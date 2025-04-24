@@ -1,0 +1,162 @@
+{
+  "info": {
+    "_postman_id": "categories-collection",
+    "name": "Categories API",
+    "description": "Collection for testing Categories CRUD operations",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Create Category",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"name\": \"Electronics\",\n    \"description\": \"Electronic products and accessories\",\n    \"sortOrder\": 1,\n    \"status\": \"active\",\n    \"image\": \"https://example.com/electronics.jpg\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/categories",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "categories"]
+        },
+        "description": "Create a new category"
+      },
+      "response": []
+    },
+    {
+      "name": "Create Subcategory",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"name\": \"Smartphones\",\n    \"parent\": \"{{parent_category_id}}\",\n    \"description\": \"Mobile phones and smartphones\",\n    \"sortOrder\": 1,\n    \"status\": \"active\",\n    \"image\": \"https://example.com/smartphones.jpg\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/categories",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "categories"]
+        },
+        "description": "Create a new subcategory"
+      },
+      "response": []
+    },
+    {
+      "name": "Get All Categories",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/categories?limit=10&page=1&sortBy=sortOrder:asc",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "categories"],
+          "query": [
+            {
+              "key": "limit",
+              "value": "10"
+            },
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "sortBy",
+              "value": "sortOrder:asc"
+            },
+            {
+              "key": "name",
+              "value": "Electronics",
+              "disabled": true
+            },
+            {
+              "key": "status",
+              "value": "active",
+              "disabled": true
+            }
+          ]
+        },
+        "description": "Get all categories with pagination and filtering options"
+      },
+      "response": []
+    },
+    {
+      "name": "Get Category by ID",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/categories/{{category_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "categories", "{{category_id}}"]
+        },
+        "description": "Get a specific category by ID"
+      },
+      "response": []
+    },
+    {
+      "name": "Update Category",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"name\": \"Electronics & Gadgets\",\n    \"description\": \"Electronic products, gadgets, and accessories\",\n    \"sortOrder\": 2,\n    \"status\": \"active\",\n    \"image\": \"https://example.com/electronics-updated.jpg\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/categories/{{category_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "categories", "{{category_id}}"]
+        },
+        "description": "Update an existing category"
+      },
+      "response": []
+    },
+    {
+      "name": "Delete Category",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/categories/{{category_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "categories", "{{category_id}}"]
+        },
+        "description": "Delete a category"
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3001"
+    },
+    {
+      "key": "category_id",
+      "value": "category_id_here"
+    },
+    {
+      "key": "parent_category_id",
+      "value": "parent_category_id_here"
+    }
+  ]
+} 

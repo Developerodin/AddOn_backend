@@ -1,0 +1,129 @@
+{
+	"info": {
+		"_postman_id": "product-attributes-collection",
+		"name": "Product Attributes API",
+		"description": "Collection for testing Product Attributes CRUD operations",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Create Product Attribute",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"name\": \"Color\",\n    \"type\": \"select\",\n    \"sortOrder\": 1,\n    \"optionValues\": [\n        {\n            \"name\": \"Red\",\n            \"image\": \"https://example.com/red.png\",\n            \"sortOrder\": 1\n        },\n        {\n            \"name\": \"Blue\",\n            \"image\": \"https://example.com/blue.png\",\n            \"sortOrder\": 2\n        }\n    ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/v1/product-attributes",
+					"host": ["{{base_url}}"],
+					"path": ["v1", "product-attributes"]
+				},
+				"description": "Create a new product attribute"
+			}
+		},
+		{
+			"name": "Get All Product Attributes",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/v1/product-attributes?limit=10&page=1&sortBy=name:asc",
+					"host": ["{{base_url}}"],
+					"path": ["v1", "product-attributes"],
+					"query": [
+						{
+							"key": "limit",
+							"value": "10"
+						},
+						{
+							"key": "page",
+							"value": "1"
+						},
+						{
+							"key": "sortBy",
+							"value": "name:asc"
+						},
+						{
+							"key": "name",
+							"value": "Color",
+							"disabled": true
+						},
+						{
+							"key": "type",
+							"value": "select",
+							"disabled": true
+						}
+					]
+				},
+				"description": "Get all product attributes with pagination and filtering options"
+			}
+		},
+		{
+			"name": "Get Product Attribute by ID",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/v1/product-attributes/{{attribute_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["v1", "product-attributes", "{{attribute_id}}"]
+				},
+				"description": "Get a specific product attribute by ID"
+			}
+		},
+		{
+			"name": "Update Product Attribute",
+			"request": {
+				"method": "PATCH",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"name\": \"Updated Color\",\n    \"optionValues\": [\n        {\n            \"name\": \"Red\",\n            \"image\": \"https://example.com/red-updated.png\",\n            \"sortOrder\": 1\n        },\n        {\n            \"name\": \"Blue\",\n            \"image\": \"https://example.com/blue-updated.png\",\n            \"sortOrder\": 2\n        },\n        {\n            \"name\": \"Green\",\n            \"image\": \"https://example.com/green.png\",\n            \"sortOrder\": 3\n        }\n    ]\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/v1/product-attributes/{{attribute_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["v1", "product-attributes", "{{attribute_id}}"]
+				},
+				"description": "Update an existing product attribute"
+			}
+		},
+		{
+			"name": "Delete Product Attribute",
+			"request": {
+				"method": "DELETE",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/v1/product-attributes/{{attribute_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["v1", "product-attributes", "{{attribute_id}}"]
+				},
+				"description": "Delete a product attribute"
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3000"
+		},
+		{
+			"key": "attribute_id",
+			"value": "product_attribute_id_here"
+		}
+	]
+} 

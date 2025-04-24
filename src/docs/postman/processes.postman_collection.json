@@ -1,0 +1,139 @@
+{
+  "info": {
+    "_postman_id": "processes-collection",
+    "name": "Processes API",
+    "description": "Collection for testing Processes CRUD operations",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Create Process",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"name\": \"Fabric Cutting\",\n    \"type\": \"Manufacturing\",\n    \"description\": \"Process for cutting fabric according to patterns\",\n    \"sortOrder\": 1,\n    \"status\": \"active\",\n    \"image\": \"https://example.com/fabric-cutting.jpg\",\n    \"steps\": [\n        {\n            \"stepTitle\": \"Pattern Layout\",\n            \"stepDescription\": \"Layout the pattern on the fabric\",\n            \"duration\": 30\n        },\n        {\n            \"stepTitle\": \"Cutting\",\n            \"stepDescription\": \"Cut the fabric following the pattern\",\n            \"duration\": 45\n        },\n        {\n            \"stepTitle\": \"Quality Check\",\n            \"stepDescription\": \"Check the cut pieces for accuracy\",\n            \"duration\": 15\n        }\n    ]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/processes",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "processes"]
+        },
+        "description": "Create a new process with steps"
+      },
+      "response": []
+    },
+    {
+      "name": "Get All Processes",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/processes?limit=10&page=1&sortBy=sortOrder:asc",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "processes"],
+          "query": [
+            {
+              "key": "limit",
+              "value": "10"
+            },
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "sortBy",
+              "value": "sortOrder:asc"
+            },
+            {
+              "key": "name",
+              "value": "Fabric",
+              "disabled": true
+            },
+            {
+              "key": "type",
+              "value": "Manufacturing",
+              "disabled": true
+            },
+            {
+              "key": "status",
+              "value": "active",
+              "disabled": true
+            }
+          ]
+        },
+        "description": "Get all processes with pagination and filtering options"
+      },
+      "response": []
+    },
+    {
+      "name": "Get Process by ID",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/processes/{{process_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "processes", "{{process_id}}"]
+        },
+        "description": "Get a specific process by ID"
+      },
+      "response": []
+    },
+    {
+      "name": "Update Process",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"name\": \"Advanced Fabric Cutting\",\n    \"description\": \"Updated process for precision fabric cutting\",\n    \"sortOrder\": 2,\n    \"steps\": [\n        {\n            \"stepTitle\": \"Pattern Layout\",\n            \"stepDescription\": \"Carefully layout the pattern on the fabric\",\n            \"duration\": 35\n        },\n        {\n            \"stepTitle\": \"Precision Cutting\",\n            \"stepDescription\": \"Cut the fabric with precision tools\",\n            \"duration\": 50\n        },\n        {\n            \"stepTitle\": \"Quality Inspection\",\n            \"stepDescription\": \"Detailed quality check of cut pieces\",\n            \"duration\": 20\n        }\n    ]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/processes/{{process_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "processes", "{{process_id}}"]
+        },
+        "description": "Update an existing process"
+      },
+      "response": []
+    },
+    {
+      "name": "Delete Process",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/processes/{{process_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "processes", "{{process_id}}"]
+        },
+        "description": "Delete a process"
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3001"
+    },
+    {
+      "key": "process_id",
+      "value": "process_id_here"
+    }
+  ]
+} 

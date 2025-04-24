@@ -1,0 +1,139 @@
+{
+	"info": {
+		"_postman_id": "raw-materials-collection",
+		"name": "Raw Materials API",
+		"description": "Collection for testing Raw Materials CRUD operations",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Create Raw Material",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"itemName\": \"Cotton Fabric\",\n    \"printName\": \"CTN-FAB-001\",\n    \"color\": \"White\",\n    \"unit\": \"Meters\",\n    \"description\": \"High-quality cotton fabric, 100% pure cotton, 300 GSM\",\n    \"image\": \"https://example.com/cotton-fabric.jpg\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/v1/raw-materials",
+					"host": ["{{base_url}}"],
+					"path": ["v1", "raw-materials"]
+				},
+				"description": "Create a new raw material"
+			},
+			"response": []
+		},
+		{
+			"name": "Get All Raw Materials",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/v1/raw-materials?limit=10&page=1&sortBy=itemName:asc",
+					"host": ["{{base_url}}"],
+					"path": ["v1", "raw-materials"],
+					"query": [
+						{
+							"key": "limit",
+							"value": "10"
+						},
+						{
+							"key": "page",
+							"value": "1"
+						},
+						{
+							"key": "sortBy",
+							"value": "itemName:asc"
+						},
+						{
+							"key": "itemName",
+							"value": "Cotton",
+							"disabled": true
+						},
+						{
+							"key": "color",
+							"value": "White",
+							"disabled": true
+						},
+						{
+							"key": "unit",
+							"value": "Meters",
+							"disabled": true
+						}
+					]
+				},
+				"description": "Get all raw materials with pagination and filtering options"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Raw Material by ID",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/v1/raw-materials/{{material_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["v1", "raw-materials", "{{material_id}}"]
+				},
+				"description": "Get a specific raw material by ID"
+			},
+			"response": []
+		},
+		{
+			"name": "Update Raw Material",
+			"request": {
+				"method": "PATCH",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"itemName\": \"Premium Cotton Fabric\",\n    \"color\": \"Off-White\",\n    \"description\": \"High-quality cotton fabric, 100% pure cotton, 300 GSM, premium finish\",\n    \"image\": \"https://example.com/premium-cotton-fabric.jpg\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/v1/raw-materials/{{material_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["v1", "raw-materials", "{{material_id}}"]
+				},
+				"description": "Update an existing raw material"
+			},
+			"response": []
+		},
+		{
+			"name": "Delete Raw Material",
+			"request": {
+				"method": "DELETE",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/v1/raw-materials/{{material_id}}",
+					"host": ["{{base_url}}"],
+					"path": ["v1", "raw-materials", "{{material_id}}"]
+				},
+				"description": "Delete a raw material"
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3001"
+		},
+		{
+			"key": "material_id",
+			"value": "material_id_here"
+		}
+	]
+} 
