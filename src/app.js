@@ -50,6 +50,15 @@ if (config.env === 'production') {
   app.use('/v1/auth', authLimiter);
 }
 
+// Root route handler
+app.get('/', (req, res) => {
+  res.status(httpStatus.OK).json({
+    status: 'success',
+    message: 'Welcome to the API',
+    version: '1.0.0'
+  });
+});
+
 // v1 api routes
 app.use('/v1', routes);
 
@@ -63,6 +72,19 @@ app.use(errorConverter);
 
 // handle error
 app.use(errorHandler);
+
+// Global error handler
+app.use((err, req, res, next) => {
+  const statusCode = err.statusCode || httpStatus.INTERNAL_SERVER_ERROR;
+  const message = err.message || 'Internal Server Error';
+  
+  res.status(statusCode).json({
+    status: 'error',
+    statusCode,
+    message,
+    ...(config.env === 'development' && { stack: err.stack })
+  });
+});
 
 export default app;
 
