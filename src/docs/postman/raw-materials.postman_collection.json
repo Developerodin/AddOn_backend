@@ -19,7 +19,7 @@
 				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n    \"itemName\": \"Cotton Fabric\",\n    \"printName\": \"CTN-FAB-001\",\n    \"color\": \"White\",\n    \"unit\": \"Meters\",\n    \"description\": \"High-quality cotton fabric, 100% pure cotton, 300 GSM\",\n    \"image\": \"https://example.com/cotton-fabric.jpg\"\n}"
+					"raw": "{\n  \"name\": \"Cotton Thread\",\n  \"groupName\": \"Embroidery\",\n  \"type\": \"Threads\",\n  \"description\": \"High quality cotton thread for embroidery.\",\n  \"brand\": \"Anchor\",\n  \"countSize\": \"40\",\n  \"material\": \"Cotton\",\n  \"color\": \"Red\",\n  \"shade\": \"Bright Red\",\n  \"unit\": \"Meter\",\n  \"mrp\": \"120.00\",\n  \"hsnCode\": \"520411\",\n  \"gst\": \"12\",\n  \"image\": null\n}"
 				},
 				"url": {
 					"raw": "{{base_url}}/v1/raw-materials",
@@ -100,7 +100,7 @@
 				],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n    \"itemName\": \"Premium Cotton Fabric\",\n    \"color\": \"Off-White\",\n    \"description\": \"High-quality cotton fabric, 100% pure cotton, 300 GSM, premium finish\",\n    \"image\": \"https://example.com/premium-cotton-fabric.jpg\"\n}"
+					"raw": "{\n  \"name\": \"Cotton Thread Updated\",\n  \"groupName\": \"Embroidery\",\n  \"type\": \"Threads\",\n  \"description\": \"Updated description.\",\n  \"brand\": \"Anchor\",\n  \"countSize\": \"42\",\n  \"material\": \"Cotton\",\n  \"color\": \"Blue\",\n  \"shade\": \"Sky Blue\",\n  \"unit\": \"Meter\",\n  \"mrp\": \"130.00\",\n  \"hsnCode\": \"520411\",\n  \"gst\": \"12\",\n  \"image\": null\n}"
 				},
 				"url": {
 					"raw": "{{base_url}}/v1/raw-materials/{{material_id}}",

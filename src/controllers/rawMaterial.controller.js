@@ -10,8 +10,12 @@ const createRawMaterial = catchAsync(async (req, res) => {
 });
 
 const getRawMaterials = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['itemName', 'color', 'unit']);
-  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  const filter = pick(req.query, [
+    'name', 'groupName', 'type', 'brand', 'countSize', 'material', 'color', 'shade', 'unit', 'mrp', 'hsnCode', 'gst'
+  ]);
+  const options = pick(req.query, [
+    'sortBy', 'limit', 'page'
+  ]);
   const result = await rawMaterialService.queryRawMaterials(filter, options);
   res.send(result);
 });
