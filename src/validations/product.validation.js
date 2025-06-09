@@ -22,7 +22,7 @@ const createProduct = {
     ),
     processes: Joi.array().items(
       Joi.object().keys({
-        processId: Joi.string().custom(objectId).required(),
+        processId: Joi.string().custom(objectId),
       })
     ),
     status: Joi.string().valid('active', 'inactive'),
@@ -77,7 +77,7 @@ const updateProduct = {
       ),
       processes: Joi.array().items(
         Joi.object().keys({
-          processId: Joi.string().custom(objectId).required(),
+          processId: Joi.string().custom(objectId),
         })
       ),
       status: Joi.string().valid('active', 'inactive'),

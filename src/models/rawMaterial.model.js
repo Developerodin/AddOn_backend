@@ -16,6 +16,7 @@ const rawMaterialSchema = mongoose.Schema(
     mrp: { type: String, required: true, trim: true },
     hsnCode: { type: String, required: true, trim: true },
     gst: { type: String, required: true, trim: true },
+    articleNo: { type: String, required: true, trim: true },
     image: { type: String, trim: true, default: null },
   },
   {

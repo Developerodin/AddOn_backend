@@ -11,7 +11,7 @@ const createRawMaterial = catchAsync(async (req, res) => {
 
 const getRawMaterials = catchAsync(async (req, res) => {
   const filter = pick(req.query, [
-    'name', 'groupName', 'type', 'brand', 'countSize', 'material', 'color', 'shade', 'unit', 'mrp', 'hsnCode', 'gst'
+    'name', 'groupName', 'type', 'brand', 'countSize', 'material', 'color', 'shade', 'unit', 'mrp', 'hsnCode', 'gst', 'articleNo'
   ]);
   const options = pick(req.query, [
     'sortBy', 'limit', 'page'

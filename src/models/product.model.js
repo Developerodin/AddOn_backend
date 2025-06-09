@@ -18,7 +18,6 @@ const processItemSchema = mongoose.Schema({
   processId: {
     type: mongoose.SchemaTypes.ObjectId,
     ref: 'Process',
-    required: true,
   },
 });
 

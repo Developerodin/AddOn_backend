@@ -16,6 +16,7 @@ const createRawMaterial = {
     mrp: Joi.string().required(),
     hsnCode: Joi.string().required(),
     gst: Joi.string().required(),
+    articleNo: Joi.string().required(),
     image: Joi.string().allow(null),
   }),
 };
@@ -34,6 +35,7 @@ const getRawMaterials = {
     mrp: Joi.string(),
     hsnCode: Joi.string(),
     gst: Joi.string(),
+    articleNo: Joi.string(),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
@@ -65,6 +67,7 @@ const updateRawMaterial = {
       mrp: Joi.string(),
       hsnCode: Joi.string(),
       gst: Joi.string(),
+      articleNo: Joi.string(),
       image: Joi.string().allow(null),
     })
     .min(1),
