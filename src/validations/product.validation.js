@@ -16,8 +16,8 @@ const createProduct = {
     attributes: Joi.object().pattern(Joi.string(), Joi.string()),
     bom: Joi.array().items(
       Joi.object().keys({
-        materialId: Joi.string().custom(objectId).required(),
-        quantity: Joi.number().min(0).required(),
+        materialId: Joi.string().custom(objectId),
+        quantity: Joi.number().min(0),
       })
     ),
     processes: Joi.array().items(
@@ -43,6 +43,7 @@ const getProducts = {
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
+    populate: Joi.string(),
   }),
 };
 
@@ -91,10 +92,31 @@ const deleteProduct = {
   }),
 };
 
+const bulkImportProducts = {
+  body: Joi.object().keys({
+    products: Joi.array().items(
+      Joi.object().keys({
+        id: Joi.string().custom(objectId).optional(), // For updates
+        name: Joi.string().required(),
+        styleCode: Joi.string().required(),
+        internalCode: Joi.string().optional().default(''),
+        vendorCode: Joi.string().optional().default(''),
+        factoryCode: Joi.string().optional().default(''),
+        eanCode: Joi.string().optional().default(''),
+        description: Joi.string().optional().default(''),
+        category: Joi.string().custom(objectId).optional(),
+        softwareCode: Joi.string().optional(), // Auto-generated if not provided
+      })
+    ).min(1).max(1000), // Limit batch size to 1000 products
+    batchSize: Joi.number().integer().min(1).max(100).default(50), // Default batch size
+  }),
+};
+
 export default {
   createProduct,
   getProducts,
   getProduct,
   updateProduct,
   deleteProduct,
+  bulkImportProducts,
 }; 

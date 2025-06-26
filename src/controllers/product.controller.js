@@ -1,5 +1,6 @@
 import httpStatus from 'http-status';
 import pick from '../utils/pick.js';
+import { cleanFilterObjectIds } from '../utils/validateObjectId.js';
 import ApiError from '../utils/ApiError.js';
 import catchAsync from '../utils/catchAsync.js';
 import * as productService from '../services/product.service.js';
@@ -10,9 +11,33 @@ export const createProduct = catchAsync(async (req, res) => {
 });
 
 export const getProducts = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['name', 'softwareCode', 'internalCode', 'vendorCode', 'factoryCode', 'styleCode', 'eanCode', 'category', 'status']);
-  const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await productService.queryProducts(filter, options);
+  // Define allowed filter fields
+  const allowedFilterFields = ['name', 'softwareCode', 'internalCode', 'vendorCode', 'factoryCode', 'styleCode', 'eanCode', 'category', 'status'];
+  
+  // Pick only valid filter fields
+  const filter = pick(req.query, allowedFilterFields);
+  
+  console.log('Original filter:', filter);
+  console.log('Query params:', req.query);
+  
+  // Clean the filter - remove empty values and validate ObjectId fields
+  const cleanFilter = cleanFilterObjectIds(filter, ['category']);
+  
+  console.log('Clean filter:', cleanFilter);
+  
+  // Only pick allowed options
+  const allowedOptions = ['sortBy', 'limit', 'page', 'populate'];
+  const options = pick(req.query, allowedOptions);
+  
+  // Ensure limit and page are numbers
+  if (options.limit) {
+    options.limit = parseInt(options.limit, 10);
+  }
+  if (options.page) {
+    options.page = parseInt(options.page, 10);
+  }
+  
+  const result = await productService.queryProducts(cleanFilter, options);
   res.send(result);
 });
 
@@ -32,4 +57,29 @@ export const updateProduct = catchAsync(async (req, res) => {
 export const deleteProduct = catchAsync(async (req, res) => {
   await productService.deleteProductById(req.params.productId);
   res.status(httpStatus.NO_CONTENT).send();
+});
+
+export const bulkImportProducts = catchAsync(async (req, res) => {
+  const { products, batchSize = 50 } = req.body;
+  
+  if (!products || !Array.isArray(products) || products.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Products array is required and must not be empty');
+  }
+
+  const results = await productService.bulkImportProducts(products, batchSize);
+  
+  res.status(httpStatus.OK).send({
+    message: 'Bulk import completed',
+    results,
+  });
+});
+
+export const debugQuery = catchAsync(async (req, res) => {
+  res.status(httpStatus.OK).json({
+    message: 'Debug query parameters',
+    query: req.query,
+    headers: req.headers,
+    url: req.url,
+    method: req.method
+  });
 }); 

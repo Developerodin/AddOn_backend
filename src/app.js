@@ -24,11 +24,20 @@ if (config.env !== 'test') {
 // set security HTTP headers
 app.use(helmet());
 
-// parse json request body
-app.use(express.json());
+// parse json request body with increased limits for bulk operations
+app.use(express.json({ 
+  limit: '50mb', // Increased from default 100kb to handle large bulk imports
+  verify: (req, res, buf) => {
+    // Store raw body for potential use
+    req.rawBody = buf;
+  }
+}));
 
-// parse urlencoded request body
-app.use(express.urlencoded({ extended: true }));
+// parse urlencoded request body with increased limits
+app.use(express.urlencoded({ 
+  extended: true, 
+  limit: '50mb' // Increased limit for form data
+}));
 
 // sanitize request data
 app.use(xss());

@@ -5,11 +5,11 @@ const bomItemSchema = mongoose.Schema({
   materialId: {
     type: mongoose.SchemaTypes.ObjectId,
     ref: 'RawMaterial',
-    required: true,
+    required: false,
   },
   quantity: {
     type: Number,
-    required: true,
+    required: false,
     min: 0,
   },
 });
