@@ -1,0 +1,200 @@
+{
+  "info": {
+    "name": "Stores API",
+    "description": "Collection for testing Store CRUD operations",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Create Store",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"storeId\": \"STORE001\",\n  \"storeName\": \"Main Street Store\",\n  \"city\": \"Mumbai\",\n  \"addressLine1\": \"123 Main Street\",\n  \"addressLine2\": \"Building A\",\n  \"storeNumber\": \"A101\",\n  \"pincode\": \"400001\",\n  \"contactPerson\": \"John Doe\",\n  \"contactEmail\": \"john.doe@store.com\",\n  \"contactPhone\": \"+91-9876543210\",\n  \"creditRating\": \"A+\",\n  \"isActive\": true\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/stores",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "stores"]
+        }
+      }
+    },
+    {
+      "name": "Get All Stores",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/v1/stores?limit=10&page=1&sortBy=createdAt:desc",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "stores"],
+          "query": [
+            {
+              "key": "limit",
+              "value": "10"
+            },
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "sortBy",
+              "value": "createdAt:desc"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Store by ID",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/v1/stores/{{storeId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "stores", "{{storeId}}"]
+        }
+      }
+    },
+    {
+      "name": "Update Store",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"storeName\": \"Updated Store Name\",\n  \"creditRating\": \"A\",\n  \"isActive\": false\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/stores/{{storeId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "stores", "{{storeId}}"]
+        }
+      }
+    },
+    {
+      "name": "Delete Store",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/v1/stores/{{storeId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "stores", "{{storeId}}"]
+        }
+      }
+    },
+    {
+      "name": "Bulk Import Stores",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"stores\": [\n    {\n      \"storeId\": \"STORE002\",\n      \"storeName\": \"Downtown Store\",\n      \"city\": \"Delhi\",\n      \"addressLine1\": \"456 Downtown Ave\",\n      \"storeNumber\": \"B202\",\n      \"pincode\": \"110001\",\n      \"contactPerson\": \"Jane Smith\",\n      \"contactEmail\": \"jane.smith@store.com\",\n      \"contactPhone\": \"+91-9876543211\",\n      \"creditRating\": \"B+\"\n    },\n    {\n      \"storeId\": \"STORE003\",\n      \"storeName\": \"Uptown Store\",\n      \"city\": \"Bangalore\",\n      \"addressLine1\": \"789 Uptown Blvd\",\n      \"storeNumber\": \"C303\",\n      \"pincode\": \"560001\",\n      \"contactPerson\": \"Bob Johnson\",\n      \"contactEmail\": \"bob.johnson@store.com\",\n      \"contactPhone\": \"+91-9876543212\",\n      \"creditRating\": \"A-\"\n    }\n  ],\n  \"batchSize\": 50\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/stores/bulk-import",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "stores", "bulk-import"]
+        }
+      }
+    },
+    {
+      "name": "Filter Stores by City",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/v1/stores?city=Mumbai&isActive=true",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "stores"],
+          "query": [
+            {
+              "key": "city",
+              "value": "Mumbai"
+            },
+            {
+              "key": "isActive",
+              "value": "true"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Filter Stores by Credit Rating",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/v1/stores?creditRating=A+&sortBy=storeName:asc",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "stores"],
+          "query": [
+            {
+              "key": "creditRating",
+              "value": "A+"
+            },
+            {
+              "key": "sortBy",
+              "value": "storeName:asc"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Debug Query",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/v1/stores/debug?test=value&filter=active",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "stores", "debug"],
+          "query": [
+            {
+              "key": "test",
+              "value": "value"
+            },
+            {
+              "key": "filter",
+              "value": "active"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "storeId",
+      "value": "your-store-id-here",
+      "type": "string"
+    }
+  ]
+} 

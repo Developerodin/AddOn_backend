@@ -5,6 +5,8 @@ import RawMaterial from './rawMaterial.model.js';
 import Category from './category.model.js';
 import Process from './process.model.js';
 import Product from './product.model.js';
+import Store from './store.model.js';
+import SealsExcelMaster from './sealsExcelMaster.model.js';
 
 export {
   Token,
@@ -14,4 +16,6 @@ export {
   Category,
   Process,
   Product,
+  Store,
+  SealsExcelMaster,
 };

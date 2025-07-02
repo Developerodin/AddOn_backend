@@ -7,6 +7,9 @@ import rawMaterialRoute from './rawMaterial.route.js';
 import categoryRoute from './category.route.js';
 import processRoute from './process.route.js';
 import productRoute from './product.route.js';
+import storeRoute from './store.route.js';
+import commonRoute from './common.route.js';
+import sealsExcelMasterRoute from './sealsExcelMaster.route.js';
 import config from '../../config/config.js';
 
 const router = express.Router();
@@ -39,6 +42,18 @@ const defaultRoutes = [
   {
     path: '/products',
     route: productRoute,
+  },
+  {
+    path: '/stores',
+    route: storeRoute,
+  },
+  {
+    path: '/common',
+    route: commonRoute,
+  },
+  {
+    path: '/seals-excel-master',
+    route: sealsExcelMasterRoute,
   },
 ];
 

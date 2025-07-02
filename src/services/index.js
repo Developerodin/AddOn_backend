@@ -5,4 +5,6 @@ export * as userService from './user.service.js';
 export * as productAttributeService from './productAttribute.service.js';
 export * as rawMaterialService from './rawMaterial.service.js';
 export * as categoryService from './category.service.js';
+export * as storeService from './store.service.js';
+export * as sealsExcelMasterService from './sealsExcelMaster.service.js';
 

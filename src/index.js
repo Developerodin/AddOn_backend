@@ -2,10 +2,15 @@ import mongoose from 'mongoose';
 import app from './app.js';
 import config from './config/config.js';
 import logger from './config/logger.js';
+import { testS3Connection } from './utils/s3Connection.js';
 
 let server;
-mongoose.connect(config.mongoose.url, config.mongoose.options).then(() => {
+mongoose.connect(config.mongoose.url, config.mongoose.options).then(async () => {
   logger.info('Connected to MongoDB');
+  
+  // Test S3 connection
+  await testS3Connection();
+  
   server = app.listen(config.port, () => {
     logger.info(`Listening to port ${config.port}`);
   });
