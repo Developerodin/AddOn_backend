@@ -1,0 +1,316 @@
+{
+  "info": {
+    "name": "Analytics API Collection",
+    "description": "Collection for testing Analytics API endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/v1",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "your-jwt-token-here",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{authToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "📊 Time-Based Sales Trends",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/analytics/time-based-trends?dateFrom=2024-01-01&dateTo=2024-01-31&groupBy=day",
+          "host": ["{{baseUrl}}"],
+          "path": ["analytics", "time-based-trends"],
+          "query": [
+            {
+              "key": "dateFrom",
+              "value": "2024-01-01",
+              "description": "Start date in ISO format"
+            },
+            {
+              "key": "dateTo",
+              "value": "2024-01-31",
+              "description": "End date in ISO format"
+            },
+            {
+              "key": "groupBy",
+              "value": "day",
+              "description": "Grouping level: day or month"
+            }
+          ]
+        },
+        "description": "Get time-based sales trends with daily aggregation"
+      }
+    },
+    {
+      "name": "🧦 Product Performance Analysis",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/analytics/product-performance?limit=10&sortBy=nsv&dateFrom=2024-01-01",
+          "host": ["{{baseUrl}}"],
+          "path": ["analytics", "product-performance"],
+          "query": [
+            {
+              "key": "limit",
+              "value": "10",
+              "description": "Number of top products to return"
+            },
+            {
+              "key": "sortBy",
+              "value": "nsv",
+              "description": "Sort criteria: quantity, nsv, gsv"
+            },
+            {
+              "key": "dateFrom",
+              "value": "2024-01-01",
+              "description": "Start date in ISO format"
+            }
+          ]
+        },
+        "description": "Get top-performing products by NSV"
+      }
+    },
+    {
+      "name": "🏪 Store Performance Analysis",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/analytics/store-performance?sortBy=quantity&dateFrom=2024-01-01&dateTo=2024-01-31",
+          "host": ["{{baseUrl}}"],
+          "path": ["analytics", "store-performance"],
+          "query": [
+            {
+              "key": "sortBy",
+              "value": "quantity",
+              "description": "Sort criteria: quantity, nsv, gsv, discount, tax"
+            },
+            {
+              "key": "dateFrom",
+              "value": "2024-01-01",
+              "description": "Start date in ISO format"
+            },
+            {
+              "key": "dateTo",
+              "value": "2024-01-31",
+              "description": "End date in ISO format"
+            }
+          ]
+        },
+        "description": "Get store-wise performance sorted by quantity"
+      }
+    },
+    {
+      "name": "🏪 Store Heatmap Data",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/analytics/store-heatmap?dateFrom=2024-01-01&dateTo=2024-01-31",
+          "host": ["{{baseUrl}}"],
+          "path": ["analytics", "store-heatmap"],
+          "query": [
+            {
+              "key": "dateFrom",
+              "value": "2024-01-01",
+              "description": "Start date in ISO format"
+            },
+            {
+              "key": "dateTo",
+              "value": "2024-01-31",
+              "description": "End date in ISO format"
+            }
+          ]
+        },
+        "description": "Get store heatmap data for visualization"
+      }
+    },
+    {
+      "name": "🏷️ Brand Performance Analysis",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/analytics/brand-performance?dateFrom=2024-01-01&dateTo=2024-01-31",
+          "host": ["{{baseUrl}}"],
+          "path": ["analytics", "brand-performance"],
+          "query": [
+            {
+              "key": "dateFrom",
+              "value": "2024-01-01",
+              "description": "Start date in ISO format"
+            },
+            {
+              "key": "dateTo",
+              "value": "2024-01-31",
+              "description": "End date in ISO format"
+            }
+          ]
+        },
+        "description": "Get brand-wise performance analysis"
+      }
+    },
+    {
+      "name": "💰 Discount Impact Analysis",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/analytics/discount-impact?dateFrom=2024-01-01&dateTo=2024-01-31",
+          "host": ["{{baseUrl}}"],
+          "path": ["analytics", "discount-impact"],
+          "query": [
+            {
+              "key": "dateFrom",
+              "value": "2024-01-01",
+              "description": "Start date in ISO format"
+            },
+            {
+              "key": "dateTo",
+              "value": "2024-01-31",
+              "description": "End date in ISO format"
+            }
+          ]
+        },
+        "description": "Get discount impact analysis data"
+      }
+    },
+    {
+      "name": "📈 Tax & MRP Analytics",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/analytics/tax-mrp-analytics?dateFrom=2024-01-01&dateTo=2024-01-31",
+          "host": ["{{baseUrl}}"],
+          "path": ["analytics", "tax-mrp-analytics"],
+          "query": [
+            {
+              "key": "dateFrom",
+              "value": "2024-01-01",
+              "description": "Start date in ISO format"
+            },
+            {
+              "key": "dateTo",
+              "value": "2024-01-31",
+              "description": "End date in ISO format"
+            }
+          ]
+        },
+        "description": "Get tax and MRP analytics data"
+      }
+    },
+    {
+      "name": "✅ Summary KPIs",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/analytics/summary-kpis?dateFrom=2024-01-01&dateTo=2024-01-31",
+          "host": ["{{baseUrl}}"],
+          "path": ["analytics", "summary-kpis"],
+          "query": [
+            {
+              "key": "dateFrom",
+              "value": "2024-01-01",
+              "description": "Start date in ISO format"
+            },
+            {
+              "key": "dateTo",
+              "value": "2024-01-31",
+              "description": "End date in ISO format"
+            }
+          ]
+        },
+        "description": "Get summary key performance indicators"
+      }
+    },
+    {
+      "name": "📊 Comprehensive Analytics Dashboard",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/analytics/dashboard?dateFrom=2024-01-01&dateTo=2024-01-31",
+          "host": ["{{baseUrl}}"],
+          "path": ["analytics", "dashboard"],
+          "query": [
+            {
+              "key": "dateFrom",
+              "value": "2024-01-01",
+              "description": "Start date in ISO format"
+            },
+            {
+              "key": "dateTo",
+              "value": "2024-01-31",
+              "description": "End date in ISO format"
+            }
+          ]
+        },
+        "description": "Get all analytics data in a single request for dashboard"
+      }
+    }
+  ]
+} 

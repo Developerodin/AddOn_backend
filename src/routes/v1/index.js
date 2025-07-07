@@ -11,6 +11,7 @@ import storeRoute from './store.route.js';
 import commonRoute from './common.route.js';
 import sealsExcelMasterRoute from './sealsExcelMaster.route.js';
 import salesRoute from './sales.route.js';
+import analyticsRoute from './analytics.route.js';
 import config from '../../config/config.js';
 
 const router = express.Router();
@@ -59,6 +60,10 @@ const defaultRoutes = [
   {
     path: '/sales',
     route: salesRoute,
+  },
+  {
+    path: '/analytics',
+    route: analyticsRoute,
   },
 ];
 
