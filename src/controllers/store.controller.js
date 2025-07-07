@@ -12,7 +12,13 @@ export const createStore = catchAsync(async (req, res) => {
 
 export const getStores = catchAsync(async (req, res) => {
   // Define allowed filter fields
-  const allowedFilterFields = ['storeId', 'storeName', 'city', 'contactPerson', 'contactEmail', 'creditRating', 'isActive'];
+  const allowedFilterFields = [
+    'storeId', 'storeName', 'city', 'contactPerson', 'contactEmail', 'creditRating', 'isActive',
+    // New fields
+    'bpCode', 'oldStoreCode', 'bpName', 'street', 'block', 'zipCode', 'state', 'country',
+    'telephone', 'internalSapCode', 'internalSoftwareCode', 'brandGrouping', 'brand',
+    'hankyNorms', 'socksNorms', 'towelNorms'
+  ];
   
   // Pick only valid filter fields
   const filter = pick(req.query, allowedFilterFields);

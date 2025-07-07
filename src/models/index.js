@@ -7,6 +7,7 @@ import Process from './process.model.js';
 import Product from './product.model.js';
 import Store from './store.model.js';
 import SealsExcelMaster from './sealsExcelMaster.model.js';
+import Sales from './sales.model.js';
 
 export {
   Token,
@@ -18,4 +19,5 @@ export {
   Product,
   Store,
   SealsExcelMaster,
+  Sales,
 };

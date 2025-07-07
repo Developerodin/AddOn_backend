@@ -8,6 +8,7 @@ import * as productController from './product.controller.js';
 import * as productAttributeController from './productAttribute.controller.js';
 import * as rawMaterialController from './rawMaterial.controller.js';
 import * as sealsExcelMasterController from './sealsExcelMaster.controller.js';
+import * as salesController from './sales.controller.js';
 
 export { 
   authController, 
@@ -19,6 +20,7 @@ export {
   productController,
   productAttributeController,
   rawMaterialController,
-  sealsExcelMasterController
+  sealsExcelMasterController,
+  salesController
 };
 

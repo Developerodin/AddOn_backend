@@ -7,4 +7,5 @@ export * as rawMaterialService from './rawMaterial.service.js';
 export * as categoryService from './category.service.js';
 export * as storeService from './store.service.js';
 export * as sealsExcelMasterService from './sealsExcelMaster.service.js';
+export * as salesService from './sales.service.js';
 

@@ -21,6 +21,26 @@ const storeSchema = mongoose.Schema(
       required: true,
       trim: true,
     },
+    bpCode: {
+      type: String,
+      trim: true,
+    },
+    oldStoreCode: {
+      type: String,
+      trim: true,
+    },
+    bpName: {
+      type: String,
+      trim: true,
+    },
+    street: {
+      type: String,
+      trim: true,
+    },
+    block: {
+      type: String,
+      trim: true,
+    },
     city: {
       type: String,
       required: true,
@@ -35,6 +55,18 @@ const storeSchema = mongoose.Schema(
       type: String,
       trim: true,
       default: '',
+    },
+    zipCode: {
+      type: String,
+      trim: true,
+    },
+    state: {
+      type: String,
+      trim: true,
+    },
+    country: {
+      type: String,
+      trim: true,
     },
     storeNumber: {
       type: String,
@@ -76,6 +108,43 @@ const storeSchema = mongoose.Schema(
           throw new Error('Invalid phone number format');
         }
       },
+    },
+    telephone: {
+      type: String,
+      trim: true,
+      validate(value) {
+        if (value && !/^\+?[\d\s\-\(\)]{10,15}$/.test(value)) {
+          throw new Error('Invalid telephone number format');
+        }
+      },
+    },
+    internalSapCode: {
+      type: String,
+      trim: true,
+    },
+    internalSoftwareCode: {
+      type: String,
+      trim: true,
+    },
+    brandGrouping: {
+      type: String,
+      trim: true,
+    },
+    brand: {
+      type: String,
+      trim: true,
+    },
+    hankyNorms: {
+      type: Number,
+      min: 0,
+    },
+    socksNorms: {
+      type: Number,
+      min: 0,
+    },
+    towelNorms: {
+      type: Number,
+      min: 0,
     },
     creditRating: {
       type: String,
