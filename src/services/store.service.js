@@ -143,39 +143,91 @@ export const bulkImportStores = async (stores, batchSize = 50) => {
           try {
             const hasId = storeData.id && storeData.id.trim() !== '';
             
+            // Validate required fields first
+            const requiredFields = ['storeId', 'storeName', 'city', 'addressLine1', 'storeNumber', 'pincode', 'contactPerson', 'contactEmail', 'contactPhone'];
+            const missingFields = requiredFields.filter(field => !storeData[field] || storeData[field].toString().trim() === '');
+            
+            if (missingFields.length > 0) {
+              throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
+            }
+
+            // Validate pincode format
+            if (!/^\d{6}$/.test(storeData.pincode.trim())) {
+              throw new Error('Pincode must be exactly 6 digits');
+            }
+
+            // Validate email format
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(storeData.contactEmail.trim())) {
+              throw new Error('Invalid email format');
+            }
+
+            // Validate phone format
+            if (!/^\+?[\d\s\-\(\)]{10,15}$/.test(storeData.contactPhone.trim())) {
+              throw new Error('Contact phone must be 10-15 digits with optional +, spaces, dashes, or parentheses');
+            }
+
+            // Validate credit rating if provided
+            if (storeData.creditRating && !['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D', 'F'].includes(storeData.creditRating)) {
+              throw new Error('Invalid credit rating. Must be one of: A+, A, A-, B+, B, B-, C+, C, C-, D, F');
+            }
+
+            // Validate numeric fields
+            const numericFields = ['hankyNorms', 'socksNorms', 'towelNorms', 'totalNorms'];
+            for (const field of numericFields) {
+              if (storeData[field] !== undefined && storeData[field] !== null && storeData[field] !== '') {
+                const numValue = Number(storeData[field]);
+                if (isNaN(numValue) || numValue < 0) {
+                  throw new Error(`${field} must be a non-negative number`);
+                }
+              }
+            }
+            
             // Prepare store data with minimal memory footprint
             const processedData = {
-              storeId: storeData.storeId?.trim(),
+              // Required fields
+              storeId: storeData.storeId?.trim().toUpperCase(),
               storeName: storeData.storeName?.trim(),
-              bpCode: storeData.bpCode?.trim(),
-              oldStoreCode: storeData.oldStoreCode?.trim(),
-              bpName: storeData.bpName?.trim(),
-              street: storeData.street?.trim(),
-              block: storeData.block?.trim(),
               city: storeData.city?.trim(),
               addressLine1: storeData.addressLine1?.trim(),
-              addressLine2: storeData.addressLine2?.trim() || '',
-              zipCode: storeData.zipCode?.trim(),
-              state: storeData.state?.trim(),
-              country: storeData.country?.trim(),
               storeNumber: storeData.storeNumber?.trim(),
               pincode: storeData.pincode?.trim(),
               contactPerson: storeData.contactPerson?.trim(),
               contactEmail: storeData.contactEmail?.trim().toLowerCase(),
               contactPhone: storeData.contactPhone?.trim(),
-              telephone: storeData.telephone?.trim(),
-              internalSapCode: storeData.internalSapCode?.trim(),
-              internalSoftwareCode: storeData.internalSoftwareCode?.trim(),
-              brandGrouping: storeData.brandGrouping?.trim(),
-              brand: storeData.brand?.trim(),
+              creditRating: storeData.creditRating || 'C',
+              
+              // Optional fields
+              bpCode: storeData.bpCode?.trim() || undefined,
+              oldStoreCode: storeData.oldStoreCode?.trim() || undefined,
+              bpName: storeData.bpName?.trim() || undefined,
+              street: storeData.street?.trim() || undefined,
+              block: storeData.block?.trim() || undefined,
+              addressLine2: storeData.addressLine2?.trim() || '',
+              zipCode: storeData.zipCode?.trim() || undefined,
+              state: storeData.state?.trim() || undefined,
+              country: storeData.country?.trim() || undefined,
+              telephone: storeData.telephone?.trim() || undefined,
+              internalSapCode: storeData.internalSapCode?.trim() || undefined,
+              internalSoftwareCode: storeData.internalSoftwareCode?.trim() || undefined,
+              brandGrouping: storeData.brandGrouping?.trim() || undefined,
+              brand: storeData.brand?.trim() || undefined,
               hankyNorms: storeData.hankyNorms ? Number(storeData.hankyNorms) : undefined,
               socksNorms: storeData.socksNorms ? Number(storeData.socksNorms) : undefined,
               towelNorms: storeData.towelNorms ? Number(storeData.towelNorms) : undefined,
-              creditRating: storeData.creditRating || 'C',
-              isActive: storeData.isActive !== undefined ? storeData.isActive : true,
+              totalNorms: storeData.totalNorms ? Number(storeData.totalNorms) : undefined,
+              isActive: storeData.isActive !== undefined ? Boolean(storeData.isActive) : true,
             };
 
+            // Debug logging for totalNorms
+            console.log('Debug - Input totalNorms:', storeData.totalNorms, typeof storeData.totalNorms);
+            console.log('Debug - Processed totalNorms:', processedData.totalNorms, typeof processedData.totalNorms);
+
             if (hasId) {
+              // Validate ObjectId format
+              if (!/^[0-9a-fA-F]{24}$/.test(storeData.id.trim())) {
+                throw new Error('Invalid store ID format. Must be a valid 24-character hexadecimal string');
+              }
+
               // Update existing store
               const existingStore = await Store.findById(storeData.id).lean();
               if (!existingStore) {
@@ -205,10 +257,15 @@ export const bulkImportStores = async (stores, batchSize = 50) => {
               }
               
               // Use updateOne for better performance
-              await Store.updateOne(
+              const updateResult = await Store.updateOne(
                 { _id: storeData.id },
                 { $set: processedData }
               );
+
+              if (updateResult.matchedCount === 0) {
+                throw new Error(`Store with ID ${storeData.id} not found during update`);
+              }
+
               results.updated++;
             } else {
               // Create new store
@@ -233,6 +290,10 @@ export const bulkImportStores = async (stores, batchSize = 50) => {
               index: globalIndex,
               storeId: storeData.storeId || 'N/A',
               error: error.message,
+              data: {
+                storeName: storeData.storeName || 'N/A',
+                city: storeData.city || 'N/A'
+              }
             });
           }
         });
@@ -246,13 +307,17 @@ export const bulkImportStores = async (stores, batchSize = 50) => {
       } catch (error) {
         console.error(`Error processing batch ${Math.floor(i / batchSize) + 1}:`, error);
         // Mark all stores in this batch as failed
-        batch.forEach((_, batchIndex) => {
+        batch.forEach((storeData, batchIndex) => {
           const globalIndex = i + batchIndex;
           results.failed++;
           results.errors.push({
             index: globalIndex,
-            storeId: 'N/A',
+            storeId: storeData.storeId || 'N/A',
             error: `Batch processing error: ${error.message}`,
+            data: {
+              storeName: storeData.storeName || 'N/A',
+              city: storeData.city || 'N/A'
+            }
           });
         });
       }
@@ -273,7 +338,11 @@ export const bulkImportStores = async (stores, batchSize = 50) => {
       index: -1,
       storeId: 'N/A',
       error: `Bulk import failed: ${error.message}`,
+      data: {
+        storeName: 'N/A',
+        city: 'N/A'
+      }
     });
     throw error;
   }
-}; 
+};

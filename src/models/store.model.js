@@ -146,6 +146,10 @@ const storeSchema = mongoose.Schema(
       type: Number,
       min: 0,
     },
+    totalNorms: {
+      type: Number,
+      min: 0,
+    },
     creditRating: {
       type: String,
       enum: ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D', 'F'],

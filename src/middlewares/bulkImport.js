@@ -25,27 +25,29 @@ export const bulkImportMiddleware = (req, res, next) => {
 
 /**
  * Middleware to validate bulk import payload size
+ * Generic middleware that works with any array field (stores, products, etc.)
  */
 export const validateBulkImportSize = (req, res, next) => {
-  const { products } = req.body;
+  // Check for common array field names
+  const arrayField = req.body.stores || req.body.products || req.body.items || req.body.data;
   
-  if (!products || !Array.isArray(products)) {
+  if (!arrayField || !Array.isArray(arrayField)) {
     return res.status(400).json({
       status: 'error',
-      message: 'Products array is required'
+      message: 'Array field (stores/products/items) is required'
     });
   }
   
   // Check if payload is reasonable
-  if (products.length > 1000) {
+  if (arrayField.length > 1000) {
     return res.status(400).json({
       status: 'error',
-      message: 'Maximum 1000 products allowed per request'
+      message: 'Maximum 1000 items allowed per request'
     });
   }
   
   // Estimate payload size (rough calculation)
-  const estimatedSize = products.length * 500; // ~500 bytes per product object
+  const estimatedSize = arrayField.length * 500; // ~500 bytes per object
   const sizeInMB = estimatedSize / (1024 * 1024);
   
   if (sizeInMB > 50) {

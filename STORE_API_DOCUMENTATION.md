@@ -206,56 +206,171 @@ No response body
 ### 6. Bulk Import Stores
 **POST** `/v1/stores/bulk-import`
 
-**Request Body:**
-```json
+### Request Body
+
+```javascript
 {
   "stores": [
     {
-      "storeId": "STORE002",
-      "storeName": "Downtown Store",
-      "city": "Delhi",
-      "addressLine1": "456 Downtown Ave",
-      "storeNumber": "B202",
-      "pincode": "110001",
-      "contactPerson": "Jane Smith",
-      "contactEmail": "jane.smith@store.com",
-      "contactPhone": "+91-9876543211",
-      "creditRating": "B+"
-    },
-    {
-      "storeId": "STORE003",
-      "storeName": "Uptown Store",
-      "city": "Bangalore",
-      "addressLine1": "789 Uptown Blvd",
-      "storeNumber": "C303",
-      "pincode": "560001",
-      "contactPerson": "Bob Johnson",
-      "contactEmail": "bob.johnson@store.com",
-      "contactPhone": "+91-9876543212",
-      "creditRating": "A-"
+      // For updating existing store (optional)
+      "id": "507f1f77bcf86cd799439011", // MongoDB ObjectId
+      
+      // REQUIRED FIELDS
+      "storeId": "STORE001",           // Will be converted to uppercase
+      "storeName": "Downtown Mall Store",
+      "city": "Mumbai",
+      "addressLine1": "123 Main Street",
+      "storeNumber": "SN001",
+      "pincode": "400001",             // Must be exactly 6 digits
+      "contactPerson": "John Doe",
+      "contactEmail": "john@store.com", // Will be converted to lowercase
+      "contactPhone": "+91-9876543210", // 10-15 digits with optional formatting
+      
+      // OPTIONAL FIELDS
+      "bpCode": "BP001",
+      "oldStoreCode": "OLD001",
+      "bpName": "Business Partner Name",
+      "street": "Main Street",
+      "block": "Block A",
+      "addressLine2": "Floor 2",
+      "zipCode": "400001",
+      "state": "Maharashtra",
+      "country": "India",
+      "telephone": "+91-9876543211",
+      "internalSapCode": "SAP001",
+      "internalSoftwareCode": "SW001",
+      "brandGrouping": "Premium",
+      "brand": "Brand Name",
+      "hankyNorms": 100,               // Must be ≥ 0
+      "socksNorms": 50,                // Must be ≥ 0
+      "towelNorms": 25,                // Must be ≥ 0
+      "totalNorms": 175,               // Must be ≥ 0
+      "creditRating": "A",             // A+, A, A-, B+, B, B-, C+, C, C-, D, F (default: C)
+      "isActive": true                 // Default: true
     }
   ],
-  "batchSize": 50
+  "batchSize": 50  // Optional, default 50, max 100
 }
 ```
+
+### Complete Field Reference
+
+#### **Required Fields (Must be provided):**
+- `storeId` - String, unique identifier (auto-converted to uppercase)
+- `storeName` - String, store name
+- `city` - String, city name
+- `addressLine1` - String, primary address
+- `storeNumber` - String, store number
+- `pincode` - String, exactly 6 digits
+- `contactPerson` - String, contact person name
+- `contactEmail` - String, valid email format (auto-converted to lowercase)
+- `contactPhone` - String, 10-15 digits with optional formatting
+
+#### **Optional Fields (Can be omitted):**
+- `id` - MongoDB ObjectId (24-character hex string) - for updating existing stores
+- `bpCode` - String, business partner code
+- `oldStoreCode` - String, old store code
+- `bpName` - String, business partner name
+- `street` - String, street name
+- `block` - String, block name
+- `addressLine2` - String, secondary address (defaults to empty string)
+- `zipCode` - String, zip code
+- `state` - String, state name
+- `country` - String, country name
+- `telephone` - String, telephone number (same format as contactPhone)
+- `internalSapCode` - String, internal SAP code
+- `internalSoftwareCode` - String, internal software code
+- `brandGrouping` - String, brand grouping
+- `brand` - String, brand name
+- `hankyNorms` - Number, must be ≥ 0
+- `socksNorms` - Number, must be ≥ 0
+- `towelNorms` - Number, must be ≥ 0
+- `totalNorms` - Number, must be ≥ 0
+- `creditRating` - String, one of: A+, A, A-, B+, B, B-, C+, C, C-, D, F (defaults to "C")
+- `isActive` - Boolean, defaults to true
 
 **Response (200 OK):**
 ```json
 {
   "message": "Bulk import completed",
-  "results": {
+  "summary": {
     "total": 100,
     "created": 95,
-    "updated": 3,
-    "failed": 2,
+    "updated": 5,
+    "failed": 0,
+    "successRate": "100.00%",
+    "processingTime": "1250ms"
+  },
+  "details": {
+    "successful": 100,
+    "errors": []
+  }
+}
+```
+
+**Response (206 Partial Content):**
+```json
+{
+  "message": "Bulk import completed",
+  "summary": {
+    "total": 100,
+    "created": 90,
+    "updated": 5,
+    "failed": 5,
+    "successRate": "95.00%",
+    "processingTime": "1200ms"
+  },
+  "details": {
+    "successful": 95,
     "errors": [
       {
-        "index": 45,
-        "storeId": "STORE045",
-        "error": "Store ID already exists"
+        "index": 15,
+        "storeId": "STORE016",
+        "error": "Store ID STORE016 already exists",
+        "data": {
+          "storeName": "Duplicate Store",
+          "city": "Mumbai"
+        }
+      },
+      {
+        "index": 23,
+        "storeId": "STORE024",
+        "error": "Pincode must be exactly 6 digits",
+        "data": {
+          "storeName": "Invalid Store",
+          "city": "Delhi"
+        }
       }
-    ],
-    "processingTime": 1250
+    ]
+  }
+}
+```
+
+**Response (400 Bad Request):**
+```json
+{
+  "message": "Bulk import completed",
+  "summary": {
+    "total": 100,
+    "created": 0,
+    "updated": 0,
+    "failed": 100,
+    "successRate": "0.00%",
+    "processingTime": "500ms"
+  },
+  "details": {
+    "successful": 0,
+    "errors": [
+      {
+        "index": 0,
+        "storeId": "STORE001",
+        "error": "Missing required fields: contactEmail, contactPhone",
+        "data": {
+          "storeName": "Incomplete Store",
+          "city": "Mumbai"
+        }
+      }
+    ]
   }
 }
 ```
