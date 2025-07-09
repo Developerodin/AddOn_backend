@@ -71,8 +71,8 @@ const bulkImportSales = {
       Joi.object().keys({
         id: Joi.string().custom(objectId).optional(), // For updates
         date: Joi.date().default(Date.now),
-        plant: Joi.string().custom(objectId).required(),
-        materialCode: Joi.string().custom(objectId).required(),
+        plant: Joi.string().trim().required(), // storeId string
+        materialCode: Joi.string().trim().required(), // styleCode string
         quantity: Joi.number().min(0).required(),
         mrp: Joi.number().min(0).required(),
         discount: Joi.number().min(0).default(0),

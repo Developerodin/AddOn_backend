@@ -70,10 +70,29 @@ export const bulkImportSales = catchAsync(async (req, res) => {
 
   const results = await salesService.bulkImportSales(salesRecords, batchSize);
   
-  res.status(httpStatus.OK).send({
+  // Prepare response based on results
+  const response = {
     message: 'Bulk import completed',
-    results,
-  });
+    summary: {
+      total: results.total,
+      created: results.created,
+      updated: results.updated,
+      failed: results.failed,
+      successRate: results.total > 0 ? ((results.created + results.updated) / results.total * 100).toFixed(2) + '%' : '0%',
+      processingTime: `${results.processingTime}ms`
+    },
+    details: {
+      successful: results.created + results.updated,
+      errors: results.errors
+    }
+  };
+
+  // Set appropriate status code
+  const statusCode = results.failed === 0 ? httpStatus.OK : 
+                    results.failed === results.total ? httpStatus.BAD_REQUEST : 
+                    httpStatus.PARTIAL_CONTENT;
+
+  res.status(statusCode).send(response);
 });
 
 export const debugQuery = catchAsync(async (req, res) => {

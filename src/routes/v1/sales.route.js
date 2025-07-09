@@ -1,6 +1,7 @@
 import express from 'express';
 import auth from '../../middlewares/auth.js';
 import validate from '../../middlewares/validate.js';
+import { bulkImportMiddleware, validateBulkImportSize } from '../../middlewares/bulkImport.js';
 import salesValidation from '../../validations/sales.validation.js';
 import * as salesController from '../../controllers/sales.controller.js';
 
@@ -20,7 +21,8 @@ router
 router
   .route('/bulk-import')
   .post(
-    
+    bulkImportMiddleware,
+    validateBulkImportSize,
     validate(salesValidation.bulkImportSales),
     salesController.bulkImportSales
   );

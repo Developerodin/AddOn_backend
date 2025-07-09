@@ -1,5 +1,7 @@
 import httpStatus from 'http-status';
 import Sales from '../models/sales.model.js';
+import Store from '../models/store.model.js';
+import Product from '../models/product.model.js';
 import ApiError from '../utils/ApiError.js';
 
 /**
@@ -123,7 +125,7 @@ export const deleteSalesById = async (salesId) => {
 
 /**
  * Bulk import sales records with batch processing
- * @param {Array} salesRecords - Array of sales objects
+ * @param {Array} salesRecords - Array of sales objects with string identifiers
  * @param {number} batchSize - Number of records to process in each batch
  * @returns {Promise<Object>} - Results of the bulk import operation
  */
@@ -151,6 +153,33 @@ export const bulkImportSales = async (salesRecords, batchSize = 50) => {
       console.warn(`Large bulk import detected: ${estimatedMemoryMB.toFixed(2)} MB estimated memory usage`);
     }
 
+    // Pre-fetch all unique storeIds and styleCodes for better performance
+    const uniqueStoreIds = [...new Set(salesRecords.map(record => record.plant?.trim()).filter(Boolean))];
+    const uniqueStyleCodes = [...new Set(salesRecords.map(record => record.materialCode?.trim()).filter(Boolean))];
+
+    console.log(`Resolving ${uniqueStoreIds.length} unique stores and ${uniqueStyleCodes.length} unique products`);
+
+    // Fetch all stores and products in bulk
+    const [stores, products] = await Promise.all([
+      Store.find({ storeId: { $in: uniqueStoreIds } }).select('_id storeId').lean(),
+      Product.find({ styleCode: { $in: uniqueStyleCodes } }).select('_id styleCode').lean()
+    ]);
+
+    // Create lookup maps for O(1) access
+    const storeMap = new Map(stores.map(store => [store.storeId, store._id]));
+    const productMap = new Map(products.map(product => [product.styleCode, product._id]));
+
+    // Track missing references for better error reporting
+    const missingStoreIds = uniqueStoreIds.filter(storeId => !storeMap.has(storeId));
+    const missingStyleCodes = uniqueStyleCodes.filter(styleCode => !productMap.has(styleCode));
+
+    if (missingStoreIds.length > 0) {
+      console.warn(`Missing stores: ${missingStoreIds.join(', ')}`);
+    }
+    if (missingStyleCodes.length > 0) {
+      console.warn(`Missing products: ${missingStyleCodes.join(', ')}`);
+    }
+
     // Process records in batches
     for (let i = 0; i < salesRecords.length; i += batchSize) {
       const batch = salesRecords.slice(i, i + batchSize);
@@ -164,17 +193,66 @@ export const bulkImportSales = async (salesRecords, batchSize = 50) => {
           try {
             const hasId = salesData.id && salesData.id.trim() !== '';
             
-            // Prepare sales data with minimal memory footprint
+            // Validate and resolve string identifiers to ObjectIds
+            const storeId = salesData.plant?.trim();
+            const styleCode = salesData.materialCode?.trim();
+            
+            if (!storeId) {
+              throw new Error('Plant (storeId) is required');
+            }
+            if (!styleCode) {
+              throw new Error('Material code (styleCode) is required');
+            }
+
+            // Resolve store and product ObjectIds
+            const plantObjectId = storeMap.get(storeId);
+            const materialObjectId = productMap.get(styleCode);
+
+            if (!plantObjectId) {
+              throw new Error(`Store with ID '${storeId}' not found`);
+            }
+            if (!materialObjectId) {
+              throw new Error(`Product with style code '${styleCode}' not found`);
+            }
+
+            // Validate numeric fields
+            const quantity = Number(salesData.quantity);
+            const mrp = Number(salesData.mrp);
+            const discount = Number(salesData.discount) || 0;
+            const gsv = Number(salesData.gsv);
+            const nsv = Number(salesData.nsv);
+            const totalTax = Number(salesData.totalTax) || 0;
+
+            if (isNaN(quantity) || quantity < 0) {
+              throw new Error('Quantity must be a non-negative number');
+            }
+            if (isNaN(mrp) || mrp < 0) {
+              throw new Error('MRP must be a non-negative number');
+            }
+            if (isNaN(discount) || discount < 0) {
+              throw new Error('Discount must be a non-negative number');
+            }
+            if (isNaN(gsv) || gsv < 0) {
+              throw new Error('GSV must be a non-negative number');
+            }
+            if (isNaN(nsv) || nsv < 0) {
+              throw new Error('NSV must be a non-negative number');
+            }
+            if (isNaN(totalTax) || totalTax < 0) {
+              throw new Error('Total tax must be a non-negative number');
+            }
+
+            // Prepare sales data with resolved ObjectIds
             const processedData = {
               date: salesData.date ? new Date(salesData.date) : new Date(),
-              plant: salesData.plant,
-              materialCode: salesData.materialCode,
-              quantity: Number(salesData.quantity) || 0,
-              mrp: Number(salesData.mrp) || 0,
-              discount: Number(salesData.discount) || 0,
-              gsv: Number(salesData.gsv) || 0,
-              nsv: Number(salesData.nsv) || 0,
-              totalTax: Number(salesData.totalTax) || 0,
+              plant: plantObjectId,
+              materialCode: materialObjectId,
+              quantity,
+              mrp,
+              discount,
+              gsv,
+              nsv,
+              totalTax,
             };
 
             if (hasId) {
