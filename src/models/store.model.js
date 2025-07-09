@@ -78,8 +78,9 @@ const storeSchema = mongoose.Schema(
       required: true,
       trim: true,
       validate(value) {
-        if (!/^\d{6}$/.test(value)) {
-          throw new Error('Pincode must be exactly 6 digits');
+        // Allow 4-10 digits for international pincode formats
+        if (!/^\d{4,10}$/.test(value)) {
+          throw new Error('Pincode must be 4-10 digits');
         }
       },
     },

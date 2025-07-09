@@ -152,8 +152,8 @@ export const bulkImportStores = async (stores, batchSize = 50) => {
             }
 
             // Validate pincode format
-            if (!/^\d{6}$/.test(storeData.pincode.trim())) {
-              throw new Error('Pincode must be exactly 6 digits');
+            if (!/^\d{4,10}$/.test(storeData.pincode.trim())) {
+              throw new Error('Pincode must be 4-10 digits');
             }
 
             // Validate email format
