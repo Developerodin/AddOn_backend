@@ -40,6 +40,25 @@ export const querySales = async (filter, options) => {
       delete filter._id;
     }
     
+    // Resolve string/number identifiers to ObjectIds
+    if (filter.plant) {
+      // Convert to string for consistent lookup
+      const storeId = String(filter.plant).trim();
+      const store = await Store.findOne({ storeId: storeId }).select('_id').lean();
+      if (!store) {
+        throw new ApiError(httpStatus.NOT_FOUND, `Store with ID '${storeId}' not found`);
+      }
+      filter.plant = store._id;
+    }
+    
+    if (filter.materialCode && typeof filter.materialCode === 'string') {
+      const product = await Product.findOne({ styleCode: filter.materialCode.trim() }).select('_id').lean();
+      if (!product) {
+        throw new ApiError(httpStatus.NOT_FOUND, `Product with style code '${filter.materialCode}' not found`);
+      }
+      filter.materialCode = product._id;
+    }
+    
     // Handle date range filtering
     if (filter.dateFrom || filter.dateTo) {
       const dateFilter = {};
@@ -355,6 +374,113 @@ export const bulkImportSales = async (salesRecords, batchSize = 50) => {
       plant: 'N/A',
       materialCode: 'N/A',
       error: `Bulk import failed: ${error.message}`,
+    });
+    throw error;
+  }
+}; 
+
+/**
+ * Bulk delete sales records
+ * @param {Array} salesIds - Array of sales ObjectIds
+ * @param {number} batchSize - Number of records to process in each batch
+ * @returns {Promise<Object>} - Results of the bulk delete operation
+ */
+export const bulkDeleteSales = async (salesIds, batchSize = 50) => {
+  const results = {
+    total: salesIds.length,
+    deleted: 0,
+    failed: 0,
+    errors: [],
+    processingTime: 0,
+  };
+
+  const startTime = Date.now();
+
+  try {
+    // Validate input size
+    if (salesIds.length > 1000) {
+      throw new Error('Maximum 1000 sales records allowed per delete request');
+    }
+
+    // Validate all IDs are valid ObjectIds
+    const invalidIds = salesIds.filter(id => !/^[0-9a-fA-F]{24}$/.test(id));
+    if (invalidIds.length > 0) {
+      throw new Error(`Invalid ObjectId format: ${invalidIds.join(', ')}`);
+    }
+
+    // Estimate memory usage (rough calculation)
+    const estimatedMemoryMB = (salesIds.length * 100) / (1024 * 1024); // ~100 bytes per ID
+    if (estimatedMemoryMB > 10) {
+      console.warn(`Large bulk delete detected: ${estimatedMemoryMB.toFixed(2)} MB estimated memory usage`);
+    }
+
+    // Process deletions in batches
+    for (let i = 0; i < salesIds.length; i += batchSize) {
+      const batch = salesIds.slice(i, i + batchSize);
+      const batchStartTime = Date.now();
+      
+      try {
+        // Process each deletion in the current batch
+        const batchPromises = batch.map(async (salesId, batchIndex) => {
+          const globalIndex = i + batchIndex;
+          
+          try {
+            // Check if sales record exists
+            const existingRecord = await Sales.findById(salesId).lean();
+            if (!existingRecord) {
+              throw new Error(`Sales record with ID ${salesId} not found`);
+            }
+            
+            // Delete the record
+            await Sales.deleteOne({ _id: salesId });
+            results.deleted++;
+            
+          } catch (error) {
+            results.failed++;
+            results.errors.push({
+              index: globalIndex,
+              salesId: salesId,
+              error: error.message,
+            });
+          }
+        });
+        
+        // Wait for all deletions in the current batch to complete
+        await Promise.all(batchPromises);
+        
+        const batchEndTime = Date.now();
+        console.log(`Batch ${Math.floor(i / batchSize) + 1} completed in ${batchEndTime - batchStartTime}ms`);
+        
+      } catch (error) {
+        console.error(`Error processing batch ${Math.floor(i / batchSize) + 1}:`, error);
+        // Mark all records in this batch as failed
+        batch.forEach((salesId, batchIndex) => {
+          const globalIndex = i + batchIndex;
+          results.failed++;
+          results.errors.push({
+            index: globalIndex,
+            salesId: salesId,
+            error: `Batch processing error: ${error.message}`,
+          });
+        });
+      }
+    }
+    
+    const endTime = Date.now();
+    results.processingTime = endTime - startTime;
+    
+    console.log(`Bulk delete completed in ${results.processingTime}ms`);
+    console.log(`Results: ${results.deleted} deleted, ${results.failed} failed`);
+    
+    return results;
+    
+  } catch (error) {
+    const endTime = Date.now();
+    results.processingTime = endTime - startTime;
+    results.errors.push({
+      index: -1,
+      salesId: 'N/A',
+      error: `Bulk delete failed: ${error.message}`,
     });
     throw error;
   }

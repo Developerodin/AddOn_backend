@@ -17,8 +17,8 @@ const createSales = {
 
 const getSales = {
   query: Joi.object().keys({
-    plant: Joi.string().custom(objectId),
-    materialCode: Joi.string().custom(objectId),
+    plant: Joi.alternatives().try(Joi.string(), Joi.number()).optional(), // storeId can be string or number
+    materialCode: Joi.string().trim(), // styleCode string
     dateFrom: Joi.date(),
     dateTo: Joi.date(),
     quantity: Joi.number().min(0),
@@ -85,6 +85,14 @@ const bulkImportSales = {
   }),
 };
 
+const bulkDeleteSales = {
+  body: Joi.object().keys({
+    salesIds: Joi.array().items(
+      Joi.string().custom(objectId)
+    ).min(1).max(1000).required(), // Limit to 1000 records per request
+  }),
+};
+
 export default {
   createSales,
   getSales,
@@ -92,4 +100,5 @@ export default {
   updateSales,
   deleteSales,
   bulkImportSales,
+  bulkDeleteSales,
 }; 

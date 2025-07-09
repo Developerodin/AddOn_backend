@@ -29,7 +29,7 @@ export const bulkImportMiddleware = (req, res, next) => {
  */
 export const validateBulkImportSize = (req, res, next) => {
   // Check for common array field names
-  const arrayField = req.body.stores || req.body.products || req.body.items || req.body.data || req.body.salesRecords;
+  const arrayField = req.body.stores || req.body.products || req.body.items || req.body.data || req.body.salesRecords || req.body.salesIds;
   
   if (!arrayField || !Array.isArray(arrayField)) {
     return res.status(400).json({

@@ -28,6 +28,15 @@ router
   );
 
 router
+  .route('/bulk-delete')
+  .delete(
+    bulkImportMiddleware,
+    validateBulkImportSize,
+    validate(salesValidation.bulkDeleteSales),
+    salesController.bulkDeleteSales
+  );
+
+router
   .route('/:salesId')
   .get(
   

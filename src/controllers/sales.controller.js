@@ -22,11 +22,6 @@ export const getSales = catchAsync(async (req, res) => {
   console.log('Original filter:', filter);
   console.log('Query params:', req.query);
   
-  // Clean the filter - remove empty values
-  const cleanFilter = cleanFilterObjectIds(filter, ['plant', 'materialCode']);
-  
-  console.log('Clean filter:', cleanFilter);
-  
   // Only pick allowed options
   const allowedOptions = ['sortBy', 'limit', 'page', 'populate'];
   const options = pick(req.query, allowedOptions);
@@ -39,7 +34,7 @@ export const getSales = catchAsync(async (req, res) => {
     options.page = parseInt(options.page, 10);
   }
   
-  const result = await salesService.querySales(cleanFilter, options);
+  const result = await salesService.querySales(filter, options);
   res.send(result);
 });
 
@@ -83,6 +78,39 @@ export const bulkImportSales = catchAsync(async (req, res) => {
     },
     details: {
       successful: results.created + results.updated,
+      errors: results.errors
+    }
+  };
+
+  // Set appropriate status code
+  const statusCode = results.failed === 0 ? httpStatus.OK : 
+                    results.failed === results.total ? httpStatus.BAD_REQUEST : 
+                    httpStatus.PARTIAL_CONTENT;
+
+  res.status(statusCode).send(response);
+});
+
+export const bulkDeleteSales = catchAsync(async (req, res) => {
+  const { salesIds } = req.body;
+  
+  if (!salesIds || !Array.isArray(salesIds) || salesIds.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Sales IDs array is required and must not be empty');
+  }
+
+  const results = await salesService.bulkDeleteSales(salesIds);
+  
+  // Prepare response based on results
+  const response = {
+    message: 'Bulk delete completed',
+    summary: {
+      total: results.total,
+      deleted: results.deleted,
+      failed: results.failed,
+      successRate: results.total > 0 ? (results.deleted / results.total * 100).toFixed(2) + '%' : '0%',
+      processingTime: `${results.processingTime}ms`
+    },
+    details: {
+      successful: results.deleted,
       errors: results.errors
     }
   };
