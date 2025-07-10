@@ -77,4 +77,52 @@ router
     analyticsController.getAnalyticsDashboard
   );
 
+// Individual store analysis
+router
+  .route('/store-analysis')
+  .get(
+    validate(analyticsValidation.getIndividualStoreAnalysis),
+    analyticsController.getIndividualStoreAnalysis
+  );
+
+// Individual product analysis
+router
+  .route('/product-analysis')
+  .get(
+    validate(analyticsValidation.getIndividualProductAnalysis),
+    analyticsController.getIndividualProductAnalysis
+  );
+
+// Store demand forecasting
+router
+  .route('/store-forecasting')
+  .get(
+    validate(analyticsValidation.getStoreDemandForecasting),
+    analyticsController.getStoreDemandForecasting
+  );
+
+// Product demand forecasting
+router
+  .route('/product-forecasting')
+  .get(
+    validate(analyticsValidation.getProductDemandForecasting),
+    analyticsController.getProductDemandForecasting
+  );
+
+// Store replenishment recommendations
+router
+  .route('/store-replenishment')
+  .get(
+    validate(analyticsValidation.getStoreReplenishmentRecommendations),
+    analyticsController.getStoreReplenishmentRecommendations
+  );
+
+// Product replenishment recommendations
+router
+  .route('/product-replenishment')
+  .get(
+    validate(analyticsValidation.getProductReplenishmentRecommendations),
+    analyticsController.getProductReplenishmentRecommendations
+  );
+
 export default router; 

@@ -62,6 +62,7 @@ const getStores = {
     creditRating: Joi.string().valid('A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D', 'F'),
     isActive: Joi.boolean(),
     sortBy: Joi.string(),
+    sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
     populate: Joi.string(),

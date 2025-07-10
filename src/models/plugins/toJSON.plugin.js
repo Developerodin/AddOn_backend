@@ -28,7 +28,8 @@ const toJSON = (schema) => {
         }
       });
 
-      ret.id = ret._id.toString();
+      // Defensive: handle null _id
+      ret.id = ret._id != null ? ret._id.toString() : null;
       delete ret._id;
       delete ret.__v;
       delete ret.createdAt;

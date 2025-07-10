@@ -40,8 +40,45 @@ export const querySales = async (filter, options) => {
       delete filter._id;
     }
     
+    // Handle city filtering
+    if (filter.city) {
+      const city = filter.city.trim();
+      // Find stores in the specified city
+      const storesInCity = await Store.find({ city: { $regex: city, $options: 'i' } }).select('_id').lean();
+      if (storesInCity.length === 0) {
+        // Return empty results if no stores found in city
+        return {
+          results: [],
+          page: options.page || 1,
+          limit: options.limit || 10,
+          totalPages: 0,
+          totalResults: 0,
+        };
+      }
+      filter.plant = { $in: storesInCity.map(store => store._id) };
+      delete filter.city;
+    }
+    
+    // Handle category filtering
+    if (filter.category) {
+      // Find products in the specified category
+      const productsInCategory = await Product.find({ category: filter.category }).select('_id').lean();
+      if (productsInCategory.length === 0) {
+        // Return empty results if no products found in category
+        return {
+          results: [],
+          page: options.page || 1,
+          limit: options.limit || 10,
+          totalPages: 0,
+          totalResults: 0,
+        };
+      }
+      filter.materialCode = { $in: productsInCategory.map(product => product._id) };
+      delete filter.category;
+    }
+    
     // Resolve string/number identifiers to ObjectIds
-    if (filter.plant) {
+    if (filter.plant && !Array.isArray(filter.plant)) {
       // Convert to string for consistent lookup
       const storeId = String(filter.plant).trim();
       const store = await Store.findOne({ storeId: storeId }).select('_id').lean();
@@ -51,7 +88,7 @@ export const querySales = async (filter, options) => {
       filter.plant = store._id;
     }
     
-    if (filter.materialCode && typeof filter.materialCode === 'string') {
+    if (filter.materialCode && typeof filter.materialCode === 'string' && !Array.isArray(filter.materialCode)) {
       const product = await Product.findOne({ styleCode: filter.materialCode.trim() }).select('_id').lean();
       if (!product) {
         throw new ApiError(httpStatus.NOT_FOUND, `Product with style code '${filter.materialCode}' not found`);
@@ -73,10 +110,33 @@ export const querySales = async (filter, options) => {
       filter.date = dateFilter;
     }
     
+    // Combine sortBy and sortOrder into the format expected by paginate plugin
+    const paginateOptions = { ...options };
+    if (options.sortBy && options.sortOrder) {
+      paginateOptions.sortBy = `${options.sortBy}:${options.sortOrder}`;
+    } else if (options.sortBy) {
+      // Default to desc if sortOrder not provided
+      paginateOptions.sortBy = `${options.sortBy}:desc`;
+    }
+    
     const sales = await Sales.paginate(filter, {
-      ...options,
-      populate: 'plant,materialCode', // Always populate references
+      ...paginateOptions,
+      populate: 'plant,materialCode.category', // Populate store, product, and category data
     });
+
+    // Post-process to handle null categories and add default values
+    if (sales.results && sales.results.length > 0) {
+      sales.results = sales.results.map(sale => {
+        if (sale.materialCode && !sale.materialCode.category) {
+          // Add default category info if category is null
+          sale.materialCode.category = {
+            _id: null,
+            name: 'Uncategorized'
+          };
+        }
+        return sale;
+      });
+    }
     return sales;
   } catch (error) {
     // Handle ObjectId casting errors
@@ -97,7 +157,17 @@ export const querySales = async (filter, options) => {
  * @returns {Promise<Sales>}
  */
 export const getSalesById = async (id) => {
-  return Sales.findById(id).populate('plant,materialCode');
+  const sales = await Sales.findById(id).populate('plant,materialCode.category');
+  
+  // Handle null category
+  if (sales && sales.materialCode && !sales.materialCode.category) {
+    sales.materialCode.category = {
+      _id: null,
+      name: 'Uncategorized'
+    };
+  }
+  
+  return sales;
 };
 
 /**

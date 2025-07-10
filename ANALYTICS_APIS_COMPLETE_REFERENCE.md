@@ -2,599 +2,572 @@
 
 ## Base URL
 ```
-http://localhost:3000/v1/analytics
+GET /v1/analytics
 ```
 
 ## Authentication
-All endpoints require JWT Bearer token:
+All endpoints require authentication. Include the JWT token in the Authorization header:
 ```
 Authorization: Bearer <your-jwt-token>
 ```
 
----
-
-## 📊 1. Time-Based Sales Trends
-
-### Endpoint
-```
-GET /v1/analytics/time-based-trends
-```
-
-### Query Parameters
+## Common Query Parameters
 - `dateFrom` (optional): Start date in ISO format (YYYY-MM-DD)
 - `dateTo` (optional): End date in ISO format (YYYY-MM-DD)
-- `groupBy` (optional): 'day' or 'month' (default: 'day')
+- `limit` (optional): Number of records to return (default: 10, max: 100)
+- `sortBy` (optional): Field to sort by (varies by endpoint)
 
-### Example Request
-```bash
-GET /v1/analytics/time-based-trends?dateFrom=2024-01-01&dateTo=2024-01-31&groupBy=day
-```
+---
 
-### Response Fields
+## 1. Time-Based Sales Trends
+**Endpoint:** `GET /v1/analytics/time-based-trends`
+
+**Query Parameters:**
+- `dateFrom` (optional): Start date
+- `dateTo` (optional): End date
+- `groupBy` (optional): Grouping interval - 'day' or 'month' (default: 'day')
+
+**Response:**
 ```json
 [
   {
     "date": "2024-01-01T00:00:00.000Z",
-    "totalQuantity": 1500,
-    "totalNSV": 75000,
-    "totalGSV": 85000,
-    "totalDiscount": 10000,
-    "totalTax": 5000,
+    "totalQuantity": 150,
+    "totalNSV": 15000.50,
+    "totalGSV": 18000.00,
+    "totalDiscount": 3000.00,
+    "totalTax": 1500.00,
     "recordCount": 25
   }
 ]
 ```
 
-### Field Descriptions
-| Field | Type | Description |
-|-------|------|-------------|
-| `date` | Date | Aggregated date (daily or monthly) |
-| `totalQuantity` | Number | Total quantity sold on this date |
-| `totalNSV` | Number | Total Net Sales Value |
-| `totalGSV` | Number | Total Gross Sales Value |
-| `totalDiscount` | Number | Total discount amount |
-| `totalTax` | Number | Total tax collected |
-| `recordCount` | Number | Number of sales records for this date |
-
 ---
 
-## 🧦 2. Product Performance Analysis
+## 2. Product Performance Analysis
+**Endpoint:** `GET /v1/analytics/product-performance`
 
-### Endpoint
-```
-GET /v1/analytics/product-performance
-```
+**Query Parameters:**
+- `dateFrom` (optional): Start date
+- `dateTo` (optional): End date
+- `limit` (optional): Number of products (default: 10, max: 100)
+- `sortBy` (optional): Sort field - 'quantity', 'nsv', 'gsv' (default: 'quantity')
 
-### Query Parameters
-- `dateFrom` (optional): Start date in ISO format
-- `dateTo` (optional): End date in ISO format
-- `limit` (optional): Number of products (1-100, default: 10)
-- `sortBy` (optional): 'quantity', 'nsv', 'gsv' (default: 'quantity')
-
-### Example Request
-```bash
-GET /v1/analytics/product-performance?limit=10&sortBy=nsv&dateFrom=2024-01-01
-```
-
-### Response Fields
+**Response:**
 ```json
 [
   {
-    "_id": "507f1f77bcf86cd799439011",
-    "productName": "Premium Cotton Socks",
-    "productCode": "SOCKS001",
-    "categoryName": "Socks",
-    "totalQuantity": 5000,
-    "totalNSV": 250000,
-    "totalGSV": 300000,
-    "totalDiscount": 50000,
-    "recordCount": 150
+    "productId": "507f1f77bcf86cd799439011",
+    "productName": "Premium Cotton T-Shirt",
+    "productCode": "TSH001",
+    "categoryName": "Apparel",
+    "totalQuantity": 500,
+    "totalNSV": 50000.00,
+    "totalGSV": 60000.00,
+    "totalDiscount": 10000.00,
+    "recordCount": 50
   }
 ]
 ```
 
-### Field Descriptions
-| Field | Type | Description |
-|-------|------|-------------|
-| `_id` | ObjectId | Product ID |
-| `productName` | String | Name of the product |
-| `productCode` | String | Product software code |
-| `categoryName` | String | Product category name |
-| `totalQuantity` | Number | Total quantity sold |
-| `totalNSV` | Number | Total Net Sales Value |
-| `totalGSV` | Number | Total Gross Sales Value |
-| `totalDiscount` | Number | Total discount amount |
-| `recordCount` | Number | Number of sales records |
-
 ---
 
-## 🏪 3. Store Performance Analysis
+## 3. Store Performance Analysis
+**Endpoint:** `GET /v1/analytics/store-performance`
 
-### Endpoint
-```
-GET /v1/analytics/store-performance
-```
+**Query Parameters:**
+- `dateFrom` (optional): Start date
+- `dateTo` (optional): End date
+- `sortBy` (optional): Sort field - 'quantity', 'nsv', 'gsv', 'discount', 'tax' (default: 'nsv')
 
-### Query Parameters
-- `dateFrom` (optional): Start date in ISO format
-- `dateTo` (optional): End date in ISO format
-- `sortBy` (optional): 'quantity', 'nsv', 'gsv', 'discount', 'tax' (default: 'nsv')
-
-### Example Request
-```bash
-GET /v1/analytics/store-performance?sortBy=quantity&dateFrom=2024-01-01&dateTo=2024-01-31
-```
-
-### Response Fields
+**Response:**
 ```json
 [
   {
-    "_id": "507f1f77bcf86cd799439012",
+    "storeId": "507f1f77bcf86cd799439011",
     "storeName": "Mumbai Central Store",
-    "storeId": "MUM001",
+    "storeCode": "MUM001",
     "city": "Mumbai",
     "state": "Maharashtra",
-    "totalQuantity": 10000,
-    "totalNSV": 500000,
-    "totalGSV": 600000,
-    "totalDiscount": 100000,
-    "totalTax": 25000,
-    "recordCount": 300
-  }
-]
-```
-
-### Field Descriptions
-| Field | Type | Description |
-|-------|------|-------------|
-| `_id` | ObjectId | Store ID |
-| `storeName` | String | Name of the store |
-| `storeId` | String | Store identifier code |
-| `city` | String | Store city location |
-| `state` | String | Store state location |
-| `totalQuantity` | Number | Total quantity sold |
-| `totalNSV` | Number | Total Net Sales Value |
-| `totalGSV` | Number | Total Gross Sales Value |
-| `totalDiscount` | Number | Total discount amount |
-| `totalTax` | Number | Total tax collected |
-| `recordCount` | Number | Number of sales records |
-
----
-
-## 🏪 4. Store Heatmap Data
-
-### Endpoint
-```
-GET /v1/analytics/store-heatmap
-```
-
-### Query Parameters
-- `dateFrom` (optional): Start date in ISO format
-- `dateTo` (optional): End date in ISO format
-
-### Example Request
-```bash
-GET /v1/analytics/store-heatmap?dateFrom=2024-01-01&dateTo=2024-01-31
-```
-
-### Response Fields
-```json
-[
-  {
-    "storeId": "507f1f77bcf86cd799439012",
-    "storeName": "Mumbai Central Store",
-    "date": "2024-01-01T00:00:00.000Z",
-    "totalNSV": 50000,
-    "totalQuantity": 1000
-  }
-]
-```
-
-### Field Descriptions
-| Field | Type | Description |
-|-------|------|-------------|
-| `storeId` | ObjectId | Store ID |
-| `storeName` | String | Name of the store |
-| `date` | Date | Sales date |
-| `totalNSV` | Number | Total Net Sales Value for this store on this date |
-| `totalQuantity` | Number | Total quantity sold for this store on this date |
-
----
-
-## 🏷️ 5. Brand Performance Analysis
-
-### Endpoint
-```
-GET /v1/analytics/brand-performance
-```
-
-### Query Parameters
-- `dateFrom` (optional): Start date in ISO format
-- `dateTo` (optional): End date in ISO format
-
-### Example Request
-```bash
-GET /v1/analytics/brand-performance?dateFrom=2024-01-01&dateTo=2024-01-31
-```
-
-### Response Fields
-```json
-[
-  {
-    "_id": "Louis Philippe",
-    "brandName": "Louis Philippe",
-    "totalQuantity": 15000,
-    "totalNSV": 750000,
-    "totalGSV": 900000,
-    "totalDiscount": 150000,
-    "recordCount": 450
-  }
-]
-```
-
-### Field Descriptions
-| Field | Type | Description |
-|-------|------|-------------|
-| `_id` | String | Brand name (used as ID) |
-| `brandName` | String | Name of the brand |
-| `totalQuantity` | Number | Total quantity sold for this brand |
-| `totalNSV` | Number | Total Net Sales Value |
-| `totalGSV` | Number | Total Gross Sales Value |
-| `totalDiscount` | Number | Total discount amount |
-| `recordCount` | Number | Number of sales records |
-
----
-
-## 💰 6. Discount Impact Analysis
-
-### Endpoint
-```
-GET /v1/analytics/discount-impact
-```
-
-### Query Parameters
-- `dateFrom` (optional): Start date in ISO format
-- `dateTo` (optional): End date in ISO format
-
-### Example Request
-```bash
-GET /v1/analytics/discount-impact?dateFrom=2024-01-01&dateTo=2024-01-31
-```
-
-### Response Fields
-```json
-[
-  {
-    "date": "2024-01-01T00:00:00.000Z",
-    "avgDiscountPercentage": 12.5,
-    "totalDiscount": 50000,
-    "totalNSV": 400000,
-    "totalTax": 20000,
+    "totalQuantity": 1000,
+    "totalNSV": 100000.00,
+    "totalGSV": 120000.00,
+    "totalDiscount": 20000.00,
+    "totalTax": 10000.00,
     "recordCount": 100
   }
 ]
 ```
 
-### Field Descriptions
-| Field | Type | Description |
-|-------|------|-------------|
-| `date` | Date | Sales date |
-| `avgDiscountPercentage` | Number | Average discount percentage (rounded to 2 decimal places) |
-| `totalDiscount` | Number | Total discount amount |
-| `totalNSV` | Number | Total Net Sales Value |
-| `totalTax` | Number | Total tax collected |
-| `recordCount` | Number | Number of sales records |
+---
+
+## 4. Store Heatmap Data
+**Endpoint:** `GET /v1/analytics/store-heatmap`
+
+**Query Parameters:**
+- `dateFrom` (optional): Start date
+- `dateTo` (optional): End date
+
+**Response:**
+```json
+[
+  {
+    "storeId": "507f1f77bcf86cd799439011",
+    "storeName": "Mumbai Central Store",
+    "date": "2024-01-01T00:00:00.000Z",
+    "totalNSV": 5000.00,
+    "totalQuantity": 50
+  }
+]
+```
 
 ---
 
-## 📈 7. Tax & MRP Analytics
+## 5. Brand Performance Analysis
+**Endpoint:** `GET /v1/analytics/brand-performance`
 
-### Endpoint
+**Query Parameters:**
+- `dateFrom` (optional): Start date
+- `dateTo` (optional): End date
+
+**Response:**
+```json
+[
+  {
+    "brandId": "Premium",
+    "brandName": "Premium",
+    "totalQuantity": 2000,
+    "totalNSV": 200000.00,
+    "totalGSV": 240000.00,
+    "totalDiscount": 40000.00,
+    "recordCount": 200
+  }
+]
 ```
-GET /v1/analytics/tax-mrp-analytics
+
+---
+
+## 6. Discount Impact Analysis
+**Endpoint:** `GET /v1/analytics/discount-impact`
+
+**Query Parameters:**
+- `dateFrom` (optional): Start date
+- `dateTo` (optional): End date
+
+**Response:**
+```json
+[
+  {
+    "date": "2024-01-01T00:00:00.000Z",
+    "avgDiscountPercentage": 15.5,
+    "totalDiscount": 5000.00,
+    "totalNSV": 45000.00,
+    "totalTax": 4500.00,
+    "recordCount": 30
+  }
+]
 ```
 
-### Query Parameters
-- `dateFrom` (optional): Start date in ISO format
-- `dateTo` (optional): End date in ISO format
+---
 
-### Example Request
-```bash
-GET /v1/analytics/tax-mrp-analytics?dateFrom=2024-01-01&dateTo=2024-01-31
-```
+## 7. Tax and MRP Analytics
+**Endpoint:** `GET /v1/analytics/tax-mrp-analytics`
 
-### Response Fields
+**Query Parameters:**
+- `dateFrom` (optional): Start date
+- `dateTo` (optional): End date
+
+**Response:**
 ```json
 {
   "dailyTaxData": [
     {
       "date": "2024-01-01T00:00:00.000Z",
-      "totalTax": 25000,
-      "avgMRP": 150.50,
-      "recordCount": 100
+      "totalTax": 2500.00,
+      "avgMRP": 120.50,
+      "recordCount": 25
     }
   ],
   "mrpDistribution": [
     {
-      "_id": 100,
-      "count": 500,
-      "avgNSV": 95.00
-    },
-    {
-      "_id": 200,
-      "count": 300,
-      "avgNSV": 180.00
-    },
-    {
-      "_id": "Above 5000",
+      "_id": "0-100",
       "count": 50,
-      "avgNSV": 4500.00
+      "avgNSV": 80.00
     }
   ]
 }
 ```
 
-### Field Descriptions
-
-#### dailyTaxData Array
-| Field | Type | Description |
-|-------|------|-------------|
-| `date` | Date | Sales date |
-| `totalTax` | Number | Total tax collected on this date |
-| `avgMRP` | Number | Average MRP (rounded to 2 decimal places) |
-| `recordCount` | Number | Number of sales records |
-
-#### mrpDistribution Array
-| Field | Type | Description |
-|-------|------|-------------|
-| `_id` | Number/String | MRP range boundary or "Above 5000" |
-| `count` | Number | Number of products in this MRP range |
-| `avgNSV` | Number | Average NSV for products in this range |
-
 ---
 
-## ✅ 8. Summary KPIs
+## 8. Summary KPIs
+**Endpoint:** `GET /v1/analytics/summary-kpis`
 
-### Endpoint
-```
-GET /v1/analytics/summary-kpis
-```
+**Query Parameters:**
+- `dateFrom` (optional): Start date
+- `dateTo` (optional): End date
 
-### Query Parameters
-- `dateFrom` (optional): Start date in ISO format
-- `dateTo` (optional): End date in ISO format
-
-### Example Request
-```bash
-GET /v1/analytics/summary-kpis?dateFrom=2024-01-01&dateTo=2024-01-31
-```
-
-### Response Fields
+**Response:**
 ```json
 {
-  "totalQuantity": 50000,
-  "totalNSV": 2500000,
-  "totalGSV": 3000000,
-  "totalDiscount": 500000,
-  "totalTax": 250000,
-  "recordCount": 1500,
+  "totalQuantity": 5000,
+  "totalNSV": 500000.00,
+  "totalGSV": 600000.00,
+  "totalDiscount": 100000.00,
+  "totalTax": 50000.00,
+  "recordCount": 500,
   "avgDiscountPercentage": 16.67,
   "topSellingSKU": {
-    "_id": "507f1f77bcf86cd799439011",
-    "productName": "Premium Cotton Socks",
-    "totalQuantity": 5000,
-    "totalNSV": 250000
+    "productId": "507f1f77bcf86cd799439011",
+    "productName": "Premium Cotton T-Shirt",
+    "totalQuantity": 500,
+    "totalNSV": 50000.00
   }
 }
 ```
 
-### Field Descriptions
-| Field | Type | Description |
-|-------|------|-------------|
-| `totalQuantity` | Number | Total quantity sold in date range |
-| `totalNSV` | Number | Total Net Sales Value |
-| `totalGSV` | Number | Total Gross Sales Value |
-| `totalDiscount` | Number | Total discount amount |
-| `totalTax` | Number | Total tax collected |
-| `recordCount` | Number | Total number of sales records |
-| `avgDiscountPercentage` | Number | Average discount percentage (rounded to 2 decimal places) |
-| `topSellingSKU` | Object | Top-selling product details |
-
-#### topSellingSKU Object
-| Field | Type | Description |
-|-------|------|-------------|
-| `_id` | ObjectId | Product ID |
-| `productName` | String | Name of the top-selling product |
-| `totalQuantity` | Number | Total quantity sold |
-| `totalNSV` | Number | Total Net Sales Value |
-
 ---
 
-## 📊 9. Comprehensive Analytics Dashboard
+## 9. Analytics Dashboard
+**Endpoint:** `GET /v1/analytics/dashboard`
 
-### Endpoint
-```
-GET /v1/analytics/dashboard
-```
+**Query Parameters:**
+- `dateFrom` (optional): Start date
+- `dateTo` (optional): End date
 
-### Query Parameters
-- `dateFrom` (optional): Start date in ISO format
-- `dateTo` (optional): End date in ISO format
-
-### Example Request
-```bash
-GET /v1/analytics/dashboard?dateFrom=2024-01-01&dateTo=2024-01-31
-```
-
-### Response Fields
+**Response:**
 ```json
 {
-  "timeBasedTrends": [
-    {
-      "date": "2024-01-01T00:00:00.000Z",
-      "totalQuantity": 1500,
-      "totalNSV": 75000,
-      "totalGSV": 85000,
-      "totalDiscount": 10000,
-      "totalTax": 5000,
-      "recordCount": 25
-    }
-  ],
-  "productPerformance": [
-    {
-      "_id": "507f1f77bcf86cd799439011",
-      "productName": "Premium Cotton Socks",
-      "productCode": "SOCKS001",
-      "categoryName": "Socks",
-      "totalQuantity": 5000,
-      "totalNSV": 250000,
-      "totalGSV": 300000,
-      "totalDiscount": 50000,
-      "recordCount": 150
-    }
-  ],
-  "storePerformance": [
-    {
-      "_id": "507f1f77bcf86cd799439012",
-      "storeName": "Mumbai Central Store",
-      "storeId": "MUM001",
-      "city": "Mumbai",
-      "state": "Maharashtra",
-      "totalQuantity": 10000,
-      "totalNSV": 500000,
-      "totalGSV": 600000,
-      "totalDiscount": 100000,
-      "totalTax": 25000,
-      "recordCount": 300
-    }
-  ],
-  "brandPerformance": [
-    {
-      "_id": "Louis Philippe",
-      "brandName": "Louis Philippe",
-      "totalQuantity": 15000,
-      "totalNSV": 750000,
-      "totalGSV": 900000,
-      "totalDiscount": 150000,
-      "recordCount": 450
-    }
-  ],
-  "discountImpact": [
-    {
-      "date": "2024-01-01T00:00:00.000Z",
-      "avgDiscountPercentage": 12.5,
-      "totalDiscount": 50000,
-      "totalNSV": 400000,
-      "totalTax": 20000,
-      "recordCount": 100
-    }
-  ],
-  "taxAndMRP": {
-    "dailyTaxData": [
-      {
-        "date": "2024-01-01T00:00:00.000Z",
-        "totalTax": 25000,
-        "avgMRP": 150.50,
-        "recordCount": 100
-      }
-    ],
-    "mrpDistribution": [
-      {
-        "_id": 100,
-        "count": 500,
-        "avgNSV": 95.00
-      }
-    ]
-  },
-  "summaryKPIs": {
-    "totalQuantity": 50000,
-    "totalNSV": 2500000,
-    "totalGSV": 3000000,
-    "totalDiscount": 500000,
-    "totalTax": 250000,
-    "recordCount": 1500,
-    "avgDiscountPercentage": 16.67,
-    "topSellingSKU": {
-      "_id": "507f1f77bcf86cd799439011",
-      "productName": "Premium Cotton Socks",
-      "totalQuantity": 5000,
-      "totalNSV": 250000
-    }
-  }
+  "timeBasedTrends": [...],
+  "productPerformance": [...],
+  "storePerformance": [...],
+  "brandPerformance": [...],
+  "discountImpact": [...],
+  "taxAndMRP": {...},
+  "summaryKPIs": {...}
 }
 ```
 
-### Field Descriptions
-| Field | Type | Description |
-|-------|------|-------------|
-| `timeBasedTrends` | Array | Time-based sales trends data |
-| `productPerformance` | Array | Top 10 product performance data |
-| `storePerformance` | Array | Store-wise performance data |
-| `brandPerformance` | Array | Brand-wise performance data |
-| `discountImpact` | Array | Discount impact analysis data |
-| `taxAndMRP` | Object | Tax and MRP analytics data |
-| `summaryKPIs` | Object | Summary key performance indicators |
+---
+
+## 10. Individual Store Analysis
+**Endpoint:** `GET /v1/analytics/store-analysis`
+
+**Query Parameters:**
+- `storeId` (required): Store ID
+- `dateFrom` (optional): Start date
+- `dateTo` (optional): End date
+
+**Response:**
+```json
+{
+  "storeInfo": {
+    "storeId": "MUM001",
+    "storeName": "Mumbai Central Store",
+    "address": "123 Main St, Mumbai, Maharashtra",
+    "contactPerson": "John Doe",
+    "grossLTV": 500000,
+    "currentMonthTrend": 15,
+    "norms": 10000,
+    "totalOrders": 500,
+    "totalQuantity": 5000
+  },
+  "monthlySalesAnalysis": [
+    {
+      "month": "2024-01-01T00:00:00.000Z",
+      "totalNSV": 50000.00,
+      "totalQuantity": 500,
+      "totalOrders": 50
+    }
+  ],
+  "productSalesAnalysis": [
+    {
+      "productId": "507f1f77bcf86cd799439011",
+      "productName": "Premium Cotton T-Shirt",
+      "productCode": "TSH001",
+      "totalNSV": 25000.00,
+      "totalQuantity": 250,
+      "totalOrders": 25
+    }
+  ],
+  "salesEntries": [
+    {
+      "_id": "507f1f77bcf86cd799439011",
+      "date": "2024-01-01T00:00:00.000Z",
+      "quantity": 10,
+      "mrp": 120.00,
+      "discount": 20.00,
+      "gsv": 1200.00,
+      "nsv": 1000.00,
+      "totalTax": 100.00,
+      "productName": "Premium Cotton T-Shirt",
+      "productCode": "TSH001"
+    }
+  ]
+}
+```
 
 ---
 
-## Error Response Format
+## 11. Individual Product Analysis
+**Endpoint:** `GET /v1/analytics/product-analysis`
 
-### 400 Bad Request
+**Query Parameters:**
+- `productId` (required): Product ID
+- `dateFrom` (optional): Start date
+- `dateTo` (optional): End date
+
+**Response:**
+```json
+{
+  "productInfo": {
+    "productId": "507f1f77bcf86cd799439011",
+    "productName": "Premium Cotton T-Shirt",
+    "productCode": "TSH001",
+    "description": "High-quality cotton t-shirt",
+    "totalQuantity": 1000,
+    "totalUnits": 1000,
+    "currentTrend": 12
+  },
+  "monthlySalesAnalysis": [
+    {
+      "month": "2024-01-01T00:00:00.000Z",
+      "totalNSV": 50000.00,
+      "totalQuantity": 500
+    }
+  ],
+  "storeWiseSalesAnalysis": [
+    {
+      "storeId": "507f1f77bcf86cd799439011",
+      "storeName": "Mumbai Central Store",
+      "storeCode": "MUM001",
+      "totalNSV": 25000.00,
+      "totalQuantity": 250
+    }
+  ],
+  "salesEntries": [
+    {
+      "_id": "507f1f77bcf86cd799439011",
+      "date": "2024-01-01T00:00:00.000Z",
+      "quantity": 10,
+      "mrp": 120.00,
+      "discount": 20.00,
+      "gsv": 1200.00,
+      "nsv": 1000.00,
+      "totalTax": 100.00,
+      "storeName": "Mumbai Central Store",
+      "storeId": "MUM001"
+    }
+  ]
+}
+```
+
+---
+
+## 12. Store Demand Forecasting
+**Endpoint:** `GET /v1/analytics/store-forecasting`
+
+**Query Parameters:**
+- `storeId` (optional): Store ID (if not provided, forecasts for all stores)
+- `months` (optional): Number of months to forecast (1-12, default: 6)
+
+**Response:**
+```json
+{
+  "forecastData": [
+    {
+      "forecastMonth": "2024-07-01",
+      "productId": "507f1f77bcf86cd799439011",
+      "productName": "Premium Cotton T-Shirt",
+      "productCode": "TSH001",
+      "forecastedQuantity": 500,
+      "forecastedNSV": 50000.00,
+      "confidence": 0.85
+    }
+  ],
+  "forecastPeriod": 6,
+  "generatedAt": "2024-01-01T00:00:00.000Z"
+}
+```
+
+---
+
+## 13. Product Demand Forecasting
+**Endpoint:** `GET /v1/analytics/product-forecasting`
+
+**Query Parameters:**
+- `productId` (optional): Product ID (if not provided, forecasts for all products)
+- `months` (optional): Number of months to forecast (1-12, default: 6)
+
+**Response:**
+```json
+{
+  "forecastData": [
+    {
+      "forecastMonth": "2024-07-01",
+      "storeId": "507f1f77bcf86cd799439011",
+      "storeName": "Mumbai Central Store",
+      "storeCode": "MUM001",
+      "forecastedQuantity": 250,
+      "forecastedNSV": 25000.00,
+      "confidence": 0.85
+    }
+  ],
+  "forecastPeriod": 6,
+  "generatedAt": "2024-01-01T00:00:00.000Z"
+}
+```
+
+---
+
+## 14. Store Replenishment Recommendations
+**Endpoint:** `GET /v1/analytics/store-replenishment`
+
+**Query Parameters:**
+- `storeId` (optional): Store ID (if not provided, recommendations for all stores)
+
+**Response:**
+```json
+{
+  "recommendations": [
+    {
+      "productId": "507f1f77bcf86cd799439011",
+      "productName": "Premium Cotton T-Shirt",
+      "productCode": "TSH001",
+      "currentDailySales": 16,
+      "monthlyProjection": 480,
+      "recommendedStock": 720,
+      "reorderPoint": 240,
+      "priority": "High",
+      "recommendation": "Increase stock levels"
+    }
+  ],
+  "storeNorms": 10000,
+  "analysisPeriod": "30 days",
+  "generatedAt": "2024-01-01T00:00:00.000Z"
+}
+```
+
+---
+
+## 15. Product Replenishment Recommendations
+**Endpoint:** `GET /v1/analytics/product-replenishment`
+
+**Query Parameters:**
+- `productId` (optional): Product ID (if not provided, recommendations for all products)
+
+**Response:**
+```json
+{
+  "recommendations": [
+    {
+      "storeId": "507f1f77bcf86cd799439011",
+      "storeName": "Mumbai Central Store",
+      "storeCode": "MUM001",
+      "currentDailySales": 8,
+      "monthlyProjection": 240,
+      "recommendedStock": 360,
+      "reorderPoint": 120,
+      "storeNorms": 10000,
+      "priority": "Medium",
+      "recommendation": "Maintain current levels"
+    }
+  ],
+  "analysisPeriod": "30 days",
+  "generatedAt": "2024-01-01T00:00:00.000Z"
+}
+```
+
+---
+
+## Error Responses
+
+All endpoints return standard HTTP status codes:
+
+- `200 OK`: Success
+- `400 Bad Request`: Invalid parameters
+- `401 Unauthorized`: Missing or invalid authentication
+- `404 Not Found`: Resource not found
+- `500 Internal Server Error`: Server error
+
+**Error Response Format:**
 ```json
 {
   "code": 400,
   "message": "Validation error",
-  "details": "Invalid date format"
-}
-```
-
-### 401 Unauthorized
-```json
-{
-  "code": 401,
-  "message": "Please authenticate"
-}
-```
-
-### 500 Internal Server Error
-```json
-{
-  "code": 500,
-  "message": "Internal server error"
+  "details": [
+    {
+      "field": "dateFrom",
+      "message": "Date must be in ISO format"
+    }
+  ]
 }
 ```
 
 ---
 
-## Data Types Reference
+## Notes
 
-| Type | Description | Example |
-|------|-------------|---------|
-| `ObjectId` | MongoDB ObjectId (24-character hex string) | `"507f1f77bcf86cd799439011"` |
-| `Date` | ISO 8601 date string | `"2024-01-01T00:00:00.000Z"` |
-| `Number` | Numeric value (integer or float) | `1500`, `75000.50` |
-| `String` | Text value | `"Premium Cotton Socks"` |
-| `Array` | Array of objects | `[{...}, {...}]` |
-| `Object` | Object with nested properties | `{"key": "value"}` |
+1. **Date Format**: All dates should be in ISO format (YYYY-MM-DD)
+2. **Rounding**: All monetary values are rounded to 2 decimal places
+3. **Pagination**: Some endpoints support pagination via `limit` parameter
+4. **Authentication**: All endpoints require valid JWT token
+5. **Rate Limiting**: Endpoints are rate-limited to prevent abuse
+6. **Caching**: Responses may be cached for performance optimization
 
 ---
 
-## Common Query Parameters
+## Frontend Integration Examples
 
-| Parameter | Type | Required | Description | Example |
-|-----------|------|----------|-------------|---------|
-| `dateFrom` | String | No | Start date (YYYY-MM-DD) | `"2024-01-01"` |
-| `dateTo` | String | No | End date (YYYY-MM-DD) | `"2024-01-31"` |
-| `limit` | Number | No | Number of records to return | `10` |
-| `sortBy` | String | No | Sort criteria | `"nsv"`, `"quantity"` |
-| `groupBy` | String | No | Grouping level | `"day"`, `"month"` |
+### React Hook Example
+```javascript
+const useAnalytics = (endpoint, params = {}) => {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
----
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const queryString = new URLSearchParams(params).toString();
+        const response = await fetch(`/v1/analytics/${endpoint}?${queryString}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (!response.ok) throw new Error('Failed to fetch data');
+        
+        const result = await response.json();
+        setData(result);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-## Performance Notes
+    fetchData();
+  }, [endpoint, JSON.stringify(params)]);
 
-- All endpoints use MongoDB aggregation pipelines for optimal performance
-- Date filtering is applied at the database level
-- Results are sorted and limited as specified in query parameters
-- Large date ranges may impact performance - consider limiting to reasonable periods
-- The dashboard endpoint combines multiple queries - use individual endpoints for specific data needs 
+  return { data, loading, error };
+};
+```
+
+### Usage Example
+```javascript
+// Get store analysis
+const { data: storeAnalysis, loading, error } = useAnalytics('store-analysis', {
+  storeId: '507f1f77bcf86cd799439011',
+  dateFrom: '2024-01-01',
+  dateTo: '2024-01-31'
+});
+
+// Get demand forecasting
+const { data: forecasting } = useAnalytics('store-forecasting', {
+  storeId: '507f1f77bcf86cd799439011',
+  months: 6
+});
+``` 

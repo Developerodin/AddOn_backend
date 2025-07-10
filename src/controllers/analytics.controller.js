@@ -100,4 +100,70 @@ export const getAnalyticsDashboard = catchAsync(async (req, res) => {
   const filter = pick(req.query, ['dateFrom', 'dateTo']);
   const dashboard = await analyticsService.getAnalyticsDashboard(filter);
   res.send(dashboard);
+});
+
+/**
+ * Get individual store analysis
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+export const getIndividualStoreAnalysis = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['storeId', 'dateFrom', 'dateTo']);
+  const analysis = await analyticsService.getIndividualStoreAnalysis(filter);
+  res.send(analysis);
+});
+
+/**
+ * Get individual product analysis
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+export const getIndividualProductAnalysis = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['productId', 'dateFrom', 'dateTo']);
+  const analysis = await analyticsService.getIndividualProductAnalysis(filter);
+  res.send(analysis);
+});
+
+/**
+ * Get store demand forecasting
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+export const getStoreDemandForecasting = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['storeId', 'months']);
+  const forecasting = await analyticsService.getStoreDemandForecasting(filter);
+  res.send(forecasting);
+});
+
+/**
+ * Get product demand forecasting
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+export const getProductDemandForecasting = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['productId', 'months']);
+  const forecasting = await analyticsService.getProductDemandForecasting(filter);
+  res.send(forecasting);
+});
+
+/**
+ * Get store replenishment recommendations
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+export const getStoreReplenishmentRecommendations = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['storeId']);
+  const recommendations = await analyticsService.getStoreReplenishmentRecommendations(filter);
+  res.send(recommendations);
+});
+
+/**
+ * Get product replenishment recommendations
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+export const getProductReplenishmentRecommendations = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['productId']);
+  const recommendations = await analyticsService.getProductReplenishmentRecommendations(filter);
+  res.send(recommendations);
 }); 

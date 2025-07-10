@@ -16,6 +16,7 @@ const getUsers = {
     name: Joi.string(),
     role: Joi.string(),
     sortBy: Joi.string(),
+    sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
   }),

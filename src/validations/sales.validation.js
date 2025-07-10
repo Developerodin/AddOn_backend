@@ -27,7 +27,10 @@ const getSales = {
     gsv: Joi.number().min(0),
     nsv: Joi.number().min(0),
     totalTax: Joi.number().min(0),
+    city: Joi.string().trim(), // Filter by city
+    category: Joi.string().custom(objectId), // Filter by category
     sortBy: Joi.string(),
+    sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
     populate: Joi.string(),

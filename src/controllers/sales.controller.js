@@ -23,7 +23,7 @@ export const getSales = catchAsync(async (req, res) => {
   console.log('Query params:', req.query);
   
   // Only pick allowed options
-  const allowedOptions = ['sortBy', 'limit', 'page', 'populate'];
+  const allowedOptions = ['sortBy', 'sortOrder', 'limit', 'page', 'populate'];
   const options = pick(req.query, allowedOptions);
   
   // Ensure limit and page are numbers

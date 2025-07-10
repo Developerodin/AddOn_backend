@@ -68,6 +68,48 @@ const getAnalyticsDashboard = {
   }),
 };
 
+const getIndividualStoreAnalysis = {
+  query: Joi.object().keys({
+    storeId: Joi.string().custom(objectId).required(),
+    dateFrom: Joi.date().iso(),
+    dateTo: Joi.date().iso().min(Joi.ref('dateFrom')),
+  }),
+};
+
+const getIndividualProductAnalysis = {
+  query: Joi.object().keys({
+    productId: Joi.string().custom(objectId).required(),
+    dateFrom: Joi.date().iso(),
+    dateTo: Joi.date().iso().min(Joi.ref('dateFrom')),
+  }),
+};
+
+const getStoreDemandForecasting = {
+  query: Joi.object().keys({
+    storeId: Joi.string().custom(objectId),
+    months: Joi.number().integer().min(1).max(12).default(6),
+  }),
+};
+
+const getProductDemandForecasting = {
+  query: Joi.object().keys({
+    productId: Joi.string().custom(objectId),
+    months: Joi.number().integer().min(1).max(12).default(6),
+  }),
+};
+
+const getStoreReplenishmentRecommendations = {
+  query: Joi.object().keys({
+    storeId: Joi.string().custom(objectId),
+  }),
+};
+
+const getProductReplenishmentRecommendations = {
+  query: Joi.object().keys({
+    productId: Joi.string().custom(objectId),
+  }),
+};
+
 export default {
   getTimeBasedSalesTrends,
   getProductPerformanceAnalysis,
@@ -78,4 +120,10 @@ export default {
   getTaxAndMRPAnalytics,
   getSummaryKPIs,
   getAnalyticsDashboard,
+  getIndividualStoreAnalysis,
+  getIndividualProductAnalysis,
+  getStoreDemandForecasting,
+  getProductDemandForecasting,
+  getStoreReplenishmentRecommendations,
+  getProductReplenishmentRecommendations,
 }; 
