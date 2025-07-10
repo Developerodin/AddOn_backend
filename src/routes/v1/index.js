@@ -12,6 +12,7 @@ import commonRoute from './common.route.js';
 import sealsExcelMasterRoute from './sealsExcelMaster.route.js';
 import salesRoute from './sales.route.js';
 import analyticsRoute from './analytics.route.js';
+import dashboardRoute from './dashboard.route.js';
 import config from '../../config/config.js';
 
 const router = express.Router();
@@ -64,6 +65,10 @@ const defaultRoutes = [
   {
     path: '/analytics',
     route: analyticsRoute,
+  },
+  {
+    path: '/dashboard',
+    route: dashboardRoute,
   },
 ];
 
