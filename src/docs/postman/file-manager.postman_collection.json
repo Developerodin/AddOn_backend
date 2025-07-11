@@ -1,0 +1,391 @@
+{
+  "info": {
+    "name": "File Manager API",
+    "description": "Complete API collection for file and folder management",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/v1",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{authToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Get Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/file-manager/dashboard?limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["file-manager", "dashboard"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Root Folders",
+      "item": [
+        {
+          "name": "Get Root Folders",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/file-manager/root-folders?sortBy=folder.name:asc&limit=10&page=1",
+              "host": ["{{baseUrl}}"],
+              "path": ["file-manager", "root-folders"],
+              "query": [
+                {
+                  "key": "sortBy",
+                  "value": "folder.name:asc"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Folder Tree",
+      "item": [
+        {
+          "name": "Get Folder Tree",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/file-manager/folder-tree",
+              "host": ["{{baseUrl}}"],
+              "path": ["file-manager", "folder-tree"]
+            }
+          }
+        },
+        {
+          "name": "Get Folder Tree from Root",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/file-manager/folder-tree?rootFolderId={{folderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file-manager", "folder-tree"],
+              "query": [
+                {
+                  "key": "rootFolderId",
+                  "value": "{{folderId}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Search",
+      "item": [
+        {
+          "name": "Search Files and Folders",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/file-manager/search?query=document&type=file&limit=10&page=1",
+              "host": ["{{baseUrl}}"],
+              "path": ["file-manager", "search"],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "document"
+                },
+                {
+                  "key": "type",
+                  "value": "file"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Folders",
+      "item": [
+        {
+          "name": "Create Folder",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"My Projects\",\n  \"description\": \"All my project files\",\n  \"metadata\": {\n    \"tags\": [\"work\", \"important\"],\n    \"color\": \"blue\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/file-manager/folders",
+              "host": ["{{baseUrl}}"],
+              "path": ["file-manager", "folders"]
+            }
+          }
+        },
+        {
+          "name": "Create Subfolder",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Frontend\",\n  \"parentFolder\": \"{{parentFolderId}}\",\n  \"description\": \"Frontend development files\",\n  \"metadata\": {\n    \"tags\": [\"frontend\", \"react\"],\n    \"color\": \"green\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/file-manager/folders",
+              "host": ["{{baseUrl}}"],
+              "path": ["file-manager", "folders"]
+            }
+          }
+        },
+        {
+          "name": "Get Folder",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/file-manager/folders/{{folderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file-manager", "folders", "{{folderId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Folder",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Project Folder\",\n  \"description\": \"Updated description\",\n  \"metadata\": {\n    \"tags\": [\"updated\", \"work\"],\n    \"color\": \"red\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/file-manager/folders/{{folderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file-manager", "folders", "{{folderId}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Folder Contents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/file-manager/folders/{{folderId}}/contents?sortBy=type:asc,name:asc&limit=20&page=1",
+              "host": ["{{baseUrl}}"],
+              "path": ["file-manager", "folders", "{{folderId}}", "contents"],
+              "query": [
+                {
+                  "key": "sortBy",
+                  "value": "type:asc,name:asc"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete Folder",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/file-manager/folders/{{folderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file-manager", "folders", "{{folderId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Files",
+      "item": [
+        {
+          "name": "Create File",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fileName\": \"document.pdf\",\n  \"fileUrl\": \"https://example.com/files/document.pdf\",\n  \"fileKey\": \"uploads/2024/01/document.pdf\",\n  \"parentFolder\": \"{{parentFolderId}}\",\n  \"fileSize\": 1024000,\n  \"mimeType\": \"application/pdf\",\n  \"metadata\": {\n    \"author\": \"John Doe\",\n    \"version\": \"1.0\",\n    \"tags\": [\"document\", \"pdf\"]\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/file-manager/files",
+              "host": ["{{baseUrl}}"],
+              "path": ["file-manager", "files"]
+            }
+          }
+        },
+        {
+          "name": "Create File in Root",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fileName\": \"readme.md\",\n  \"fileUrl\": \"https://example.com/files/readme.md\",\n  \"fileKey\": \"uploads/2024/01/readme.md\",\n  \"fileSize\": 2048,\n  \"mimeType\": \"text/markdown\",\n  \"metadata\": {\n    \"author\": \"Jane Doe\",\n    \"version\": \"1.0\",\n    \"tags\": [\"documentation\", \"markdown\"]\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/file-manager/files",
+              "host": ["{{baseUrl}}"],
+              "path": ["file-manager", "files"]
+            }
+          }
+        },
+        {
+          "name": "Get File",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/file-manager/files/{{fileId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file-manager", "files", "{{fileId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update File",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fileName\": \"updated-document.pdf\",\n  \"fileUrl\": \"https://example.com/files/updated-document.pdf\",\n  \"fileKey\": \"uploads/2024/01/updated-document.pdf\",\n  \"fileSize\": 2048000,\n  \"mimeType\": \"application/pdf\",\n  \"metadata\": {\n    \"author\": \"Jane Doe\",\n    \"version\": \"2.0\",\n    \"tags\": [\"updated\", \"document\"]\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/file-manager/files/{{fileId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file-manager", "files", "{{fileId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete File",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/file-manager/files/{{fileId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["file-manager", "files", "{{fileId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Bulk Operations",
+      "item": [
+        {
+          "name": "Delete Multiple Items",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"itemIds\": [\n    \"{{folderId1}}\",\n    \"{{folderId2}}\",\n    \"{{fileId1}}\",\n    \"{{fileId2}}\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/file-manager/items",
+              "host": ["{{baseUrl}}"],
+              "path": ["file-manager", "items"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+} 

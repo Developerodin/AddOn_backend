@@ -13,6 +13,7 @@ import sealsExcelMasterRoute from './sealsExcelMaster.route.js';
 import salesRoute from './sales.route.js';
 import analyticsRoute from './analytics.route.js';
 import dashboardRoute from './dashboard.route.js';
+import fileManagerRoute from './fileManager.route.js';
 import config from '../../config/config.js';
 
 const router = express.Router();
@@ -69,6 +70,10 @@ const defaultRoutes = [
   {
     path: '/dashboard',
     route: dashboardRoute,
+  },
+  {
+    path: '/file-manager',
+    route: fileManagerRoute,
   },
 ];
 

@@ -8,6 +8,7 @@ import Product from './product.model.js';
 import Store from './store.model.js';
 import SealsExcelMaster from './sealsExcelMaster.model.js';
 import Sales from './sales.model.js';
+import FileManager from './fileManager.model.js';
 
 export {
   Token,
@@ -20,4 +21,5 @@ export {
   Store,
   SealsExcelMaster,
   Sales,
+  FileManager,
 };

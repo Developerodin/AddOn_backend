@@ -38,6 +38,10 @@ const paginate = (schema) => {
 
     const countPromise = this.countDocuments(filter).exec();
     let docsPromise = this.find(filter).sort(sort).skip(skip).limit(limit);
+    
+    console.log('🔍 Paginate Plugin - Query filter:', JSON.stringify(filter, null, 2));
+    console.log('🔍 Paginate Plugin - Sort:', sort);
+    console.log('🔍 Paginate Plugin - Skip:', skip, 'Limit:', limit);
 
     if (options.populate) {
       options.populate.split(',').forEach((populateOption) => {
@@ -53,8 +57,18 @@ const paginate = (schema) => {
     docsPromise = docsPromise.exec();
 
     return Promise.all([countPromise, docsPromise]).then((values) => {
+      console.log('🔍 Paginate Plugin - Raw documents from query:', values[1].length, 'items');
+      if (values[1].length > 0) {
+        console.log('🔍 Paginate Plugin - First document raw:', JSON.stringify(values[1][0].toObject(), null, 2));
+      }
       const [totalResults, results] = values;
       const totalPages = Math.ceil(totalResults / limit);
+      
+      console.log('🔍 Paginate Plugin - Raw results from database:', results.length, 'items');
+      if (results.length > 0) {
+        console.log('📋 Paginate Plugin - First result sample:', JSON.stringify(results[0], null, 2));
+      }
+      
       const result = {
         results,
         page,
@@ -62,6 +76,9 @@ const paginate = (schema) => {
         totalPages,
         totalResults,
       };
+      
+      console.log('📊 Paginate Plugin - Final result object:', JSON.stringify(result, null, 2));
+      
       return Promise.resolve(result);
     });
   };
