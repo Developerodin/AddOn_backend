@@ -63,6 +63,51 @@ const getTopProducts = catchAsync(async (req, res) => {
   });
 });
 
+const getAllStoresPerformance = catchAsync(async (req, res) => {
+  const { startDate, endDate } = req.query;
+  const performance = await dashboardService.getAllStoresPerformance(startDate, endDate);
+  res.status(httpStatus.OK).json({
+    status: 'success',
+    data: performance,
+  });
+});
+
+const getAllProductsPerformance = catchAsync(async (req, res) => {
+  const { period = 'month', startDate, endDate } = req.query;
+  const performance = await dashboardService.getAllProductsPerformance(period, startDate, endDate);
+  res.status(httpStatus.OK).json({
+    status: 'success',
+    data: performance,
+  });
+});
+
+const getAllSalesData = catchAsync(async (req, res) => {
+  const { startDate, endDate } = req.query;
+  const salesData = await dashboardService.getAllSalesData(startDate, endDate);
+  res.status(httpStatus.OK).json({
+    status: 'success',
+    data: salesData,
+  });
+});
+
+const getAllCategoriesAnalytics = catchAsync(async (req, res) => {
+  const { period = 'month', startDate, endDate } = req.query;
+  const analytics = await dashboardService.getAllCategoriesAnalytics(period, startDate, endDate);
+  res.status(httpStatus.OK).json({
+    status: 'success',
+    data: analytics,
+  });
+});
+
+const getAllCitiesPerformance = catchAsync(async (req, res) => {
+  const { startDate, endDate } = req.query;
+  const performance = await dashboardService.getAllCitiesPerformance(startDate, endDate);
+  res.status(httpStatus.OK).json({
+    status: 'success',
+    data: performance,
+  });
+});
+
 export default {
   getDashboardData,
   getSalesAnalytics,
@@ -71,4 +116,9 @@ export default {
   getCityPerformance,
   getDemandForecast,
   getTopProducts,
+  getAllStoresPerformance,
+  getAllProductsPerformance,
+  getAllSalesData,
+  getAllCategoriesAnalytics,
+  getAllCitiesPerformance,
 }; 

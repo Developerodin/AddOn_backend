@@ -43,6 +43,43 @@ const getTopProducts = {
   }),
 };
 
+const getAllStoresPerformance = {
+  query: Joi.object().keys({
+    startDate: Joi.date().iso(),
+    endDate: Joi.date().iso().min(Joi.ref('startDate')),
+  }),
+};
+
+const getAllProductsPerformance = {
+  query: Joi.object().keys({
+    period: Joi.string().valid('week', 'month', 'quarter').default('month'),
+    startDate: Joi.date().iso(),
+    endDate: Joi.date().iso().min(Joi.ref('startDate')),
+  }),
+};
+
+const getAllSalesData = {
+  query: Joi.object().keys({
+    startDate: Joi.date().iso(),
+    endDate: Joi.date().iso().min(Joi.ref('startDate')),
+  }),
+};
+
+const getAllCategoriesAnalytics = {
+  query: Joi.object().keys({
+    period: Joi.string().valid('week', 'month', 'quarter').default('month'),
+    startDate: Joi.date().iso(),
+    endDate: Joi.date().iso().min(Joi.ref('startDate')),
+  }),
+};
+
+const getAllCitiesPerformance = {
+  query: Joi.object().keys({
+    startDate: Joi.date().iso(),
+    endDate: Joi.date().iso().min(Joi.ref('startDate')),
+  }),
+};
+
 export default {
   getDashboardData,
   getSalesAnalytics,
@@ -51,4 +88,9 @@ export default {
   getCityPerformance,
   getDemandForecast,
   getTopProducts,
+  getAllStoresPerformance,
+  getAllProductsPerformance,
+  getAllSalesData,
+  getAllCategoriesAnalytics,
+  getAllCitiesPerformance,
 }; 

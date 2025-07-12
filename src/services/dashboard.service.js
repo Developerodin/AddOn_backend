@@ -524,6 +524,339 @@ const getTopProducts = async (limit = 5, period = 'month') => {
   };
 };
 
+/**
+ * Get all stores performance (unlimited) with date range support
+ */
+const getAllStoresPerformance = async (startDate, endDate) => {
+  let dateFilter = {};
+  
+  if (startDate && endDate) {
+    dateFilter = {
+      date: { $gte: new Date(startDate), $lte: new Date(endDate) }
+    };
+  }
+
+  const stores = await Sales.aggregate([
+    {
+      $match: dateFilter
+    },
+    {
+      $lookup: {
+        from: 'stores',
+        localField: 'plant',
+        foreignField: '_id',
+        as: 'store'
+      }
+    },
+    {
+      $unwind: '$store'
+    },
+    {
+      $group: {
+        _id: '$store._id',
+        storeName: { $first: '$store.storeName' },
+        storeId: { $first: '$store.storeId' },
+        city: { $first: '$store.city' },
+        totalNSV: { $sum: '$nsv' },
+        totalQuantity: { $sum: '$quantity' },
+        totalOrders: { $sum: 1 },
+        avgOrderValue: { $avg: '$nsv' }
+      }
+    },
+    {
+      $sort: { totalNSV: -1 }
+    }
+  ]);
+
+  return {
+    stores,
+    dateRange: startDate && endDate ? { startDate, endDate } : null,
+    totalCount: stores.length
+  };
+};
+
+/**
+ * Get all products performance (unlimited) with date range support
+ */
+const getAllProductsPerformance = async (period = 'month', startDate, endDate) => {
+  let dateFilter = {};
+  
+  if (startDate && endDate) {
+    dateFilter = {
+      date: { $gte: new Date(startDate), $lte: new Date(endDate) }
+    };
+  } else {
+    const dateRange = getDateRanges(period).currentPeriod;
+    dateFilter = {
+      date: { $gte: dateRange.start, $lte: dateRange.end }
+    };
+  }
+
+  const products = await Sales.aggregate([
+    {
+      $match: dateFilter
+    },
+    {
+      $lookup: {
+        from: 'products',
+        localField: 'materialCode',
+        foreignField: '_id',
+        as: 'product'
+      }
+    },
+    {
+      $unwind: '$product'
+    },
+    {
+      $lookup: {
+        from: 'categories',
+        localField: 'product.category',
+        foreignField: '_id',
+        as: 'category'
+      }
+    },
+    {
+      $unwind: {
+        path: '$category',
+        preserveNullAndEmptyArrays: true
+      }
+    },
+    {
+      $group: {
+        _id: '$product._id',
+        productName: { $first: '$product.name' },
+        productCode: { $first: '$product.softwareCode' },
+        categoryName: { $first: { $ifNull: ['$category.name', 'Unknown Category'] } },
+        categoryId: { $first: { $ifNull: ['$category._id', null] } },
+        totalNSV: { $sum: '$nsv' },
+        totalQuantity: { $sum: '$quantity' },
+        totalOrders: { $sum: 1 },
+        avgOrderValue: { $avg: '$nsv' },
+        avgQuantity: { $avg: '$quantity' }
+      }
+    },
+    {
+      $sort: { totalNSV: -1 }
+    }
+  ]);
+
+  return {
+    period: startDate && endDate ? 'custom' : period,
+    products,
+    dateRange: startDate && endDate ? { startDate, endDate } : null,
+    totalCount: products.length
+  };
+};
+
+/**
+ * Get all sales data (unlimited)
+ */
+const getAllSalesData = async (startDate, endDate) => {
+  let dateFilter = {};
+  
+  if (startDate && endDate) {
+    dateFilter = {
+      date: { $gte: new Date(startDate), $lte: new Date(endDate) }
+    };
+  }
+
+  const sales = await Sales.aggregate([
+    {
+      $match: dateFilter
+    },
+    {
+      $lookup: {
+        from: 'stores',
+        localField: 'plant',
+        foreignField: '_id',
+        as: 'store'
+      }
+    },
+    {
+      $lookup: {
+        from: 'products',
+        localField: 'materialCode',
+        foreignField: '_id',
+        as: 'product'
+      }
+    },
+    {
+      $unwind: '$store'
+    },
+    {
+      $unwind: '$product'
+    },
+    {
+      $lookup: {
+        from: 'categories',
+        localField: 'product.category',
+        foreignField: '_id',
+        as: 'category'
+      }
+    },
+    {
+      $unwind: {
+        path: '$category',
+        preserveNullAndEmptyArrays: true
+      }
+    },
+    {
+      $project: {
+        _id: 1,
+        date: 1,
+        nsv: 1,
+        gsv: 1,
+        quantity: 1,
+        storeName: '$store.storeName',
+        storeId: '$store.storeId',
+        storeCity: '$store.city',
+        productName: '$product.name',
+        productCode: '$product.softwareCode',
+        categoryName: { $ifNull: ['$category.name', 'Unknown Category'] }
+      }
+    },
+    {
+      $sort: { date: -1 }
+    }
+  ]);
+
+  return {
+    sales,
+    totalCount: sales.length,
+    dateRange: startDate && endDate ? { startDate, endDate } : null
+  };
+};
+
+/**
+ * Get all categories analytics (unlimited) with date range support
+ */
+const getAllCategoriesAnalytics = async (period = 'month', startDate, endDate) => {
+  let dateFilter = {};
+  
+  if (startDate && endDate) {
+    dateFilter = {
+      date: { $gte: new Date(startDate), $lte: new Date(endDate) }
+    };
+  } else {
+    const dateRange = getDateRanges(period).currentPeriod;
+    dateFilter = {
+      date: { $gte: dateRange.start, $lte: dateRange.end }
+    };
+  }
+
+  const categories = await Sales.aggregate([
+    {
+      $match: dateFilter
+    },
+    {
+      $lookup: {
+        from: 'products',
+        localField: 'materialCode',
+        foreignField: '_id',
+        as: 'product'
+      }
+    },
+    {
+      $unwind: '$product'
+    },
+    {
+      $lookup: {
+        from: 'categories',
+        localField: 'product.category',
+        foreignField: '_id',
+        as: 'category'
+      }
+    },
+    {
+      $unwind: {
+        path: '$category',
+        preserveNullAndEmptyArrays: true
+      }
+    },
+    {
+      $group: {
+        _id: { $ifNull: ['$category._id', 'unknown'] },
+        categoryName: { $first: { $ifNull: ['$category.name', 'Unknown Category'] } },
+        totalNSV: { $sum: '$nsv' },
+        totalQuantity: { $sum: '$quantity' },
+        totalOrders: { $sum: 1 },
+        avgOrderValue: { $avg: '$nsv' },
+        productCount: { $addToSet: '$product._id' }
+      }
+    },
+    {
+      $addFields: {
+        productCount: { $size: '$productCount' }
+      }
+    },
+    {
+      $sort: { totalNSV: -1 }
+    }
+  ]);
+
+  return {
+    period: startDate && endDate ? 'custom' : period,
+    categories,
+    dateRange: startDate && endDate ? { startDate, endDate } : null,
+    totalCount: categories.length
+  };
+};
+
+/**
+ * Get all cities performance (unlimited) with date range support
+ */
+const getAllCitiesPerformance = async (startDate, endDate) => {
+  let dateFilter = {};
+  
+  if (startDate && endDate) {
+    dateFilter = {
+      date: { $gte: new Date(startDate), $lte: new Date(endDate) }
+    };
+  }
+
+  const cities = await Sales.aggregate([
+    {
+      $match: dateFilter
+    },
+    {
+      $lookup: {
+        from: 'stores',
+        localField: 'plant',
+        foreignField: '_id',
+        as: 'store'
+      }
+    },
+    {
+      $unwind: '$store'
+    },
+    {
+      $group: {
+        _id: '$store.city',
+        totalNSV: { $sum: '$nsv' },
+        totalQuantity: { $sum: '$quantity' },
+        totalOrders: { $sum: 1 },
+        storeCount: { $addToSet: '$store._id' },
+        stores: { $addToSet: '$store.storeName' }
+      }
+    },
+    {
+      $addFields: {
+        storeCount: { $size: '$storeCount' },
+        avgOrderValue: { $divide: ['$totalNSV', '$totalOrders'] }
+      }
+    },
+    {
+      $sort: { totalNSV: -1 }
+    }
+  ]);
+
+  return {
+    cities,
+    dateRange: startDate && endDate ? { startDate, endDate } : null,
+    totalCount: cities.length
+  };
+};
+
 export default {
   getDashboardData,
   getSalesAnalytics,
@@ -532,4 +865,9 @@ export default {
   getCityPerformance,
   getDemandForecast,
   getTopProducts,
+  getAllStoresPerformance,
+  getAllProductsPerformance,
+  getAllSalesData,
+  getAllCategoriesAnalytics,
+  getAllCitiesPerformance,
 }; 

@@ -62,4 +62,39 @@ router
     dashboardController.getTopProducts
   );
 
+router
+  .route('/all-stores-performance')
+  .get(
+    validate(dashboardValidation.getAllStoresPerformance),
+    dashboardController.getAllStoresPerformance
+  );
+
+router
+  .route('/all-products-performance')
+  .get(
+    validate(dashboardValidation.getAllProductsPerformance),
+    dashboardController.getAllProductsPerformance
+  );
+
+router
+  .route('/all-sales-data')
+  .get(
+    validate(dashboardValidation.getAllSalesData),
+    dashboardController.getAllSalesData
+  );
+
+router
+  .route('/all-categories-analytics')
+  .get(
+    validate(dashboardValidation.getAllCategoriesAnalytics),
+    dashboardController.getAllCategoriesAnalytics
+  );
+
+router
+  .route('/all-cities-performance')
+  .get(
+    validate(dashboardValidation.getAllCitiesPerformance),
+    dashboardController.getAllCitiesPerformance
+  );
+
 export default router; 
