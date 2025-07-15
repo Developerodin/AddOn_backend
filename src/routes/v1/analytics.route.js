@@ -5,6 +5,16 @@ import * as analyticsController from '../../controllers/analytics.controller.js'
 
 const router = express.Router();
 
+// Enhanced Analytics for Replenishment Dashboard
+router.get('/trends', analyticsController.getEnhancedTrends);
+router.get('/accuracy-distribution', analyticsController.getAccuracyDistribution);
+router.get('/performance', analyticsController.getPerformanceAnalytics);
+router.get('/replenishment', analyticsController.getReplenishmentAnalytics);
+
+// Legacy endpoints (keeping for backward compatibility)
+router.get('/accuracy', analyticsController.getAccuracy);
+router.get('/summary', analyticsController.getSummary);
+
 // Time-based sales trends
 router
   .route('/time-based-trends')

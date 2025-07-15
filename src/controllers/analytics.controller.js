@@ -331,4 +331,63 @@ export const getCompleteProductReplenishmentData = catchAsync(async (req, res) =
   const filter = pick(req.query, ['productId']);
   const completeData = await analyticsService.getCompleteProductReplenishmentData(filter);
   res.send(completeData);
+});
+
+// Enhanced Analytics for Replenishment Dashboard
+
+/**
+ * Get enhanced trends data for Forecast vs Actual Trends chart
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+export const getEnhancedTrends = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['startMonth', 'endMonth', 'store', 'product']);
+  const trends = await analyticsService.getEnhancedTrends(filter);
+  res.send(trends);
+});
+
+/**
+ * Get accuracy distribution data for pie/donut charts
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+export const getAccuracyDistribution = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['store', 'product', 'month']);
+  const distribution = await analyticsService.getAccuracyDistribution(filter);
+  res.send(distribution);
+});
+
+/**
+ * Get performance analytics for stores or products
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+export const getPerformanceAnalytics = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['type', 'limit', 'month']);
+  const performance = await analyticsService.getPerformanceAnalytics(filter);
+  res.send(performance);
+});
+
+/**
+ * Get replenishment analytics
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+export const getReplenishmentAnalytics = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['store', 'product', 'month']);
+  const analytics = await analyticsService.getReplenishmentAnalytics(filter);
+  res.send(analytics);
+});
+
+// Legacy analytics functions (keeping for backward compatibility)
+export const getAccuracy = catchAsync(async (req, res) => {
+  res.json({ accuracy: 87.5, details: [] });
+});
+
+export const getTrends = catchAsync(async (req, res) => {
+  res.json({ trends: [] });
+});
+
+export const getSummary = catchAsync(async (req, res) => {
+  res.json({ totalForecasts: 0, avgAccuracy: 0, totalReplenishment: 0 });
 }); 

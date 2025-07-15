@@ -3,6 +3,8 @@ import Store from '../models/store.model.js';
 import Product from '../models/product.model.js';
 import Category from '../models/category.model.js';
 import mongoose from 'mongoose';
+import Forecast from '../models/forecast.model.js';
+import Replenishment from '../models/replenishment.model.js';
 
 /**
  * Get time-based sales trends
@@ -2354,5 +2356,609 @@ export const getCompleteProductReplenishmentData = async (filter = {}) => {
     analysisPeriod: '30 days',
     generatedAt: new Date().toISOString(),
     allRecords: recentSales
+  };
+}; 
+
+// Enhanced Analytics for Replenishment Dashboard
+
+/**
+ * Get enhanced trends data for Forecast vs Actual Trends chart
+ * @param {Object} filter - Filter options
+ * @returns {Promise<Object>}
+ */
+export const getEnhancedTrends = async (filter = {}) => {
+  const { startMonth, endMonth, store, product } = filter;
+  
+  const matchStage = {};
+  if (startMonth || endMonth) {
+    matchStage.month = {};
+    if (startMonth) matchStage.month.$gte = startMonth;
+    if (endMonth) matchStage.month.$lte = endMonth;
+  }
+  if (store) matchStage.store = mongoose.Types.ObjectId(store);
+  if (product) matchStage.product = mongoose.Types.ObjectId(product);
+
+  const trends = await Forecast.aggregate([
+    { $match: matchStage },
+    {
+      $lookup: {
+        from: 'stores',
+        localField: 'store',
+        foreignField: '_id',
+        as: 'storeData'
+      }
+    },
+    {
+      $lookup: {
+        from: 'products',
+        localField: 'product',
+        foreignField: '_id',
+        as: 'productData'
+      }
+    },
+    {
+      $group: {
+        _id: '$month',
+        totalForecastQty: { $sum: '$forecastQty' },
+        totalActualQty: { $sum: { $ifNull: ['$actualQty', 0] } },
+        avgForecastQty: { $avg: '$forecastQty' },
+        avgActualQty: { $avg: { $ifNull: ['$actualQty', 0] } },
+        forecastCount: { $sum: 1 },
+        actualCount: { $sum: { $cond: [{ $ne: ['$actualQty', null] }, 1, 0] } }
+      }
+    },
+    {
+      $addFields: {
+        accuracy: {
+          $cond: [
+            { $gt: ['$totalForecastQty', 0] },
+            {
+              $multiply: [
+                {
+                  $subtract: [
+                    1,
+                    {
+                      $divide: [
+                        { $abs: { $subtract: ['$totalActualQty', '$totalForecastQty'] } },
+                        '$totalForecastQty'
+                      ]
+                    }
+                  ]
+                },
+                100
+              ]
+            },
+            0
+          ]
+        },
+        deviation: {
+          $cond: [
+            { $gt: ['$totalForecastQty', 0] },
+            {
+              $multiply: [
+                {
+                  $divide: [
+                    { $subtract: ['$totalActualQty', '$totalForecastQty'] },
+                    '$totalForecastQty'
+                  ]
+                },
+                100
+              ]
+            },
+            0
+          ]
+        }
+      }
+    },
+    { $sort: { _id: 1 } }
+  ]);
+
+  // Calculate summary
+  const totalMonths = trends.length;
+  const avgAccuracy = totalMonths > 0 ? trends.reduce((sum, t) => sum + t.accuracy, 0) / totalMonths : 0;
+  const totalForecasts = trends.reduce((sum, t) => sum + t.forecastCount, 0);
+  const totalDeviation = totalMonths > 0 ? trends.reduce((sum, t) => sum + t.deviation, 0) / totalMonths : 0;
+
+  // Determine trend direction
+  let trendDirection = 'stable';
+  if (totalMonths >= 2) {
+    const recentAccuracy = trends.slice(-3).reduce((sum, t) => sum + t.accuracy, 0) / Math.min(3, trends.length);
+    const olderAccuracy = trends.slice(0, -3).reduce((sum, t) => sum + t.accuracy, 0) / Math.max(1, trends.length - 3);
+    if (recentAccuracy > olderAccuracy + 2) trendDirection = 'improving';
+    else if (recentAccuracy < olderAccuracy - 2) trendDirection = 'declining';
+  }
+
+  return {
+    trends: trends.map(t => ({
+      month: t._id,
+      totalForecastQty: Math.round(t.totalForecastQty * 100) / 100,
+      totalActualQty: Math.round(t.totalActualQty * 100) / 100,
+      avgForecastQty: Math.round(t.avgForecastQty * 100) / 100,
+      avgActualQty: Math.round(t.avgActualQty * 100) / 100,
+      accuracy: Math.round(t.accuracy * 100) / 100,
+      forecastCount: t.forecastCount,
+      deviation: Math.round(t.deviation * 100) / 100
+    })),
+    summary: {
+      totalMonths,
+      avgAccuracy: Math.round(avgAccuracy * 100) / 100,
+      trendDirection,
+      totalForecasts,
+      totalDeviation: Math.round(totalDeviation * 100) / 100
+    }
+  };
+};
+
+/**
+ * Get accuracy distribution data for pie/donut charts
+ * @param {Object} filter - Filter options
+ * @returns {Promise<Object>}
+ */
+export const getAccuracyDistribution = async (filter = {}) => {
+  const { store, product, month } = filter;
+  
+  const matchStage = {};
+  if (store) matchStage.store = mongoose.Types.ObjectId(store);
+  if (product) matchStage.product = mongoose.Types.ObjectId(product);
+  if (month) matchStage.month = month;
+
+  const forecasts = await Forecast.aggregate([
+    { $match: matchStage },
+    {
+      $addFields: {
+        accuracy: {
+          $cond: [
+            { $and: [{ $gt: ['$forecastQty', 0] }, { $ne: ['$actualQty', null] }] },
+            {
+              $multiply: [
+                {
+                  $subtract: [
+                    1,
+                    {
+                      $divide: [
+                        { $abs: { $subtract: ['$actualQty', '$forecastQty'] } },
+                        '$forecastQty'
+                      ]
+                    }
+                  ]
+                },
+                100
+              ]
+            },
+            null
+          ]
+        }
+      }
+    },
+    { $match: { accuracy: { $ne: null } } }
+  ]);
+
+  // Calculate distribution
+  const totalForecasts = forecasts.length;
+  const overallAccuracy = totalForecasts > 0 
+    ? forecasts.reduce((sum, f) => sum + f.accuracy, 0) / totalForecasts 
+    : 0;
+
+  const distribution = [
+    {
+      range: '90-100%',
+      label: 'Excellent',
+      count: 0,
+      percentage: 0,
+      forecastIds: [],
+      color: '#10B981'
+    },
+    {
+      range: '80-89%',
+      label: 'Good',
+      count: 0,
+      percentage: 0,
+      forecastIds: [],
+      color: '#F59E0B'
+    },
+    {
+      range: '70-79%',
+      label: 'Fair',
+      count: 0,
+      percentage: 0,
+      forecastIds: [],
+      color: '#EF4444'
+    },
+    {
+      range: '<70%',
+      label: 'Poor',
+      count: 0,
+      percentage: 0,
+      forecastIds: [],
+      color: '#DC2626'
+    }
+  ];
+
+  forecasts.forEach(forecast => {
+    const accuracy = forecast.accuracy;
+    if (accuracy >= 90) {
+      distribution[0].count++;
+      distribution[0].forecastIds.push(forecast._id.toString());
+    } else if (accuracy >= 80) {
+      distribution[1].count++;
+      distribution[1].forecastIds.push(forecast._id.toString());
+    } else if (accuracy >= 70) {
+      distribution[2].count++;
+      distribution[2].forecastIds.push(forecast._id.toString());
+    } else {
+      distribution[3].count++;
+      distribution[3].forecastIds.push(forecast._id.toString());
+    }
+  });
+
+  // Calculate percentages
+  distribution.forEach(d => {
+    d.percentage = totalForecasts > 0 ? Math.round((d.count / totalForecasts) * 100 * 100) / 100 : 0;
+  });
+
+  return {
+    overallAccuracy: Math.round(overallAccuracy * 100) / 100,
+    distribution,
+    totalForecasts,
+    summary: {
+      excellentCount: distribution[0].count,
+      goodCount: distribution[1].count,
+      fairCount: distribution[2].count,
+      poorCount: distribution[3].count
+    }
+  };
+};
+
+/**
+ * Get performance analytics for stores or products
+ * @param {Object} filter - Filter options
+ * @returns {Promise<Object>}
+ */
+export const getPerformanceAnalytics = async (filter = {}) => {
+  const { type, limit = 10, month } = filter;
+  const limitNum = parseInt(limit, 10) || 10;
+  
+  const matchStage = {};
+  if (month) matchStage.month = month;
+
+  if (type === 'store') {
+    const performance = await Forecast.aggregate([
+      { $match: matchStage },
+      {
+        $lookup: {
+          from: 'stores',
+          localField: 'store',
+          foreignField: '_id',
+          as: 'storeData'
+        }
+      },
+      { $unwind: '$storeData' },
+      {
+        $addFields: {
+          accuracy: {
+            $cond: [
+              { $and: [{ $gt: ['$forecastQty', 0] }, { $ne: ['$actualQty', null] }] },
+              {
+                $multiply: [
+                  {
+                    $subtract: [
+                      1,
+                      {
+                        $divide: [
+                          { $abs: { $subtract: ['$actualQty', '$forecastQty'] } },
+                          '$forecastQty'
+                        ]
+                      }
+                    ]
+                  },
+                  100
+                ]
+              },
+              null
+            ]
+          },
+          deviation: {
+            $cond: [
+              { $and: [{ $gt: ['$forecastQty', 0] }, { $ne: ['$actualQty', null] }] },
+              {
+                $multiply: [
+                  {
+                    $divide: [
+                      { $subtract: ['$actualQty', '$forecastQty'] },
+                      '$forecastQty'
+                    ]
+                  },
+                  100
+                ]
+              },
+              null
+            ]
+          }
+        }
+      },
+      {
+        $group: {
+          _id: '$store',
+          storeId: { $first: '$store' },
+          storeName: { $first: '$storeData.storeName' },
+          storeCode: { $first: '$storeData.storeId' },
+          city: { $first: '$storeData.city' },
+          avgAccuracy: { $avg: '$accuracy' },
+          forecastCount: { $sum: 1 },
+          totalForecastQty: { $sum: '$forecastQty' },
+          totalActualQty: { $sum: { $ifNull: ['$actualQty', 0] } },
+          avgDeviation: { $avg: '$deviation' }
+        }
+      },
+      { $sort: { avgAccuracy: -1 } },
+      { $limit: limitNum }
+    ]);
+
+    const totalStores = await Forecast.distinct('store').countDocuments();
+    const avgStoreAccuracy = performance.length > 0 
+      ? performance.reduce((sum, p) => sum + p.avgAccuracy, 0) / performance.length 
+      : 0;
+
+    return {
+      type: 'store',
+      performance: performance.map(p => ({
+        storeId: p.storeId.toString(),
+        storeName: p.storeName,
+        storeCode: p.storeCode,
+        city: p.city,
+        avgAccuracy: Math.round(p.avgAccuracy * 100) / 100,
+        forecastCount: p.forecastCount,
+        totalForecastQty: Math.round(p.totalForecastQty * 100) / 100,
+        totalActualQty: Math.round(p.totalActualQty * 100) / 100,
+        avgDeviation: Math.round(p.avgDeviation * 100) / 100,
+        trend: p.avgAccuracy > 85 ? 'improving' : p.avgAccuracy > 75 ? 'stable' : 'declining'
+      })),
+      summary: {
+        totalStores,
+        avgStoreAccuracy: Math.round(avgStoreAccuracy * 100) / 100,
+        bestPerformingStore: performance[0]?.storeId?.toString(),
+        worstPerformingStore: performance[performance.length - 1]?.storeId?.toString()
+      }
+    };
+  } else {
+    const performance = await Forecast.aggregate([
+      { $match: matchStage },
+      {
+        $lookup: {
+          from: 'products',
+          localField: 'product',
+          foreignField: '_id',
+          as: 'productData'
+        }
+      },
+      { $unwind: '$productData' },
+      {
+        $addFields: {
+          accuracy: {
+            $cond: [
+              { $and: [{ $gt: ['$forecastQty', 0] }, { $ne: ['$actualQty', null] }] },
+              {
+                $multiply: [
+                  {
+                    $subtract: [
+                      1,
+                      {
+                        $divide: [
+                          { $abs: { $subtract: ['$actualQty', '$forecastQty'] } },
+                          '$forecastQty'
+                        ]
+                      }
+                    ]
+                  },
+                  100
+                ]
+              },
+              null
+            ]
+          },
+          deviation: {
+            $cond: [
+              { $and: [{ $gt: ['$forecastQty', 0] }, { $ne: ['$actualQty', null] }] },
+              {
+                $multiply: [
+                  {
+                    $divide: [
+                      { $subtract: ['$actualQty', '$forecastQty'] },
+                      '$forecastQty'
+                    ]
+                  },
+                  100
+                ]
+              },
+              null
+            ]
+          }
+        }
+      },
+      {
+        $group: {
+          _id: '$product',
+          productId: { $first: '$product' },
+          productName: { $first: '$productData.name' },
+          styleCode: { $first: '$productData.softwareCode' },
+          category: { $first: '$productData.category' },
+          avgAccuracy: { $avg: '$accuracy' },
+          forecastCount: { $sum: 1 },
+          totalForecastQty: { $sum: '$forecastQty' },
+          totalActualQty: { $sum: { $ifNull: ['$actualQty', 0] } },
+          avgDeviation: { $avg: '$deviation' }
+        }
+      },
+      { $sort: { avgAccuracy: -1 } },
+      { $limit: limitNum }
+    ]);
+
+    const totalProducts = await Forecast.distinct('product').countDocuments();
+    const avgProductAccuracy = performance.length > 0 
+      ? performance.reduce((sum, p) => sum + p.avgAccuracy, 0) / performance.length 
+      : 0;
+
+    return {
+      type: 'product',
+      performance: performance.map(p => ({
+        productId: p.productId.toString(),
+        productName: p.productName,
+        styleCode: p.styleCode,
+        category: p.category,
+        avgAccuracy: Math.round(p.avgAccuracy * 100) / 100,
+        forecastCount: p.forecastCount,
+        totalForecastQty: Math.round(p.totalForecastQty * 100) / 100,
+        totalActualQty: Math.round(p.totalActualQty * 100) / 100,
+        avgDeviation: Math.round(p.avgDeviation * 100) / 100,
+        trend: p.avgAccuracy > 85 ? 'improving' : p.avgAccuracy > 75 ? 'stable' : 'declining'
+      })),
+      summary: {
+        totalProducts,
+        avgProductAccuracy: Math.round(avgProductAccuracy * 100) / 100,
+        bestPerformingProduct: performance[0]?.productId?.toString(),
+        worstPerformingProduct: performance[performance.length - 1]?.productId?.toString()
+      }
+    };
+  }
+};
+
+/**
+ * Get replenishment analytics
+ * @param {Object} filter - Filter options
+ * @returns {Promise<Object>}
+ */
+export const getReplenishmentAnalytics = async (filter = {}) => {
+  const { store, product, month } = filter;
+  
+  const matchStage = {};
+  if (store) matchStage.store = mongoose.Types.ObjectId(store);
+  if (product) matchStage.product = mongoose.Types.ObjectId(product);
+  if (month) matchStage.month = month;
+
+  const replenishments = await Replenishment.aggregate([
+    { $match: matchStage },
+    {
+      $lookup: {
+        from: 'stores',
+        localField: 'store',
+        foreignField: '_id',
+        as: 'storeData'
+      }
+    },
+    {
+      $lookup: {
+        from: 'products',
+        localField: 'product',
+        foreignField: '_id',
+        as: 'productData'
+      }
+    }
+  ]);
+
+  // Calculate summary
+  const totalReplenishments = replenishments.length;
+  const avgReplenishmentQty = totalReplenishments > 0 
+    ? replenishments.reduce((sum, r) => sum + r.replenishmentQty, 0) / totalReplenishments 
+    : 0;
+  const totalReplenishmentValue = replenishments.reduce((sum, r) => sum + r.replenishmentQty, 0);
+  const avgSafetyBuffer = totalReplenishments > 0 
+    ? replenishments.reduce((sum, r) => sum + r.safetyBuffer, 0) / totalReplenishments 
+    : 0;
+
+  // Monthly trends
+  const monthlyTrends = await Replenishment.aggregate([
+    { $match: matchStage },
+    {
+      $group: {
+        _id: '$month',
+        totalReplenishmentQty: { $sum: '$replenishmentQty' },
+        avgReplenishmentQty: { $avg: '$replenishmentQty' },
+        replenishmentCount: { $sum: 1 },
+        avgSafetyBuffer: { $avg: '$safetyBuffer' }
+      }
+    },
+    { $sort: { _id: 1 } }
+  ]);
+
+  // Store replenishment
+  const storeReplenishment = await Replenishment.aggregate([
+    { $match: matchStage },
+    {
+      $lookup: {
+        from: 'stores',
+        localField: 'store',
+        foreignField: '_id',
+        as: 'storeData'
+      }
+    },
+    { $unwind: '$storeData' },
+    {
+      $group: {
+        _id: '$store',
+        storeId: { $first: '$store' },
+        storeName: { $first: '$storeData.storeName' },
+        totalReplenishmentQty: { $sum: '$replenishmentQty' },
+        avgReplenishmentQty: { $avg: '$replenishmentQty' },
+        replenishmentCount: { $sum: 1 }
+      }
+    },
+    { $sort: { totalReplenishmentQty: -1 } },
+    { $limit: 10 }
+  ]);
+
+  // Product replenishment
+  const productReplenishment = await Replenishment.aggregate([
+    { $match: matchStage },
+    {
+      $lookup: {
+        from: 'products',
+        localField: 'product',
+        foreignField: '_id',
+        as: 'productData'
+      }
+    },
+    { $unwind: '$productData' },
+    {
+      $group: {
+        _id: '$product',
+        productId: { $first: '$product' },
+        productName: { $first: '$productData.name' },
+        totalReplenishmentQty: { $sum: '$replenishmentQty' },
+        avgReplenishmentQty: { $avg: '$replenishmentQty' },
+        replenishmentCount: { $sum: 1 }
+      }
+    },
+    { $sort: { totalReplenishmentQty: -1 } },
+    { $limit: 10 }
+  ]);
+
+  return {
+    summary: {
+      totalReplenishments,
+      avgReplenishmentQty: Math.round(avgReplenishmentQty * 100) / 100,
+      totalReplenishmentValue,
+      avgSafetyBuffer: Math.round(avgSafetyBuffer * 100) / 100
+    },
+    monthlyTrends: monthlyTrends.map(t => ({
+      month: t._id,
+      totalReplenishmentQty: Math.round(t.totalReplenishmentQty * 100) / 100,
+      avgReplenishmentQty: Math.round(t.avgReplenishmentQty * 100) / 100,
+      replenishmentCount: t.replenishmentCount,
+      avgSafetyBuffer: Math.round(t.avgSafetyBuffer * 100) / 100
+    })),
+    storeReplenishment: storeReplenishment.map(s => ({
+      storeId: s.storeId.toString(),
+      storeName: s.storeName,
+      totalReplenishmentQty: Math.round(s.totalReplenishmentQty * 100) / 100,
+      avgReplenishmentQty: Math.round(s.avgReplenishmentQty * 100) / 100,
+      replenishmentCount: s.replenishmentCount
+    })),
+    productReplenishment: productReplenishment.map(p => ({
+      productId: p.productId.toString(),
+      productName: p.productName,
+      totalReplenishmentQty: Math.round(p.totalReplenishmentQty * 100) / 100,
+      avgReplenishmentQty: Math.round(p.avgReplenishmentQty * 100) / 100,
+      replenishmentCount: p.replenishmentCount
+    }))
   };
 }; 

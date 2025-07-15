@@ -14,6 +14,8 @@ import salesRoute from './sales.route.js';
 import analyticsRoute from './analytics.route.js';
 import dashboardRoute from './dashboard.route.js';
 import fileManagerRoute from './fileManager.route.js';
+import forecastRoute from './forecast.route.js';
+import replenishmentRoute from './replenishment.route.js';
 import config from '../../config/config.js';
 
 const router = express.Router();
@@ -74,6 +76,14 @@ const defaultRoutes = [
   {
     path: '/file-manager',
     route: fileManagerRoute,
+  },
+  {
+    path: '/forecasts',
+    route: forecastRoute,
+  },
+  {
+    path: '/replenishment',
+    route: replenishmentRoute,
   },
 ];
 
