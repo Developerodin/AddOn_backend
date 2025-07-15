@@ -1299,3 +1299,1060 @@ export const getProductReplenishmentRecommendations = async (filter = {}) => {
     generatedAt: new Date().toISOString()
   };
 }; 
+
+/**
+ * Get complete time-based sales data (all records without limits)
+ * @param {Object} filter - Date range filter
+ * @returns {Promise<Object>}
+ */
+export const getCompleteTimeBasedSalesData = async (filter = {}) => {
+  const { dateFrom, dateTo, groupBy = 'day' } = filter;
+  
+  const matchStage = {};
+  if (dateFrom || dateTo) {
+    matchStage.date = {};
+    if (dateFrom) matchStage.date.$gte = new Date(dateFrom);
+    if (dateTo) matchStage.date.$lte = new Date(dateTo);
+  }
+
+  let groupStage;
+  if (groupBy === 'month') {
+    groupStage = {
+      year: { $year: '$date' },
+      month: { $month: '$date' }
+    };
+  } else {
+    groupStage = {
+      year: { $year: '$date' },
+      month: { $month: '$date' },
+      day: { $dayOfMonth: '$date' }
+    };
+  }
+
+  const pipeline = [
+    { $match: matchStage },
+    {
+      $lookup: {
+        from: 'stores',
+        localField: 'plant',
+        foreignField: '_id',
+        as: 'plantData'
+      }
+    },
+    {
+      $lookup: {
+        from: 'products',
+        localField: 'materialCode',
+        foreignField: '_id',
+        as: 'productData'
+      }
+    },
+    {
+      $group: {
+        _id: groupStage,
+        totalQuantity: { $sum: '$quantity' },
+        totalNSV: { $sum: '$nsv' },
+        totalGSV: { $sum: '$gsv' },
+        totalDiscount: { $sum: '$discount' },
+        totalTax: { $sum: '$totalTax' },
+        recordCount: { $sum: 1 },
+        allRecords: { $push: '$$ROOT' }
+      }
+    },
+    {
+      $project: {
+        _id: 0,
+        date: {
+          $dateFromParts: {
+            year: '$_id.year',
+            month: '$_id.month',
+            day: '$_id.day'
+          }
+        },
+        totalQuantity: '$totalQuantity',
+        totalNSV: '$totalNSV',
+        totalGSV: '$totalGSV',
+        totalDiscount: '$totalDiscount',
+        totalTax: '$totalTax',
+        recordCount: '$recordCount',
+        allRecords: '$allRecords'
+      }
+    },
+    { $sort: { date: 1 } }
+  ];
+
+  return Sales.aggregate(pipeline);
+};
+
+/**
+ * Get complete product performance data (all products without limits)
+ * @param {Object} filter - Filter options
+ * @returns {Promise<Object>}
+ */
+export const getCompleteProductPerformanceData = async (filter = {}) => {
+  const { sortBy = 'quantity', dateFrom, dateTo } = filter;
+  
+  const matchStage = {};
+  if (dateFrom || dateTo) {
+    matchStage.date = {};
+    if (dateFrom) matchStage.date.$gte = new Date(dateFrom);
+    if (dateTo) matchStage.date.$lte = new Date(dateTo);
+  }
+
+  const pipeline = [
+    { $match: matchStage },
+    {
+      $lookup: {
+        from: 'products',
+        localField: 'materialCode',
+        foreignField: '_id',
+        as: 'productData'
+      }
+    },
+    {
+      $unwind: '$productData'
+    },
+    {
+      $lookup: {
+        from: 'categories',
+        localField: 'productData.category',
+        foreignField: '_id',
+        as: 'categoryData'
+      }
+    },
+    {
+      $unwind: {
+        path: '$categoryData',
+        preserveNullAndEmptyArrays: true
+      }
+    },
+    {
+      $group: {
+        _id: '$materialCode',
+        productName: { $first: '$productData.name' },
+        productCode: { $first: '$productData.softwareCode' },
+        categoryName: { $first: '$categoryData.name' },
+        totalQuantity: { $sum: '$quantity' },
+        totalNSV: { $sum: '$nsv' },
+        totalGSV: { $sum: '$gsv' },
+        totalDiscount: { $sum: '$discount' },
+        recordCount: { $sum: 1 },
+        allRecords: { $push: '$$ROOT' }
+      }
+    },
+    {
+      $sort: { [`total${sortBy.charAt(0).toUpperCase() + sortBy.slice(1)}`]: -1 }
+    }
+  ];
+
+  return Sales.aggregate(pipeline);
+};
+
+/**
+ * Get complete store performance data (all stores without limits)
+ * @param {Object} filter - Filter options
+ * @returns {Promise<Object>}
+ */
+export const getCompleteStorePerformanceData = async (filter = {}) => {
+  const { dateFrom, dateTo, sortBy = 'nsv' } = filter;
+  
+  const matchStage = {};
+  if (dateFrom || dateTo) {
+    matchStage.date = {};
+    if (dateFrom) matchStage.date.$gte = new Date(dateFrom);
+    if (dateTo) matchStage.date.$lte = new Date(dateTo);
+  }
+
+  const pipeline = [
+    { $match: matchStage },
+    {
+      $lookup: {
+        from: 'stores',
+        localField: 'plant',
+        foreignField: '_id',
+        as: 'storeData'
+      }
+    },
+    {
+      $unwind: '$storeData'
+    },
+    {
+      $group: {
+        _id: '$plant',
+        storeName: { $first: '$storeData.storeName' },
+        storeId: { $first: '$storeData.storeId' },
+        city: { $first: '$storeData.city' },
+        state: { $first: '$storeData.state' },
+        totalQuantity: { $sum: '$quantity' },
+        totalNSV: { $sum: '$nsv' },
+        totalGSV: { $sum: '$gsv' },
+        totalDiscount: { $sum: '$discount' },
+        totalTax: { $sum: '$totalTax' },
+        recordCount: { $sum: 1 },
+        allRecords: { $push: '$$ROOT' }
+      }
+    },
+    {
+      $sort: { [`total${sortBy.charAt(0).toUpperCase() + sortBy.slice(1)}`]: -1 }
+    }
+  ];
+
+  return Sales.aggregate(pipeline);
+}; 
+
+/**
+ * Get complete store heatmap data (all stores with detailed information)
+ * @param {Object} filter - Filter options
+ * @returns {Promise<Object>}
+ */
+export const getCompleteStoreHeatmapData = async (filter = {}) => {
+  const { dateFrom, dateTo } = filter;
+  
+  const matchStage = {};
+  if (dateFrom || dateTo) {
+    matchStage.date = {};
+    if (dateFrom) matchStage.date.$gte = new Date(dateFrom);
+    if (dateTo) matchStage.date.$lte = new Date(dateTo);
+  }
+
+  const pipeline = [
+    { $match: matchStage },
+    {
+      $lookup: {
+        from: 'stores',
+        localField: 'plant',
+        foreignField: '_id',
+        as: 'storeData'
+      }
+    },
+    {
+      $unwind: '$storeData'
+    },
+    {
+      $group: {
+        _id: '$plant',
+        storeName: { $first: '$storeData.storeName' },
+        storeId: { $first: '$storeData.storeId' },
+        city: { $first: '$storeData.city' },
+        state: { $first: '$storeData.state' },
+        latitude: { $first: '$storeData.latitude' },
+        longitude: { $first: '$storeData.longitude' },
+        totalQuantity: { $sum: '$quantity' },
+        totalNSV: { $sum: '$nsv' },
+        totalGSV: { $sum: '$gsv' },
+        totalDiscount: { $sum: '$discount' },
+        totalTax: { $sum: '$totalTax' },
+        recordCount: { $sum: 1 },
+        allRecords: { $push: '$$ROOT' }
+      }
+    },
+    {
+      $sort: { totalNSV: -1 }
+    }
+  ];
+
+  return Sales.aggregate(pipeline);
+};
+
+/**
+ * Get complete brand performance data (all brands with detailed information)
+ * @param {Object} filter - Filter options
+ * @returns {Promise<Object>}
+ */
+export const getCompleteBrandPerformanceData = async (filter = {}) => {
+  const { dateFrom, dateTo } = filter;
+  
+  const matchStage = {};
+  if (dateFrom || dateTo) {
+    matchStage.date = {};
+    if (dateFrom) matchStage.date.$gte = new Date(dateFrom);
+    if (dateTo) matchStage.date.$lte = new Date(dateTo);
+  }
+
+  const pipeline = [
+    { $match: matchStage },
+    {
+      $lookup: {
+        from: 'products',
+        localField: 'materialCode',
+        foreignField: '_id',
+        as: 'productData'
+      }
+    },
+    {
+      $unwind: '$productData'
+    },
+    {
+      $lookup: {
+        from: 'categories',
+        localField: 'productData.category',
+        foreignField: '_id',
+        as: 'categoryData'
+      }
+    },
+    {
+      $unwind: {
+        path: '$categoryData',
+        preserveNullAndEmptyArrays: true
+      }
+    },
+    {
+      $group: {
+        _id: '$productData.brand',
+        brandName: { $first: '$productData.brand' },
+        totalQuantity: { $sum: '$quantity' },
+        totalNSV: { $sum: '$nsv' },
+        totalGSV: { $sum: '$gsv' },
+        totalDiscount: { $sum: '$discount' },
+        totalTax: { $sum: '$totalTax' },
+        recordCount: { $sum: 1 },
+        allRecords: { $push: '$$ROOT' }
+      }
+    },
+    {
+      $sort: { totalNSV: -1 }
+    }
+  ];
+
+  return Sales.aggregate(pipeline);
+};
+
+/**
+ * Get complete discount impact data (all discount records)
+ * @param {Object} filter - Filter options
+ * @returns {Promise<Object>}
+ */
+export const getCompleteDiscountImpactData = async (filter = {}) => {
+  const { dateFrom, dateTo } = filter;
+  
+  const matchStage = {};
+  if (dateFrom || dateTo) {
+    matchStage.date = {};
+    if (dateFrom) matchStage.date.$gte = new Date(dateFrom);
+    if (dateTo) matchStage.date.$lte = new Date(dateTo);
+  }
+
+  const pipeline = [
+    { $match: matchStage },
+    {
+      $lookup: {
+        from: 'products',
+        localField: 'materialCode',
+        foreignField: '_id',
+        as: 'productData'
+      }
+    },
+    {
+      $unwind: '$productData'
+    },
+    {
+      $lookup: {
+        from: 'stores',
+        localField: 'plant',
+        foreignField: '_id',
+        as: 'storeData'
+      }
+    },
+    {
+      $unwind: '$storeData'
+    },
+    {
+      $group: {
+        _id: {
+          productId: '$materialCode',
+          storeId: '$plant'
+        },
+        productName: { $first: '$productData.name' },
+        productCode: { $first: '$productData.softwareCode' },
+        storeName: { $first: '$storeData.storeName' },
+        storeId: { $first: '$storeData.storeId' },
+        totalQuantity: { $sum: '$quantity' },
+        totalNSV: { $sum: '$nsv' },
+        totalGSV: { $sum: '$gsv' },
+        totalDiscount: { $sum: '$discount' },
+        discountPercentage: { $avg: { $multiply: [{ $divide: ['$discount', '$gsv'] }, 100] } },
+        recordCount: { $sum: 1 },
+        allRecords: { $push: '$$ROOT' }
+      }
+    },
+    {
+      $sort: { totalDiscount: -1 }
+    }
+  ];
+
+  return Sales.aggregate(pipeline);
+};
+
+/**
+ * Get complete tax and MRP data (all tax records)
+ * @param {Object} filter - Filter options
+ * @returns {Promise<Object>}
+ */
+export const getCompleteTaxAndMRPData = async (filter = {}) => {
+  const { dateFrom, dateTo } = filter;
+  
+  const matchStage = {};
+  if (dateFrom || dateTo) {
+    matchStage.date = {};
+    if (dateFrom) matchStage.date.$gte = new Date(dateFrom);
+    if (dateTo) matchStage.date.$lte = new Date(dateTo);
+  }
+
+  const pipeline = [
+    { $match: matchStage },
+    {
+      $lookup: {
+        from: 'products',
+        localField: 'materialCode',
+        foreignField: '_id',
+        as: 'productData'
+      }
+    },
+    {
+      $unwind: '$productData'
+    },
+    {
+      $lookup: {
+        from: 'stores',
+        localField: 'plant',
+        foreignField: '_id',
+        as: 'storeData'
+      }
+    },
+    {
+      $unwind: '$storeData'
+    },
+    {
+      $group: {
+        _id: {
+          productId: '$materialCode',
+          storeId: '$plant'
+        },
+        productName: { $first: '$productData.name' },
+        productCode: { $first: '$productData.softwareCode' },
+        mrp: { $first: '$productData.mrp' },
+        storeName: { $first: '$storeData.storeName' },
+        storeId: { $first: '$storeData.storeId' },
+        totalQuantity: { $sum: '$quantity' },
+        totalNSV: { $sum: '$nsv' },
+        totalGSV: { $sum: '$gsv' },
+        totalTax: { $sum: '$totalTax' },
+        totalMRP: { $sum: { $multiply: ['$quantity', '$productData.mrp'] } },
+        taxPercentage: { $avg: { $multiply: [{ $divide: ['$totalTax', '$gsv'] }, 100] } },
+        recordCount: { $sum: 1 },
+        allRecords: { $push: '$$ROOT' }
+      }
+    },
+    {
+      $sort: { totalTax: -1 }
+    }
+  ];
+
+  return Sales.aggregate(pipeline);
+};
+
+/**
+ * Get complete summary KPIs data (all KPI calculations)
+ * @param {Object} filter - Filter options
+ * @returns {Promise<Object>}
+ */
+export const getCompleteSummaryKPIsData = async (filter = {}) => {
+  const { dateFrom, dateTo } = filter;
+  
+  const matchStage = {};
+  if (dateFrom || dateTo) {
+    matchStage.date = {};
+    if (dateFrom) matchStage.date.$gte = new Date(dateFrom);
+    if (dateTo) matchStage.date.$lte = new Date(dateTo);
+  }
+
+  const pipeline = [
+    { $match: matchStage },
+    {
+      $lookup: {
+        from: 'products',
+        localField: 'materialCode',
+        foreignField: '_id',
+        as: 'productData'
+      }
+    },
+    {
+      $lookup: {
+        from: 'stores',
+        localField: 'plant',
+        foreignField: '_id',
+        as: 'storeData'
+      }
+    },
+    {
+      $group: {
+        _id: null,
+        totalQuantity: { $sum: '$quantity' },
+        totalNSV: { $sum: '$nsv' },
+        totalGSV: { $sum: '$gsv' },
+        totalDiscount: { $sum: '$discount' },
+        totalTax: { $sum: '$totalTax' },
+        recordCount: { $sum: 1 },
+        uniqueProducts: { $addToSet: '$materialCode' },
+        uniqueStores: { $addToSet: '$plant' },
+        allRecords: { $push: '$$ROOT' }
+      }
+    },
+    {
+      $project: {
+        _id: 0,
+        totalQuantity: 1,
+        totalNSV: 1,
+        totalGSV: 1,
+        totalDiscount: 1,
+        totalTax: 1,
+        recordCount: 1,
+        uniqueProductCount: { $size: '$uniqueProducts' },
+        uniqueStoreCount: { $size: '$uniqueStores' },
+        averageOrderValue: { $divide: ['$totalNSV', '$recordCount'] },
+        discountPercentage: { $multiply: [{ $divide: ['$totalDiscount', '$totalGSV'] }, 100] },
+        taxPercentage: { $multiply: [{ $divide: ['$totalTax', '$totalGSV'] }, 100] },
+        allRecords: 1
+      }
+    }
+  ];
+
+  return Sales.aggregate(pipeline);
+};
+
+/**
+ * Get complete analytics dashboard data (all dashboard metrics)
+ * @param {Object} filter - Filter options
+ * @returns {Promise<Object>}
+ */
+export const getCompleteAnalyticsDashboardData = async (filter = {}) => {
+  const { dateFrom, dateTo } = filter;
+  
+  const matchStage = {};
+  if (dateFrom || dateTo) {
+    matchStage.date = {};
+    if (dateFrom) matchStage.date.$gte = new Date(dateFrom);
+    if (dateTo) matchStage.date.$lte = new Date(dateTo);
+  }
+
+  // Get all the analytics data in parallel
+  const [
+    timeBasedTrends,
+    productPerformance,
+    storePerformance,
+    brandPerformance,
+    summaryKPIs
+  ] = await Promise.all([
+    getCompleteTimeBasedSalesData(filter),
+    getCompleteProductPerformanceData(filter),
+    getCompleteStorePerformanceData(filter),
+    getCompleteBrandPerformanceData(filter),
+    getCompleteSummaryKPIsData(filter)
+  ]);
+
+  return {
+    timeBasedTrends,
+    productPerformance,
+    storePerformance,
+    brandPerformance,
+    summaryKPIs,
+    generatedAt: new Date().toISOString(),
+    allRecords: {
+      timeBasedTrends,
+      productPerformance,
+      storePerformance,
+      brandPerformance,
+      summaryKPIs
+    }
+  };
+};
+
+/**
+ * Get complete individual store analysis data
+ * @param {Object} filter - Filter options
+ * @returns {Promise<Object>}
+ */
+export const getCompleteIndividualStoreAnalysisData = async (filter = {}) => {
+  const { storeId, dateFrom, dateTo } = filter;
+  
+  if (!storeId) {
+    throw new Error('Store ID is required for individual store analysis');
+  }
+
+  const matchStage = { plant: new mongoose.Types.ObjectId(storeId) };
+  if (dateFrom || dateTo) {
+    matchStage.date = {};
+    if (dateFrom) matchStage.date.$gte = new Date(dateFrom);
+    if (dateTo) matchStage.date.$lte = new Date(dateTo);
+  }
+
+  const pipeline = [
+    { $match: matchStage },
+    {
+      $lookup: {
+        from: 'stores',
+        localField: 'plant',
+        foreignField: '_id',
+        as: 'storeData'
+      }
+    },
+    {
+      $unwind: '$storeData'
+    },
+    {
+      $lookup: {
+        from: 'products',
+        localField: 'materialCode',
+        foreignField: '_id',
+        as: 'productData'
+      }
+    },
+    {
+      $unwind: '$productData'
+    },
+    {
+      $group: {
+        _id: {
+          date: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+          productId: '$materialCode'
+        },
+        productName: { $first: '$productData.name' },
+        productCode: { $first: '$productData.softwareCode' },
+        storeName: { $first: '$storeData.storeName' },
+        storeId: { $first: '$storeData.storeId' },
+        quantity: { $sum: '$quantity' },
+        nsv: { $sum: '$nsv' },
+        gsv: { $sum: '$gsv' },
+        discount: { $sum: '$discount' },
+        tax: { $sum: '$totalTax' },
+        recordCount: { $sum: 1 },
+        allRecords: { $push: '$$ROOT' }
+      }
+    },
+    {
+      $sort: { '_id.date': 1, '_id.productId': 1 }
+    }
+  ];
+
+  return Sales.aggregate(pipeline);
+};
+
+/**
+ * Get complete individual product analysis data
+ * @param {Object} filter - Filter options
+ * @returns {Promise<Object>}
+ */
+export const getCompleteIndividualProductAnalysisData = async (filter = {}) => {
+  const { productId, dateFrom, dateTo } = filter;
+  
+  if (!productId) {
+    throw new Error('Product ID is required for individual product analysis');
+  }
+
+  const matchStage = { materialCode: new mongoose.Types.ObjectId(productId) };
+  if (dateFrom || dateTo) {
+    matchStage.date = {};
+    if (dateFrom) matchStage.date.$gte = new Date(dateFrom);
+    if (dateTo) matchStage.date.$lte = new Date(dateTo);
+  }
+
+  const pipeline = [
+    { $match: matchStage },
+    {
+      $lookup: {
+        from: 'products',
+        localField: 'materialCode',
+        foreignField: '_id',
+        as: 'productData'
+      }
+    },
+    {
+      $unwind: '$productData'
+    },
+    {
+      $lookup: {
+        from: 'stores',
+        localField: 'plant',
+        foreignField: '_id',
+        as: 'storeData'
+      }
+    },
+    {
+      $unwind: '$storeData'
+    },
+    {
+      $group: {
+        _id: {
+          date: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+          storeId: '$plant'
+        },
+        productName: { $first: '$productData.name' },
+        productCode: { $first: '$productData.softwareCode' },
+        storeName: { $first: '$storeData.storeName' },
+        storeId: { $first: '$storeData.storeId' },
+        quantity: { $sum: '$quantity' },
+        nsv: { $sum: '$nsv' },
+        gsv: { $sum: '$gsv' },
+        discount: { $sum: '$discount' },
+        tax: { $sum: '$totalTax' },
+        recordCount: { $sum: 1 },
+        allRecords: { $push: '$$ROOT' }
+      }
+    },
+    {
+      $sort: { '_id.date': 1, '_id.storeId': 1 }
+    }
+  ];
+
+  return Sales.aggregate(pipeline);
+};
+
+/**
+ * Get complete store demand forecasting data
+ * @param {Object} filter - Filter options
+ * @returns {Promise<Object>}
+ */
+export const getCompleteStoreDemandForecastingData = async (filter = {}) => {
+  const { storeId, months = 3 } = filter;
+  
+  const matchStage = {};
+  if (storeId) {
+    matchStage.plant = new mongoose.Types.ObjectId(storeId);
+  }
+
+  // Get historical data for all stores
+  const historicalData = await Sales.aggregate([
+    { $match: matchStage },
+    {
+      $lookup: {
+        from: 'stores',
+        localField: 'plant',
+        foreignField: '_id',
+        as: 'storeData'
+      }
+    },
+    {
+      $unwind: '$storeData'
+    },
+    {
+      $group: {
+        _id: {
+          year: { $year: '$date' },
+          month: { $month: '$date' },
+          storeId: '$plant'
+        },
+        storeName: { $first: '$storeData.storeName' },
+        storeCode: '$storeData.storeId',
+        totalQuantity: { $sum: '$quantity' },
+        totalNSV: { $sum: '$nsv' },
+        allRecords: { $push: '$$ROOT' }
+      }
+    },
+    { $sort: { year: 1, month: 1 } }
+  ]);
+
+  // Generate complete forecasting data
+  const forecastData = [];
+  const currentDate = new Date();
+
+  for (let i = 1; i <= months; i++) {
+    const forecastMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + i, 1);
+    
+    // Group stores and calculate forecast
+    const storeForecasts = {};
+    
+    historicalData.forEach(record => {
+      if (!storeForecasts[record._id.storeId]) {
+        storeForecasts[record._id.storeId] = {
+          storeId: record._id.storeId,
+          storeName: record.storeName,
+          storeCode: record.storeCode,
+          historicalQuantities: [],
+          historicalNSVs: [],
+          allRecords: []
+        };
+      }
+      storeForecasts[record._id.storeId].historicalQuantities.push(record.totalQuantity);
+      storeForecasts[record._id.storeId].historicalNSVs.push(record.totalNSV);
+      storeForecasts[record._id.storeId].allRecords.push(...record.allRecords);
+    });
+
+    // Calculate forecast for each store
+    Object.values(storeForecasts).forEach(store => {
+      const avgQuantity = store.historicalQuantities.length > 0 
+        ? store.historicalQuantities.reduce((a, b) => a + b, 0) / store.historicalQuantities.length 
+        : 0;
+      
+      const avgNSV = store.historicalNSVs.length > 0 
+        ? store.historicalNSVs.reduce((a, b) => a + b, 0) / store.historicalNSVs.length 
+        : 0;
+
+      forecastData.push({
+        forecastMonth: forecastMonth.toISOString().split('T')[0],
+        storeId: store.storeId,
+        storeName: store.storeName,
+        storeCode: store.storeCode,
+        forecastedQuantity: Math.round(avgQuantity),
+        forecastedNSV: Math.round(avgNSV),
+        confidence: Math.min(0.95, 0.7 + (store.historicalQuantities.length * 0.02)),
+        historicalData: store.allRecords
+      });
+    });
+  }
+
+  return {
+    forecastData,
+    forecastPeriod: months,
+    generatedAt: new Date().toISOString(),
+    allRecords: historicalData
+  };
+};
+
+/**
+ * Get complete product demand forecasting data
+ * @param {Object} filter - Filter options
+ * @returns {Promise<Object>}
+ */
+export const getCompleteProductDemandForecastingData = async (filter = {}) => {
+  const { productId, months = 3 } = filter;
+  
+  const matchStage = {};
+  if (productId) {
+    matchStage.materialCode = new mongoose.Types.ObjectId(productId);
+  }
+
+  // Get historical data for all products
+  const historicalData = await Sales.aggregate([
+    { $match: matchStage },
+    {
+      $lookup: {
+        from: 'products',
+        localField: 'materialCode',
+        foreignField: '_id',
+        as: 'productData'
+      }
+    },
+    {
+      $unwind: '$productData'
+    },
+    {
+      $group: {
+        _id: {
+          year: { $year: '$date' },
+          month: { $month: '$date' },
+          productId: '$materialCode'
+        },
+        productName: { $first: '$productData.name' },
+        productCode: { $first: '$productData.softwareCode' },
+        totalQuantity: { $sum: '$quantity' },
+        totalNSV: { $sum: '$nsv' },
+        allRecords: { $push: '$$ROOT' }
+      }
+    },
+    { $sort: { year: 1, month: 1 } }
+  ]);
+
+  // Generate complete forecasting data
+  const forecastData = [];
+  const currentDate = new Date();
+
+  for (let i = 1; i <= months; i++) {
+    const forecastMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + i, 1);
+    
+    // Group products and calculate forecast
+    const productForecasts = {};
+    
+    historicalData.forEach(record => {
+      if (!productForecasts[record._id.productId]) {
+        productForecasts[record._id.productId] = {
+          productId: record._id.productId,
+          productName: record.productName,
+          productCode: record.productCode,
+          historicalQuantities: [],
+          historicalNSVs: [],
+          allRecords: []
+        };
+      }
+      productForecasts[record._id.productId].historicalQuantities.push(record.totalQuantity);
+      productForecasts[record._id.productId].historicalNSVs.push(record.totalNSV);
+      productForecasts[record._id.productId].allRecords.push(...record.allRecords);
+    });
+
+    // Calculate forecast for each product
+    Object.values(productForecasts).forEach(product => {
+      const avgQuantity = product.historicalQuantities.length > 0 
+        ? product.historicalQuantities.reduce((a, b) => a + b, 0) / product.historicalQuantities.length 
+        : 0;
+      
+      const avgNSV = product.historicalNSVs.length > 0 
+        ? product.historicalNSVs.reduce((a, b) => a + b, 0) / product.historicalNSVs.length 
+        : 0;
+
+      forecastData.push({
+        forecastMonth: forecastMonth.toISOString().split('T')[0],
+        productId: product.productId,
+        productName: product.productName,
+        productCode: product.productCode,
+        forecastedQuantity: Math.round(avgQuantity),
+        forecastedNSV: Math.round(avgNSV),
+        confidence: Math.min(0.95, 0.7 + (product.historicalQuantities.length * 0.02)),
+        historicalData: product.allRecords
+      });
+    });
+  }
+
+  return {
+    forecastData,
+    forecastPeriod: months,
+    generatedAt: new Date().toISOString(),
+    allRecords: historicalData
+  };
+};
+
+/**
+ * Get complete store replenishment data
+ * @param {Object} filter - Filter options
+ * @returns {Promise<Object>}
+ */
+export const getCompleteStoreReplenishmentData = async (filter = {}) => {
+  const { storeId } = filter;
+  
+  const matchStage = {};
+  if (storeId) {
+    matchStage.plant = new mongoose.Types.ObjectId(storeId);
+  }
+
+  // Get last 30 days sales for all products
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const recentSales = await Sales.aggregate([
+    { $match: { ...matchStage, date: { $gte: thirtyDaysAgo } } },
+    {
+      $lookup: {
+        from: 'products',
+        localField: 'materialCode',
+        foreignField: '_id',
+        as: 'productData'
+      }
+    },
+    {
+      $unwind: '$productData'
+    },
+    {
+      $group: {
+        _id: '$materialCode',
+        productName: { $first: '$productData.name' },
+        productCode: { $first: '$productData.softwareCode' },
+        totalQuantity: { $sum: '$quantity' },
+        avgDailySales: { $avg: '$quantity' },
+        allRecords: { $push: '$$ROOT' }
+      }
+    }
+  ]);
+
+  // Get store norms if available
+  const storeInfo = storeId ? await Store.findById(storeId) : null;
+  const storeNorms = storeInfo?.totalNorms || 1000; // Default norm
+
+  const recommendations = recentSales.map(sale => {
+    const dailySalesRate = sale.avgDailySales || 0;
+    const monthlyProjection = dailySalesRate * 30;
+    const recommendedStock = Math.max(monthlyProjection * 1.5, storeNorms * 0.1);
+    const reorderPoint = Math.max(monthlyProjection * 0.5, storeNorms * 0.05);
+    
+    return {
+      productId: sale._id,
+      productName: sale.productName,
+      productCode: sale.productCode,
+      currentDailySales: Math.round(dailySalesRate),
+      monthlyProjection: Math.round(monthlyProjection),
+      recommendedStock: Math.round(recommendedStock),
+      reorderPoint: Math.round(reorderPoint),
+      priority: dailySalesRate > storeNorms * 0.01 ? 'High' : 'Medium',
+      recommendation: dailySalesRate > storeNorms * 0.01 ? 'Increase stock levels' : 'Maintain current levels',
+      allRecords: sale.allRecords
+    };
+  });
+
+  return {
+    recommendations,
+    storeNorms,
+    analysisPeriod: '30 days',
+    generatedAt: new Date().toISOString(),
+    allRecords: recentSales
+  };
+};
+
+/**
+ * Get complete product replenishment data
+ * @param {Object} filter - Filter options
+ * @returns {Promise<Object>}
+ */
+export const getCompleteProductReplenishmentData = async (filter = {}) => {
+  const { productId } = filter;
+  
+  const matchStage = {};
+  if (productId) {
+    matchStage.materialCode = new mongoose.Types.ObjectId(productId);
+  }
+
+  // Get last 30 days sales by store for all stores
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const recentSales = await Sales.aggregate([
+    { $match: { ...matchStage, date: { $gte: thirtyDaysAgo } } },
+    {
+      $lookup: {
+        from: 'stores',
+        localField: 'plant',
+        foreignField: '_id',
+        as: 'storeData'
+      }
+    },
+    {
+      $unwind: '$storeData'
+    },
+    {
+      $group: {
+        _id: '$plant',
+        storeName: { $first: '$storeData.storeName' },
+        storeId: { $first: '$storeData.storeId' },
+        totalQuantity: { $sum: '$quantity' },
+        avgDailySales: { $avg: '$quantity' },
+        storeNorms: { $first: '$storeData.totalNorms' },
+        allRecords: { $push: '$$ROOT' }
+      }
+    }
+  ]);
+
+  const recommendations = recentSales.map(sale => {
+    const dailySalesRate = sale.avgDailySales || 0;
+    const monthlyProjection = dailySalesRate * 30;
+    const storeNorms = sale.storeNorms || 1000;
+    const recommendedStock = Math.max(monthlyProjection * 1.5, storeNorms * 0.1);
+    const reorderPoint = Math.max(monthlyProjection * 0.5, storeNorms * 0.05);
+    
+    return {
+      storeId: sale._id,
+      storeName: sale.storeName,
+      storeCode: sale.storeId,
+      currentDailySales: Math.round(dailySalesRate),
+      monthlyProjection: Math.round(monthlyProjection),
+      recommendedStock: Math.round(recommendedStock),
+      reorderPoint: Math.round(reorderPoint),
+      storeNorms: storeNorms,
+      priority: dailySalesRate > storeNorms * 0.01 ? 'High' : 'Medium',
+      recommendation: dailySalesRate > storeNorms * 0.01 ? 'Increase stock levels' : 'Maintain current levels',
+      allRecords: sale.allRecords
+    };
+  });
+
+  return {
+    recommendations,
+    analysisPeriod: '30 days',
+    generatedAt: new Date().toISOString(),
+    allRecords: recentSales
+  };
+}; 
