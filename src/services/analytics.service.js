@@ -698,10 +698,16 @@ export const getIndividualStoreAnalysis = async (filter = {}) => {
       }
     },
     {
+      $unwind: {
+        path: '$productData',
+        preserveNullAndEmptyArrays: true
+      }
+    },
+    {
       $group: {
         _id: '$materialCode',
-        productName: { $first: '$productData.name' },
-        productCode: { $first: '$productData.softwareCode' },
+        productName: { $first: { $ifNull: ['$productData.name', 'Unknown Product'] } },
+        productCode: { $first: { $ifNull: ['$productData.softwareCode', 'N/A'] } },
         totalNSV: { $sum: '$nsv' },
         totalQuantity: { $sum: '$quantity' },
         totalOrders: { $sum: 1 }
@@ -733,6 +739,12 @@ export const getIndividualStoreAnalysis = async (filter = {}) => {
       }
     },
     {
+      $unwind: {
+        path: '$productData',
+        preserveNullAndEmptyArrays: true
+      }
+    },
+    {
       $project: {
         _id: 1,
         date: 1,
@@ -742,8 +754,8 @@ export const getIndividualStoreAnalysis = async (filter = {}) => {
         gsv: 1,
         nsv: 1,
         totalTax: 1,
-        productName: { $first: '$productData.name' },
-        productCode: { $first: '$productData.softwareCode' }
+        productName: { $ifNull: ['$productData.name', 'Unknown Product'] },
+        productCode: { $ifNull: ['$productData.softwareCode', 'N/A'] }
       }
     },
     { $sort: { date: -1 } }
@@ -975,14 +987,20 @@ export const getStoreDemandForecasting = async (filter = {}) => {
       }
     },
     {
+      $unwind: {
+        path: '$productData',
+        preserveNullAndEmptyArrays: true
+      }
+    },
+    {
       $group: {
         _id: {
           year: { $year: '$date' },
           month: { $month: '$date' },
           productId: '$materialCode'
         },
-        productName: { $first: '$productData.name' },
-        productCode: { $first: '$productData.softwareCode' },
+        productName: { $first: { $ifNull: ['$productData.name', 'Unknown Product'] } },
+        productCode: { $first: { $ifNull: ['$productData.softwareCode', 'N/A'] } },
         totalQuantity: { $sum: '$quantity' },
         totalNSV: { $sum: '$nsv' }
       }
@@ -1194,10 +1212,16 @@ export const getStoreReplenishmentRecommendations = async (filter = {}) => {
       }
     },
     {
+      $unwind: {
+        path: '$productData',
+        preserveNullAndEmptyArrays: true
+      }
+    },
+    {
       $group: {
         _id: '$materialCode',
-        productName: { $first: '$productData.name' },
-        productCode: { $first: '$productData.softwareCode' },
+        productName: { $first: { $ifNull: ['$productData.name', 'Unknown Product'] } },
+        productCode: { $first: { $ifNull: ['$productData.softwareCode', 'N/A'] } },
         totalQuantity: { $sum: '$quantity' },
         avgDailySales: { $avg: '$quantity' }
       }
@@ -1899,7 +1923,10 @@ export const getCompleteIndividualStoreAnalysisData = async (filter = {}) => {
       }
     },
     {
-      $unwind: '$storeData'
+      $unwind: {
+        path: '$storeData',
+        preserveNullAndEmptyArrays: true
+      }
     },
     {
       $lookup: {
@@ -1910,7 +1937,10 @@ export const getCompleteIndividualStoreAnalysisData = async (filter = {}) => {
       }
     },
     {
-      $unwind: '$productData'
+      $unwind: {
+        path: '$productData',
+        preserveNullAndEmptyArrays: true
+      }
     },
     {
       $group: {
@@ -1918,8 +1948,8 @@ export const getCompleteIndividualStoreAnalysisData = async (filter = {}) => {
           date: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
           productId: '$materialCode'
         },
-        productName: { $first: '$productData.name' },
-        productCode: { $first: '$productData.softwareCode' },
+        productName: { $first: { $ifNull: ['$productData.name', 'Unknown Product'] } },
+        productCode: { $first: { $ifNull: ['$productData.softwareCode', 'N/A'] } },
         storeName: { $first: '$storeData.storeName' },
         storeId: { $first: '$storeData.storeId' },
         quantity: { $sum: '$quantity' },
@@ -1988,8 +2018,8 @@ export const getCompleteIndividualProductAnalysisData = async (filter = {}) => {
           date: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
           storeId: '$plant'
         },
-        productName: { $first: '$productData.name' },
-        productCode: { $first: '$productData.softwareCode' },
+        productName: { $first: { $ifNull: ['$productData.name', 'Unknown Product'] } },
+        productCode: { $first: { $ifNull: ['$productData.softwareCode', 'N/A'] } },
         storeName: { $first: '$storeData.storeName' },
         storeId: { $first: '$storeData.storeId' },
         quantity: { $sum: '$quantity' },
@@ -2239,13 +2269,16 @@ export const getCompleteStoreReplenishmentData = async (filter = {}) => {
       }
     },
     {
-      $unwind: '$productData'
+      $unwind: {
+        path: '$productData',
+        preserveNullAndEmptyArrays: true
+      }
     },
     {
       $group: {
         _id: '$materialCode',
-        productName: { $first: '$productData.name' },
-        productCode: { $first: '$productData.softwareCode' },
+        productName: { $first: { $ifNull: ['$productData.name', 'Unknown Product'] } },
+        productCode: { $first: { $ifNull: ['$productData.softwareCode', 'N/A'] } },
         totalQuantity: { $sum: '$quantity' },
         avgDailySales: { $avg: '$quantity' },
         allRecords: { $push: '$$ROOT' }
