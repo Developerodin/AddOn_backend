@@ -16,6 +16,7 @@ import dashboardRoute from './dashboard.route.js';
 import fileManagerRoute from './fileManager.route.js';
 import forecastRoute from './forecast.route.js';
 import replenishmentRoute from './replenishment.route.js';
+import chatbotRoute from './chatbot.route.js';
 import config from '../../config/config.js';
 
 const router = express.Router();
@@ -84,6 +85,10 @@ const defaultRoutes = [
   {
     path: '/replenishment',
     route: replenishmentRoute,
+  },
+  {
+    path: '/chatbot',
+    route: chatbotRoute,
   },
 ];
 

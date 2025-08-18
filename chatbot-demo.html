@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot HTML Response Demo</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .demo-section {
+            margin: 30px 0;
+            padding: 20px;
+            border: 1px solid #e1e5e9;
+            border-radius: 8px;
+            background: #fff;
+        }
+        
+        .demo-section h2 {
+            color: #2c3e50;
+            margin-top: 0;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        
+        .chat-interface {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .chat-input {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .chat-input input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 16px;
+        }
+        
+        .chat-input button {
+            padding: 12px 24px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        .chat-input button:hover {
+            background: #2980b9;
+        }
+        
+        .chat-messages {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: white;
+            padding: 15px;
+        }
+        
+        .message {
+            margin: 15px 0;
+            padding: 15px;
+            border-radius: 8px;
+            max-width: 80%;
+        }
+        
+        .message.user {
+            background: #e3f2fd;
+            margin-left: auto;
+            text-align: right;
+        }
+        
+        .message.bot {
+            background: #f5f5f5;
+            margin-right: auto;
+        }
+        
+        .message.bot .html-response {
+            margin-top: 15px;
+        }
+        
+        .predefined-questions {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .question-btn {
+            padding: 10px 15px;
+            background: #ecf0f1;
+            border: 1px solid #bdc3c7;
+            border-radius: 6px;
+            cursor: pointer;
+            text-align: left;
+            transition: all 0.2s;
+        }
+        
+        .question-btn:hover {
+            background: #d5dbdb;
+            border-color: #95a5a6;
+        }
+        
+        .question-btn .title {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+        
+        .question-btn .description {
+            font-size: 12px;
+            color: #7f8c8d;
+        }
+        
+        .api-info {
+            background: #e8f5e8;
+            border: 1px solid #4caf50;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        
+        .api-info h3 {
+            color: #2e7d32;
+            margin-top: 0;
+        }
+        
+        .code-block {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 14px;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+        
+        .chart-container {
+            margin: 20px 0;
+            text-align: center;
+        }
+        
+        .chart-container h4 {
+            margin-bottom: 15px;
+            color: #2c3e50;
+        }
+        
+        .summary-card {
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            text-align: center;
+            margin: 20px 0;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        .card-content h3 {
+            margin: 0 0 15px 0;
+            font-size: 18px;
+            opacity: 0.9;
+        }
+        
+        .card-value {
+            font-size: 48px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        
+        .card-subtitle {
+            font-size: 16px;
+            opacity: 0.8;
+        }
+        
+        .table-container {
+            margin: 20px 0;
+        }
+        
+        .table-container h4 {
+            margin-bottom: 15px;
+            color: #2c3e50;
+        }
+        
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .data-table th,
+        .data-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e1e5e9;
+        }
+        
+        .data-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        .data-table tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .kpi-dashboard {
+            margin: 20px 0;
+        }
+        
+        .kpi-dashboard h4 {
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+        
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+        
+        .kpi-item {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e1e5e9;
+        }
+        
+        .kpi-label {
+            font-size: 14px;
+            color: #7f8c8d;
+            margin-bottom: 10px;
+        }
+        
+        .kpi-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+        
+        .kpi-change {
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .kpi-change.positive {
+            color: #27ae60;
+        }
+        
+        .kpi-change.negative {
+            color: #e74c3c;
+        }
+        
+        .chatbot-response {
+            margin: 20px 0;
+        }
+        
+        .chatbot-response h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+        }
+        
+        .help-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+        }
+        
+        .help-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #e1e5e9;
+        }
+        
+        .help-command {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+        
+        .help-description {
+            font-size: 14px;
+            color: #7f8c8d;
+        }
+        
+        .capabilities-list {
+            display: grid;
+            gap: 10px;
+        }
+        
+        .capability-item {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 6px;
+            border-left: 4px solid #3498db;
+        }
+        
+        .suggestions-list {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        
+        .suggestions-list li {
+            margin: 5px 0;
+            color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Chatbot HTML Response Demo</h1>
+        
+        <div class="demo-section">
+            <h2>How It Works</h2>
+            <p>This demo shows how the chatbot generates rich HTML responses with charts, tables, and visualizations based on your API data.</p>
+            
+            <div class="api-info">
+                <h3>📡 API Integration</h3>
+                <p>The chatbot automatically calls your existing analytics, product, and replenishment APIs and converts the data into beautiful visualizations.</p>
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>💬 Try the Chatbot</h2>
+            <div class="chat-interface">
+                <div class="chat-input">
+                    <input type="text" id="chatInput" placeholder="Type your question here..." value="show me top 5 products">
+                    <button onclick="sendMessage()">Send</button>
+                </div>
+                
+                <div class="chat-messages" id="chatMessages">
+                    <div class="message bot">
+                        <strong>Bot:</strong> Hi! I'm your data assistant. Try asking me questions like:
+                        <ul>
+                            <li>"show me top 5 products"</li>
+                            <li>"what are the sales trends"</li>
+                            <li>"how many products do we have"</li>
+                            <li>"help"</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>🚀 Predefined Questions</h2>
+            <p>Click any question to see the chatbot in action:</p>
+            
+            <div class="predefined-questions">
+                <div class="question-btn" onclick="askQuestion('show me top 5 products')">
+                    <div class="title">📊 Top 5 Products</div>
+                    <div class="description">Get top performing products with bar chart</div>
+                </div>
+                
+                <div class="question-btn" onclick="askQuestion('show me top 5 stores')">
+                    <div class="title">🏪 Top 5 Stores</div>
+                    <div class="description">Get top performing stores with bar chart</div>
+                </div>
+                
+                <div class="question-btn" onclick="askQuestion('what are the sales trends')">
+                    <div class="title">📈 Sales Trends</div>
+                    <div class="description">Get sales trends over time with line chart</div>
+                </div>
+                
+                <div class="question-btn" onclick="askQuestion('how many products do we have')">
+                    <div class="title">🔢 Product Count</div>
+                    <div class="description">Get total product count with summary card</div>
+                </div>
+                
+                <div class="question-btn" onclick="askQuestion('show me store performance')">
+                    <div class="title">📋 Store Performance</div>
+                    <div class="description">Get store performance data in table format</div>
+                </div>
+                
+                <div class="question-btn" onclick="askQuestion('show me summary KPIs')">
+                    <div class="title">🎯 Summary KPIs</div>
+                    <div class="description">Get key performance indicators dashboard</div>
+                </div>
+                
+                <div class="question-btn" onclick="askQuestion('help')">
+                    <div class="title">❓ Help</div>
+                    <div class="description">See all available commands</div>
+                </div>
+                
+                <div class="question-btn" onclick="askQuestion('what can you do')">
+                    <div class="title">💡 Capabilities</div>
+                    <div class="description">See what the chatbot can do</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>🔧 API Endpoints</h2>
+            <p>Your chatbot is available at these endpoints:</p>
+            
+            <div class="code-block">
+POST /api/v1/chatbot/chat
+{
+  "message": "show me top 5 products"
+}
+            </div>
+            
+            <div class="code-block">
+GET /api/v1/chatbot/questions          # Get all predefined questions
+GET /api/v1/chatbot/suggestions       # Get questions by category
+GET /api/v1/chatbot/help             # Get chatbot help
+GET /api/v1/chatbot/demo             # Get demo responses
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>📱 Frontend Integration</h2>
+            <p>Here's how to integrate the chatbot in your frontend:</p>
+            
+            <div class="code-block">
+// Send message to chatbot
+const sendMessage = async (message) => {
+  try {
+    const response = await fetch('/api/v1/chatbot/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message })
+    });
+    
+    const data = await response.json();
+    
+    // Display the HTML response
+    if (data.html) {
+      document.getElementById('chatContainer').innerHTML = data.html;
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Chat error:', error);
+  }
+};
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Demo data for testing (replace with actual API calls)
+        const demoData = {
+            'show me top 5 products': {
+                results: [
+                    { name: 'Product A', sales: 15000, revenue: 45000 },
+                    { name: 'Product B', sales: 12000, revenue: 36000 },
+                    { name: 'Product C', sales: 10000, revenue: 30000 },
+                    { name: 'Product D', sales: 8000, revenue: 24000 },
+                    { name: 'Product E', sales: 6000, revenue: 18000 }
+                ]
+            },
+            'show me top 5 stores': {
+                results: [
+                    { storeName: 'Store A', sales: 25000, revenue: 75000 },
+                    { storeName: 'Store B', sales: 22000, revenue: 66000 },
+                    { storeName: 'Store C', sales: 20000, revenue: 60000 },
+                    { storeName: 'Store D', sales: 18000, revenue: 54000 },
+                    { storeName: 'Store E', sales: 15000, revenue: 45000 }
+                ]
+            },
+            'what are the sales trends': {
+                trends: [
+                    { period: 'Jan', sales: 10000 },
+                    { period: 'Feb', sales: 12000 },
+                    { period: 'Mar', sales: 15000 },
+                    { period: 'Apr', sales: 14000 },
+                    { period: 'May', sales: 18000 },
+                    { period: 'Jun', sales: 20000 }
+                ]
+            },
+            'how many products do we have': {
+                totalProducts: 1250
+            },
+            'show me store performance': {
+                results: [
+                    { storeName: 'Store A', sales: 25000, revenue: 75000, performance: 'Excellent' },
+                    { storeName: 'Store B', sales: 22000, revenue: 66000, performance: 'Good' },
+                    { storeName: 'Store C', sales: 20000, revenue: 60000, performance: 'Good' }
+                ]
+            },
+            'show me summary KPIs': {
+                results: [
+                    { name: 'Total Sales', value: '$150,000', change: 15 },
+                    { name: 'Total Products', value: '1,250', change: 8 },
+                    { name: 'Total Stores', value: '25', change: -2 },
+                    { name: 'Revenue Growth', value: '12.5%', change: 12 }
+                ]
+            }
+        };
+
+        function askQuestion(question) {
+            document.getElementById('chatInput').value = question;
+            sendMessage();
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            // Add user message
+            addMessage(message, 'user');
+            
+            // Simulate bot response
+            setTimeout(() => {
+                const response = generateBotResponse(message);
+                addMessage(response.message, 'bot', response.html);
+            }, 500);
+            
+            input.value = '';
+        }
+
+        function generateBotResponse(message) {
+            const normalizedMessage = message.toLowerCase();
+            
+            // Find matching demo data
+            for (const [key, data] of Object.entries(demoData)) {
+                if (normalizedMessage.includes(key.toLowerCase())) {
+                    return {
+                        message: `Here's what I found for: "${message}"`,
+                        html: generateHTMLResponse(key, data)
+                    };
+                }
+            }
+            
+            // Special responses
+            if (normalizedMessage.includes('help')) {
+                return {
+                    message: 'Here are the available commands:',
+                    html: generateHelpHTML()
+                };
+            }
+            
+            if (normalizedMessage.includes('what can you do')) {
+                return {
+                    message: 'I can help you with:',
+                    html: generateCapabilitiesHTML()
+                };
+            }
+            
+            return {
+                message: 'I\'m not sure how to help with that. Try asking for "help" to see what I can do.',
+                html: generateErrorHTML(['Try: "show me top 5 products"', 'Try: "what are the sales trends"'])
+            };
+        }
+
+        function generateHTMLResponse(question, data) {
+            if (question.includes('top 5 products') || question.includes('top 5 stores')) {
+                return generateBarChartHTML(question, data);
+            } else if (question.includes('sales trends')) {
+                return generateLineChartHTML(question, data);
+            } else if (question.includes('how many products')) {
+                return generateSummaryCardHTML(question, data);
+            } else if (question.includes('store performance')) {
+                return generateDataTableHTML(question, data);
+            } else if (question.includes('summary KPIs')) {
+                return generateKPIDashboardHTML(question, data);
+            }
+            return generateDefaultHTML(data);
+        }
+
+        function generateBarChartHTML(question, data) {
+            const labels = data.results.map(item => item.name || item.storeName);
+            const values = data.results.map(item => item.sales);
+            
+            return `
+                <div class="chart-container">
+                    <h4>${question}</h4>
+                    <canvas id="chart-${Date.now()}" width="400" height="200"></canvas>
+                    <script>
+                        const ctx = document.getElementById('chart-${Date.now()}').getContext('2d');
+                        new Chart(ctx, {
+                            type: 'bar',
+                            data: {
+                                labels: ${JSON.stringify(labels)},
+                                datasets: [{
+                                    label: 'Sales',
+                                    data: ${JSON.stringify(values)},
+                                    backgroundColor: 'rgba(54, 162, 235, 0.8)',
+                                    borderColor: 'rgba(54, 162, 235, 1)',
+                                    borderWidth: 1
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                scales: { y: { beginAtZero: true } }
+                            }
+                        });
+                    </script>
+                </div>
+            `;
+        }
+
+        function generateLineChartHTML(question, data) {
+            const labels = data.trends.map(item => item.period);
+            const values = data.trends.map(item => item.sales);
+            
+            return `
+                <div class="chart-container">
+                    <h4>${question}</h4>
+                    <canvas id="chart-${Date.now()}" width="400" height="200"></canvas>
+                    <script>
+                        const ctx = document.getElementById('chart-${Date.now()}').getContext('2d');
+                        new Chart(ctx, {
+                            type: 'line',
+                            data: {
+                                labels: ${JSON.stringify(labels)},
+                                datasets: [{
+                                    label: 'Sales',
+                                    data: ${JSON.stringify(values)},
+                                    borderColor: 'rgba(75, 192, 192, 1)',
+                                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                                    tension: 0.1
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                scales: { y: { beginAtZero: true } }
+                            }
+                        });
+                    </script>
+                </div>
+            `;
+        }
+
+        function generateSummaryCardHTML(question, data) {
+            return `
+                <div class="summary-card">
+                    <div class="card-content">
+                        <h3>${question}</h3>
+                        <div class="card-value">${data.totalProducts}</div>
+                        <div class="card-subtitle">Products</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function generateDataTableHTML(question, data) {
+            const columns = Object.keys(data.results[0] || {}).filter(key => 
+                !key.startsWith('_') && key !== '__v'
+            );
+            
+            return `
+                <div class="table-container">
+                    <h4>${question}</h4>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                ${columns.map(col => `<th>${col}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.results.map(row => `
+                                <tr>
+                                    ${columns.map(col => `<td>${row[col] || '-'}</td>`).join('')}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function generateKPIDashboardHTML(question, data) {
+            return `
+                <div class="kpi-dashboard">
+                    <h4>Key Performance Indicators</h4>
+                    <div class="kpi-grid">
+                        ${data.results.map(kpi => `
+                            <div class="kpi-item">
+                                <div class="kpi-label">${kpi.name}</div>
+                                <div class="kpi-value">${kpi.value}</div>
+                                <div class="kpi-change ${kpi.change >= 0 ? 'positive' : 'negative'}">
+                                    ${kpi.change >= 0 ? '+' : ''}${kpi.change}%
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function generateDefaultHTML(data) {
+            return `
+                <div class="chatbot-response">
+                    <h3>Data Response</h3>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                </div>
+            `;
+        }
+
+        function generateHelpHTML() {
+            return `
+                <div class="chatbot-response">
+                    <h3>Available Commands</h3>
+                    <div class="help-grid">
+                        <div class="help-item">
+                            <div class="help-command">"show me top 5 products"</div>
+                            <div class="help-description">Get top 5 performing products</div>
+                        </div>
+                        <div class="help-item">
+                            <div class="help-command">"show me top 5 stores"</div>
+                            <div class="help-description">Get top 5 performing stores</div>
+                        </div>
+                        <div class="help-item">
+                            <div class="help-command">"what are the sales trends"</div>
+                            <div class="help-description">Get sales trends over time</div>
+                        </div>
+                        <div class="help-item">
+                            <div class="help-command">"help"</div>
+                            <div class="help-description">Show available commands</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function generateCapabilitiesHTML() {
+            return `
+                <div class="chatbot-response">
+                    <h3>What I Can Do</h3>
+                    <div class="capabilities-list">
+                        <div class="capability-item">📊 Analytics: Sales trends, product/store performance, KPIs</div>
+                        <div class="capability-item">🏪 Products: Search, count, filter by category</div>
+                        <div class="capability-item">📦 Replenishment: Recommendations and calculations</div>
+                        <div class="capability-item">📈 Charts: Visual representations of your data</div>
+                        <div class="capability-item">📋 Tables: Detailed data in organized format</div>
+                        <div class="capability-item">🎯 KPIs: Key performance indicators dashboard</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function generateErrorHTML(suggestions) {
+            return `
+                <div class="chatbot-response error">
+                    <h3>❌ Not Sure How to Help</h3>
+                    <p>Try one of these suggestions:</p>
+                    <ul class="suggestions-list">
+                        ${suggestions.map(suggestion => `<li>${suggestion}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+
+        function addMessage(text, sender, html = '') {
+            const messagesContainer = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}`;
+            
+            let content = `<strong>${sender === 'user' ? 'You' : 'Bot'}:</strong> ${text}`;
+            if (html) {
+                content += `<div class="html-response">${html}</div>`;
+            }
+            
+            messageDiv.innerHTML = content;
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        // Enter key support
+        document.getElementById('chatInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>

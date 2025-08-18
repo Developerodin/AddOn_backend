@@ -1,0 +1,348 @@
+{
+  "info": {
+    "name": "Chatbot API Collection",
+    "description": "Collection for testing the chatbot functionality with predefined questions",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Chat with Bot",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"message\": \"show me top 5 products\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/chatbot/chat",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "chatbot", "chat"]
+        },
+        "description": "Send a message to the chatbot and get a response"
+      }
+    },
+    {
+      "name": "Get All Predefined Questions",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/chatbot/questions",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "chatbot", "questions"]
+        },
+        "description": "Get all predefined questions available in the chatbot"
+      }
+    },
+    {
+      "name": "Get Question Suggestions by Category",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/chatbot/suggestions?category=analytics",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "chatbot", "suggestions"],
+          "query": [
+            {
+              "key": "category",
+              "value": "analytics",
+              "description": "Category filter: analytics, product, replenishment, general, or all"
+            }
+          ]
+        },
+        "description": "Get question suggestions filtered by category"
+      }
+    },
+    {
+      "name": "Get Chatbot Help",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/chatbot/help",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "chatbot", "help"]
+        },
+        "description": "Get chatbot help and capabilities information"
+      }
+    },
+    {
+      "name": "Get Demo Responses",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/chatbot/demo",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "chatbot", "demo"]
+        },
+        "description": "Get demo responses for common predefined questions"
+      }
+    },
+    {
+      "name": "Test Analytics Questions",
+      "item": [
+        {
+          "name": "Top 5 Products",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"show me top 5 products\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chatbot/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "chatbot", "chat"]
+            }
+          }
+        },
+        {
+          "name": "Top 5 Stores",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"show me top 5 stores\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chatbot/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "chatbot", "chat"]
+            }
+          }
+        },
+        {
+          "name": "Sales Trends",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"what are the sales trends\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chatbot/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "chatbot", "chat"]
+            }
+          }
+        },
+        {
+          "name": "Store Performance",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"show me store performance\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chatbot/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "chatbot", "chat"]
+            }
+          }
+        },
+        {
+          "name": "Analytics Dashboard",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"show me the analytics dashboard\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chatbot/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "chatbot", "chat"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Test Product Questions",
+      "item": [
+        {
+          "name": "Product Count",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"how many products do we have\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chatbot/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "chatbot", "chat"]
+            }
+          }
+        },
+        {
+          "name": "Active Products",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"show me active products\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chatbot/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "chatbot", "chat"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Test Replenishment Questions",
+      "item": [
+        {
+          "name": "Replenishment Recommendations",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"show me replenishment recommendations\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chatbot/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "chatbot", "chat"]
+            }
+          }
+        },
+        {
+          "name": "All Replenishments",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"show me all replenishments\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chatbot/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "chatbot", "chat"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Test General Questions",
+      "item": [
+        {
+          "name": "Help",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"help\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chatbot/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "chatbot", "chat"]
+            }
+          }
+        },
+        {
+          "name": "Capabilities",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"what can you do\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chatbot/chat",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "chatbot", "chat"]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    }
+  ]
+}

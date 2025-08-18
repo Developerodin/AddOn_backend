@@ -34,6 +34,11 @@ export const generateReplenishment = async ({ storeId, productId, month, current
 
 // Get replenishments (with filters)
 export const getReplenishments = async (filter = {}, options = {}) => {
+  // Add populate to options if not already present
+  if (!options.populate) {
+    options.populate = 'store,product';
+  }
+  
   return Replenishment.paginate(filter, options);
 };
 
