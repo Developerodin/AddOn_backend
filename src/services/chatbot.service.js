@@ -699,6 +699,38 @@ const PREDEFINED_QUESTIONS = {
     inputPrompt: 'Please provide the store name or location:',
     htmlTemplate: 'textSummary'
   },
+  'what are the top products in store LUC-66': {
+    type: 'storeSales',
+    action: 'getStoreTopProducts',
+    description: 'Get top performing products for store LUC-66',
+    parameters: { storeId: 'LUC-66' },
+    htmlTemplate: 'textSummary'
+  },
+  'what are the top products in store SUR-5': {
+    type: 'storeSales',
+    action: 'getStoreTopProducts',
+    description: 'Get top performing products for store SUR-5',
+    parameters: { storeId: 'SUR-5' },
+    htmlTemplate: 'textSummary'
+  },
+  'show me top products in store': {
+    type: 'storeSales',
+    action: 'getStoreTopProducts',
+    description: 'Get top performing products for a specific store',
+    parameters: { storeName: '' },
+    requiresInput: true,
+    inputPrompt: 'Please provide the store name or location:',
+    htmlTemplate: 'textSummary'
+  },
+  'top products in store': {
+    type: 'storeSales',
+    action: 'getStoreTopProducts',
+    description: 'Get top performing products for a specific store',
+    parameters: { storeName: '' },
+    requiresInput: true,
+    inputPrompt: 'Please provide the store name, store ID, or location:',
+    htmlTemplate: 'textSummary'
+  },
 
   // Sales Forecasting Questions
   'what is the sales forecast for next month': {
@@ -969,7 +1001,11 @@ const findMatchingQuestion = (message) => {
     'surat': ['which was top performing item in surat'],
     'forecast': ['what is the sales forecast for next month', 'show me sales forecast by store', 'what is the demand forecast'],
     'replenishment status': ['what is the replenishment status'],
-    'store sales': ['show me sales performance for store', 'what are the top products in store']
+    'store sales': ['show me sales performance for store', 'what are the top products in store'],
+    'store products': ['what are the top products in store', 'show me top products in store'],
+    'top products': ['what are the top products in store', 'show me top products in store'],
+    'LUC-66': ['what are the top products in store LUC-66'],
+    'SUR-5': ['what are the top products in store SUR-5']
   };
 
   for (const [keyword, questions] of Object.entries(keywordPatterns)) {
@@ -1087,59 +1123,6 @@ const executeReplenishmentAction = async (question) => {
     }
   } catch (error) {
     console.error('Replenishment service error:', error);
-    
-    // Return mock data for testing when service fails
-    if (question.action === 'getAllReplenishments') {
-      return {
-        results: [
-          {
-            method: 'moving_average',
-            month: '2025-01',
-            product: {
-              name: 'Sample Product',
-              softwareCode: 'PROD001'
-            },
-            store: {
-              storeName: 'Sample Store',
-              storeId: 'STORE001'
-            },
-            currentStock: 50,
-            forecastQty: 3.9,
-            replenishmentQty: 5,
-            safetyBuffer: 1
-          }
-        ],
-        page: 1,
-        limit: 20,
-        totalPages: 1,
-        totalResults: 1
-      };
-    } else if (question.action === 'getReplenishmentStatus') {
-      return {
-        status: 'Overall Replenishment Status',
-        summary: {
-          totalStores: 25,
-          storesNeedingReplenishment: 8,
-          criticalStockLevels: 3,
-          averageForecastAccuracy: 87.5,
-          totalReplenishmentValue: 125000
-        },
-        breakdown: {
-          byPriority: [
-            { priority: 'Critical', count: 3, value: 45000 },
-            { priority: 'High', count: 5, value: 55000 },
-            { priority: 'Medium', count: 12, value: 20000 },
-            { priority: 'Low', count: 5, value: 5000 }
-          ],
-          byStore: [
-            { storeName: 'Mumbai Store', priority: 'Critical', value: 18000 },
-            { storeName: 'Delhi Store', priority: 'High', value: 15000 },
-            { storeName: 'Bangalore Store', priority: 'High', value: 12000 }
-          ]
-        }
-      };
-    }
-    
     throw error;
   }
 };
@@ -1165,111 +1148,6 @@ const executeStoreSalesAction = async (question) => {
     }
   } catch (error) {
     console.error('Store sales service error:', error);
-    
-    // Return mock data for testing when service fails
-    if (question.action === 'getStoreSalesStatus') {
-      return {
-        status: 'Last month sales status',
-        data: {
-          totalSales: 10000,
-          totalNSV: 8000,
-          totalGSV: 12000,
-          totalDiscount: 2000,
-          totalTax: 1500,
-          totalQuantity: 1000,
-          totalResults: 100,
-          results: [
-            {
-              date: '2025-01-01',
-              sales: 10000,
-              revenue: 8000,
-              quantity: 1000,
-              discount: 2000,
-              tax: 1500,
-              nsv: 8000,
-              gsv: 12000,
-              discountPercentage: 25,
-              taxPercentage: 18.75,
-              margin: 5000,
-              marginPercentage: 62.5
-            }
-          ]
-        }
-      };
-    } else if (question.action === 'getTopPerformingItem') {
-      return {
-        topItem: {
-          name: 'Sample Product',
-          softwareCode: 'PROD001',
-          category: 'Electronics',
-          brand: 'BrandX',
-          price: 100,
-          quantity: 100,
-          sales: 10000,
-          revenue: 8000,
-          discount: 2000,
-          tax: 1500,
-          nsv: 8000,
-          gsv: 12000,
-          discountPercentage: 25,
-          taxPercentage: 18.75,
-          margin: 5000,
-          marginPercentage: 62.5
-        }
-      };
-    } else if (question.action === 'getStoreSalesPerformance') {
-      return {
-        performance: {
-          totalSales: 10000,
-          totalNSV: 8000,
-          totalGSV: 12000,
-          totalDiscount: 2000,
-          totalTax: 1500,
-          totalQuantity: 1000,
-          totalResults: 100,
-          results: [
-            {
-              date: '2025-01-01',
-              sales: 10000,
-              revenue: 8000,
-              quantity: 1000,
-              discount: 2000,
-              tax: 1500,
-              nsv: 8000,
-              gsv: 12000,
-              discountPercentage: 25,
-              taxPercentage: 18.75,
-              margin: 5000,
-              marginPercentage: 62.5
-            }
-          ]
-        }
-      };
-    } else if (question.action === 'getStoreTopProducts') {
-      return {
-        topProducts: [
-          {
-            name: 'Sample Product',
-            softwareCode: 'PROD001',
-            category: 'Electronics',
-            brand: 'BrandX',
-            price: 100,
-            quantity: 100,
-            sales: 10000,
-            revenue: 8000,
-            discount: 2000,
-            tax: 1500,
-            nsv: 8000,
-            gsv: 12000,
-            discountPercentage: 25,
-            taxPercentage: 18.75,
-            margin: 5000,
-            marginPercentage: 62.5
-          }
-        ]
-      };
-    }
-    
     throw error;
   }
 };
@@ -1396,6 +1274,11 @@ const getSuggestions = (message) => {
       suggestions.push('Try: "what is the sales forecast for next month"', 'Try: "show me sales forecast by store"');
     } else if (message.includes('replenishment status') || message.includes('stock status')) {
       suggestions.push('Try: "what is the replenishment status"');
+    } else if (message.includes('top products') || message.includes('store products')) {
+      suggestions.push('Try: "what are the top products in store"', 'Try: "show me top products in store"');
+    } else if (message.includes('LUC-66') || message.includes('SUR-5') || /\b[A-Z]{3}-\d+\b/.test(message)) {
+      // Pattern for store IDs like LUC-66, SUR-5, etc.
+      suggestions.push('Try: "what are the top products in store [STORE-ID]"', 'Try: "show me sales performance for store [STORE-ID]"');
     } else {
       suggestions.push('Try: "help"', 'Try: "show me top 5 products"', 'Try: "what are the sales trends"');
     }
@@ -2579,34 +2462,77 @@ const getStoreSalesPerformanceFromDB = async (params) => {
 
 /**
  * Get store top products from database
- * @param {Object} params - Parameters including storeName
+ * @param {Object} params - Parameters including storeName or storeId
  * @returns {Object} Store top products data
  */
 const getStoreTopProductsFromDB = async (params) => {
   try {
-    const { storeName } = params;
+    const { storeName, storeId } = params;
     
-    if (!storeName) {
+    if (!storeName && !storeId) {
       return {
-        error: 'Store name required',
-        message: 'Please provide a store name or location to search for'
+        error: 'Store identifier required',
+        message: 'Please provide a store name, location, or store ID to search for'
       };
     }
 
-    // Search for store by name or location
-    const store = await Store.findOne({
-      $or: [
-        { storeName: { $regex: storeName, $options: 'i' } },
-        { city: { $regex: storeName, $options: 'i' } },
-        { addressLine1: { $regex: storeName, $options: 'i' } }
-      ]
-    });
+    let store;
+    
+    // Search by store ID first (more specific)
+    if (storeId) {
+      store = await Store.findOne({
+        $or: [
+          { storeId: storeId },
+          { _id: storeId }
+        ]
+      });
+    }
+    
+    // If not found by ID, search by name or location
+    if (!store && storeName) {
+      store = await Store.findOne({
+        $or: [
+          { storeName: { $regex: storeName, $options: 'i' } },
+          { city: { $regex: storeName, $options: 'i' } },
+          { addressLine1: { $regex: storeName, $options: 'i' } },
+          { storeId: { $regex: storeName, $options: 'i' } }
+        ]
+      });
+    }
+    
+    // Enhanced search: try to find by partial matches
+    if (!store) {
+      const searchTerm = storeId || storeName;
+      if (searchTerm) {
+        // Try different search patterns
+        store = await Store.findOne({
+          $or: [
+            // Exact store ID match
+            { storeId: searchTerm },
+            // Store ID contains search term
+            { storeId: { $regex: searchTerm, $options: 'i' } },
+            // Store name contains search term
+            { storeName: { $regex: searchTerm, $options: 'i' } },
+            // Store name starts with search term
+            { storeName: { $regex: `^${searchTerm}`, $options: 'i' } },
+            // Store name contains search term (with "Store" prefix)
+            { storeName: { $regex: `Store ${searchTerm}`, $options: 'i' } },
+            // City contains search term
+            { city: { $regex: searchTerm, $options: 'i' } },
+            // Address contains search term
+            { addressLine1: { $regex: searchTerm, $options: 'i' } },
+            // Business partner code
+            { bpCode: { $regex: searchTerm, $options: 'i' } }
+          ]
+        });
+      }
+    }
 
     if (!store) {
       return {
         error: 'Store not found',
-        message: `No store found matching: ${storeName}`,
-        suggestions: ['Try searching with different terms', 'Check store name spelling']
+        message: `No store found matching: ${storeId || storeName}`,
+        suggestions: ['Try searching with different terms', 'Check store ID or name spelling']
       };
     }
 
@@ -2620,6 +2546,7 @@ const getStoreTopProductsFromDB = async (params) => {
         topProducts: [],
         store: {
           name: store.storeName,
+          storeId: store.storeId,
           city: store.city,
           address: store.addressLine1
         },
@@ -2673,6 +2600,7 @@ const getStoreTopProductsFromDB = async (params) => {
       topProducts,
       store: {
         name: store.storeName,
+        storeId: store.storeId,
         city: store.city,
         address: store.addressLine1
       }
@@ -2691,28 +2619,19 @@ const getStoreTopProductsFromDB = async (params) => {
 const getSalesForecastFromDB = async (params) => {
   try {
     // This would typically integrate with a forecasting service
-    // For now, return mock data
+    // For now, return empty data structure
     return {
       forecast: {
         period: 'Next Month',
-        totalForecast: 150000,
-        growthRate: 12.5,
-        confidence: 85,
+        totalForecast: 0,
+        growthRate: 0,
+        confidence: 0,
         breakdown: {
-          byStore: [
-            { storeName: 'Mumbai Store', forecast: 45000, growth: 15.2 },
-            { storeName: 'Delhi Store', forecast: 38000, growth: 8.7 },
-            { storeName: 'Bangalore Store', forecast: 42000, growth: 18.3 },
-            { storeName: 'Chennai Store', forecast: 25000, growth: 5.4 }
-          ],
-          byCategory: [
-            { category: 'Electronics', forecast: 60000, growth: 20.1 },
-            { category: 'Clothing', forecast: 45000, growth: 10.5 },
-            { category: 'Home & Garden', forecast: 30000, growth: 8.9 },
-            { category: 'Sports', forecast: 15000, growth: 15.7 }
-          ]
+          byStore: [],
+          byCategory: []
         }
-      }
+      },
+      message: 'Sales forecast data not available. Please check database connection.'
     };
   } catch (error) {
     console.error('Error getting sales forecast:', error);
@@ -2728,38 +2647,14 @@ const getSalesForecastFromDB = async (params) => {
 const getStoreSalesForecastFromDB = async (params) => {
   try {
     // This would typically integrate with a forecasting service
-    // For now, return mock data
+    // For now, return empty data structure
     return {
       storeForecast: {
         period: 'Next Month',
-        totalForecast: 150000,
-        storeBreakdown: [
-          {
-            storeName: 'Mumbai Store',
-            city: 'Mumbai',
-            forecast: 45000,
-            growth: 15.2,
-            confidence: 88,
-            topProducts: [
-              { name: 'Product A', forecast: 12000, growth: 18.5 },
-              { name: 'Product B', forecast: 8500, growth: 12.3 },
-              { name: 'Product C', forecast: 6500, growth: 22.1 }
-            ]
-          },
-          {
-            storeName: 'Delhi Store',
-            city: 'Delhi',
-            forecast: 38000,
-            growth: 8.7,
-            confidence: 82,
-            topProducts: [
-              { name: 'Product D', forecast: 9500, growth: 7.8 },
-              { name: 'Product E', forecast: 7200, growth: 11.2 },
-              { name: 'Product F', forecast: 5800, growth: 9.5 }
-            ]
-          }
-        ]
-      }
+        totalForecast: 0,
+        storeBreakdown: []
+      },
+      message: 'Store sales forecast data not available. Please check database connection.'
     };
   } catch (error) {
     console.error('Error getting store sales forecast:', error);
@@ -2775,28 +2670,19 @@ const getStoreSalesForecastFromDB = async (params) => {
 const getDemandForecastFromDB = async (params) => {
   try {
     // This would typically integrate with a forecasting service
-    // For now, return mock data
+    // For now, return empty data structure
     return {
       demandForecast: {
         period: 'Next 3 Months',
-        totalDemand: 450000,
-        growthRate: 18.5,
-        confidence: 87,
+        totalDemand: 0,
+        growthRate: 0,
+        confidence: 0,
         breakdown: {
-          byMonth: [
-            { month: 'January', demand: 150000, growth: 15.2 },
-            { month: 'February', demand: 145000, growth: 18.7 },
-            { month: 'March', demand: 155000, growth: 21.6 }
-          ],
-          byProduct: [
-            { product: 'Product A', demand: 120000, growth: 22.1 },
-            { product: 'Product B', demand: 95000, growth: 16.8 },
-            { product: 'Product C', demand: 85000, growth: 19.3 },
-            { product: 'Product D', demand: 75000, growth: 14.7 },
-            { product: 'Product E', demand: 75000, growth: 18.9 }
-          ]
+          byMonth: [],
+          byProduct: []
         }
-      }
+      },
+      message: 'Demand forecast data not available. Please check database connection.'
     };
   } catch (error) {
     console.error('Error getting demand forecast:', error);
@@ -2812,29 +2698,21 @@ const getDemandForecastFromDB = async (params) => {
 const getReplenishmentStatusFromDB = async (params) => {
   try {
     // This would typically integrate with a replenishment service
-    // For now, return mock data
+    // For now, return empty data structure
     return {
-      status: 'Overall Replenishment Status',
+      status: 'No replenishment data available',
       summary: {
-        totalStores: 25,
-        storesNeedingReplenishment: 8,
-        criticalStockLevels: 3,
-        averageForecastAccuracy: 87.5,
-        totalReplenishmentValue: 125000
+        totalStores: 0,
+        storesNeedingReplenishment: 0,
+        criticalStockLevels: 0,
+        averageForecastAccuracy: 0,
+        totalReplenishmentValue: 0
       },
       breakdown: {
-        byPriority: [
-          { priority: 'Critical', count: 3, value: 45000 },
-          { priority: 'High', count: 5, value: 55000 },
-          { priority: 'Medium', count: 12, value: 20000 },
-          { priority: 'Low', count: 5, value: 5000 }
-        ],
-        byStore: [
-          { storeName: 'Mumbai Store', priority: 'Critical', value: 18000 },
-          { storeName: 'Delhi Store', priority: 'High', value: 15000 },
-          { storeName: 'Bangalore Store', priority: 'High', value: 12000 }
-        ]
-      }
+        byPriority: [],
+        byStore: []
+      },
+      message: 'Replenishment data not available. Please check database connection.'
     };
   } catch (error) {
     console.error('Error getting replenishment status:', error);
@@ -2843,97 +2721,132 @@ const getReplenishmentStatusFromDB = async (params) => {
 };
 
 /**
- * Generate text summary HTML with follow-up question
+ * Generate text summary HTML with natural, conversational language
  * @param {Object} question - Question object
  * @param {Object} data - Response data
  * @returns {string} HTML string
  */
 const generateTextSummaryHTML = (question, data) => {
-  let html = CHATBOT_STYLES + '<div class="chatbot-response">';
-  
-  // Generate text summary based on data type
   let summary = '';
-  let title = question.description;
-  
+
   if (question.action === 'getStoreSalesStatus') {
-    if (data.error) {
-      summary = `<p><strong>Error:</strong> ${data.message}</p>`;
-      if (data.suggestions) {
-        summary += '<p><strong>Suggestions:</strong></p><ul>';
-        data.suggestions.forEach(suggestion => {
-          summary += `<li>${suggestion}</li>`;
-        });
-        summary += '</ul>';
-      }
+    if (data.data && data.data.totalSales > 0) {
+      summary = `
+        <p>Hey! I found the sales data for ${data.location || 'that location'} for last month. Here's what's happening:</p>
+        <p>The total sales came to <strong>$${data.data.totalSales.toLocaleString()}</strong>, which is pretty solid! The net sales value is <strong>$${data.data.totalNSV.toLocaleString()}</strong>, and they moved about <strong>${data.data.totalQuantity.toLocaleString()} units</strong>.</p>
+        <p>I also noticed they had <strong>$${data.data.totalDiscount.toLocaleString()}</strong> in discounts and <strong>$${data.data.totalTax.toLocaleString()}</strong> in taxes. Overall, it looks like a good month with <strong>${data.data.totalResults}</strong> transactions processed.</p>
+      `;
     } else {
       summary = `
-        <p><strong>Store:</strong> ${data.store.name} (${data.store.city})</p>
-        <p><strong>Period:</strong> ${data.period}</p>
-        <p><strong>Total Sales:</strong> $${data.data.totalSales.toLocaleString()}</p>
-        <p><strong>Total NSV:</strong> $${data.data.totalNSV.toLocaleString()}</p>
-        <p><strong>Total Quantity:</strong> ${data.data.totalQuantity.toLocaleString()} units</p>
-        <p><strong>Total Discount:</strong> $${data.data.totalDiscount.toLocaleString()}</p>
-        <p><strong>Total Tax:</strong> $${data.data.totalTax.toLocaleString()}</p>
-        <p><strong>Transactions:</strong> ${data.data.totalResults}</p>
+        <p>I looked for sales data for ${data.location || 'that location'} but couldn't find anything for last month. This could mean either there were no sales recorded, or maybe the data isn't available yet.</p>
+        <p>Would you like me to check a different time period, or maybe look at a different store location?</p>
       `;
     }
   } else if (question.action === 'getTopPerformingItem') {
-    if (data.error) {
-      summary = `<p><strong>Error:</strong> ${data.message}</p>`;
-      if (data.suggestions) {
-        summary += '<p><strong>Suggestions:</strong></p><ul>';
-        data.suggestions.forEach(suggestion => {
-          summary += `<li>${suggestion}</li>`
-        });
-        summary += '</ul>';
-      }
+    if (data.topItem) {
+      summary = `
+        <p>Great question! I dug into the data for <strong>${data.location || 'that area'}</strong> and found the star performer:</p>
+        <p><strong>${data.topItem.name}</strong> is absolutely crushing it! This product (code: <strong>${data.topItem.softwareCode}</strong>) brought in <strong>$${data.topItem.sales.toLocaleString()}</strong> in sales and generated <strong>$${data.topItem.revenue.toLocaleString()}</strong> in revenue.</p>
+        <p>They sold <strong>${data.topItem.quantity.toLocaleString()} units</strong> with a nice margin of <strong>$${data.topItem.margin.toLocaleString()}</strong>. The product is in the <strong>${data.topItem.category || 'general'}</strong> category and from <strong>${data.topItem.brand || 'our brand'}</strong>.</p>
+        <p>I also noticed there are <strong>${data.storeCount || 0} stores</strong> in that location, and they're carrying <strong>${data.totalProducts || 0} different products</strong> total. Pretty impressive variety!</p>
+        <p>This item is definitely a winner in that location - it's clearly resonating with customers!</p>
+      `;
     } else {
       summary = `
-        <p><strong>Location:</strong> ${data.location}</p>
-        <p><strong>Top Performing Item:</strong> ${data.topItem.name}</p>
-        <p><strong>Product Code:</strong> ${data.topItem.softwareCode}</p>
-        <p><strong>Category:</strong> ${data.topItem.category}</p>
-        <p><strong>Brand:</strong> ${data.topItem.brand}</p>
-        <p><strong>Total Sales:</strong> $${data.topItem.sales.toLocaleString()}</p>
-        <p><strong>Total Revenue:</strong> $${data.topItem.revenue.toLocaleString()}</p>
-        <p><strong>Total Quantity:</strong> ${data.topItem.quantity.toLocaleString()} units</p>
-        <p><strong>Stores in Location:</strong> ${data.storeCount}</p>
-        <p><strong>Total Products:</strong> ${data.totalProducts}</p>
+        <p>I searched through the data for <strong>${data.location || 'that area'}</strong> but couldn't find any top performing items. This might be because there's no sales data available, or maybe the location name doesn't match exactly.</p>
+        <p>Could you try asking about a different location, or maybe check if the spelling is correct? I'm here to help once we get the right data!</p>
+      `;
+    }
+  } else if (question.action === 'getStoreSalesPerformance') {
+    if (data.performance && data.performance.totalSales > 0) {
+      summary = `
+        <p>Let me tell you about the sales performance for <strong>${data.storeName || 'that store'}</strong>:</p>
+        <p>They had a total sales volume of <strong>$${data.performance.totalSales.toLocaleString()}</strong> with net sales value of <strong>$${data.performance.totalNSV.toLocaleString()}</strong>. Pretty good numbers!</p>
+        <p>They processed <strong>${data.performance.totalQuantity.toLocaleString()} units</strong> across <strong>${data.performance.totalResults}</strong> transactions. The discount amount was <strong>$${data.performance.totalDiscount.toLocaleString()}</strong> and taxes came to <strong>$${data.performance.totalTax.toLocaleString()}</strong>.</p>
+        <p>Overall, it looks like a solid performance month for them!</p>
+      `;
+    } else {
+      summary = `
+        <p>I tried to get the sales performance for <strong>${data.storeName || 'that store'}</strong>, but I couldn't find any data. This could mean either the store doesn't exist in our system, or there's no sales data recorded for them yet.</p>
+        <p>Could you double-check the store name? I'm happy to help once we get the right information!</p>
       `;
     }
   } else if (question.action === 'getSalesForecast') {
-    summary = `
-      <p><strong>Period:</strong> ${data.forecast.period}</p>
-      <p><strong>Total Forecast:</strong> $${data.forecast.totalForecast.toLocaleString()}</p>
-      <p><strong>Growth Rate:</strong> ${data.forecast.growthRate}%</p>
-      <p><strong>Confidence Level:</strong> ${data.forecast.confidence}%</p>
-      <p><strong>Top Performing Store:</strong> ${data.forecast.breakdown.byStore[0].storeName} ($${data.forecast.breakdown.byStore[0].forecast.toLocaleString()})</p>
-      <p><strong>Top Category:</strong> ${data.forecast.breakdown.byCategory[0].category} ($${data.forecast.breakdown.byCategory[0].forecast.toLocaleString()})</p>
-    `;
+    if (data.forecast && data.forecast.totalForecast > 0) {
+      summary = `
+        <p>Looking at the sales forecast for <strong>${data.forecast.period}</strong>, things are looking pretty promising!</p>
+        <p>The total forecast is <strong>$${data.forecast.totalForecast.toLocaleString()}</strong> with a growth rate of <strong>${data.forecast.growthRate}%</strong>. I'm feeling confident about this prediction - our confidence level is <strong>${data.forecast.confidence}%</strong>.</p>
+        <p>The top performing store is expected to be <strong>${data.forecast.breakdown.byStore[0]?.storeName || 'one of our stores'}</strong> with a forecast of <strong>$${data.forecast.breakdown.byStore[0]?.forecast?.toLocaleString() || '0'}</strong>.</p>
+        <p>And the <strong>${data.forecast.breakdown.byCategory[0]?.category || 'top category'}</strong> is projected to bring in <strong>$${data.forecast.breakdown.byCategory[0]?.forecast?.toLocaleString() || '0'}</strong>.</p>
+        <p>Pretty exciting numbers, don't you think?</p>
+      `;
+    } else {
+      summary = `
+        <p>I tried to get the sales forecast data, but it looks like there's nothing available right now. This could be because the forecasting system isn't set up yet, or maybe there's not enough historical data to make predictions.</p>
+        <p>Would you like me to check if there are any other analytics available, or maybe we can look at historical sales data instead?</p>
+      `;
+    }
   } else if (question.action === 'getReplenishmentStatus') {
-    summary = `
-      <p><strong>Total Stores:</strong> ${data.summary.totalStores}</p>
-      <p><strong>Stores Needing Replenishment:</strong> ${data.summary.storesNeedingReplenishment}</p>
-      <p><strong>Critical Stock Levels:</strong> ${data.summary.criticalStockLevels}</p>
-      <p><strong>Average Forecast Accuracy:</strong> ${data.summary.averageForecastAccuracy}%</p>
-      <p><strong>Total Replenishment Value:</strong> $${data.summary.totalReplenishmentValue.toLocaleString()}</p>
-      <p><strong>Priority Breakdown:</strong></p>
-      <ul>
-        <li>Critical: ${data.breakdown.byPriority[0].count} stores ($${data.breakdown.byPriority[0].value.toLocaleString()})</li>
-        <li>High: ${data.breakdown.byPriority[1].count} stores ($${data.breakdown.byPriority[1].value.toLocaleString()})</li>
-        <li>Medium: ${data.breakdown.byPriority[2].count} stores ($${data.breakdown.byPriority[2].value.toLocaleString()})</li>
-      </ul>
-    `;
+    if (data.summary && data.summary.totalStores > 0) {
+      summary = `
+        <p>Let me give you the lowdown on the replenishment situation across all our stores:</p>
+        <p>Out of <strong>${data.summary.totalStores}</strong> total stores, we have <strong>${data.summary.storesNeedingReplenishment}</strong> that need restocking. That's actually pretty manageable!</p>
+        <p>There are <strong>${data.summary.criticalStockLevels}</strong> stores with critical stock levels that need immediate attention. Our forecast accuracy is sitting at <strong>${data.summary.averageForecastAccuracy}%</strong>, which is pretty solid.</p>
+        <p>The total replenishment value across all stores is <strong>$${data.summary.totalReplenishmentValue.toLocaleString()}</strong>.</p>
+        <p>Here's the priority breakdown:</p>
+        <ul>
+          ${data.breakdown.byPriority.map(priority => 
+            `<li><strong>${priority.priority}:</strong> ${priority.count} stores need attention ($${priority.value.toLocaleString()})</li>`
+          ).join('')}
+        </ul>
+        <p>Overall, the replenishment situation looks pretty well under control!</p>
+      `;
+    } else {
+      summary = `
+        <p>I tried to check the replenishment status, but I couldn't find any data available. This might mean the replenishment system isn't set up yet, or there's no data being tracked.</p>
+        <p>Would you like me to help you set up replenishment tracking, or maybe we can look at inventory levels instead?</p>
+      `;
+    }
+  } else if (question.action === 'getStoreTopProducts') {
+    if (data.error) {
+      summary = `
+        <p>Oops! I ran into an issue while trying to get the top products for that store. The error says: <strong>${data.error}</strong></p>
+        <p>This usually happens when the store name or ID doesn't match what's in our system. Could you double-check the store information and try again?</p>
+        <p>I'm here to help once we get the right details!</p>
+      `;
+    } else if (data.topProducts && data.topProducts.length > 0) {
+      // Real data with store info
+      summary = `
+        <p>Great! I found the top performing products for <strong>${data.store.name}</strong> (${data.store.storeId}) in <strong>${data.store.city}</strong>.</p>
+        <p>I discovered <strong>${data.topProducts.length}</strong> products with solid performance. Here are the top 5 that are really killing it:</p>
+        <ul>
+          ${data.topProducts.slice(0, 5).map((product, index) => `
+            <li><strong>${index + 1}. ${product.name}</strong> (${product.softwareCode})</li>
+            <li>&nbsp;&nbsp;&nbsp;Sales: <strong>$${product.sales.toLocaleString()}</strong> | Quantity: <strong>${product.quantity} units</strong> | Revenue: <strong>$${product.revenue.toLocaleString()}</strong></li>
+          `).join('')}
+        </ul>
+        <p>Here's the overall performance summary:</p>
+        <ul>
+          <li>Total Sales Value: <strong>$${data.topProducts.reduce((sum, p) => sum + p.sales, 0).toLocaleString()}</strong></li>
+          <li>Total Revenue: <strong>$${data.topProducts.reduce((sum, p) => sum + p.revenue, 0).toLocaleString()}</strong></li>
+          <li>Total Quantity: <strong>${data.topProducts.reduce((sum, p) => sum + p.quantity, 0).toLocaleString()} units</strong></li>
+        </ul>
+        <p>Pretty impressive numbers, right? This store is definitely moving some product!</p>
+      `;
+    } else {
+      summary = `
+        <p>I looked for top products in <strong>${data.store?.name || 'that store'}</strong> (${data.store?.storeId || 'unknown ID'}), but I couldn't find any sales data.</p>
+        <p>This could mean either the store doesn't have any sales recorded yet, or maybe there's no data for the time period you're asking about.</p>
+        <p>Would you like me to check a different store, or maybe look at a different time period?</p>
+      `;
+    }
   } else {
-    // Generic summary for other actions
     summary = `
-      <p>Data analysis completed successfully.</p>
-      <p>Please review the details below and let me know if you need additional information.</p>
+      <p>I found some data, but I'm not sure how to present it in the best way. Here's what I have:</p>
+      <p><strong>Data:</strong> ${JSON.stringify(data, null, 2)}</p>
+      <p>Let me know if you'd like me to format this differently or if you have a specific question about the data!</p>
     `;
   }
-  
-  html += HTML_TEMPLATES.textSummary(data, title, summary);
-  
-  html += '</div>';
-  return html;
+
+  return HTML_TEMPLATES.textSummary(data, 'Analysis Results', summary);
 };
