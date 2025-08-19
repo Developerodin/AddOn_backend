@@ -674,11 +674,14 @@ const PREDEFINED_QUESTIONS = {
     parameters: { storeLocation: 'mumbai, powai', period: 'lastMonth' },
     htmlTemplate: 'textSummary'
   },
-  'which was top performing item in surat': {
+
+  'which was top performing item in': {
     type: 'storeSales',
     action: 'getTopPerformingItem',
     description: 'Get top performing item for specific location',
-    parameters: { location: 'surat' },
+    parameters: { location: '' },
+    requiresInput: true,
+    inputPrompt: 'Please provide the location (city, state, or area):',
     htmlTemplate: 'textSummary'
   },
   'show me sales performance for store': {
@@ -899,11 +902,48 @@ export const processMessage = async (message, options = {}) => {
 };
 
 /**
- * Find the best matching predefined question
- * @param {string} message - Normalized user message
- * @returns {Object|null} Matched question object or null
+ * Extract location from user message for top performing item queries
+ * @param {string} message - User message
+ * @returns {string|null} - Extracted location or null
+ */
+const extractLocationFromMessage = (message) => {
+  // Common patterns for location extraction
+  const locationPatterns = [
+    /which was top performing item in (\w+)/i,
+    /top performing item in (\w+)/i,
+    /top item in (\w+)/i,
+    /best performing item in (\w+)/i,
+    /top product in (\w+)/i
+  ];
+
+  for (const pattern of locationPatterns) {
+    const match = message.match(pattern);
+    if (match && match[1]) {
+      return match[1].trim();
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Find matching question with dynamic parameter extraction
+ * @param {string} message - User message
+ * @returns {Object|null} - Matched question with extracted parameters
  */
 const findMatchingQuestion = (message) => {
+  // Check for dynamic location extraction first
+  const extractedLocation = extractLocationFromMessage(message);
+  if (extractedLocation) {
+    return {
+      type: 'storeSales',
+      action: 'getTopPerformingItem',
+      description: `Get top performing item for ${extractedLocation}`,
+      parameters: { location: extractedLocation },
+      htmlTemplate: 'textSummary'
+    };
+  }
+
   // Exact match first
   for (const [key, question] of Object.entries(PREDEFINED_QUESTIONS)) {
     if (message === key.toLowerCase()) {
@@ -998,7 +1038,7 @@ const findMatchingQuestion = (message) => {
     'mrp': ['show me tax and MRP analytics'],
     'mumbai': ['what is last month sales status of mumbai, powai store'],
     'powai': ['what is last month sales status of mumbai, powai store'],
-    'surat': ['which was top performing item in surat'],
+    'surat': ['which was top performing item in surat', 'which was top performing item in chandigarh'],
     'forecast': ['what is the sales forecast for next month', 'show me sales forecast by store', 'what is the demand forecast'],
     'replenishment status': ['what is the replenishment status'],
     'store sales': ['show me sales performance for store', 'what are the top products in store'],
@@ -1269,7 +1309,7 @@ const getSuggestions = (message) => {
     } else if (message.includes('mumbai') || message.includes('powai')) {
       suggestions.push('Try: "what is last month sales status of mumbai, powai store"');
     } else if (message.includes('surat')) {
-      suggestions.push('Try: "which was top performing item in surat"');
+              suggestions.push('Try: "which was top performing item in [city name]"');
     } else if (message.includes('forecast') || message.includes('prediction') || message.includes('future')) {
       suggestions.push('Try: "what is the sales forecast for next month"', 'Try: "show me sales forecast by store"');
     } else if (message.includes('replenishment status') || message.includes('stock status')) {
