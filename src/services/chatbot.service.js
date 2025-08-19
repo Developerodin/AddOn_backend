@@ -1436,21 +1436,184 @@ const generateDashboardHTML = (question, data) => {
   let html = CHATBOT_STYLES + '<div class="chatbot-response">';
   html += `<h3>${question.description}</h3>`;
   
-  // Add summary cards
-  if (data.summary) {
-    html += '<div class="dashboard-summary">';
-    Object.entries(data.summary).forEach(([key, value]) => {
-      html += HTML_TEMPLATES.summaryCard(key, value, 'Current');
+  // Add summary KPIs
+  if (data.summaryKPIs) {
+    html += '<div class="kpi-dashboard">';
+    html += '<h4>📊 Summary KPIs</h4>';
+    html += '<div class="kpi-grid">';
+    
+    const kpis = [
+      { label: 'Total Quantity', value: data.summaryKPIs.totalQuantity?.toLocaleString() || '0', change: 'Current' },
+      { label: 'Total NSV', value: `$${data.summaryKPIs.totalNSV?.toLocaleString() || '0'}`, change: 'Current' },
+      { label: 'Total GSV', value: `$${data.summaryKPIs.totalGSV?.toLocaleString() || '0'}`, change: 'Current' },
+      { label: 'Total Discount', value: `$${data.summaryKPIs.totalDiscount?.toLocaleString() || '0'}`, change: 'Current' },
+      { label: 'Total Tax', value: `$${data.summaryKPIs.totalTax?.toLocaleString() || '0'}`, change: 'Current' },
+      { label: 'Record Count', value: data.summaryKPIs.recordCount?.toLocaleString() || '0', change: 'Current' },
+      { label: 'Avg Discount %', value: `${data.summaryKPIs.avgDiscountPercentage?.toFixed(2) || '0'}%`, change: 'Current' }
+    ];
+    
+    kpis.forEach(kpi => {
+      html += `
+        <div class="kpi-item">
+          <div class="kpi-label">${kpi.label}</div>
+          <div class="kpi-value">${kpi.value}</div>
+          <div class="kpi-change">${kpi.change}</div>
+        </div>
+      `;
     });
+    
+    html += '</div></div>';
+  }
+  
+  // Add time-based trends chart
+  if (data.timeBasedTrends && data.timeBasedTrends.length > 0) {
+    html += '<div class="chart-container">';
+    html += '<h4>📈 Time-Based Trends</h4>';
+    html += '<div class="chartjs-container">';
+    html += '<canvas id="timeTrendsChart"></canvas>';
+    html += '</div>';
+    html += '<script>';
+    html += 'setTimeout(() => {';
+    html += 'const ctx = document.getElementById("timeTrendsChart");';
+    html += 'if (ctx) {';
+    html += 'new Chart(ctx, {';
+    html += 'type: "line",';
+    html += 'data: {';
+    html += `labels: ${JSON.stringify(data.timeBasedTrends.map(item => new Date(item.date).toLocaleDateString()))},`;
+    html += 'datasets: [';
+    html += `{label: "NSV", data: ${JSON.stringify(data.timeBasedTrends.map(item => item.totalNSV))}, borderColor: "rgb(75, 192, 192)", tension: 0.1},`;
+    html += `{label: "GSV", data: ${JSON.stringify(data.timeBasedTrends.map(item => item.totalGSV))}, borderColor: "rgb(255, 99, 132)", tension: 0.1},`;
+    html += `{label: "Quantity", data: ${JSON.stringify(data.timeBasedTrends.map(item => item.totalQuantity))}, borderColor: "rgb(54, 162, 235)", tension: 0.1}`;
+    html += ']';
+    html += '},';
+    html += 'options: { responsive: true, maintainAspectRatio: false }';
+    html += '});';
+    html += '}';
+    html += '}, 100);';
+    html += '</script>';
     html += '</div>';
   }
   
-  // Add charts and tables
-  if (data.charts) {
-    data.charts.forEach(chart => {
-      html += HTML_TEMPLATES.barChart(chart.data, chart.title, chart.labels, chart.values);
+  // Add store performance table
+  if (data.storePerformance && data.storePerformance.length > 0) {
+    html += '<div class="table-container">';
+    html += '<h4>🏪 Top Store Performance</h4>';
+    html += '<table class="data-table">';
+    html += '<thead><tr>';
+    html += '<th>Store Name</th>';
+    html += '<th>City</th>';
+    html += '<th>Quantity</th>';
+    html += '<th>NSV</th>';
+    html += '<th>GSV</th>';
+    html += '<th>Discount</th>';
+    html += '</tr></thead>';
+    html += '<tbody>';
+    
+    // Show top 10 stores by NSV
+    const topStores = data.storePerformance
+      .sort((a, b) => b.totalNSV - a.totalNSV)
+      .slice(0, 10);
+    
+    topStores.forEach(store => {
+      html += '<tr>';
+      html += `<td>${store.storeName || 'Unknown'}</td>`;
+      html += `<td>${store.city || 'Unknown'}</td>`;
+      html += `<td>${store.totalQuantity?.toLocaleString() || '0'}</td>`;
+      html += `<td>$${store.totalNSV?.toLocaleString() || '0'}</td>`;
+      html += `<td>$${store.totalGSV?.toLocaleString() || '0'}</td>`;
+      html += `<td>$${store.totalDiscount?.toLocaleString() || '0'}</td>`;
+      html += '</tr>';
     });
+    
+    html += '</tbody></table></div>';
   }
+  
+  // Add brand performance
+  if (data.brandPerformance && data.brandPerformance.length > 0) {
+    html += '<div class="chart-container">';
+    html += '<h4>🏷️ Brand Performance</h4>';
+    html += '<div class="chartjs-container">';
+    html += '<canvas id="brandChart"></canvas>';
+    html += '</div>';
+    html += '<script>';
+    html += 'setTimeout(() => {';
+    html += 'const ctx = document.getElementById("brandChart");';
+    html += 'if (ctx) {';
+    html += 'new Chart(ctx, {';
+    html += 'type: "doughnut",';
+    html += 'data: {';
+    html += `labels: ${JSON.stringify(data.brandPerformance.map(item => item.brandName || item._id))},`;
+    html += 'datasets: [{';
+    html += `data: ${JSON.stringify(data.brandPerformance.map(item => item.totalNSV))},`;
+    html += 'backgroundColor: ["#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF"]';
+    html += '}]';
+    html += '},';
+    html += 'options: { responsive: true, maintainAspectRatio: false }';
+    html += '});';
+    html += '}';
+    html += '}, 200);';
+    html += '</script>';
+    html += '</div>';
+  }
+  
+  // Add discount impact analysis
+  if (data.discountImpact && data.discountImpact.length > 0) {
+    html += '<div class="chart-container">';
+    html += '<h4>💰 Discount Impact Analysis</h4>';
+    html += '<div class="chartjs-container">';
+    html += '<canvas id="discountChart"></canvas>';
+    html += '</div>';
+    html += '<script>';
+    html += 'setTimeout(() => {';
+    html += 'const ctx = document.getElementById("discountChart");';
+    html += 'if (ctx) {';
+    html += 'new Chart(ctx, {';
+    html += 'type: "bar",';
+    html += 'data: {';
+    html += `labels: ${JSON.stringify(data.discountImpact.map(item => new Date(item.date).toLocaleDateString()))},`;
+    html += 'datasets: [{';
+    html += `label: "Discount %", data: ${JSON.stringify(data.discountImpact.map(item => item.avgDiscountPercentage))},`;
+    html += 'backgroundColor: "rgba(255, 99, 132, 0.8)"';
+    html += '}]';
+    html += '},';
+    html += 'options: { responsive: true, maintainAspectRatio: false }';
+    html += '});';
+    html += '}';
+    html += '}, 300);';
+    html += '</script>';
+    html += '</div>';
+  }
+  
+  // Add MRP distribution
+  if (data.taxAndMRP && data.taxAndMRP.mrpDistribution) {
+    html += '<div class="chart-container">';
+    html += '<h4>📊 MRP Distribution</h4>';
+    html += '<div class="chartjs-container">';
+    html += '<canvas id="mrpChart"></canvas>';
+    html += '</div>';
+    html += '<script>';
+    html += 'setTimeout(() => {';
+    html += 'const ctx = document.getElementById("mrpChart");';
+    html += 'if (ctx) {';
+    html += 'new Chart(ctx, {';
+    html += 'type: "bar",';
+    html += 'data: {';
+    html += `labels: ${JSON.stringify(data.taxAndMRP.mrpDistribution.map(item => `$${item._id}`))},`;
+    html += 'datasets: [{';
+    html += `label: "Count", data: ${JSON.stringify(data.taxAndMRP.mrpDistribution.map(item => item.count))},`;
+    html += 'backgroundColor: "rgba(54, 162, 235, 0.8)"';
+    html += '}]';
+    html += '},';
+    html += 'options: { responsive: true, maintainAspectRatio: false }';
+    html += '});';
+    html += '}';
+    html += '}, 400);';
+    html += '</script>';
+    html += '</div>';
+  }
+  
+  // Add Chart.js library
+  html += '<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>';
   
   html += '</div>';
   return html;
