@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot Word Matching Demo</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .demo-section {
+            margin-bottom: 40px;
+            padding: 20px;
+            border: 1px solid #e1e5e9;
+            border-radius: 8px;
+            background: #f8f9fa;
+        }
+        
+        .demo-section h2 {
+            color: #495057;
+            margin-top: 0;
+        }
+        
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        input[type="text"] {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e1e5e9;
+            border-radius: 6px;
+            font-size: 16px;
+        }
+        
+        button {
+            padding: 12px 24px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.2s;
+        }
+        
+        button:hover {
+            background: #0056b3;
+        }
+        
+        .results {
+            margin-top: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 6px;
+            border-left: 4px solid #007bff;
+        }
+        
+        .match-success {
+            border-left-color: #28a745;
+            background: #f8fff9;
+        }
+        
+        .match-error {
+            border-left-color: #dc3545;
+            background: #fff8f8;
+        }
+        
+        .word-analysis {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 15px;
+        }
+        
+        .word-match {
+            display: inline-block;
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin: 2px;
+            font-size: 12px;
+        }
+        
+        .score-high { background: #e8f5e8; color: #2e7d32; }
+        .score-medium { background: #fff3e0; color: #f57c00; }
+        .score-low { background: #ffebee; color: #c62828; }
+        
+        .suggestions {
+            margin-top: 15px;
+        }
+        
+        .suggestion {
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin: 5px 0;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .suggestion:hover {
+            background: #bbdefb;
+        }
+        
+        .predefined-examples {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .example-card {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #e1e5e9;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .example-card:hover {
+            border-color: #007bff;
+            box-shadow: 0 2px 4px rgba(0, 123, 255, 0.1);
+        }
+        
+        .example-type {
+            font-size: 12px;
+            color: #6c757d;
+            text-transform: uppercase;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        
+        .example-question {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+        
+        .example-description {
+            font-size: 14px;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Chatbot Word Matching Demo</h1>
+        
+        <div class="demo-section">
+            <h2>Test Word Matching</h2>
+            <p>Type any question and see how the chatbot matches it with predefined questions:</p>
+            
+            <div class="input-group">
+                <input type="text" id="userMessage" placeholder="Try: 'top products' or 'sales trends' or 'store performance'">
+                <button onclick="testMatching()">Test Matching</button>
+                <button onclick="debugMatching()">Debug Analysis</button>
+            </div>
+            
+            <div id="results"></div>
+        </div>
+        
+        <div class="demo-section">
+            <h2>Predefined Questions</h2>
+            <p>Click on any question to test it:</p>
+            
+            <div id="predefinedExamples" class="predefined-examples"></div>
+        </div>
+        
+        <div class="demo-section">
+            <h2>How It Works</h2>
+            <p>The enhanced word matching system uses multiple strategies:</p>
+            <ul>
+                <li><strong>Exact Word Match:</strong> 3 points for identical words</li>
+                <li><strong>Partial Word Match:</strong> 2 points for contained words</li>
+                <li><strong>Word Similarity:</strong> 1.5 points for similar words (prefixes, suffixes, character overlap)</li>
+                <li><strong>Type Bonus:</strong> +2 points for matching category keywords</li>
+                <li><strong>Action Bonus:</strong> +1 point for matching action keywords</li>
+            </ul>
+            <p>Questions need a minimum score of 2 or at least 2 matched words to be considered a match.</p>
+        </div>
+    </div>
+
+    <script>
+        // Sample predefined questions for demo
+        const predefinedQuestions = {
+            'show me top 5 products': {
+                type: 'analytics',
+                action: 'getTopProducts',
+                description: 'Get top 5 performing products'
+            },
+            'show me top 5 stores': {
+                type: 'analytics',
+                action: 'getTopStores',
+                description: 'Get top 5 performing stores'
+            },
+            'what are the sales trends': {
+                type: 'analytics',
+                action: 'getSalesTrends',
+                description: 'Get sales trends over time'
+            },
+            'show me store performance': {
+                type: 'analytics',
+                action: 'getStorePerformance',
+                description: 'Get overall store performance analysis'
+            },
+            'show me product performance': {
+                type: 'analytics',
+                action: 'getProductPerformance',
+                description: 'Get overall product performance analysis'
+            },
+            'what is the discount impact': {
+                type: 'analytics',
+                action: 'getDiscountImpact',
+                description: 'Analyze the impact of discounts on sales'
+            },
+            'show me tax and MRP analytics': {
+                type: 'analytics',
+                action: 'getTaxMRPAnalytics',
+                description: 'Get tax and MRP related analytics'
+            },
+            'show me summary KPIs': {
+                type: 'analytics',
+                action: 'getSummaryKPIs',
+                description: 'Get summary key performance indicators'
+            },
+            'show me the analytics dashboard': {
+                type: 'analytics',
+                action: 'getAnalyticsDashboard',
+                description: 'Get comprehensive analytics dashboard data'
+            },
+            'how many products do we have': {
+                type: 'product',
+                action: 'getProductCount',
+                description: 'Get total count of products'
+            },
+            'show me active products': {
+                type: 'product',
+                action: 'getActiveProducts',
+                description: 'Get all active products'
+            },
+            'show me replenishment recommendations': {
+                type: 'replenishment',
+                action: 'getReplenishmentRecommendations',
+                description: 'Get replenishment recommendations for stores'
+            },
+            'help': {
+                type: 'general',
+                action: 'showHelp',
+                description: 'Show available commands and questions'
+            }
+        };
+
+        // Initialize predefined examples
+        function initializeExamples() {
+            const container = document.getElementById('predefinedExamples');
+            
+            Object.entries(predefinedQuestions).forEach(([question, details]) => {
+                const card = document.createElement('div');
+                card.className = 'example-card';
+                card.onclick = () => {
+                    document.getElementById('userMessage').value = question;
+                    testMatching();
+                };
+                
+                card.innerHTML = `
+                    <div class="example-type">${details.type}</div>
+                    <div class="example-question">"${question}"</div>
+                    <div class="example-description">${details.description}</div>
+                `;
+                
+                container.appendChild(card);
+            });
+        }
+
+        // Test word matching
+        async function testMatching() {
+            const message = document.getElementById('userMessage').value.trim();
+            if (!message) return;
+            
+            const results = document.getElementById('results');
+            results.innerHTML = '<div class="results">Testing...</div>';
+            
+            try {
+                const response = await fetch('/api/v1/chatbot/match-words', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayMatchResults(data.data);
+                } else {
+                    results.innerHTML = `<div class="results match-error">Error: ${data.message}</div>`;
+                }
+            } catch (error) {
+                results.innerHTML = `<div class="results match-error">Network Error: ${error.message}</div>`;
+            }
+        }
+
+        // Debug word matching
+        async function debugMatching() {
+            const message = document.getElementById('userMessage').value.trim();
+            if (!message) return;
+            
+            const results = document.getElementById('results');
+            results.innerHTML = '<div class="results">Analyzing...</div>';
+            
+            try {
+                const response = await fetch('/api/v1/chatbot/debug-match', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayDebugResults(data.data);
+                } else {
+                    results.innerHTML = `<div class="results match-error">Error: ${data.message}</div>`;
+                }
+            } catch (error) {
+                results.innerHTML = `<div class="results match-error">Network Error: ${error.message}</div>`;
+            }
+        }
+
+        // Display match results
+        function displayMatchResults(data) {
+            const results = document.getElementById('results');
+            
+            let html = '<div class="results match-success">';
+            html += `<h3>✅ Word Matching Results</h3>`;
+            html += `<p><strong>User Message:</strong> "${data.userMessage}"</p>`;
+            html += `<p><strong>Total Questions Available:</strong> ${data.totalQuestions}</p>`;
+            
+            if (data.suggestions && data.suggestions.length > 0) {
+                html += '<div class="suggestions">';
+                html += '<h4>💡 Suggestions:</h4>';
+                data.suggestions.forEach(suggestion => {
+                    html += `<div class="suggestion" onclick="document.getElementById('userMessage').value='${suggestion.replace('Try: "', '').replace('"', '')}'">${suggestion}</div>`;
+                });
+                html += '</div>';
+            }
+            
+            html += '</div>';
+            results.innerHTML = html;
+        }
+
+        // Display debug results
+        function displayDebugResults(data) {
+            const results = document.getElementById('results');
+            
+            let html = '<div class="results">';
+            html += `<h3>🔍 Debug Analysis</h3>`;
+            html += `<p><strong>User Message:</strong> "${data.userMessage}"</p>`;
+            html += `<p><strong>Normalized:</strong> "${data.normalizedMessage}"</p>`;
+            html += `<p><strong>Words:</strong> ${data.messageWords.join(', ')}</p>`;
+            html += `<p><strong>Questions with Matches:</strong> ${data.questionsWithMatches} / ${data.totalQuestions}</p>`;
+            
+            if (data.analysis && data.analysis.length > 0) {
+                html += '<h4>📊 Match Analysis:</h4>';
+                
+                data.analysis.slice(0, 5).forEach((item, index) => {
+                    const scoreClass = item.matchScore >= 4 ? 'score-high' : 
+                                     item.matchScore >= 2 ? 'score-medium' : 'score-low';
+                    
+                    html += '<div class="word-analysis">';
+                    html += `<h5>${index + 1}. "${item.question}" (Score: ${item.matchScore})</h5>`;
+                    html += `<p><strong>Type:</strong> ${item.type} | <strong>Action:</strong> ${item.action}</p>`;
+                    html += `<p><strong>Description:</strong> ${item.description}</p>`;
+                    
+                    if (item.matchedWords && item.matchedWords.length > 0) {
+                        html += `<p><strong>Matched Words:</strong> `;
+                        item.matchedWords.forEach(word => {
+                            html += `<span class="word-match">${word}</span>`;
+                        });
+                        html += '</p>';
+                    }
+                    
+                    if (item.wordDetails && item.wordDetails.length > 0) {
+                        html += '<p><strong>Word Details:</strong></p><ul>';
+                        item.wordDetails.slice(0, 3).forEach(detail => {
+                            html += `<li>"${detail.userWord}" ↔ "${detail.questionWord}" (${detail.matchType}: ${detail.score})</li>`;
+                        });
+                        html += '</ul>';
+                    }
+                    
+                    html += '</div>';
+                });
+            }
+            
+            html += '</div>';
+            results.innerHTML = html;
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', initializeExamples);
+        
+        // Allow Enter key to test matching
+        document.getElementById('userMessage').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                testMatching();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -762,26 +762,94 @@ const findMatchingQuestion = (message) => {
     }
   }
 
-  // Partial match
+  // Enhanced word-based matching
+  const messageWords = message.split(/\s+/).filter(word => word.length > 2);
+  const bestMatches = [];
+  
   for (const [key, question] of Object.entries(PREDEFINED_QUESTIONS)) {
-    if (key.toLowerCase().includes(message) || message.includes(key.toLowerCase())) {
-      return question;
+    const questionWords = key.toLowerCase().split(/\s+/).filter(word => word.length > 2);
+    const questionType = question.type;
+    
+    // Calculate word match score
+    let matchScore = 0;
+    let matchedWords = [];
+    
+    // Check each word in user message against question words
+    messageWords.forEach(userWord => {
+      questionWords.forEach(questionWord => {
+        // Exact word match
+        if (userWord === questionWord) {
+          matchScore += 3;
+          matchedWords.push(userWord);
+        }
+        // Partial word match (user word contains question word or vice versa)
+        else if (userWord.includes(questionWord) || questionWord.includes(userWord)) {
+          matchScore += 2;
+          matchedWords.push(userWord);
+        }
+        // Word similarity (common prefixes/suffixes)
+        else if (getWordSimilarity(userWord, questionWord) > 0.7) {
+          matchScore += 1.5;
+          matchedWords.push(userWord);
+        }
+      });
+    });
+    
+    // Bonus for type-specific keywords
+    if (questionType === 'analytics' && message.includes('analytics')) matchScore += 2;
+    if (questionType === 'product' && message.includes('product')) matchScore += 2;
+    if (questionType === 'replenishment' && message.includes('replenish')) matchScore += 2;
+    if (questionType === 'store' && message.includes('store')) matchScore += 2;
+    if (questionType === 'sales' && message.includes('sales')) matchScore += 2;
+    
+    // Bonus for action-specific keywords
+    if (question.action.includes('top') && message.includes('top')) matchScore += 1;
+    if (question.action.includes('trend') && message.includes('trend')) matchScore += 1;
+    if (question.action.includes('performance') && message.includes('performance')) matchScore += 1;
+    if (question.action.includes('count') && message.includes('count')) matchScore += 1;
+    if (question.action.includes('show') && message.includes('show')) matchScore += 1;
+    
+    if (matchScore > 0) {
+      bestMatches.push({
+        question,
+        score: matchScore,
+        matchedWords,
+        key
+      });
+    }
+  }
+  
+  // Sort by score and return best match
+  if (bestMatches.length > 0) {
+    bestMatches.sort((a, b) => b.score - a.score);
+    const bestMatch = bestMatches[0];
+    
+    // Only return if score is high enough (at least 2 words matched or high similarity)
+    if (bestMatch.score >= 2 || bestMatch.matchedWords.length >= 2) {
+      return bestMatch.question;
     }
   }
 
-  // Keyword matching
-  const keywords = {
-    'top': ['top 5 products', 'top 5 stores'],
+  // Fallback: keyword matching for common patterns
+  const keywordPatterns = {
+    'top': ['show me top 5 products', 'show me top 5 stores'],
     'products': ['show me top 5 products', 'how many products do we have', 'show me active products'],
     'stores': ['show me top 5 stores', 'show me store performance'],
     'sales': ['what are the sales trends', 'show me sales performance'],
     'performance': ['show me store performance', 'show me product performance'],
     'replenishment': ['show me replenishment recommendations', 'calculate replenishment'],
     'analytics': ['show me the analytics dashboard', 'show me summary KPIs'],
-    'help': ['help', 'what can you do']
+    'trends': ['what are the sales trends'],
+    'count': ['how many products do we have'],
+    'help': ['help', 'what can you do'],
+    'dashboard': ['show me the analytics dashboard'],
+    'kpi': ['show me summary KPIs'],
+    'discount': ['what is the discount impact'],
+    'tax': ['show me tax and MRP analytics'],
+    'mrp': ['show me tax and MRP analytics']
   };
 
-  for (const [keyword, questions] of Object.entries(keywords)) {
+  for (const [keyword, questions] of Object.entries(keywordPatterns)) {
     if (message.includes(keyword)) {
       const bestMatch = questions.find(q => 
         PREDEFINED_QUESTIONS[q] && 
@@ -962,17 +1030,61 @@ const executeGeneralAction = (question) => {
  */
 const getSuggestions = (message) => {
   const suggestions = [];
+  const messageWords = message.toLowerCase().split(/\s+/).filter(word => word.length > 2);
   
-  if (message.includes('product')) {
-    suggestions.push('Try: "show me top 5 products"', 'Try: "how many products do we have"');
-  } else if (message.includes('store')) {
-    suggestions.push('Try: "show me top 5 stores"', 'Try: "show me store performance"');
-  } else if (message.includes('sales') || message.includes('trend')) {
-    suggestions.push('Try: "what are the sales trends"', 'Try: "show me the analytics dashboard"');
-  } else if (message.includes('replenish')) {
-    suggestions.push('Try: "show me replenishment recommendations"', 'Try: "calculate replenishment for store"');
-  } else {
-    suggestions.push('Try: "help"', 'Try: "show me top 5 products"', 'Try: "what are the sales trends"');
+  // Find similar questions based on words used
+  const similarQuestions = [];
+  
+  for (const [key, question] of Object.entries(PREDEFINED_QUESTIONS)) {
+    const questionWords = key.toLowerCase().split(/\s+/).filter(word => word.length > 2);
+    let wordMatches = 0;
+    
+    messageWords.forEach(userWord => {
+      questionWords.forEach(questionWord => {
+        if (userWord === questionWord || 
+            userWord.includes(questionWord) || 
+            questionWord.includes(userWord) ||
+            getWordSimilarity(userWord, questionWord) > 0.6) {
+          wordMatches++;
+        }
+      });
+    });
+    
+    if (wordMatches > 0) {
+      similarQuestions.push({
+        question: key,
+        description: question.description,
+        matches: wordMatches,
+        type: question.type
+      });
+    }
+  }
+  
+  // Sort by number of matches and add top suggestions
+  similarQuestions.sort((a, b) => b.matches - a.matches);
+  similarQuestions.slice(0, 3).forEach(q => {
+    suggestions.push(`Try: "${q.question}"`);
+  });
+  
+  // Add category-based suggestions if no good matches
+  if (suggestions.length === 0) {
+    if (message.includes('product') || message.includes('item')) {
+      suggestions.push('Try: "show me top 5 products"', 'Try: "how many products do we have"');
+    } else if (message.includes('store') || message.includes('shop')) {
+      suggestions.push('Try: "show me top 5 stores"', 'Try: "show me store performance"');
+    } else if (message.includes('sales') || message.includes('revenue') || message.includes('trend')) {
+      suggestions.push('Try: "what are the sales trends"', 'Try: "show me the analytics dashboard"');
+    } else if (message.includes('replenish') || message.includes('stock') || message.includes('inventory')) {
+      suggestions.push('Try: "show me replenishment recommendations"', 'Try: "calculate replenishment for store"');
+    } else if (message.includes('analytics') || message.includes('data') || message.includes('report')) {
+      suggestions.push('Try: "show me the analytics dashboard"', 'Try: "show me summary KPIs"');
+    } else if (message.includes('discount') || message.includes('offer') || message.includes('deal')) {
+      suggestions.push('Try: "what is the discount impact"');
+    } else if (message.includes('tax') || message.includes('mrp') || message.includes('price')) {
+      suggestions.push('Try: "show me tax and MRP analytics"');
+    } else {
+      suggestions.push('Try: "help"', 'Try: "show me top 5 products"', 'Try: "what are the sales trends"');
+    }
   }
   
   return suggestions;
@@ -1800,4 +1912,50 @@ export const analyzeDataStructure = (data) => {
   }
   
   return analysis;
+};
+
+/**
+ * Calculate word similarity using common prefixes, suffixes, and character overlap
+ * @param {string} word1 - First word
+ * @param {string} word2 - Second word
+ * @returns {number} Similarity score between 0 and 1
+ */
+export const getWordSimilarity = (word1, word2) => {
+  if (word1 === word2) return 1;
+  if (word1.length < 3 || word2.length < 3) return 0;
+  
+  // Check common prefixes
+  let prefixMatch = 0;
+  const minLength = Math.min(word1.length, word2.length);
+  for (let i = 0; i < minLength; i++) {
+    if (word1[i] === word2[i]) {
+      prefixMatch++;
+    } else {
+      break;
+    }
+  }
+  
+  // Check common suffixes
+  let suffixMatch = 0;
+  for (let i = 1; i <= minLength; i++) {
+    if (word1[word1.length - i] === word2[word2.length - i]) {
+      suffixMatch++;
+    } else {
+      break;
+    }
+  }
+  
+  // Check character overlap
+  const chars1 = new Set(word1.split(''));
+  const chars2 = new Set(word2.split(''));
+  const intersection = new Set([...chars1].filter(x => chars2.has(x)));
+  const union = new Set([...chars1, ...chars2]);
+  const jaccard = intersection.size / union.size;
+  
+  // Weighted similarity score
+  const prefixScore = prefixMatch / minLength * 0.4;
+  const suffixScore = suffixMatch / minLength * 0.3;
+  const jaccardScore = jaccard * 0.3;
+  
+  return prefixScore + suffixScore + jaccardScore;
 };
