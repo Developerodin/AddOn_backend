@@ -114,7 +114,7 @@ const FIELD_EXTRACTORS = {
       return { value: data.totalStores.toString(), subtitle: 'Stores' };
     }
     if (data.totalSales !== undefined) {
-      return { value: `$${data.totalSales.toLocaleString()}`, subtitle: 'Sales' };
+      return { value: `₹${data.totalSales.toLocaleString()}`, subtitle: 'Sales' };
     }
     if (data.totalResults !== undefined) {
       return { value: data.totalResults.toString(), subtitle: 'Results' };
@@ -1129,7 +1129,24 @@ const executeProductAction = async (question) => {
       const products = await productService.queryProducts({}, { limit: 1 });
       return { totalProducts: products.totalResults || 0 };
     case 'getActiveProducts':
-      return await productService.queryProducts({ status: 'active' }, { limit: 10 });
+      const activeProducts = await productService.queryProducts({ status: 'active' }, { 
+        limit: 10, 
+        populate: 'category' 
+      });
+      
+      // Debug: Check what's being returned
+      console.log('Active products debug:', {
+        totalResults: activeProducts.totalResults,
+        resultsCount: activeProducts.results?.length || 0,
+        firstProduct: activeProducts.results?.[0] ? {
+          name: activeProducts.results[0].name,
+          category: activeProducts.results[0].category,
+          categoryType: typeof activeProducts.results[0].category,
+          hasName: activeProducts.results[0].category?.name
+        } : 'No products'
+      });
+      
+      return activeProducts;
     case 'searchProductByName':
       // This would need user input, so return a placeholder
       return { message: 'Please provide a product name to search for' };
@@ -1479,11 +1496,22 @@ const cleanDataForDisplay = (items) => {
     
     // Handle product data
     if (item.name && item.softwareCode) {
+      // Debug: Check category data
+      console.log('Product data cleaning debug:', {
+        name: item.name,
+        category: item.category,
+        categoryType: typeof item.category,
+        hasName: item.category?.name,
+        categoryKeys: item.category ? Object.keys(item.category) : 'No category'
+      });
+      
       cleanedItem['Name'] = item.name;
       cleanedItem['Code'] = item.softwareCode;
       cleanedItem['Status'] = item.status || 'Unknown';
       if (item.category && typeof item.category === 'object') {
         cleanedItem['Category'] = item.category.name || 'Unknown';
+      } else {
+        cleanedItem['Category'] = 'Category not populated';
       }
       return cleanedItem;
     }
@@ -1500,7 +1528,7 @@ const cleanDataForDisplay = (items) => {
     // Handle sales data
     if (item.quantity !== undefined && item.sales !== undefined) {
       cleanedItem['Quantity'] = item.quantity;
-      cleanedItem['Sales'] = `$${item.sales.toLocaleString()}`;
+      cleanedItem['Sales'] = `₹${item.sales.toLocaleString()}`;
       if (item.date) cleanedItem['Date'] = new Date(item.date).toLocaleDateString();
       if (item.product && typeof item.product === 'object') {
         cleanedItem['Product'] = item.product.name || 'Unknown';
@@ -1520,7 +1548,7 @@ const cleanDataForDisplay = (items) => {
         if (typeof value === 'number') {
           if (key.toLowerCase().includes('price') || key.toLowerCase().includes('cost') || 
               key.toLowerCase().includes('sales') || key.toLowerCase().includes('revenue')) {
-            cleanedItem[key] = `$${value.toLocaleString()}`;
+            cleanedItem[key] = `₹${value.toLocaleString()}`;
           } else if (key.toLowerCase().includes('percentage') || key.toLowerCase().includes('rate')) {
             cleanedItem[key] = `${value.toFixed(2)}%`;
           } else {
@@ -2239,7 +2267,14 @@ const getStoreSalesStatusFromDB = async (params) => {
     const sales = await Sales.find({
       plant: store._id,
       date: { $gte: lastMonth, $lte: endOfLastMonth }
-    }).populate('materialCode', 'name softwareCode category');
+    }).populate({
+      path: 'materialCode',
+      select: 'name softwareCode category',
+      populate: {
+        path: 'category',
+        select: 'name'
+      }
+    });
 
     if (sales.length === 0) {
       return {
@@ -2331,8 +2366,26 @@ const getTopPerformingItemFromDB = async (params) => {
     // Get sales data for all stores in the location
     const sales = await Sales.find({
       plant: { $in: storeIds }
-    }).populate('materialCode', 'name softwareCode category brand')
-      .populate('plant', 'storeName city');
+    }).populate({
+      path: 'materialCode',
+      select: 'name softwareCode category',
+      populate: {
+        path: 'category',
+        select: 'name'
+      }
+    }).populate('plant', 'storeName city');
+
+    // Debug: Check what's being populated
+    if (sales.length > 0) {
+      console.log('Sample sale materialCode debug:', {
+        firstSale: sales[0].materialCode,
+        category: sales[0].materialCode?.category,
+        categoryType: typeof sales[0].materialCode?.category,
+        hasName: sales[0].materialCode?.category?.name,
+        materialCodeKeys: Object.keys(sales[0].materialCode || {}),
+        categoryKeys: sales[0].materialCode?.category ? Object.keys(sales[0].materialCode.category) : 'No category'
+      });
+    }
 
     if (sales.length === 0) {
       return {
@@ -2352,7 +2405,7 @@ const getTopPerformingItemFromDB = async (params) => {
           name: sale.materialCode.name,
           softwareCode: sale.materialCode.softwareCode,
           category: sale.materialCode.category?.name || 'Unknown',
-          brand: sale.materialCode.brand || 'Unknown',
+          brand: 'Brand info not available', // Product model doesn't have brand field
           price: sale.mrp,
           quantity: 0,
           sales: 0,
@@ -2378,11 +2431,47 @@ const getTopPerformingItemFromDB = async (params) => {
       current.sales > top.sales ? current : top
     );
 
-    // Calculate percentages
+    // Calculate percentages and profit metrics
     topItem.discountPercentage = topItem.discount > 0 ? ((topItem.discount / topItem.gsv) * 100).toFixed(2) : 0;
     topItem.taxPercentage = topItem.tax > 0 ? ((topItem.tax / topItem.nsv) * 100).toFixed(2) : 0;
-    topItem.margin = topItem.nsv - (topItem.price * topItem.quantity);
-    topItem.marginPercentage = topItem.nsv > 0 ? ((topItem.margin / topItem.nsv) * 100).toFixed(2) : 0;
+    
+    // Calculate discount impact (how much revenue was lost due to discounts)
+    topItem.discountImpact = topItem.gsv - topItem.nsv;
+    topItem.discountImpactPercentage = topItem.gsv > 0 ? ((topItem.discountImpact / topItem.gsv) * 100).toFixed(2) : 0;
+    
+    // Calculate estimated gross profit (NSV - Estimated Cost)
+    // Assuming cost is 70% of MRP (30% markup)
+    const estimatedCost = topItem.price * topItem.quantity * 0.7;
+    topItem.estimatedGrossProfit = topItem.nsv - estimatedCost;
+    topItem.estimatedGrossProfitPercentage = topItem.nsv > 0 ? ((topItem.estimatedGrossProfit / topItem.nsv) * 100).toFixed(2) : 0;
+    
+    // Calculate actual profit margin (NSV - GSV + Discount) - this should be 0 if discount = GSV - NSV
+    topItem.actualProfitMargin = topItem.nsv - (topItem.gsv - topItem.discount);
+    topItem.actualProfitMarginPercentage = topItem.nsv > 0 ? ((topItem.actualProfitMargin / topItem.nsv) * 100).toFixed(2) : 0;
+
+            // Debug category information
+        console.log('Top item category debug:', {
+          category: topItem.category,
+          categoryType: typeof topItem.category,
+          hasName: topItem.category?.name,
+          rawCategory: topItem.category,
+          productName: topItem.name,
+          softwareCode: topItem.softwareCode
+        });
+
+        // Debug profit calculations
+        console.log('Top item profit debug:', {
+          productName: topItem.name,
+          gsv: topItem.gsv,
+          nsv: topItem.nsv,
+          discount: topItem.discount,
+          price: topItem.price,
+          quantity: topItem.quantity,
+          discountImpact: topItem.discountImpact,
+          estimatedCost: topItem.price * topItem.quantity * 0.7,
+          estimatedGrossProfit: topItem.estimatedGrossProfit,
+          actualProfitMargin: topItem.actualProfitMargin
+        });
 
     return {
       topItem,
@@ -2432,8 +2521,14 @@ const getStoreSalesPerformanceFromDB = async (params) => {
     // Get sales data for the store
     const sales = await Sales.find({
       plant: store._id
-    }).populate('materialCode', 'name softwareCode category')
-      .sort({ date: -1 })
+    }).populate({
+      path: 'materialCode',
+      select: 'name softwareCode category',
+      populate: {
+        path: 'category',
+        select: 'name'
+      }
+    }).sort({ date: -1 })
       .limit(100);
 
     if (sales.length === 0) {
@@ -2520,12 +2615,31 @@ const getStoreTopProductsFromDB = async (params) => {
     
     // Search by store ID first (more specific)
     if (storeId) {
-      store = await Store.findOne({
-        $or: [
-          { storeId: storeId },
-          { _id: storeId }
-        ]
-      });
+      // Check if storeId is a valid ObjectId
+      const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(storeId);
+      
+      if (isValidObjectId) {
+        store = await Store.findOne({
+          $or: [
+            { storeId: storeId },
+            { _id: storeId }
+          ]
+        });
+      } else {
+        // If not a valid ObjectId, search by storeId as a string
+        store = await Store.findOne({ storeId: storeId });
+      }
+      
+      // If not found by storeId, try to find by other fields
+      if (!store) {
+        store = await Store.findOne({
+          $or: [
+            { storeName: { $regex: storeId, $options: 'i' } },
+            { city: { $regex: storeId, $options: 'i' } },
+            { addressLine1: { $regex: storeId, $options: 'i' } }
+          ]
+        });
+      }
     }
     
     // If not found by ID, search by name or location
@@ -2579,7 +2693,26 @@ const getStoreTopProductsFromDB = async (params) => {
     // Get sales data for the store
     const sales = await Sales.find({
       plant: store._id
-    }).populate('materialCode', 'name softwareCode category brand');
+    }).populate({
+      path: 'materialCode',
+      select: 'name softwareCode category',
+      populate: {
+        path: 'category',
+        select: 'name'
+      }
+    });
+
+    // Debug: Check what's being populated
+    if (sales.length > 0) {
+      console.log('Store sales materialCode debug:', {
+        firstSale: sales[0].materialCode,
+        category: sales[0].materialCode?.category,
+        categoryType: typeof sales[0].materialCode?.category,
+        hasName: sales[0].materialCode?.category?.name,
+        materialCodeKeys: Object.keys(sales[0].materialCode || {}),
+        categoryKeys: sales[0].materialCode?.category ? Object.keys(sales[0].materialCode.category) : 'No category'
+      });
+    }
 
     if (sales.length === 0) {
       return {
@@ -2603,7 +2736,7 @@ const getStoreTopProductsFromDB = async (params) => {
           name: sale.materialCode.name,
           softwareCode: sale.materialCode.softwareCode,
           category: sale.materialCode.category?.name || 'Unknown',
-          brand: sale.materialCode.brand || 'Unknown',
+          brand: 'Brand info not available', // Product model doesn't have brand field
           price: sale.mrp,
           quantity: 0,
           sales: 0,
@@ -2630,8 +2763,10 @@ const getStoreTopProductsFromDB = async (params) => {
         ...product,
         discountPercentage: product.discount > 0 ? ((product.discount / product.gsv) * 100).toFixed(2) : 0,
         taxPercentage: product.tax > 0 ? ((product.tax / product.nsv) * 100).toFixed(2) : 0,
-        margin: product.nsv - (product.price * product.quantity),
-        marginPercentage: product.nsv > 0 ? ((product.nsv - (product.price * product.quantity)) / product.nsv * 100).toFixed(2) : 0
+        discountImpact: product.gsv - product.nsv,
+        discountImpactPercentage: product.gsv > 0 ? ((product.gsv - product.nsv) / product.gsv * 100).toFixed(2) : 0,
+        estimatedGrossProfit: product.nsv - (product.price * product.quantity * 0.7),
+        estimatedGrossProfitPercentage: product.nsv > 0 ? ((product.nsv - (product.price * product.quantity * 0.7)) / product.nsv * 100).toFixed(2) : 0
       }))
       .sort((a, b) => b.sales - a.sales)
       .slice(0, 10);
@@ -2773,8 +2908,8 @@ const generateTextSummaryHTML = (question, data) => {
     if (data.data && data.data.totalSales > 0) {
       summary = `
         <p>Hey! I found the sales data for ${data.location || 'that location'} for last month. Here's what's happening:</p>
-        <p>The total sales came to <strong>$${data.data.totalSales.toLocaleString()}</strong>, which is pretty solid! The net sales value is <strong>$${data.data.totalNSV.toLocaleString()}</strong>, and they moved about <strong>${data.data.totalQuantity.toLocaleString()} units</strong>.</p>
-        <p>I also noticed they had <strong>$${data.data.totalDiscount.toLocaleString()}</strong> in discounts and <strong>$${data.data.totalTax.toLocaleString()}</strong> in taxes. Overall, it looks like a good month with <strong>${data.data.totalResults}</strong> transactions processed.</p>
+        <p>The total sales came to <strong>₹${data.data.totalSales.toLocaleString()}</strong>, which is pretty solid! The net sales value is <strong>₹${data.data.totalNSV.toLocaleString()}</strong>, and they moved about <strong>${data.data.totalQuantity.toLocaleString()} units</strong>.</p>
+        <p>I also noticed they had <strong>₹${data.data.totalDiscount.toLocaleString()}</strong> in discounts and <strong>₹${data.data.totalTax.toLocaleString()}</strong> in taxes. Overall, it looks like a good month with <strong>${data.data.totalResults}</strong> transactions processed.</p>
       `;
     } else {
       summary = `
@@ -2786,8 +2921,9 @@ const generateTextSummaryHTML = (question, data) => {
     if (data.topItem) {
       summary = `
         <p>Great question! I dug into the data for <strong>${data.location || 'that area'}</strong> and found the star performer:</p>
-        <p><strong>${data.topItem.name}</strong> is absolutely crushing it! This product (code: <strong>${data.topItem.softwareCode}</strong>) brought in <strong>$${data.topItem.sales.toLocaleString()}</strong> in sales and generated <strong>$${data.topItem.revenue.toLocaleString()}</strong> in revenue.</p>
-        <p>They sold <strong>${data.topItem.quantity.toLocaleString()} units</strong> with a nice margin of <strong>$${data.topItem.margin.toLocaleString()}</strong>. The product is in the <strong>${data.topItem.category || 'general'}</strong> category and from <strong>${data.topItem.brand || 'our brand'}</strong>.</p>
+        <p><strong>${data.topItem.name}</strong> is absolutely crushing it! This product (code: <strong>${data.topItem.softwareCode}</strong>) brought in <strong>₹${data.topItem.sales.toLocaleString()}</strong> in sales and generated <strong>₹${data.topItem.revenue.toLocaleString()}</strong> in revenue.</p>
+        <p>They sold <strong>${data.topItem.quantity.toLocaleString()} units</strong> with an estimated gross profit of <strong>₹${data.topItem.estimatedGrossProfit?.toLocaleString() || '0'}</strong> (${data.topItem.estimatedGrossProfitPercentage || '0'}% of revenue). The product is in the <strong>${data.topItem.category || 'general'}</strong> category.</p>
+        <p><em>Note: Estimated gross profit assumes 30% markup on MRP. Discount impact: ₹${data.topItem.discountImpact?.toLocaleString() || '0'} (${data.topItem.discountImpactPercentage || '0'}% of gross sales).</em></p>
         <p>I also noticed there are <strong>${data.storeCount || 0} stores</strong> in that location, and they're carrying <strong>${data.totalProducts || 0} different products</strong> total. Pretty impressive variety!</p>
         <p>This item is definitely a winner in that location - it's clearly resonating with customers!</p>
       `;
@@ -2801,8 +2937,8 @@ const generateTextSummaryHTML = (question, data) => {
     if (data.performance && data.performance.totalSales > 0) {
       summary = `
         <p>Let me tell you about the sales performance for <strong>${data.storeName || 'that store'}</strong>:</p>
-        <p>They had a total sales volume of <strong>$${data.performance.totalSales.toLocaleString()}</strong> with net sales value of <strong>$${data.performance.totalNSV.toLocaleString()}</strong>. Pretty good numbers!</p>
-        <p>They processed <strong>${data.performance.totalQuantity.toLocaleString()} units</strong> across <strong>${data.performance.totalResults}</strong> transactions. The discount amount was <strong>$${data.performance.totalDiscount.toLocaleString()}</strong> and taxes came to <strong>$${data.performance.totalTax.toLocaleString()}</strong>.</p>
+        <p>They had a total sales volume of <strong>₹${data.performance.totalSales.toLocaleString()}</strong> with net sales value of <strong>₹${data.performance.totalNSV.toLocaleString()}</strong>. Pretty good numbers!</p>
+        <p>They processed <strong>${data.performance.totalQuantity.toLocaleString()} units</strong> across <strong>${data.performance.totalResults}</strong> transactions. The discount amount was <strong>₹${data.performance.totalDiscount.toLocaleString()}</strong> and taxes came to <strong>₹${data.performance.totalTax.toLocaleString()}</strong>.</p>
         <p>Overall, it looks like a solid performance month for them!</p>
       `;
     } else {
@@ -2815,9 +2951,9 @@ const generateTextSummaryHTML = (question, data) => {
     if (data.forecast && data.forecast.totalForecast > 0) {
       summary = `
         <p>Looking at the sales forecast for <strong>${data.forecast.period}</strong>, things are looking pretty promising!</p>
-        <p>The total forecast is <strong>$${data.forecast.totalForecast.toLocaleString()}</strong> with a growth rate of <strong>${data.forecast.growthRate}%</strong>. I'm feeling confident about this prediction - our confidence level is <strong>${data.forecast.confidence}%</strong>.</p>
-        <p>The top performing store is expected to be <strong>${data.forecast.breakdown.byStore[0]?.storeName || 'one of our stores'}</strong> with a forecast of <strong>$${data.forecast.breakdown.byStore[0]?.forecast?.toLocaleString() || '0'}</strong>.</p>
-        <p>And the <strong>${data.forecast.breakdown.byCategory[0]?.category || 'top category'}</strong> is projected to bring in <strong>$${data.forecast.breakdown.byCategory[0]?.forecast?.toLocaleString() || '0'}</strong>.</p>
+        <p>The total forecast is <strong>₹${data.forecast.totalForecast.toLocaleString()}</strong> with a growth rate of <strong>${data.forecast.growthRate}%</strong>. I'm feeling confident about this prediction - our confidence level is <strong>${data.forecast.confidence}%</strong>.</p>
+        <p>The top performing store is expected to be <strong>${data.forecast.breakdown.byStore[0]?.storeName || 'one of our stores'}</strong> with a forecast of <strong>₹${data.forecast.breakdown.byStore[0]?.forecast?.toLocaleString() || '0'}</strong>.</p>
+        <p>And the <strong>${data.forecast.breakdown.byCategory[0]?.category || 'top category'}</strong> is projected to bring in <strong>₹${data.forecast.breakdown.byCategory[0]?.forecast?.toLocaleString() || '0'}</strong>.</p>
         <p>Pretty exciting numbers, don't you think?</p>
       `;
     } else {
@@ -2832,11 +2968,11 @@ const generateTextSummaryHTML = (question, data) => {
         <p>Let me give you the lowdown on the replenishment situation across all our stores:</p>
         <p>Out of <strong>${data.summary.totalStores}</strong> total stores, we have <strong>${data.summary.storesNeedingReplenishment}</strong> that need restocking. That's actually pretty manageable!</p>
         <p>There are <strong>${data.summary.criticalStockLevels}</strong> stores with critical stock levels that need immediate attention. Our forecast accuracy is sitting at <strong>${data.summary.averageForecastAccuracy}%</strong>, which is pretty solid.</p>
-        <p>The total replenishment value across all stores is <strong>$${data.summary.totalReplenishmentValue.toLocaleString()}</strong>.</p>
+        <p>The total replenishment value across all stores is <strong>₹${data.summary.totalReplenishmentValue.toLocaleString()}</strong>.</p>
         <p>Here's the priority breakdown:</p>
         <ul>
           ${data.breakdown.byPriority.map(priority => 
-            `<li><strong>${priority.priority}:</strong> ${priority.count} stores need attention ($${priority.value.toLocaleString()})</li>`
+            `<li><strong>${priority.priority}:</strong> ${priority.count} stores need attention (₹${priority.value.toLocaleString()})</li>`
           ).join('')}
         </ul>
         <p>Overall, the replenishment situation looks pretty well under control!</p>
@@ -2862,15 +2998,18 @@ const generateTextSummaryHTML = (question, data) => {
         <ul>
           ${data.topProducts.slice(0, 5).map((product, index) => `
             <li><strong>${index + 1}. ${product.name}</strong> (${product.softwareCode})</li>
-            <li>&nbsp;&nbsp;&nbsp;Sales: <strong>$${product.sales.toLocaleString()}</strong> | Quantity: <strong>${product.quantity} units</strong> | Revenue: <strong>$${product.revenue.toLocaleString()}</strong></li>
+            <li>&nbsp;&nbsp;&nbsp;Sales: <strong>₹${product.sales.toLocaleString()}</strong> | Quantity: <strong>${product.quantity} units</strong> | Revenue: <strong>₹${product.revenue.toLocaleString()}</strong> | Est. Profit: <strong>₹${product.estimatedGrossProfit?.toLocaleString() || '0'}</strong></li>
           `).join('')}
         </ul>
         <p>Here's the overall performance summary:</p>
         <ul>
-          <li>Total Sales Value: <strong>$${data.topProducts.reduce((sum, p) => sum + p.sales, 0).toLocaleString()}</strong></li>
-          <li>Total Revenue: <strong>$${data.topProducts.reduce((sum, p) => sum + p.revenue, 0).toLocaleString()}</strong></li>
+          <li>Total Sales Value: <strong>₹${data.topProducts.reduce((sum, p) => sum + p.sales, 0).toLocaleString()}</strong></li>
+          <li>Total Revenue: <strong>₹${data.topProducts.reduce((sum, p) => sum + p.revenue, 0).toLocaleString()}</strong></li>
           <li>Total Quantity: <strong>${data.topProducts.reduce((sum, p) => sum + p.quantity, 0).toLocaleString()} units</strong></li>
+          <li>Total Estimated Gross Profit: <strong>₹${data.topProducts.reduce((sum, p) => sum + (p.estimatedGrossProfit || 0), 0).toLocaleString()}</strong></li>
+          <li>Total Discount Impact: <strong>₹${data.topProducts.reduce((sum, p) => sum + (p.discountImpact || 0), 0).toLocaleString()}</strong></li>
         </ul>
+        <p><em>Note: Estimated gross profit assumes 30% markup on MRP. Discount impact shows revenue lost due to discounts.</em></p>
         <p>Pretty impressive numbers, right? This store is definitely moving some product!</p>
       `;
     } else {

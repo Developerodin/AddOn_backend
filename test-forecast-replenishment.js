@@ -1,3 +1,6 @@
+// Set required environment variables if not present
+process.env.NODE_ENV = process.env.NODE_ENV || 'development';
+
 import mongoose from 'mongoose';
 import Sales from './src/models/sales.model.js';
 import axios from 'axios';
@@ -131,7 +134,7 @@ const testForecastGeneration = async (storeId, productId, storeName, productName
   console.log('📤 Sending forecast request:', JSON.stringify(payload, null, 2));
 
   try {
-    const response = await axios.post('http://localhost:3002/v1/forecasts/generate', payload);
+    const response = await axios.post('http://localhost:4000/v1/forecasts/generate', payload);
     
     console.log('✅ Forecast generated successfully!');
     console.log('📊 Response:');
@@ -168,7 +171,7 @@ const testReplenishmentCalculation = async (storeId, productId, storeName, produ
   console.log('📤 Sending replenishment request:', JSON.stringify(payload, null, 2));
 
   try {
-    const response = await axios.post('http://localhost:3002/v1/replenishment/calculate', payload);
+    const response = await axios.post('http://localhost:4000/v1/replenishment/calculate', payload);
     
     console.log('✅ Replenishment calculated successfully!');
     console.log('📊 Response:');
@@ -194,7 +197,7 @@ const testGetForecasts = async () => {
   console.log('\n📋 Testing Get Forecasts...');
   
   try {
-    const response = await axios.get('http://localhost:3002/v1/forecasts');
+    const response = await axios.get('http://localhost:4000/v1/forecasts');
     
     console.log('✅ Get forecasts successful!');
     console.log('📊 Response:');
@@ -224,7 +227,7 @@ const testGetReplenishments = async () => {
   console.log('\n📦 Testing Get Replenishments...');
   
   try {
-    const response = await axios.get('http://localhost:3002/v1/replenishment');
+    const response = await axios.get('http://localhost:4000/v1/replenishment');
     
     console.log('✅ Get replenishments successful!');
     console.log('📊 Response:');

@@ -41,6 +41,13 @@ export const queryProducts = async (filter, options) => {
       delete filter._id;
     }
     
+    // Add default population for category if not specified
+    if (!options.populate) {
+      options.populate = 'category';
+    } else if (!options.populate.includes('category')) {
+      options.populate += ',category';
+    }
+    
     const products = await Product.paginate(filter, options);
     return products;
   } catch (error) {
