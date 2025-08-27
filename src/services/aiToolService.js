@@ -233,12 +233,12 @@ export const detectIntent = async (question) => {
       description: 'Get detailed product analysis by name'
     },
     {
-      pattern: /(?:show\s+me\s+)?(?:data\s+for\s+)?(?:store\s+)?([a-zA-Z0-9\s\-]+?)(?:\s+store)?/i,
+      pattern: /(?:store\s+)?([a-zA-Z]{3,}[a-zA-Z0-9\s\-]*?)\s+(?:store|data|performance|analysis)/i,
       action: 'getStoreAnalysisByName',
       extractParams: (match) => ({ 
         storeName: match[1].trim()
       }),
-      description: 'Get store analysis by store name'
+      description: 'Get store analysis by store name with context'
     }
   ];
   

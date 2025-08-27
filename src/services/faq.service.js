@@ -351,13 +351,127 @@ Please provide a helpful response based on this FAQ knowledge.`
         fallback: true
       };
     } else {
-      return {
-        type: 'faq',
-        response: "I don't have a specific answer for that question. Could you please rephrase or ask something else?",
-        confidence: 0,
-        source: 'faq_vector_search',
-        fallback: true
-      };
+      // Step 5: AI Agent Fallback - Handle queries not covered by FAQ or AI tools
+      console.log('No FAQ or AI tool match found, using AI agent fallback for:', normalizedQuestion);
+      
+      try {
+        const aiAgentResponse = await openai.chat.completions.create({
+          model: 'gpt-3.5-turbo',
+          messages: [
+            {
+              role: 'system',
+              content: `You are an AI agent of the Addon System, a comprehensive retail business intelligence platform. 
+
+SYSTEM CAPABILITIES & USE CASES:
+
+📊 Analytics & Reporting (Complete)
+- Sales trends, product performance, store analysis
+- Real-time business insights and KPI tracking
+
+🔮 Demand Forecasting (Advanced)
+- Product & store-level predictions
+- AI-powered sales forecasting
+
+📦 Inventory Management (Smart)
+- Replenishment recommendations
+- Stock optimization and demand planning
+
+🏪 Store Performance (Real-time)
+- Individual store analytics
+- Performance comparison and optimization
+
+🎯 KEY USE CASES:
+1. Sales Analysis: Track product performance, identify top sellers, analyze trends
+2. Store Optimization: Compare store performance, identify improvement opportunities  
+3. Demand Planning: Forecast future sales, optimize inventory levels
+4. Product Insights: Analyze individual product performance across stores
+5. Geographic Analysis: City-wise performance, regional trends
+6. Inventory Optimization: Prevent stockouts, reduce excess inventory
+
+💡 HOW TO USE:
+• Ask for reports: "Show me top products", "Generate sales report"
+• Analyze specific items: "Give me PE Mens Full Rib analysis"
+• Check store performance: "Show me store ABC data"
+• Get forecasts: "Next month sales forecast for Product X in Mumbai"
+• Compare performance: "Store performance analysis"
+
+IMPORTANT: You are in development and learning phase, improving day by day. Some advanced features may still be in development.
+
+RESPONSE GUIDELINES:
+- Be helpful, professional, and conversational
+- Acknowledge what you can do and what's in development
+- Suggest specific questions they can ask that you can handle
+- If they ask about capabilities, explain what's available
+- If they ask about something not yet implemented, explain it's in development
+- Always provide helpful alternatives they can ask about
+- Be encouraging about future improvements`
+            },
+            {
+              role: 'user',
+              content: `User Query: "${normalizedQuestion}"
+
+Please respond as the Addon System AI agent, helping the user understand what you can do and suggesting alternative questions they can ask.`
+            }
+          ],
+          max_tokens: 400,
+          temperature: 0.7
+        });
+        
+        const aiAgentAnswer = aiAgentResponse.choices[0]?.message?.content?.trim();
+        
+        return {
+          type: 'ai_agent',
+          response: aiAgentAnswer,
+          confidence: 0.8,
+          source: 'ai_agent_fallback',
+          originalQuery: normalizedQuestion,
+          suggestions: [
+            "Show me top products",
+            "Generate sales report",
+            "Give me product analysis for [Product Name]",
+            "Show me store performance data",
+            "What are your capabilities?",
+            "Show me analytics dashboard"
+          ]
+        };
+        
+      } catch (aiAgentError) {
+        console.error('AI Agent fallback failed:', aiAgentError);
+        
+        // Final fallback response
+        return {
+          type: 'ai_agent',
+          response: `I'm the Addon System AI agent, and I'm here to help you with retail business intelligence! 
+
+While I'm still learning and some features are in development, I can currently help you with:
+
+📊 **Analytics & Reports**
+- Show top products and sales data
+- Generate sales reports and performance analysis
+- Analyze individual products and stores
+
+🔮 **Forecasting & Planning**
+- Sales forecasts for products and locations
+- Demand planning and inventory insights
+
+💡 **Try asking me:**
+• "Show me top products"
+• "Generate sales report" 
+• "Give me [Product Name] analysis"
+• "What are your capabilities?"
+
+I'm improving every day and will be able to handle more complex queries soon!`,
+          confidence: 0.7,
+          source: 'ai_agent_fallback',
+          originalQuery: normalizedQuestion,
+          suggestions: [
+            "Show me top products",
+            "Generate sales report", 
+            "What are your capabilities?",
+            "Show me analytics dashboard"
+          ]
+        };
+      }
     }
     
   } catch (error) {
