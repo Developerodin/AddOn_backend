@@ -44,7 +44,6 @@ const aiToolQuestions = [
 
 // Test FAQ questions
 const faqQuestions = [
-  "What can you do?",
   "How do you prevent stockouts?",
   "Can you help with inventory optimization?",
   "What kind of analytics do you offer?",
@@ -52,6 +51,14 @@ const faqQuestions = [
   "What's your forecast accuracy?",
   "Do you provide store analytics?",
   "Can you analyze product performance?"
+];
+
+// Test capability questions (should go to AI tools)
+const capabilityQuestions = [
+  "What can you do?",
+  "What are your capabilities?",
+  "How can you help me?",
+  "What do you do?"
 ];
 
 /**

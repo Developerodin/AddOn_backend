@@ -170,8 +170,8 @@ export const bulkTrainFAQ = async (faqList) => {
 
 /**
  * Ask question with AI tool calling and FAQ vector search
- * @param {string} question - User's question
- * @returns {Promise<Object>} - Response object
+ * @param {string> question - User's question
+ * @returns {Promise<Object>} Response object
  */
 export const askQuestion = async (question) => {
   try {
@@ -184,10 +184,144 @@ export const askQuestion = async (question) => {
       throw new ApiError(400, 'Question cannot be empty');
     }
     
-    // Step 1: Check if this is an AI tool intent
-    const aiIntent = aiToolService.detectIntent(normalizedQuestion);
+    // Step 1: Check FAQ vector search first for existing knowledge
+    console.log('Checking FAQ vector search for:', normalizedQuestion);
     
-    if (aiIntent) {
+    // Generate embedding for the question
+    const questionEmbedding = await generateEmbedding(normalizedQuestion);
+    
+    // Find similar FAQs using vector similarity
+    const allFAQs = await FaqVector.find({}).lean();
+    
+    if (allFAQs.length > 0) {
+      // Calculate similarities and find best matches
+      const similarities = allFAQs.map(faq => ({
+        faq,
+        similarity: cosineSimilarity(questionEmbedding, faq.embedding)
+      }));
+      
+      // Sort by similarity (descending)
+      similarities.sort((a, b) => b.similarity - a.similarity);
+      
+      // Get top matches above threshold
+      const threshold = 0.7;
+      const topMatches = similarities.filter(item => item.similarity >= threshold);
+      
+      if (topMatches.length > 0) {
+        // Get the best match
+        const bestMatch = topMatches[0];
+        
+        console.log(`FAQ match found with similarity: ${(bestMatch.similarity * 100).toFixed(1)}%`);
+        
+        // Use OpenAI to enhance the FAQ response
+        try {
+          const openaiResponse = await openai.chat.completions.create({
+            model: 'gpt-3.5-turbo',
+            messages: [
+              {
+                role: 'system',
+                content: `You are a helpful support assistant. 
+Answer ONLY based on the stored FAQ knowledge base. 
+If the question is unrelated or not found in the database, politely reply:
+"Sorry, I don't have an answer for that."
+
+Keep your response concise, helpful, and professional.`
+              },
+              {
+                role: 'user',
+                content: `Question: ${normalizedQuestion}
+
+FAQ Knowledge Base:
+Question: ${bestMatch.faq.question}
+Answer: ${bestMatch.faq.answer}
+
+Please provide a helpful response based on this FAQ knowledge.`
+              }
+            ],
+            max_tokens: 300,
+            temperature: 0.7
+          });
+          
+          const enhancedAnswer = openaiResponse.choices[0]?.message?.content?.trim() || bestMatch.faq.answer;
+          
+          return {
+            type: 'faq',
+            response: enhancedAnswer,
+            confidence: bestMatch.similarity,
+            source: 'faq_vector_search',
+            originalFAQ: {
+              question: bestMatch.faq.question,
+              answer: bestMatch.faq.answer
+            },
+            similarity: bestMatch.similarity,
+            topMatches: topMatches.slice(0, 3).map(match => ({
+              question: match.faq.question,
+              answer: match.faq.answer,
+              similarity: match.similarity
+            }))
+          };
+          
+        } catch (openaiError) {
+          console.error('OpenAI enhancement failed:', openaiError);
+          
+          // Return original FAQ answer if OpenAI fails
+          return {
+            type: 'faq',
+            response: bestMatch.faq.answer,
+            confidence: bestMatch.similarity,
+            source: 'faq_vector_search',
+            originalFAQ: {
+              question: bestMatch.faq.question,
+              answer: bestMatch.faq.answer
+            },
+            similarity: bestMatch.similarity,
+            fallback: true
+          };
+        }
+      }
+    }
+    
+    // Step 2: If no good FAQ match found, check if this is a capability question
+    const capabilityPatterns = [
+      /what\s+can\s+you\s+do/i,
+      /what\s+are\s+your\s+capabilities/i,
+      /what\s+are\s+your\s+use\s+cases/i,
+      /how\s+can\s+you\s+help/i,
+      /what\s+do\s+you\s+do/i,
+      /tell\s+me\s+about\s+yourself/i
+    ];
+    
+    const isCapabilityQuestion = capabilityPatterns.some(pattern => pattern.test(normalizedQuestion));
+    
+    if (isCapabilityQuestion) {
+      console.log('Capability question detected, checking AI tool intent for:', normalizedQuestion);
+      
+      const aiIntent = await aiToolService.detectIntent(normalizedQuestion);
+      
+      if (aiIntent && aiIntent.action === 'getCapabilities') {
+        try {
+          const aiResponse = await aiToolService.executeAITool(aiIntent);
+          
+          return {
+            type: 'ai_tool',
+            intent: aiIntent,
+            response: aiResponse,
+            confidence: aiIntent.confidence,
+            source: 'ai_tool_service'
+          };
+        } catch (aiError) {
+          console.error('AI Tool execution failed:', aiError);
+          // Continue to fallback response
+        }
+      }
+    }
+    
+    // Step 3: If no good FAQ match and not a capability question, check AI tool intent for data/analytics requests
+    console.log('No good FAQ match found, checking AI tool intent for:', normalizedQuestion);
+    
+    const aiIntent = await aiToolService.detectIntent(normalizedQuestion);
+    
+    if (aiIntent && aiIntent.action !== 'getCapabilities') {
       console.log('AI Tool Intent Detected:', aiIntent);
       
       try {
@@ -203,19 +337,11 @@ export const askQuestion = async (question) => {
         };
       } catch (aiError) {
         console.error('AI Tool execution failed:', aiError);
-        // Fall back to FAQ search if AI tool fails
+        // Continue to fallback response
       }
     }
     
-    // Step 2: Fall back to FAQ vector search
-    console.log('Using FAQ vector search for:', normalizedQuestion);
-    
-    // Generate embedding for the question
-    const questionEmbedding = await generateEmbedding(normalizedQuestion);
-    
-    // Find similar FAQs using vector similarity
-    const allFAQs = await FaqVector.find({}).lean();
-    
+    // Step 4: Final fallback - no FAQ match and no AI tool
     if (allFAQs.length === 0) {
       return {
         type: 'faq',
@@ -224,96 +350,12 @@ export const askQuestion = async (question) => {
         source: 'faq_vector_search',
         fallback: true
       };
-    }
-    
-    // Calculate similarities and find best matches
-    const similarities = allFAQs.map(faq => ({
-      faq,
-      similarity: cosineSimilarity(questionEmbedding, faq.embedding)
-    }));
-    
-    // Sort by similarity (descending)
-    similarities.sort((a, b) => b.similarity - a.similarity);
-    
-    // Get top matches above threshold
-    const threshold = 0.7;
-    const topMatches = similarities.filter(item => item.similarity >= threshold);
-    
-    if (topMatches.length === 0) {
+    } else {
       return {
         type: 'faq',
         response: "I don't have a specific answer for that question. Could you please rephrase or ask something else?",
         confidence: 0,
         source: 'faq_vector_search',
-        fallback: true
-      };
-    }
-    
-    // Get the best match
-    const bestMatch = topMatches[0];
-    
-    // Use OpenAI to enhance the FAQ response
-    try {
-      const openaiResponse = await openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a helpful support assistant. 
-Answer ONLY based on the stored FAQ knowledge base. 
-If the question is unrelated or not found in the database, politely reply:
-"Sorry, I don't have an answer for that."
-
-Keep your response concise, helpful, and professional.`
-          },
-          {
-            role: 'user',
-            content: `Question: ${normalizedQuestion}
-
-FAQ Knowledge Base:
-Question: ${bestMatch.faq.question}
-Answer: ${bestMatch.faq.answer}
-
-Please provide a helpful response based on this FAQ knowledge.`
-          }
-        ],
-        max_tokens: 300,
-        temperature: 0.7
-      });
-      
-      const enhancedAnswer = openaiResponse.choices[0]?.message?.content?.trim() || bestMatch.faq.answer;
-      
-      return {
-        type: 'faq',
-        response: enhancedAnswer,
-        confidence: bestMatch.similarity,
-        source: 'faq_vector_search',
-        originalFAQ: {
-          question: bestMatch.faq.question,
-          answer: bestMatch.faq.answer
-        },
-        similarity: bestMatch.similarity,
-        topMatches: topMatches.slice(0, 3).map(match => ({
-          question: match.faq.question,
-          answer: match.faq.answer,
-          similarity: match.similarity
-        }))
-      };
-      
-    } catch (openaiError) {
-      console.error('OpenAI enhancement failed:', openaiError);
-      
-      // Return original FAQ answer if OpenAI fails
-      return {
-        type: 'faq',
-        response: bestMatch.faq.answer,
-        confidence: bestMatch.similarity,
-        source: 'faq_vector_search',
-        originalFAQ: {
-          question: bestMatch.faq.question,
-          answer: bestMatch.faq.answer
-        },
-        similarity: bestMatch.similarity,
         fallback: true
       };
     }
