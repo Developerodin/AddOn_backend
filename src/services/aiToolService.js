@@ -773,9 +773,12 @@ export const getSalesReport = async (params = {}) => {
       dateTo, 
       city, 
       category, 
-      limit = 20,
+      limit,
       groupBy = 'product'
     } = params;
+    
+    // Set default limit if not provided or invalid
+    const reportLimit = parseInt(limit) || 20;
     
     // Build filter
     let filter = {};
@@ -805,12 +808,60 @@ export const getSalesReport = async (params = {}) => {
     let columns = [];
     let tableData = [];
     
-    // Use appropriate analytics service based on groupBy
+    // Use direct database queries instead of analytics service
     if (groupBy === 'product') {
-      reportData = await analyticsService.getProductPerformanceAnalysis({
-        ...filter,
-        limit: parseInt(limit)
-      });
+      // Get product performance data directly
+      const productMatch = {};
+      if (storeIds && storeIds.length > 0) {
+        productMatch.plant = { $in: storeIds };
+      }
+      if (filter.dateFrom || filter.dateTo) {
+        productMatch.date = {};
+        if (filter.dateFrom) productMatch.date.$gte = new Date(filter.dateFrom);
+        if (filter.dateTo) productMatch.date.$lte = new Date(filter.dateTo);
+      }
+      
+      reportData = await Sales.aggregate([
+        { $match: productMatch },
+        {
+          $lookup: {
+            from: 'products',
+            localField: 'materialCode',
+            foreignField: '_id',
+            as: 'productData'
+          }
+        },
+        { $unwind: '$productData' },
+        {
+          $lookup: {
+            from: 'categories',
+            localField: 'productData.category',
+            foreignField: '_id',
+            as: 'categoryData'
+          }
+        },
+        {
+          $unwind: {
+            path: '$categoryData',
+            preserveNullAndEmptyArrays: true
+          }
+        },
+        {
+          $group: {
+            _id: '$materialCode',
+            productName: { $first: '$productData.name' },
+            productCode: { $first: '$productData.softwareCode' },
+            categoryName: { $first: { $ifNull: ['$categoryData.name', 'Unknown Category'] } },
+            totalQuantity: { $sum: '$quantity' },
+            totalNSV: { $sum: '$nsv' },
+            totalGSV: { $sum: '$gsv' },
+            totalDiscount: { $sum: '$discount' },
+            recordCount: { $sum: 1 }
+          }
+        },
+        { $sort: { totalNSV: -1 } },
+        { $limit: reportLimit }
+      ]);
       
       columns = ['Rank', 'Product Name', 'Code', 'Category', 'Quantity', 'NSV (₹)', 'GSV (₹)', 'Discount (₹)', 'Orders'];
       tableData = reportData.map((item, index) => [
@@ -818,15 +869,50 @@ export const getSalesReport = async (params = {}) => {
         item.productName || 'Unknown',
         item.productCode || 'N/A',
         item.categoryName || 'Unknown',
-        item.totalQuantity.toLocaleString(),
-        `₹${item.totalNSV.toLocaleString()}`,
-        `₹${item.totalGSV.toLocaleString()}`,
-        `₹${item.totalDiscount.toLocaleString()}`,
-        item.recordCount
+        (item.totalQuantity || 0).toLocaleString(),
+        `₹${(item.totalNSV || 0).toLocaleString()}`,
+        `₹${(item.totalGSV || 0).toLocaleString()}`,
+        `₹${(item.totalDiscount || 0).toLocaleString()}`,
+        item.recordCount || 0
       ]);
       
     } else if (groupBy === 'store') {
-      reportData = await analyticsService.getStorePerformanceAnalysis(filter);
+      // Get store performance data directly
+      const storeMatch = {};
+      if (filter.dateFrom || filter.dateTo) {
+        storeMatch.date = {};
+        if (filter.dateFrom) storeMatch.date.$gte = new Date(filter.dateFrom);
+        if (filter.dateTo) storeMatch.date.$lte = new Date(filter.dateTo);
+      }
+      
+      reportData = await Sales.aggregate([
+        { $match: storeMatch },
+        {
+          $lookup: {
+            from: 'stores',
+            localField: 'plant',
+            foreignField: '_id',
+            as: 'storeData'
+          }
+        },
+        { $unwind: '$storeData' },
+        {
+          $group: {
+            _id: '$storeData._id',
+            storeName: { $first: '$storeData.storeName' },
+            storeId: { $first: '$storeData.storeId' },
+            city: { $first: '$storeData.city' },
+            totalQuantity: { $sum: '$quantity' },
+            totalNSV: { $sum: '$nsv' },
+            totalGSV: { $sum: '$gsv' },
+            totalDiscount: { $sum: '$discount' },
+            totalTax: { $sum: '$totalTax' },
+            recordCount: { $sum: 1 }
+          }
+        },
+        { $sort: { totalNSV: -1 } },
+        { $limit: reportLimit }
+      ]);
       
       columns = ['Rank', 'Store Name', 'Store ID', 'City', 'Quantity', 'NSV (₹)', 'GSV (₹)', 'Discount (₹)', 'Tax (₹)', 'Orders'];
       tableData = reportData.map((item, index) => [
@@ -834,27 +920,52 @@ export const getSalesReport = async (params = {}) => {
         item.storeName || 'Unknown',
         item.storeId || 'N/A',
         item.city || 'Unknown',
-        item.totalQuantity.toLocaleString(),
-        `₹${item.totalNSV.toLocaleString()}`,
-        `₹${item.totalGSV.toLocaleString()}`,
-        `₹${item.totalDiscount.toLocaleString()}`,
-        `₹${item.totalTax.toLocaleString()}`,
-        item.recordCount
+        (item.totalQuantity || 0).toLocaleString(),
+        `₹${(item.totalNSV || 0).toLocaleString()}`,
+        `₹${(item.totalGSV || 0).toLocaleString()}`,
+        `₹${(item.totalDiscount || 0).toLocaleString()}`,
+        `₹${(item.totalTax || 0).toLocaleString()}`,
+        item.recordCount || 0
       ]);
       
     } else if (groupBy === 'date') {
-      reportData = await analyticsService.getTimeBasedSalesTrends(filter);
+      // Get time-based sales trends directly
+      const dateMatch = {};
+      if (filter.dateFrom || filter.dateTo) {
+        dateMatch.date = {};
+        if (filter.dateFrom) dateMatch.date.$gte = new Date(filter.dateFrom);
+        if (filter.dateTo) dateMatch.date.$lte = new Date(filter.dateTo);
+      }
+      
+      reportData = await Sales.aggregate([
+        { $match: dateMatch },
+        {
+          $group: {
+            _id: {
+              date: { $dateToString: { format: '%Y-%m-%d', date: '$date' } }
+            },
+            totalQuantity: { $sum: '$quantity' },
+            totalNSV: { $sum: '$nsv' },
+            totalGSV: { $sum: '$gsv' },
+            totalDiscount: { $sum: '$discount' },
+            totalTax: { $sum: '$totalTax' },
+            recordCount: { $sum: 1 }
+          }
+        },
+        { $sort: { '_id.date': 1 } },
+        { $limit: reportLimit }
+      ]);
       
       columns = ['Rank', 'Date', 'Quantity', 'NSV (₹)', 'GSV (₹)', 'Discount (₹)', 'Tax (₹)', 'Orders'];
       tableData = reportData.map((item, index) => [
         index + 1,
-        new Date(item.date).toLocaleDateString(),
-        item.totalQuantity.toLocaleString(),
-        `₹${item.totalNSV.toLocaleString()}`,
-        `₹${item.totalGSV.toLocaleString()}`,
-        `₹${item.totalDiscount.toLocaleString()}`,
-        `₹${item.totalTax.toLocaleString()}`,
-        item.recordCount
+        item._id.date,
+        (item.totalQuantity || 0).toLocaleString(),
+        `₹${(item.totalNSV || 0).toLocaleString()}`,
+        `₹${(item.totalGSV || 0).toLocaleString()}`,
+        `₹${(item.totalDiscount || 0).toLocaleString()}`,
+        `₹${(item.totalTax || 0).toLocaleString()}`,
+        item.recordCount || 0
       ]);
     }
     
@@ -1689,13 +1800,103 @@ export const getProductAnalysis = async (params = {}) => {
       return generateHTMLResponse('Product Not Found', `Product "${productName}" not found in the system.`);
     }
     
-    // Get product analysis using analytics service
-    const productAnalysis = await analyticsService.getIndividualProductAnalysis({
-      productId: product._id
-    });
+    // Get product analysis directly from sales data
+    const productAnalysis = await Sales.aggregate([
+      { $match: { materialCode: product._id } },
+      {
+        $lookup: {
+          from: 'stores',
+          localField: 'plant',
+          foreignField: '_id',
+          as: 'storeData'
+        }
+      },
+      { $unwind: '$storeData' },
+      {
+        $lookup: {
+          from: 'categories',
+          localField: 'product.category',
+          foreignField: '_id',
+          as: 'categoryData'
+        }
+      },
+      {
+        $unwind: {
+          path: '$categoryData',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalQuantity: { $sum: '$quantity' },
+          totalNSV: { $sum: '$nsv' },
+          totalGSV: { $sum: '$gsv' },
+          totalDiscount: { $sum: '$discount' },
+          totalOrders: { $sum: 1 },
+          avgOrderValue: { $avg: '$nsv' }
+        }
+      }
+    ]);
     
-    if (!productAnalysis) {
-      return generateHTMLResponse('No Data Available', `No analysis data available for ${product.name}.`);
+    if (!productAnalysis || productAnalysis.length === 0) {
+      return generateHTMLResponse('No Sales Data', `No sales data available for ${product.name}.`);
+    }
+    
+    const summary = productAnalysis[0];
+    
+    // Get monthly sales analysis
+    const monthlySales = await Sales.aggregate([
+      { $match: { materialCode: product._id } },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$date' },
+            month: { $month: '$date' }
+          },
+          totalQuantity: { $sum: '$quantity' },
+          totalNSV: { $sum: '$nsv' },
+          totalOrders: { $sum: 1 }
+        }
+      },
+      { $sort: { '_id.year': 1, '_id.month': 1 } },
+      { $limit: 6 }
+    ]);
+    
+    // Get store-wise performance
+    const storePerformance = await Sales.aggregate([
+      { $match: { materialCode: product._id } },
+      {
+        $lookup: {
+          from: 'stores',
+          localField: 'plant',
+          foreignField: '_id',
+          as: 'storeData'
+        }
+      },
+      { $unwind: '$storeData' },
+      {
+        $group: {
+          _id: '$storeData._id',
+          storeName: { $first: '$storeData.storeName' },
+          storeCode: { $first: '$storeData.storeId' },
+          totalQuantity: { $sum: '$quantity' },
+          totalNSV: { $sum: '$nsv' },
+          totalOrders: { $sum: 1 }
+        }
+      },
+      { $sort: { totalNSV: -1 } },
+      { $limit: 10 }
+    ]);
+    
+    // Calculate trend (simple comparison with previous period)
+    let currentTrend = 0;
+    if (monthlySales.length >= 2) {
+      const currentMonth = monthlySales[monthlySales.length - 1];
+      const previousMonth = monthlySales[monthlySales.length - 2];
+      if (previousMonth.totalNSV > 0) {
+        currentTrend = ((currentMonth.totalNSV - previousMonth.totalNSV) / previousMonth.totalNSV * 100).toFixed(1);
+      }
     }
     
     // Generate product analysis HTML
@@ -1707,14 +1908,18 @@ export const getProductAnalysis = async (params = {}) => {
         <div class="city-info">
           <p><strong>Product Name:</strong> ${product.name}</p>
           <p><strong>Product Code:</strong> ${product.softwareCode || 'N/A'}</p>
-          <p><strong>Category:</strong> ${product.category || 'Uncategorized'}</p>
-          <p><strong>Total Quantity Sold:</strong> ${productAnalysis.productInfo.totalQuantity.toLocaleString()}</p>
-          <p><strong>Total Revenue:</strong> ₹${productAnalysis.productInfo.totalNSV.toLocaleString()}</p>
-          <p><strong>Current Trend:</strong> ${productAnalysis.productInfo.currentTrend}%</p>
+          <p><strong>Category:</strong> ${product.category ? 'Unknown Category' : 'Uncategorized'}</p>
+          <p><strong>Total Quantity Sold:</strong> ${(summary.totalQuantity || 0).toLocaleString()}</p>
+          <p><strong>Total Revenue (NSV):</strong> ₹${(summary.totalNSV || 0).toLocaleString()}</p>
+          <p><strong>Total Revenue (GSV):</strong> ₹${(summary.totalGSV || 0).toLocaleString()}</p>
+          <p><strong>Total Discount:</strong> ₹${(summary.totalDiscount || 0).toLocaleString()}</p>
+          <p><strong>Total Orders:</strong> ${(summary.totalOrders || 0).toLocaleString()}</p>
+          <p><strong>Average Order Value:</strong> ₹${(summary.avgOrderValue || 0).toFixed(2)}</p>
+          <p><strong>Current Trend:</strong> ${currentTrend}%</p>
         </div>
         
         <!-- Monthly Sales Analysis -->
-        ${productAnalysis.monthlySalesAnalysis && productAnalysis.monthlySalesAnalysis.length > 0 ? `
+        ${monthlySales && monthlySales.length > 0 ? `
           <div class="chart-container">
             <h4>📈 Monthly Sales Trend</h4>
             <div class="table-container">
@@ -1724,14 +1929,16 @@ export const getProductAnalysis = async (params = {}) => {
                     <th>Month</th>
                     <th>Quantity Sold</th>
                     <th>Revenue (₹)</th>
+                    <th>Orders</th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${productAnalysis.monthlySalesAnalysis.slice(0, 6).map((month) => `
+                  ${monthlySales.map((month) => `
                     <tr>
-                      <td>${new Date(month.month).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</td>
-                      <td>${month.totalQuantity.toLocaleString()}</td>
-                      <td>₹${month.totalNSV.toLocaleString()}</td>
+                      <td>${month._id.month}/${month._id.year}</td>
+                      <td>${(month.totalQuantity || 0).toLocaleString()}</td>
+                      <td>₹${(month.totalNSV || 0).toLocaleString()}</td>
+                      <td>${month.totalOrders || 0}</td>
                     </tr>
                   `).join('')}
                 </tbody>
@@ -1741,7 +1948,7 @@ export const getProductAnalysis = async (params = {}) => {
         ` : ''}
         
         <!-- Store-wise Performance -->
-        ${productAnalysis.storeWiseSalesAnalysis && productAnalysis.storeWiseSalesAnalysis.length > 0 ? `
+        ${storePerformance && storePerformance.length > 0 ? `
           <div class="chart-container">
             <h4>🏪 Store Performance</h4>
             <div class="table-container">
@@ -1753,16 +1960,18 @@ export const getProductAnalysis = async (params = {}) => {
                     <th>Store Code</th>
                     <th>Quantity Sold</th>
                     <th>Revenue (₹)</th>
+                    <th>Orders</th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${productAnalysis.storeWiseSalesAnalysis.slice(0, 10).map((store, index) => `
+                  ${storePerformance.map((store, index) => `
                     <tr>
                       <td>${index + 1}</td>
                       <td>${store.storeName || 'Unknown'}</td>
                       <td>${store.storeCode || 'N/A'}</td>
-                      <td>${store.totalQuantity.toLocaleString()}</td>
-                      <td>₹${store.totalNSV.toLocaleString()}</td>
+                      <td>${(store.totalQuantity || 0).toLocaleString()}</td>
+                      <td>₹${(store.totalNSV || 0).toLocaleString()}</td>
+                      <td>${store.totalOrders || 0}</td>
                     </tr>
                   `).join('')}
                 </tbody>
