@@ -27,6 +27,7 @@ const envVarsSchema = Joi.object()
     AWS_SECRET_ACCESS_KEY: Joi.string().required().description('AWS secret access key'),
     AWS_REGION: Joi.string().required().description('AWS region'),
     AWS_BUCKET_NAME: Joi.string().required().description('AWS S3 bucket name'),
+    OPENAI_API_KEY: Joi.string().required().description('OpenAI API key'),
   })
   .unknown();
 
@@ -72,6 +73,9 @@ const config = {
     s3: {
       bucket: process.env.AWS_BUCKET_NAME,
     }
+  },
+  openai: {
+    apiKey: envVars.OPENAI_API_KEY,
   },
 };
 

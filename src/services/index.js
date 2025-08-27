@@ -9,4 +9,5 @@ export * as storeService from './store.service.js';
 export * as sealsExcelMasterService from './sealsExcelMaster.service.js';
 export * as salesService from './sales.service.js';
 export * as analyticsService from './analytics.service.js';
+export * as faqService from './faq.service.js';
 

@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Tool-Calling & FAQ System Demo</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            line-height: 1.6;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .header h1 {
+            margin: 0 0 10px 0;
+            font-size: 2.5em;
+            font-weight: 700;
+        }
+        
+        .header p {
+            margin: 0;
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .demo-section {
+            background: white;
+            padding: 25px;
+            margin: 25px 0;
+            border-radius: 12px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        .demo-section h2 {
+            color: #2c3e50;
+            margin: 0 0 20px 0;
+            font-size: 1.8em;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        
+        .demo-section h3 {
+            color: #34495e;
+            margin: 20px 0 15px 0;
+            font-size: 1.4em;
+        }
+        
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .feature-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #3498db;
+            transition: transform 0.2s ease;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-2px);
+        }
+        
+        .feature-card h4 {
+            color: #2c3e50;
+            margin: 0 0 10px 0;
+            font-size: 1.2em;
+        }
+        
+        .feature-card p {
+            color: #555;
+            margin: 0;
+            font-size: 0.95em;
+        }
+        
+        .example-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .example-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #e1e5e9;
+        }
+        
+        .example-card h4 {
+            color: #2c3e50;
+            margin: 0 0 15px 0;
+            font-size: 1.1em;
+            display: flex;
+            align-items: center;
+        }
+        
+        .example-card h4::before {
+            content: "💡";
+            margin-right: 8px;
+        }
+        
+        .example-question {
+            background: #e3f2fd;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 10px 0;
+            border-left: 3px solid #2196f3;
+            font-weight: 500;
+        }
+        
+        .example-response {
+            background: #f3e5f5;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 10px 0;
+            border-left: 3px solid #9c27b0;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        
+        .capability-list {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .capability-list li {
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            align-items: center;
+        }
+        
+        .capability-list li::before {
+            content: "✅";
+            margin-right: 10px;
+            color: #27ae60;
+        }
+        
+        .capability-list li:last-child {
+            border-bottom: none;
+        }
+        
+        .tech-stack {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        
+        .tech-stack h3 {
+            margin: 0 0 15px 0;
+            text-align: center;
+        }
+        
+        .tech-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+        
+        .tech-item {
+            text-align: center;
+            padding: 15px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 6px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .tech-item strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+        
+        .tech-item span {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+        
+        .integration-flow {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        
+        .flow-step {
+            display: flex;
+            align-items: center;
+            margin: 15px 0;
+            padding: 15px;
+            background: white;
+            border-radius: 6px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .flow-step-number {
+            background: #3498db;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 15px;
+            flex-shrink: 0;
+        }
+        
+        .flow-step-content h4 {
+            margin: 0 0 5px 0;
+            color: #2c3e50;
+        }
+        
+        .flow-step-content p {
+            margin: 0;
+            color: #555;
+            font-size: 0.9em;
+        }
+        
+        .benefits-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .benefit-card {
+            background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .benefit-card h4 {
+            margin: 0 0 10px 0;
+            font-size: 1.2em;
+        }
+        
+        .benefit-card p {
+            margin: 0;
+            opacity: 0.9;
+            font-size: 0.9em;
+        }
+        
+        .code-example {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 0.9em;
+            overflow-x: auto;
+            margin: 20px 0;
+        }
+        
+        .code-example .comment {
+            color: #68d391;
+        }
+        
+        .code-example .keyword {
+            color: #63b3ed;
+        }
+        
+        .code-example .string {
+            color: #fbb6ce;
+        }
+        
+        .highlight {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 4px solid #ffc107;
+            margin: 20px 0;
+        }
+        
+        .highlight h4 {
+            margin: 0 0 10px 0;
+            color: #856404;
+        }
+        
+        .highlight p {
+            margin: 0;
+            color: #856404;
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding: 20px;
+            color: #666;
+            border-top: 1px solid #eee;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .feature-grid,
+            .example-grid,
+            .tech-grid,
+            .benefits-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .demo-section {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚀 AI Tool-Calling & FAQ System</h1>
+        <p>Intelligent Business Intelligence with Natural Language Processing</p>
+    </div>
+
+    <div class="demo-section">
+        <h2>🎯 What This System Does</h2>
+        <p>This is a comprehensive AI-powered system that combines:</p>
+        <ul class="capability-list">
+            <li><strong>AI Tool-Calling:</strong> Automatically detects user intent and calls appropriate backend services</li>
+            <li><strong>FAQ Vector Search:</strong> Uses OpenAI embeddings for semantic question matching</li>
+            <li><strong>Business Intelligence:</strong> Generates reports, analytics, and insights on demand</li>
+            <li><strong>Natural Language Processing:</strong> Understands business questions in plain English</li>
+        </ul>
+    </div>
+
+    <div class="demo-section">
+        <h2>🤖 AI Tool-Calling Capabilities</h2>
+        <div class="feature-grid">
+            <div class="feature-card">
+                <h4>📊 Analytics Dashboard</h4>
+                <p>Generate comprehensive business insights with KPIs, trends, and performance metrics</p>
+            </div>
+            <div class="feature-card">
+                <h4>🏆 Top Products Analysis</h4>
+                <p>Identify best-performing products across all stores or in specific cities</p>
+            </div>
+            <div class="feature-card">
+                <h4>📦 Inventory Management</h4>
+                <p>Get product counts, stock levels, and inventory summaries</p>
+            </div>
+            <div class="feature-card">
+                <h4>🏪 Store Performance</h4>
+                <p>Analyze individual store performance, trends, and recommendations</p>
+            </div>
+            <div class="feature-card">
+                <h4>📈 Sales Reports</h4>
+                <p>Generate detailed sales reports with various grouping and filtering options</p>
+            </div>
+            <div class="feature-card">
+                <h4>🔍 Demand Forecasting</h4>
+                <p>Predict future demand patterns for products and stores</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="demo-section">
+        <h2>💡 Example Questions & Responses</h2>
+        <div class="example-grid">
+            <div class="example-card">
+                <h4>Product Analytics</h4>
+                <div class="example-question">"Show me top products in Mumbai"</div>
+                <div class="example-response">AI Tool: getTopProductsInCity(Mumbai)
+Returns: HTML table with top products, sales data, and performance metrics</div>
+            </div>
+            
+            <div class="example-card">
+                <h4>Inventory Queries</h4>
+                <div class="example-question">"How many products do we have?"</div>
+                <div class="example-response">AI Tool: getProductCount()
+Returns: KPI cards showing total, active, and inactive product counts</div>
+            </div>
+            
+            <div class="example-card">
+                <h4>Business Intelligence</h4>
+                <div class="example-question">"Create an analytics dashboard"</div>
+                <div class="example-response">AI Tool: getAnalyticsDashboard()
+Returns: Comprehensive dashboard with KPIs, charts, and performance tables</div>
+            </div>
+            
+            <div class="example-card">
+                <h4>Sales Analysis</h4>
+                <div class="example-question">"Generate a sales report for last month"</div>
+                <div class="example-response">AI Tool: getSalesReport({dateFrom, dateTo})
+Returns: Detailed sales report with product/store breakdowns</div>
+            </div>
+            
+            <div class="example-card">
+                <h4>Store Performance</h4>
+                <div class="example-question">"Show me store performance analysis"</div>
+                <div class="example-response">AI Tool: getStoreAnalysis()
+Returns: Store-wise performance metrics and trend analysis</div>
+            </div>
+            
+            <div class="example-card">
+                <h4>FAQ Knowledge</h4>
+                <div class="example-question">"How do you prevent stockouts?"</div>
+                <div class="example-response">FAQ Vector Search: Semantic matching
+Returns: Enhanced answer using OpenAI with stored knowledge base</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="demo-section">
+        <h2>⚙️ How It Works</h2>
+        <div class="integration-flow">
+            <div class="flow-step">
+                <div class="flow-step-number">1</div>
+                <div class="flow-step-content">
+                    <h4>User Asks Question</h4>
+                    <p>User types a natural language question about business data</p>
+                </div>
+            </div>
+            
+            <div class="flow-step">
+                <div class="flow-step-number">2</div>
+                <div class="flow-step-content">
+                    <h4>Intent Detection</h4>
+                    <p>System analyzes the question to detect if it's an AI tool request or FAQ query</p>
+                </div>
+            </div>
+            
+            <div class="flow-step">
+                <div class="flow-step-number">3</div>
+                <div class="flow-step-content">
+                    <h4>Service Execution</h4>
+                    <p>If AI tool: Calls appropriate backend service (analytics, products, sales, etc.)</p>
+                </div>
+            </div>
+            
+            <div class="flow-step">
+                <div class="flow-step-number">4</div>
+                <div class="flow-step-content">
+                    <h4>Response Generation</h4>
+                    <p>Generates formatted HTML response with tables, charts, and insights</p>
+                </div>
+            </div>
+            
+            <div class="flow-step">
+                <div class="flow-step-number">5</div>
+                <div class="flow-step-content">
+                    <h4>Fallback to FAQ</h4>
+                    <p>If no AI tool match: Uses vector similarity search for FAQ knowledge</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="demo-section">
+        <h2>🛠️ Technical Architecture</h2>
+        <div class="tech-stack">
+            <h3>Technology Stack</h3>
+            <div class="tech-grid">
+                <div class="tech-item">
+                    <strong>Backend</strong>
+                    <span>Node.js + Express</span>
+                </div>
+                <div class="tech-item">
+                    <strong>Database</strong>
+                    <span>MongoDB</span>
+                </div>
+                <div class="tech-item">
+                    <strong>AI/ML</strong>
+                    <span>OpenAI GPT-3.5</span>
+                </div>
+                <div class="tech-item">
+                    <strong>Embeddings</strong>
+                    <span>OpenAI text-embedding-3-small</span>
+                </div>
+                <div class="tech-item">
+                    <strong>Vector Search</strong>
+                    <span>Cosine Similarity</span>
+                </div>
+                <div class="tech-item">
+                    <strong>Services</strong>
+                    <span>Analytics, Products, Sales, Stores</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="demo-section">
+        <h2>📋 Available AI Tools</h2>
+        <div class="code-example">
+<span class="comment">// AI Tool Functions Available</span>
+<span class="keyword">export const</span> <span class="string">getTopProducts</span> = <span class="keyword">async</span> (city) => {
+  <span class="comment">// Get top products across all stores or filtered by city</span>
+  <span class="keyword">return</span> <span class="string">analyticsService</span>.<span class="string">getProductPerformanceAnalysis</span>();
+};
+
+<span class="keyword">export const</span> <span class="string">getProductCount</span> = <span class="keyword">async</span> () => {
+  <span class="comment">// Get total product count and inventory summary</span>
+  <span class="keyword">return</span> <span class="string">productService</span>.<span class="string">queryProducts</span>();
+};
+
+<span class="keyword">export const</span> <span class="string">getTopProductsInCity</span> = <span class="keyword">async</span> (city) => {
+  <span class="comment">// Get top products in a specific city</span>
+  <span class="keyword">return</span> <span class="string">analyticsService</span>.<span class="string">getStorePerformanceAnalysis</span>();
+};
+
+<span class="keyword">export const</span> <span class="string">getSalesReport</span> = <span class="keyword">async</span> (params) => {
+  <span class="comment">// Generate comprehensive sales reports</span>
+  <span class="keyword">return</span> <span class="string">analyticsService</span>.<span class="string">getAnalyticsDashboard</span>();
+};
+
+<span class="keyword">export const</span> <span class="string">getAnalyticsDashboard</span> = <span class="keyword">async</span> (params) => {
+  <span class="comment">// Get complete business intelligence dashboard</span>
+  <span class="keyword">return</span> <span class="string">analyticsService</span>.<span class="string">getAnalyticsDashboard</span>();
+};
+
+<span class="keyword">export const</span> <span class="string">getStoreAnalysis</span> = <span class="keyword">async</span> (params) => {
+  <span class="comment">// Analyze individual store performance</span>
+  <span class="keyword">return</span> <span class="string">analyticsService</span>.<span class="string">getIndividualStoreAnalysis</span>();
+};
+        </div>
+    </div>
+
+    <div class="demo-section">
+        <h2>🎯 Intent Detection Patterns</h2>
+        <div class="code-example">
+<span class="comment">// Intent Detection Patterns</span>
+<span class="keyword">const</span> intents = [
+  {
+    pattern: <span class="string">/top\s+products\s+(?:in\s+)?([a-zA-Z\s,]+)/i</span>,
+    action: <span class="string">'getTopProductsInCity'</span>,
+    description: <span class="string">'Get top products in a specific city'</span>
+  },
+  {
+    pattern: <span class="string">/top\s+products/i</span>,
+    action: <span class="string">'getTopProducts'</span>,
+    description: <span class="string">'Get top products across all stores'</span>
+  },
+  {
+    pattern: <span class="string">/how\s+many\s+products|product\s+count/i</span>,
+    action: <span class="string">'getProductCount'</span>,
+    description: <span class="string">'Get total product count'</span>
+  },
+  {
+    pattern: <span class="string">/sales\s+report|analytics\s+dashboard/i</span>,
+    action: <span class="string">'getAnalyticsDashboard'</span>,
+    description: <span class="string">'Get comprehensive business insights'</span>
+  }
+];
+        </div>
+    </div>
+
+    <div class="demo-section">
+        <h2>🚀 Key Benefits</h2>
+        <div class="benefits-grid">
+            <div class="benefit-card">
+                <h4>🎯 Intelligent Intent Detection</h4>
+                <p>Automatically understands user questions and routes to appropriate services</p>
+            </div>
+            <div class="benefit-card">
+                <h4>📊 Rich Data Visualization</h4>
+                <p>Generates beautiful HTML responses with tables, charts, and KPIs</p>
+            </div>
+            <div class="benefit-card">
+                <h4>🔄 Seamless Fallback</h4>
+                <p>Falls back to FAQ search when AI tools don't match</p>
+            </div>
+            <div class="benefit-card">
+                <h4>⚡ Real-time Analytics</h4>
+                <p>Provides instant access to business intelligence and performance data</p>
+            </div>
+            <div class="benefit-card">
+                <h4>🔍 Semantic Search</h4>
+                <p>Uses AI embeddings for intelligent FAQ matching</p>
+            </div>
+            <div class="benefit-card">
+                <h4>🛠️ Extensible Architecture</h4>
+                <p>Easy to add new AI tools and services</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="highlight">
+        <h4>💡 Pro Tips</h4>
+        <p><strong>Best Practices:</strong> Ask specific questions like "Show me top products in Mumbai" or "Generate sales report for last month". The system works best with clear, business-focused queries.</p>
+    </div>
+
+    <div class="demo-section">
+        <h2>🔧 Integration Points</h2>
+        <p>This system integrates with your existing backend services:</p>
+        <ul class="capability-list">
+            <li><strong>Analytics Service:</strong> Sales trends, product performance, store analysis</li>
+            <li><strong>Product Service:</strong> Inventory management, product queries</li>
+            <li><strong>Store Service:</strong> Store information and performance data</li>
+            <li><strong>Sales Service:</strong> Transaction data and reporting</li>
+            <li><strong>Replenishment Service:</strong> Demand forecasting and stock recommendations</li>
+        </ul>
+    </div>
+
+    <div class="footer">
+        <p>🚀 AI Tool-Calling & FAQ System - Powered by OpenAI, MongoDB, and Node.js</p>
+        <p>Transform your business intelligence with natural language queries!</p>
+    </div>
+</body>
+</html>

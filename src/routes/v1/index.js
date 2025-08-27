@@ -17,6 +17,7 @@ import fileManagerRoute from './fileManager.route.js';
 import forecastRoute from './forecast.route.js';
 import replenishmentRoute from './replenishment.route.js';
 import chatbotRoute from './chatbot.route.js';
+import faqRoute from './faq.route.js';
 import config from '../../config/config.js';
 
 const router = express.Router();
@@ -89,6 +90,10 @@ const defaultRoutes = [
   {
     path: '/chatbot',
     route: chatbotRoute,
+  },
+  {
+    path: '/faq',
+    route: faqRoute,
   },
 ];
 

@@ -243,6 +243,33 @@ const HTML_TEMPLATES = {
     </div>
   `,
 
+  // Greeting template
+  greeting: () => `
+    <div class="greeting-container" style="text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 10px; margin: 20px 0;">
+      <h2 style="margin: 0 0 15px 0; font-size: 24px;">👋 Hello! I'm Your Business Analytics Assistant</h2>
+      <p style="margin: 0 0 20px 0; font-size: 16px; opacity: 0.9;">I can help you analyze your business data and get insights quickly. Here are some things I can do:</p>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px;">
+        <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2);">
+          <h4 style="margin: 0 0 10px 0; color: #ffd700;">📊 Analytics</h4>
+          <p style="margin: 0; font-size: 14px;">Dashboard, KPIs, trends</p>
+        </div>
+        <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2);">
+          <h4 style="margin: 0 0 10px 0; color: #ffd700;">🏪 Stores</h4>
+          <p style="margin: 0; font-size: 14px;">Performance, top products</p>
+        </div>
+        <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2);">
+          <h4 style="margin: 0 0 10px 0; color: #ffd700;">📦 Products</h4>
+          <p style="margin: 0; font-size: 14px;">Top performers, inventory</p>
+        </div>
+        <div style="background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2);">
+          <h4 style="margin: 0 0 10px 0; color: #ffd700;">🔄 Replenishment</h4>
+          <p style="margin: 0; font-size: 14px;">Recommendations, status</p>
+        </div>
+      </div>
+      <p style="margin: 20px 0 0 0; font-size: 14px; opacity: 0.8;">Just ask me anything about your business data!</p>
+    </div>
+  `,
+
   // Summary cards
   summaryCard: (title, value, subtitle) => `
     <div class="summary-card">
@@ -838,6 +865,27 @@ const PREDEFINED_QUESTIONS = {
     description: 'Show chatbot capabilities',
     parameters: {},
     htmlTemplate: 'capabilities'
+  },
+  'what are your capabilities': {
+    type: 'general',
+    action: 'showCapabilities',
+    description: 'Show chatbot capabilities',
+    parameters: {},
+    htmlTemplate: 'capabilities'
+  },
+  'tell me about yourself': {
+    type: 'general',
+    action: 'showCapabilities',
+    description: 'Show chatbot capabilities',
+    parameters: {},
+    htmlTemplate: 'capabilities'
+  },
+  'who are you': {
+    type: 'general',
+    action: 'showCapabilities',
+    description: 'Show chatbot capabilities',
+    parameters: {},
+    htmlTemplate: 'capabilities'
   }
 };
 
@@ -851,54 +899,124 @@ export const processMessage = async (message, options = {}) => {
   const { debug = false } = options;
   const normalizedMessage = message.toLowerCase().trim();
   
-  // Find matching predefined question
+  // First, try to find a matching business question
   const matchedQuestion = findMatchingQuestion(normalizedMessage);
   
-  if (!matchedQuestion) {
-    return {
-      type: 'error',
-      message: 'I\'m not sure how to help with that. Try asking for "help" to see what I can do.',
-      suggestions: getSuggestions(normalizedMessage),
-      html: generateErrorHTML(getSuggestions(normalizedMessage))
-    };
-  }
-
-  try {
-    const result = await executeAction(matchedQuestion);
-    
-    if (debug) {
-      console.log('Chatbot Debug - Raw Result:', JSON.stringify(result, null, 2));
-      console.log('Chatbot Debug - Question:', matchedQuestion);
-    }
-    
-    const html = generateHTMLResponse(matchedQuestion, result);
-    
-    if (debug) {
-      console.log('Chatbot Debug - Generated HTML length:', html.length);
-    }
-    
-    return {
-      type: 'success',
-      message: `Here's what I found for: "${message}"`,
-      data: result,
-      question: matchedQuestion,
-      html: html,
-      debug: debug ? {
-        rawData: result,
+  // If we found a business question, process it immediately
+  if (matchedQuestion) {
+    try {
+      const result = await executeAction(matchedQuestion);
+      
+      if (debug) {
+        console.log('Chatbot Debug - Raw Result:', JSON.stringify(result, null, 2));
+        console.log('Chatbot Debug - Question:', matchedQuestion);
+      }
+      
+      const html = generateHTMLResponse(matchedQuestion, result);
+      
+      if (debug) {
+        console.log('Chatbot Debug - Generated HTML length:', html.length);
+      }
+      
+      return {
+        type: 'success',
+        message: `Here's what I found for: "${message}"`,
+        data: result,
         question: matchedQuestion,
-        htmlLength: html.length
-      } : undefined
-    };
-  } catch (error) {
-    console.error('Chatbot Error:', error);
+        html: html,
+        debug: debug ? {
+          rawData: result,
+          question: matchedQuestion,
+          htmlLength: html.length
+        } : undefined
+      };
+    } catch (error) {
+      console.error('Chatbot Error:', error);
+      return {
+        type: 'error',
+        message: `Sorry, I encountered an error while processing your request: ${error.message}`,
+        question: matchedQuestion,
+        html: generateErrorHTML([`Error: ${error.message}`]),
+        debug: debug ? { error: error.message, stack: error.stack } : undefined
+      };
+    }
+  }
+  
+  // Only check for greetings if no business question was found
+  if (isGreeting(normalizedMessage)) {
     return {
-      type: 'error',
-      message: `Sorry, I encountered an error while processing your request: ${error.message}`,
-      question: matchedQuestion,
-      html: generateErrorHTML([`Error: ${error.message}`]),
-      debug: debug ? { error: error.message, stack: error.stack } : undefined
+      type: 'greeting',
+      message: 'Hello! 👋 I\'m your business analytics assistant. I can help you with:',
+      suggestions: [
+        'Show me top 5 products',
+        'Show me store performance', 
+        'Show me the analytics dashboard',
+        'Show me replenishment recommendations',
+        'Help'
+      ],
+      html: generateGreetingHTML(),
+      data: {
+        type: 'greeting',
+        suggestions: [
+          'Show me top 5 products',
+          'Show me store performance',
+          'Show me the analytics dashboard', 
+          'Show me replenishment recommendations',
+          'Help'
+        ]
+      }
     };
   }
+  
+  // Check for common conversational phrases
+  if (normalizedMessage.includes('thank') || normalizedMessage.includes('thanks')) {
+    return {
+      type: 'greeting',
+      message: 'You\'re welcome! 😊 I\'m here to help you get the business insights you need. Is there anything else you\'d like to know about your business data?',
+      suggestions: [
+        'Show me top 5 products',
+        'Show me store performance',
+        'Show me the analytics dashboard',
+        'Help'
+      ],
+      html: generateGreetingHTML(),
+      data: {
+        type: 'greeting',
+        suggestions: [
+          'Show me top 5 products',
+          'Show me store performance',
+          'Show me the analytics dashboard',
+          'Help'
+        ]
+      }
+    };
+  }
+  
+  // Check for farewell phrases
+  if (normalizedMessage.includes('bye') || normalizedMessage.includes('goodbye') || normalizedMessage.includes('see you')) {
+    return {
+      type: 'greeting',
+      message: 'Goodbye! 👋 It was great helping you today. Feel free to come back anytime for business insights and analytics. Have a great day!',
+      suggestions: [
+        'Show me top 5 products',
+        'Show me store performance',
+        'Show me the analytics dashboard',
+        'Help'
+      ],
+      html: generateGreetingHTML(),
+      data: {
+        type: 'greeting',
+        suggestions: [
+          'Show me top 5 products',
+          'Show me store performance',
+          'Show me the analytics dashboard',
+          'Help'
+        ]
+      }
+    };
+  }
+  
+  
 };
 
 /**
@@ -1045,7 +1163,18 @@ const findMatchingQuestion = (message) => {
     'store products': ['what are the top products in store', 'show me top products in store'],
     'top products': ['what are the top products in store', 'show me top products in store'],
     'LUC-66': ['what are the top products in store LUC-66'],
-    'SUR-5': ['what are the top products in store SUR-5']
+    'SUR-5': ['what are the top products in store SUR-5'],
+    // Conversational patterns
+    'capabilities': ['what can you do', 'what are your capabilities'],
+    'about': ['tell me about yourself', 'who are you'],
+    'yourself': ['tell me about yourself', 'who are you'],
+    'can you': ['what can you do', 'what are your capabilities'],
+    'do you': ['what can you do', 'what are your capabilities'],
+    'thank': ['help', 'what can you do'],
+    'thanks': ['help', 'what can you do'],
+    'bye': ['help', 'what can you do'],
+    'goodbye': ['help', 'what can you do'],
+    'see you': ['help', 'what can you do']
   };
 
   for (const [keyword, questions] of Object.entries(keywordPatterns)) {
@@ -1310,34 +1439,40 @@ const getSuggestions = (message) => {
   // Add category-based suggestions if no good matches
   if (suggestions.length === 0) {
     if (message.includes('product') || message.includes('item')) {
-      suggestions.push('Try: "show me top 5 products"', 'Try: "how many products do we have"');
+      suggestions.push('How many products do we have?', 'Show me active products');
     } else if (message.includes('store') || message.includes('shop')) {
-      suggestions.push('Try: "show me top 5 stores"', 'Try: "show me store performance"');
+      suggestions.push('Show me store performance');
     } else if (message.includes('sales') || message.includes('revenue') || message.includes('trend')) {
-      suggestions.push('Try: "what are the sales trends"', 'Try: "show me the analytics dashboard"');
+      suggestions.push('Show me the analytics dashboard');
     } else if (message.includes('replenish') || message.includes('stock') || message.includes('inventory')) {
-      suggestions.push('Try: "show me replenishment recommendations"', 'Try: "calculate replenishment for store"');
+      suggestions.push('Show me replenishment recommendations', 'Show me all replenishments');
     } else if (message.includes('analytics') || message.includes('data') || message.includes('report')) {
-      suggestions.push('Try: "show me the analytics dashboard"', 'Try: "show me summary KPIs"');
+      suggestions.push('Show me the analytics dashboard');
     } else if (message.includes('discount') || message.includes('offer') || message.includes('deal')) {
-      suggestions.push('Try: "what is the discount impact"');
+      suggestions.push('Show me the analytics dashboard');
     } else if (message.includes('tax') || message.includes('mrp') || message.includes('price')) {
-      suggestions.push('Try: "show me tax and MRP analytics"');
+      suggestions.push('Show me the analytics dashboard');
     } else if (message.includes('mumbai') || message.includes('powai')) {
-      suggestions.push('Try: "what is last month sales status of mumbai, powai store"');
+      suggestions.push('Show me store performance');
     } else if (message.includes('surat')) {
-              suggestions.push('Try: "which was top performing item in [city name]"');
+      suggestions.push('Which was the top performing item in Surat?');
+    } else if (message.includes('pune')) {
+      suggestions.push('Which was the top performing item in Pune?');
+    } else if (message.includes('hyderabad')) {
+      suggestions.push('Which was the top performing item in Hyderabad?');
+    } else if (message.includes('delhi')) {
+      suggestions.push('Which was the top performing item in Delhi?');
     } else if (message.includes('forecast') || message.includes('prediction') || message.includes('future')) {
-      suggestions.push('Try: "what is the sales forecast for next month"', 'Try: "show me sales forecast by store"');
+      suggestions.push('Show me the analytics dashboard');
     } else if (message.includes('replenishment status') || message.includes('stock status')) {
-      suggestions.push('Try: "what is the replenishment status"');
+      suggestions.push('Show me all replenishments');
     } else if (message.includes('top products') || message.includes('store products')) {
-      suggestions.push('Try: "what are the top products in store"', 'Try: "show me top products in store"');
+      suggestions.push('Which was the top performing item in Surat?', 'Which was the top performing item in Pune?');
     } else if (message.includes('LUC-66') || message.includes('SUR-5') || /\b[A-Z]{3}-\d+\b/.test(message)) {
       // Pattern for store IDs like LUC-66, SUR-5, etc.
-      suggestions.push('Try: "what are the top products in store [STORE-ID]"', 'Try: "show me sales performance for store [STORE-ID]"');
+      suggestions.push('Show me store performance');
     } else {
-      suggestions.push('Try: "help"', 'Try: "show me top 5 products"', 'Try: "what are the sales trends"');
+      suggestions.push('Show me replenishment recommendations', 'Show me store performance', 'Show me the analytics dashboard');
     }
   }
   
@@ -1409,6 +1544,14 @@ const generateHTMLResponse = (question, data) => {
     console.error('Error generating HTML:', error);
     return generateDefaultHTML(data);
   }
+};
+
+/**
+ * Generate greeting HTML response
+ * @returns {string} HTML string for greeting
+ */
+const generateGreetingHTML = () => {
+  return HTML_TEMPLATES.greeting();
 };
 
 /**
@@ -1630,11 +1773,7 @@ const generateBarChartHTML = (question, data) => {
         <p>This feature is coming soon! Stay tuned for updates.</p>
         <p>We're working on providing meaningful charts for this request.</p>
         <p>Try asking for:</p>
-        <ul>
-          <li>Product information</li>
-          <li>Store performance</li>
-          <li>Replenishment data</li>
-        </ul>
+     
       </div>
     `;
   }
@@ -1665,14 +1804,14 @@ const generateLineChartHTML = (question, data) => {
   if (!isDataMeaningful(items)) {
     return CHATBOT_STYLES + `
       <div class="chatbot-response">
-        <h3>${question.description}</h3>
+       
         <p>This feature is coming soon! Stay tuned for updates.</p>
         <p>We're working on providing meaningful charts for this request.</p>
         <p>Try asking for:</p>
         <ul>
-          <li>Product information</li>
-          <li>Store performance</li>
-          <li>Replenishment data</li>
+          <li>How many products do we have?</li>
+          <li>Show me the analytics dashboard</li>
+         
         </ul>
       </div>
     `;
@@ -1715,9 +1854,9 @@ const generateDataTableHTML = (question, data) => {
         <p>This feature is coming soon! Stay tuned for updates.</p>
         <p>Try asking for:</p>
         <ul>
-          <li>Product information</li>
-          <li>Store performance</li>
-          <li>Sales analytics</li>
+          <li>Show me the analytics dashboard</li>
+          <li>Show me all replenishments</li>
+          <li>Which was the top performing item in Pune?</li>
         </ul>
       </div>
     `;
@@ -2085,15 +2224,18 @@ const generateDefaultHTML = (data) => {
  */
 const generateErrorHTML = (suggestions) => {
   let html = CHATBOT_STYLES + '<div class="chatbot-response error">';
-  html += '<h3>❌ Not Sure How to Help</h3>';
-  html += '<p>Try one of these suggestions:</p>';
+  html += '<h3>🤖 I\'m Here to Help!</h3>';
+  html += '<p>I\'m your business analytics assistant, and I can help you with various business insights. While I couldn\'t understand that specific request, here are some things I can definitely help you with:</p>';
+  html += '<p>Try these suggestions:</p>';
   html += '<ul class="suggestions-list">';
   
   suggestions.forEach(suggestion => {
     html += `<li>${suggestion}</li>`;
   });
   
-  html += '</ul></div>';
+  html += '</ul>';
+  html += '<p><em>💡 Try asking about products, stores, sales, analytics, or replenishment. I\'m here to help you get the business insights you need!</em></p>';
+  html += '</div>';
   return html;
 };
 
@@ -3028,4 +3170,45 @@ const generateTextSummaryHTML = (question, data) => {
   }
 
   return HTML_TEMPLATES.textSummary(data, 'Analysis Results', summary);
+};
+
+/**
+ * Check if message is a greeting
+ * @param {string} message - Normalized message
+ * @returns {boolean} True if message is a greeting
+ */
+const isGreeting = (message) => {
+  const greetings = [
+    'hi', 'hello', 'hey', 'good morning', 'good afternoon', 
+    'good evening', 'morning', 'afternoon', 'evening',
+    'sup', 'what\'s up', 'howdy', 'yo', 'greetings',
+    'hi there', 'hello there', 'hey there', 'good day',
+    'what\'s happening', 'how are you', 'how\'s it going'
+  ];
+  
+  // Check if the message is primarily a greeting (not a business query with greeting words)
+  const isPrimarilyGreeting = greetings.some(greeting => {
+    // If the greeting is the main content of the message
+    if (message === greeting || message === greeting + '!' || message === greeting + '?') {
+      return true;
+    }
+    
+    // If the greeting is at the start and the message is short
+    if (message.startsWith(greeting) && message.length < greeting.length + 10) {
+      return true;
+    }
+    
+    // If the greeting is the only meaningful content (ignoring punctuation and common words)
+    const cleanMessage = message.replace(/[!?.,]/g, '').trim();
+    const words = cleanMessage.split(/\s+/);
+    const meaningfulWords = words.filter(word => word.length > 2);
+    
+    if (meaningfulWords.length <= 2 && greetings.some(g => meaningfulWords.includes(g))) {
+      return true;
+    }
+    
+    return false;
+  });
+  
+  return isPrimarilyGreeting;
 };
