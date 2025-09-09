@@ -17,6 +17,10 @@ router
   .patch(auth('manageUsers'), validate(userValidation.updateUser), userController.updateUser)
   .delete(auth('manageUsers'), validate(userValidation.deleteUser), userController.deleteUser);
 
+router
+  .route('/:userId/navigation')
+  .patch(auth('manageUsers'), validate(userValidation.updateUserNavigation), userController.updateUserNavigation);
+
   export default router;
 
 /**
@@ -61,11 +65,109 @@ router
  *               role:
  *                  type: string
  *                  enum: [user, admin]
+ *               phoneNumber:
+ *                 type: string
+ *               profilePicture:
+ *                 type: string
+ *               dateOfBirth:
+ *                 type: string
+ *                 format: date
+ *               gender:
+ *                 type: string
+ *                 enum: [Male, Female, Other]
+ *               country:
+ *                 type: string
+ *               timezone:
+ *                 type: string
+ *                 default: UTC
+ *               navigation:
+ *                 type: object
+ *                 description: User navigation permissions
+ *                 properties:
+ *                   Users:
+ *                     type: boolean
+ *                   Dashboard:
+ *                     type: boolean
+ *                   Catalog:
+ *                     type: object
+ *                     properties:
+ *                       Items:
+ *                         type: boolean
+ *                       Categories:
+ *                         type: boolean
+ *                       'Raw Material':
+ *                         type: boolean
+ *                       Processes:
+ *                         type: boolean
+ *                       Attributes:
+ *                         type: boolean
+ *                   Sales:
+ *                     type: object
+ *                     properties:
+ *                       'All Sales':
+ *                         type: boolean
+ *                       'Master Sales':
+ *                         type: boolean
+ *                   Stores:
+ *                     type: boolean
+ *                   Analytics:
+ *                     type: boolean
+ *                   'Replenishment Agent':
+ *                     type: boolean
+ *                   'File Manager':
+ *                     type: boolean
+ *                   Production:
+ *                     type: object
+ *                     properties:
+ *                       'Production Supervisor':
+ *                         type: boolean
+ *                       'Knitting Floor Supervisor':
+ *                         type: boolean
+ *                       'Linking Floor Supervisor':
+ *                         type: boolean
+ *                       'Checking Floor Supervisor':
+ *                         type: boolean
+ *                       'Washing Floor Supervisor':
+ *                         type: boolean
+ *                       'Boarding Floor Supervisor':
+ *                         type: boolean
+ *                       'Final Checking Floor Supervisor':
+ *                         type: boolean
+ *                       'Branding Floor Supervisor':
+ *                         type: boolean
+ *                       'Warehouse Floor Supervisor':
+ *                         type: boolean
  *             example:
  *               name: fake name
  *               email: fake@example.com
  *               password: password1
  *               role: user
+ *               navigation:
+ *                 Users: false
+ *                 Dashboard: true
+ *                 Catalog:
+ *                   Items: true
+ *                   Categories: false
+ *                   'Raw Material': false
+ *                   Processes: false
+ *                   Attributes: false
+ *                 Sales:
+ *                   'All Sales': true
+ *                   'Master Sales': false
+ *                 Stores: false
+ *                 Analytics: true
+ *                 'Replenishment Agent': false
+ *                 'File Manager': false
+ *                 Production:
+ *                   'Production Supervisor': false
+ *                   'Knitting Floor Supervisor': false
+ *                   'Linking Floor Supervisor': false
+ *                   'Checking Floor Supervisor': false
+ *                   'Washing Floor Supervisor': false
+ *                   'Boarding Floor Supervisor': false
+ *                   'Final Checking Floor Supervisor': false
+ *                   'Branding Floor Supervisor': false
+ *                   'Warehouse Floor Supervisor': false
  *     responses:
  *       "201":
  *         description: Created
@@ -207,10 +309,90 @@ router
  *                 format: password
  *                 minLength: 8
  *                 description: At least one number and one letter
+ *               phoneNumber:
+ *                 type: string
+ *               profilePicture:
+ *                 type: string
+ *               dateOfBirth:
+ *                 type: string
+ *                 format: date
+ *               gender:
+ *                 type: string
+ *                 enum: [Male, Female, Other]
+ *               country:
+ *                 type: string
+ *               timezone:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *                 enum: [user, admin]
+ *               navigation:
+ *                 type: object
+ *                 description: User navigation permissions
+ *                 properties:
+ *                   Users:
+ *                     type: boolean
+ *                   Dashboard:
+ *                     type: boolean
+ *                   Catalog:
+ *                     type: object
+ *                     properties:
+ *                       Items:
+ *                         type: boolean
+ *                       Categories:
+ *                         type: boolean
+ *                       'Raw Material':
+ *                         type: boolean
+ *                       Processes:
+ *                         type: boolean
+ *                       Attributes:
+ *                         type: boolean
+ *                   Sales:
+ *                     type: object
+ *                     properties:
+ *                       'All Sales':
+ *                         type: boolean
+ *                       'Master Sales':
+ *                         type: boolean
+ *                   Stores:
+ *                     type: boolean
+ *                   Analytics:
+ *                     type: boolean
+ *                   'Replenishment Agent':
+ *                     type: boolean
+ *                   'File Manager':
+ *                     type: boolean
+ *                   Production:
+ *                     type: object
+ *                     properties:
+ *                       'Production Supervisor':
+ *                         type: boolean
+ *                       'Knitting Floor Supervisor':
+ *                         type: boolean
+ *                       'Linking Floor Supervisor':
+ *                         type: boolean
+ *                       'Checking Floor Supervisor':
+ *                         type: boolean
+ *                       'Washing Floor Supervisor':
+ *                         type: boolean
+ *                       'Boarding Floor Supervisor':
+ *                         type: boolean
+ *                       'Final Checking Floor Supervisor':
+ *                         type: boolean
+ *                       'Branding Floor Supervisor':
+ *                         type: boolean
+ *                       'Warehouse Floor Supervisor':
+ *                         type: boolean
  *             example:
  *               name: fake name
  *               email: fake@example.com
  *               password: password1
+ *               navigation:
+ *                 Users: false
+ *                 Dashboard: true
+ *                 Catalog:
+ *                   Items: true
+ *                   Categories: false
  *     responses:
  *       "200":
  *         description: OK
@@ -243,6 +425,132 @@ router
  *     responses:
  *       "200":
  *         description: No content
+ *       "401":
+ *         $ref: '#/components/responses/Unauthorized'
+ *       "403":
+ *         $ref: '#/components/responses/Forbidden'
+ *       "404":
+ *         $ref: '#/components/responses/NotFound'
+ */
+
+/**
+ * @swagger
+ * /users/{id}/navigation:
+ *   patch:
+ *     summary: Update user navigation permissions
+ *     description: Only admins can update user navigation permissions.
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User id
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - navigation
+ *             properties:
+ *               navigation:
+ *                 type: object
+ *                 description: User navigation permissions
+ *                 properties:
+ *                   Users:
+ *                     type: boolean
+ *                   Dashboard:
+ *                     type: boolean
+ *                   Catalog:
+ *                     type: object
+ *                     properties:
+ *                       Items:
+ *                         type: boolean
+ *                       Categories:
+ *                         type: boolean
+ *                       'Raw Material':
+ *                         type: boolean
+ *                       Processes:
+ *                         type: boolean
+ *                       Attributes:
+ *                         type: boolean
+ *                   Sales:
+ *                     type: object
+ *                     properties:
+ *                       'All Sales':
+ *                         type: boolean
+ *                       'Master Sales':
+ *                         type: boolean
+ *                   Stores:
+ *                     type: boolean
+ *                   Analytics:
+ *                     type: boolean
+ *                   'Replenishment Agent':
+ *                     type: boolean
+ *                   'File Manager':
+ *                     type: boolean
+ *                   Production:
+ *                     type: object
+ *                     properties:
+ *                       'Production Supervisor':
+ *                         type: boolean
+ *                       'Knitting Floor Supervisor':
+ *                         type: boolean
+ *                       'Linking Floor Supervisor':
+ *                         type: boolean
+ *                       'Checking Floor Supervisor':
+ *                         type: boolean
+ *                       'Washing Floor Supervisor':
+ *                         type: boolean
+ *                       'Boarding Floor Supervisor':
+ *                         type: boolean
+ *                       'Final Checking Floor Supervisor':
+ *                         type: boolean
+ *                       'Branding Floor Supervisor':
+ *                         type: boolean
+ *                       'Warehouse Floor Supervisor':
+ *                         type: boolean
+ *             example:
+ *               navigation:
+ *                 Users: false
+ *                 Dashboard: true
+ *                 Catalog:
+ *                   Items: true
+ *                   Categories: false
+ *                   'Raw Material': false
+ *                   Processes: false
+ *                   Attributes: false
+ *                 Sales:
+ *                   'All Sales': true
+ *                   'Master Sales': false
+ *                 Stores: false
+ *                 Analytics: true
+ *                 'Replenishment Agent': false
+ *                 'File Manager': false
+ *                 Production:
+ *                   'Production Supervisor': false
+ *                   'Knitting Floor Supervisor': false
+ *                   'Linking Floor Supervisor': false
+ *                   'Checking Floor Supervisor': false
+ *                   'Washing Floor Supervisor': false
+ *                   'Boarding Floor Supervisor': false
+ *                   'Final Checking Floor Supervisor': false
+ *                   'Branding Floor Supervisor': false
+ *                   'Warehouse Floor Supervisor': false
+ *     responses:
+ *       "200":
+ *         description: OK
+ *         content:
+ *           application/json:
+ *             schema:
+ *                $ref: '#/components/schemas/User'
+ *       "400":
+ *         $ref: '#/components/responses/BadRequest'
  *       "401":
  *         $ref: '#/components/responses/Unauthorized'
  *       "403":

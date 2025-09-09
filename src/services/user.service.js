@@ -2,6 +2,7 @@ import httpStatus from 'http-status';
 
 import ApiError from '../utils/ApiError.js';
 import User from '../models/user.model.js';
+import { getDefaultNavigationByRole, mergeNavigation, validateNavigationStructure } from '../utils/navigationHelper.js';
 
 
 /**
@@ -13,6 +14,14 @@ const createUser = async (userBody) => {
   if (await User.isEmailTaken(userBody.email)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Email already taken');
   }
+  
+  // Set default navigation based on role if not provided
+  if (!userBody.navigation) {
+    userBody.navigation = getDefaultNavigationByRole(userBody.role || 'user');
+  } else if (!validateNavigationStructure(userBody.navigation)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid navigation structure');
+  }
+  
   return User.create(userBody);
 };
 
@@ -62,7 +71,38 @@ const updateUserById = async (userId, updateBody) => {
   if (updateBody.email && (await User.isEmailTaken(updateBody.email, userId))) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Email already taken');
   }
+  
+  // Validate navigation structure if provided
+  if (updateBody.navigation && !validateNavigationStructure(updateBody.navigation)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid navigation structure');
+  }
+  
   Object.assign(user, updateBody);
+  await user.save();
+  return user;
+};
+
+/**
+ * Update user navigation permissions by id
+ * @param {ObjectId} userId
+ * @param {Object} navigationBody
+ * @returns {Promise<User>}
+ */
+const updateUserNavigationById = async (userId, navigationBody) => {
+  const user = await getUserById(userId);
+  if (!user) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
+  }
+  
+  // Validate navigation structure
+  if (!validateNavigationStructure(navigationBody.navigation)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid navigation structure');
+  }
+  
+  // Merge with existing navigation to preserve other permissions
+  const updatedNavigation = mergeNavigation(user.navigation, navigationBody.navigation);
+  
+  Object.assign(user, { navigation: updatedNavigation });
   await user.save();
   return user;
 };
@@ -87,6 +127,7 @@ export {
   getUserById,
   getUserByEmail,
   updateUserById,
+  updateUserNavigationById,
   deleteUserById,
 };
 

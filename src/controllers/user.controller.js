@@ -30,6 +30,11 @@ const updateUser = catchAsync(async (req, res) => {
   res.send(user);
 });
 
+const updateUserNavigation = catchAsync(async (req, res) => {
+  const user = await userService.updateUserNavigationById(req.params.userId, req.body);
+  res.send(user);
+});
+
 const deleteUser = catchAsync(async (req, res) => {
   await userService.deleteUserById(req.params.userId);
   res.status(httpStatus.NO_CONTENT).send();
@@ -40,6 +45,7 @@ export {
   getUsers,
   getUser,
   updateUser,
+  updateUserNavigation,
   deleteUser,
 };
 

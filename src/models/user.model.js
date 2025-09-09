@@ -69,6 +69,40 @@ const userSchema = mongoose.Schema(
       type: String,
       enum: roles,
       default: 'user',
+    },
+    navigation: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {
+        // Main Sidebar
+        Users: false,
+        Dashboard: false,
+        Catalog: {
+          Items: false,
+          Categories: false,
+          'Raw Material': false,
+          Processes: false,
+          Attributes: false
+        },
+        Sales: {
+          'All Sales': false,
+          'Master Sales': false
+        },
+        Stores: false,
+        Analytics: false,
+        'Replenishment Agent': false,
+        'File Manager': false,
+        Production: {
+          'Production Supervisor': false,
+          'Knitting Floor Supervisor': false,
+          'Linking Floor Supervisor': false,
+          'Checking Floor Supervisor': false,
+          'Washing Floor Supervisor': false,
+          'Boarding Floor Supervisor': false,
+          'Final Checking Floor Supervisor': false,
+          'Branding Floor Supervisor': false,
+          'Warehouse Floor Supervisor': false
+        }
+      }
     }
     
   },
