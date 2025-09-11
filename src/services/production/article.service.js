@@ -73,6 +73,11 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
       throw new ApiError(httpStatus.BAD_REQUEST, `Invalid completed quantity: must be between 0 and received quantity (${floorData.received})`);
     }
     
+    // Validate that new completed quantity is not less than current (prevents accidental overwrites)
+    if (updateData.completedQuantity < floorData.completed) {
+      throw new ApiError(httpStatus.BAD_REQUEST, `New completed quantity (${updateData.completedQuantity}) cannot be less than current completed quantity (${floorData.completed}). Please send the total cumulative completed quantity.`);
+    }
+    
     // Update floor-specific quantities
     const previousFloorCompleted = floorData.completed;
     floorData.completed = updateData.completedQuantity;
@@ -232,16 +237,27 @@ const transferFromPreviousFloor = async (article, fromFloor, quantity, updateDat
   const fromFloorKey = article.getFloorKey(fromFloor);
   const fromFloorData = article.floorQuantities[fromFloorKey];
   
-  // Update previous floor: mark as transferred
-  fromFloorData.transferred += quantity;
-  fromFloorData.completed = 0; // Reset completed
-  fromFloorData.remaining = fromFloorData.received - fromFloorData.transferred;
+  // Calculate how much work is already transferred vs completed
+  const alreadyTransferred = fromFloorData.transferred || 0;
+  const totalCompleted = fromFloorData.completed || 0;
+  
+  // Only transfer the newly completed work (not already transferred)
+  const newTransferQuantity = totalCompleted - alreadyTransferred;
+  
+  if (newTransferQuantity <= 0) {
+    // No new work to transfer
+    return;
+  }
+  
+  // Update previous floor: mark additional work as transferred
+  fromFloorData.transferred = totalCompleted; // Set transferred to total completed
+  fromFloorData.remaining = fromFloorData.received - totalCompleted; // Remaining = received - completed
   
   // Update current floor: mark as received
   const currentFloorKey = article.getFloorKey(article.currentFloor);
   const currentFloorData = article.floorQuantities[currentFloorKey];
-  currentFloorData.received += quantity;
-  currentFloorData.remaining += quantity;
+  currentFloorData.received += newTransferQuantity;
+  currentFloorData.remaining += newTransferQuantity;
   
   await article.save();
   
@@ -251,10 +267,10 @@ const transferFromPreviousFloor = async (article, fromFloor, quantity, updateDat
     articleId: article._id.toString(),
     orderId: article.orderId.toString(),
     action: transferAction,
-    quantity: quantity,
+    quantity: newTransferQuantity,
     fromFloor: fromFloor,
     toFloor: article.currentFloor,
-    remarks: `Transferred ${quantity} completed units from ${fromFloor} to ${article.currentFloor}`,
+    remarks: `Transferred ${newTransferQuantity} completed units from ${fromFloor} to ${article.currentFloor} (Total completed: ${totalCompleted}, Total transferred: ${fromFloorData.transferred})`,
     previousValue: fromFloor,
     newValue: article.currentFloor,
     changeReason: 'Previous floor work transfer',
@@ -378,23 +394,26 @@ const transferCompletedWorkToNextFloor = async (article, updateData, user = null
   const currentFloorData = article.floorQuantities[currentFloorKey];
   const nextFloorData = article.floorQuantities[nextFloorKey];
 
-  // Transfer only the completed quantity (not all received)
-  const transferQuantity = currentFloorData.completed;
+  // Calculate how much work is already transferred vs completed
+  const alreadyTransferred = currentFloorData.transferred || 0;
+  const totalCompleted = currentFloorData.completed || 0;
   
-  if (transferQuantity <= 0) return; // Nothing to transfer
+  // Only transfer the newly completed work (not already transferred)
+  const newTransferQuantity = totalCompleted - alreadyTransferred;
   
-  // Update current floor: mark as transferred
-  currentFloorData.transferred += transferQuantity;
-  currentFloorData.completed = 0; // Reset completed for this floor
-  currentFloorData.remaining = currentFloorData.received - currentFloorData.transferred;
+  if (newTransferQuantity <= 0) return; // Nothing new to transfer
+  
+  // Update current floor: mark additional work as transferred
+  currentFloorData.transferred = totalCompleted; // Set transferred to total completed
+  currentFloorData.remaining = currentFloorData.received - totalCompleted; // Remaining = received - completed
   
   // Update next floor: mark as received
-  nextFloorData.received += transferQuantity;
-  nextFloorData.remaining += transferQuantity;
+  nextFloorData.received += newTransferQuantity;
+  nextFloorData.remaining += newTransferQuantity;
 
   // Update article current floor to next floor
   article.currentFloor = nextFloor;
-  article.quantityFromPreviousFloor = transferQuantity;
+  article.quantityFromPreviousFloor = newTransferQuantity;
 
   // Reset floor-specific fields for new floor
   if (nextFloor !== 'Final Checking') {
@@ -422,10 +441,10 @@ const transferCompletedWorkToNextFloor = async (article, updateData, user = null
     articleId: article._id.toString(),
     orderId: article.orderId.toString(),
     action: transferAction,
-    quantity: transferQuantity,
+    quantity: newTransferQuantity,
     fromFloor: article.currentFloor,
     toFloor: nextFloor,
-    remarks: `Transferred ${transferQuantity} completed units from ${article.currentFloor} to ${nextFloor} (${currentFloorData.remaining} remaining on ${article.currentFloor})`,
+    remarks: `Transferred ${newTransferQuantity} completed units from ${article.currentFloor} to ${nextFloor} (Total completed: ${totalCompleted}, Total transferred: ${currentFloorData.transferred}, Remaining: ${currentFloorData.remaining})`,
     previousValue: article.currentFloor,
     newValue: nextFloor,
     changeReason: 'Continuous flow transfer',

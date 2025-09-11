@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
 import { OrderStatus, Priority, LinkingType, ProductionFloor, RepairStatus } from './enums.js';
 import ArticleLog from './articleLog.model.js';
+import { 
+  updateQualityCategories, 
+  shiftM2Items, 
+  confirmFinalQuality, 
+  updateCompletedQuantityWithQuality 
+} from './qualityMethods.js';
 
 /**
  * Article Model
@@ -104,7 +110,18 @@ const articleSchema = new mongoose.Schema({
       received: { type: Number, default: 0 },
       completed: { type: Number, default: 0 },
       remaining: { type: Number, default: 0 },
-      transferred: { type: Number, default: 0 }
+      transferred: { type: Number, default: 0 },
+      // Quality tracking fields for checking floor
+      m1Quantity: { type: Number, default: 0, min: 0 },
+      m2Quantity: { type: Number, default: 0, min: 0 },
+      m3Quantity: { type: Number, default: 0, min: 0 },
+      m4Quantity: { type: Number, default: 0, min: 0 },
+      repairStatus: { 
+        type: String, 
+        enum: Object.values(RepairStatus), 
+        default: RepairStatus.NOT_REQUIRED 
+      },
+      repairRemarks: { type: String, default: '' }
     },
     washing: {
       received: { type: Number, default: 0 },
@@ -122,7 +139,18 @@ const articleSchema = new mongoose.Schema({
       received: { type: Number, default: 0 },
       completed: { type: Number, default: 0 },
       remaining: { type: Number, default: 0 },
-      transferred: { type: Number, default: 0 }
+      transferred: { type: Number, default: 0 },
+      // Quality tracking fields for final checking floor
+      m1Quantity: { type: Number, default: 0, min: 0 },
+      m2Quantity: { type: Number, default: 0, min: 0 },
+      m3Quantity: { type: Number, default: 0, min: 0 },
+      m4Quantity: { type: Number, default: 0, min: 0 },
+      repairStatus: { 
+        type: String, 
+        enum: Object.values(RepairStatus), 
+        default: RepairStatus.NOT_REQUIRED 
+      },
+      repairRemarks: { type: String, default: '' }
     },
     branding: {
       received: { type: Number, default: 0 },
@@ -233,6 +261,14 @@ articleSchema.virtual('calculatedProgress').get(function() {
 
 // Virtual for quality total validation
 articleSchema.virtual('qualityTotal').get(function() {
+  const floorKey = this.getFloorKey(this.currentFloor);
+  const floorData = this.floorQuantities[floorKey];
+  
+  if (floorData && (this.currentFloor === ProductionFloor.CHECKING || this.currentFloor === ProductionFloor.FINAL_CHECKING)) {
+    return (floorData.m1Quantity || 0) + (floorData.m2Quantity || 0) + (floorData.m3Quantity || 0) + (floorData.m4Quantity || 0);
+  }
+  
+  // Fallback to global fields for backward compatibility
   return (this.m1Quantity || 0) + (this.m2Quantity || 0) + (this.m3Quantity || 0) + (this.m4Quantity || 0);
 });
 
@@ -246,7 +282,7 @@ articleSchema.pre('save', function(next) {
 
 // Pre-save middleware to validate quality quantities
 articleSchema.pre('save', function(next) {
-  if (this.currentFloor === ProductionFloor.FINAL_CHECKING) {
+  if (this.currentFloor === ProductionFloor.CHECKING || this.currentFloor === ProductionFloor.FINAL_CHECKING) {
     const qualityTotal = this.qualityTotal;
     const currentFloorKey = this.getFloorKey(this.currentFloor);
     const currentFloorCompleted = this.floorQuantities[currentFloorKey]?.completed || 0;
@@ -338,6 +374,9 @@ articleSchema.methods.updateCompletedQuantity = async function(newQuantity, user
     remaining: floorData.remaining
   };
 };
+
+// Method to update completed quantity with quality tracking for checking floors
+articleSchema.methods.updateCompletedQuantityWithQuality = updateCompletedQuantityWithQuality;
 
 
 // Method to initialize article with planned quantity on first floor
@@ -441,259 +480,14 @@ articleSchema.methods.transferToNextFloor = async function(quantity, userId, flo
   };
 };
 
-// Method to update quality categories (Final Checking only)
-articleSchema.methods.updateQualityCategories = async function(qualityData, userId, floorSupervisorId) {
-  if (this.currentFloor !== ProductionFloor.FINAL_CHECKING) {
-    throw new Error('Quality categories can only be updated in Final Checking floor');
-  }
-  
-  const { m1Quantity, m2Quantity, m3Quantity, m4Quantity, repairStatus, repairRemarks } = qualityData;
-  
-  const currentFloorKey = this.getFloorKey(this.currentFloor);
-  const currentFloorCompleted = this.floorQuantities[currentFloorKey]?.completed || 0;
-  if (m1Quantity + m2Quantity + m3Quantity + m4Quantity > currentFloorCompleted) {
-    throw new Error('Quality quantities cannot exceed completed quantity on current floor');
-  }
-  
-  const previousValues = {
-    m1Quantity: this.m1Quantity,
-    m2Quantity: this.m2Quantity,
-    m3Quantity: this.m3Quantity,
-    m4Quantity: this.m4Quantity,
-    repairStatus: this.repairStatus
-  };
-  
-  // Create logs for each quality category update
-  try {
-    if (m1Quantity !== undefined && m1Quantity !== this.m1Quantity) {
-      await ArticleLog.create({
-        articleId: this._id,
-        orderId: this.orderId,
-        action: 'M1 Quantity Updated',
-        quantity: m1Quantity - this.m1Quantity,
-        remarks: `M1 quantity updated to ${m1Quantity} (Good Quality)`,
-        previousValue: this.m1Quantity,
-        newValue: m1Quantity,
-        changeReason: 'Quality inspection',
-        userId,
-        floorSupervisorId,
-        qualityStatus: 'M1 - Good Quality',
-        date: new Date().toISOString().split('T')[0],
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    if (m2Quantity !== undefined && m2Quantity !== this.m2Quantity) {
-      await ArticleLog.create({
-        articleId: this._id,
-        orderId: this.orderId,
-        action: 'M2 Quantity Updated',
-        quantity: m2Quantity - this.m2Quantity,
-        remarks: `M2 quantity updated to ${m2Quantity} (Needs Repair)`,
-        previousValue: this.m2Quantity,
-        newValue: m2Quantity,
-        changeReason: 'Quality inspection',
-        userId,
-        floorSupervisorId,
-        qualityStatus: 'M2 - Needs Repair',
-        date: new Date().toISOString().split('T')[0],
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    if (m3Quantity !== undefined && m3Quantity !== this.m3Quantity) {
-      await ArticleLog.create({
-        articleId: this._id,
-        orderId: this.orderId,
-        action: 'M3 Quantity Updated',
-        quantity: m3Quantity - this.m3Quantity,
-        remarks: `M3 quantity updated to ${m3Quantity} (Minor Defects)`,
-        previousValue: this.m3Quantity,
-        newValue: m3Quantity,
-        changeReason: 'Quality inspection',
-        userId,
-        floorSupervisorId,
-        qualityStatus: 'M3 - Minor Defects',
-        date: new Date().toISOString().split('T')[0],
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    if (m4Quantity !== undefined && m4Quantity !== this.m4Quantity) {
-      await ArticleLog.create({
-        articleId: this._id,
-        orderId: this.orderId,
-        action: 'M4 Quantity Updated',
-        quantity: m4Quantity - this.m4Quantity,
-        remarks: `M4 quantity updated to ${m4Quantity} (Major Defects)`,
-        previousValue: this.m4Quantity,
-        newValue: m4Quantity,
-        changeReason: 'Quality inspection',
-        userId,
-        floorSupervisorId,
-        qualityStatus: 'M4 - Major Defects',
-        date: new Date().toISOString().split('T')[0],
-        timestamp: new Date().toISOString()
-      });
-    }
-  } catch (logError) {
-    console.error('Error creating quality update logs:', logError);
-    // Don't throw error for logging failure, just log it
-  }
-  
-  this.m1Quantity = m1Quantity || 0;
-  this.m2Quantity = m2Quantity || 0;
-  this.m3Quantity = m3Quantity || 0;
-  this.m4Quantity = m4Quantity || 0;
-  
-  if (repairStatus) {
-    this.repairStatus = repairStatus;
-  }
-  if (repairRemarks) {
-    this.repairRemarks = repairRemarks;
-  }
-  
-  return previousValues;
-};
+// Method to update quality categories (Checking and Final Checking floors)
+articleSchema.methods.updateQualityCategories = updateQualityCategories;
 
 // Method to shift M2 items to other categories
-articleSchema.methods.shiftM2Items = async function(shiftData, userId, floorSupervisorId) {
-  if (this.currentFloor !== ProductionFloor.FINAL_CHECKING) {
-    throw new Error('M2 shifting can only be done in Final Checking floor');
-  }
-  
-  const { fromM2, toM1, toM3, toM4 } = shiftData;
-  
-  if (fromM2 > this.m2Quantity) {
-    throw new Error('Cannot shift more M2 items than available');
-  }
-  
-  const totalShifted = (toM1 || 0) + (toM3 || 0) + (toM4 || 0);
-  if (totalShifted !== fromM2) {
-    throw new Error('Total shifted quantity must equal fromM2 quantity');
-  }
-  
-  const previousValues = {
-    m1Quantity: this.m1Quantity,
-    m2Quantity: this.m2Quantity,
-    m3Quantity: this.m3Quantity,
-    m4Quantity: this.m4Quantity
-  };
-  
-  // Create logs for M2 shifts
-  try {
-    // Create individual logs for each shift
-    if (toM1 > 0) {
-      await ArticleLog.create({
-        articleId: this._id,
-        orderId: this.orderId,
-        action: 'M2 Item Shifted to M1',
-        quantity: toM1,
-        remarks: `${toM1} M2 items shifted to M1`,
-        previousValue: this.m2Quantity,
-        newValue: this.m2Quantity - toM1,
-        changeReason: 'M2 repair process - items successfully repaired',
-        userId,
-        floorSupervisorId,
-        qualityStatus: 'M1 - Good Quality',
-        date: new Date().toISOString().split('T')[0],
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    if (toM3 > 0) {
-      await ArticleLog.create({
-        articleId: this._id,
-        orderId: this.orderId,
-        action: 'M2 Item Shifted to M3',
-        quantity: toM3,
-        remarks: `${toM3} M2 items shifted to M3`,
-        previousValue: this.m2Quantity,
-        newValue: this.m2Quantity - toM3,
-        changeReason: 'M2 repair process - items have minor defects',
-        userId,
-        floorSupervisorId,
-        qualityStatus: 'M3 - Minor Defects',
-        date: new Date().toISOString().split('T')[0],
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    if (toM4 > 0) {
-      await ArticleLog.create({
-        articleId: this._id,
-        orderId: this.orderId,
-        action: 'M2 Item Shifted to M4',
-        quantity: toM4,
-        remarks: `${toM4} M2 items shifted to M4`,
-        previousValue: this.m2Quantity,
-        newValue: this.m2Quantity - toM4,
-        changeReason: 'M2 repair process - items have major defects',
-        userId,
-        floorSupervisorId,
-        qualityStatus: 'M4 - Major Defects',
-        date: new Date().toISOString().split('T')[0],
-        timestamp: new Date().toISOString()
-      });
-    }
-  } catch (logError) {
-    console.error('Error creating M2 shift logs:', logError);
-    // Don't throw error for logging failure, just log it
-  }
-  
-  this.m2Quantity -= fromM2;
-  this.m1Quantity += toM1 || 0;
-  this.m3Quantity += toM3 || 0;
-  this.m4Quantity += toM4 || 0;
-  
-  return {
-    previousValues,
-    shiftData
-  };
-};
+articleSchema.methods.shiftM2Items = shiftM2Items;
 
 // Method to confirm final quality
-articleSchema.methods.confirmFinalQuality = async function(confirmed, userId, floorSupervisorId, remarks) {
-  if (this.currentFloor !== ProductionFloor.FINAL_CHECKING) {
-    throw new Error('Final quality confirmation can only be done in Final Checking floor');
-  }
-  
-  const currentFloorKey = this.getFloorKey(this.currentFloor);
-  const currentFloorCompleted = this.floorQuantities[currentFloorKey]?.completed || 0;
-  if (confirmed && this.qualityTotal !== currentFloorCompleted) {
-    throw new Error('All completed quantity must be categorized before final confirmation');
-  }
-  
-  const previousValue = this.finalQualityConfirmed;
-  this.finalQualityConfirmed = confirmed;
-  
-  // Create log entry for final quality confirmation
-  try {
-    await ArticleLog.create({
-      articleId: this._id,
-      orderId: this.orderId,
-      action: confirmed ? 'Final Quality Confirmed' : 'Final Quality Rejected',
-      quantity: this.floorQuantities[this.getFloorKey(this.currentFloor)]?.completed || 0,
-      remarks: remarks || `Final quality ${confirmed ? 'confirmed' : 'rejected'} for article ${this.articleNumber}`,
-      previousValue: previousValue,
-      newValue: confirmed,
-      changeReason: 'Final quality inspection',
-      userId,
-      floorSupervisorId,
-      qualityStatus: confirmed ? 'Approved for Warehouse' : 'Rejected',
-      date: new Date().toISOString().split('T')[0],
-      timestamp: new Date().toISOString()
-    });
-  } catch (logError) {
-    console.error('Error creating final quality confirmation log:', logError);
-    // Don't throw error for logging failure, just log it
-  }
-  
-  return {
-    previousValue,
-    newValue: confirmed
-  };
-};
+articleSchema.methods.confirmFinalQuality = confirmFinalQuality;
 
 // Static method to get articles by floor
 articleSchema.statics.getArticlesByFloor = function(floor, options = {}) {
