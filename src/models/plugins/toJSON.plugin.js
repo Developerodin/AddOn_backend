@@ -34,8 +34,13 @@ const toJSON = (schema) => {
       ret.id = ret._id != null ? ret._id.toString() : null;
       delete ret._id;
       delete ret.__v;
-      delete ret.createdAt;
-      delete ret.updatedAt;
+      
+      // Only delete timestamps for specific models that don't need them
+      // Keep timestamps for production orders and other models that need them
+      if (schema.modelName !== 'ProductionOrder' && schema.modelName !== 'Article') {
+        delete ret.createdAt;
+        delete ret.updatedAt;
+      }
       
       // Handle nested file and folder objects
       if (ret.file && typeof ret.file === 'object') {
