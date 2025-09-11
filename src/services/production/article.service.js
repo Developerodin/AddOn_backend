@@ -68,20 +68,33 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
       throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid floor for quantity update');
     }
     
-    // Validate quantity against floor received quantity
-    if (updateData.completedQuantity < 0 || updateData.completedQuantity > floorData.received) {
-      throw new ApiError(httpStatus.BAD_REQUEST, `Invalid completed quantity: must be between 0 and received quantity (${floorData.received})`);
+    // Handle both incremental and total quantity inputs
+    let newCompletedQuantity;
+    const currentCompleted = floorData.completed;
+    
+    // If the input is less than current completed, treat it as incremental
+    if (updateData.completedQuantity < currentCompleted) {
+      // This is an incremental update
+      newCompletedQuantity = currentCompleted + updateData.completedQuantity;
+      
+      // Validate that the incremental amount is positive
+      if (updateData.completedQuantity <= 0) {
+        throw new ApiError(httpStatus.BAD_REQUEST, `Incremental quantity must be positive. You provided: ${updateData.completedQuantity}`);
+      }
+    } else {
+      // This is a total quantity update
+      newCompletedQuantity = updateData.completedQuantity;
     }
     
-    // Validate that new completed quantity is not less than current (prevents accidental overwrites)
-    if (updateData.completedQuantity < floorData.completed) {
-      throw new ApiError(httpStatus.BAD_REQUEST, `New completed quantity (${updateData.completedQuantity}) cannot be less than current completed quantity (${floorData.completed}). Please send the total cumulative completed quantity.`);
+    // Validate final quantity against floor received quantity
+    if (newCompletedQuantity < 0 || newCompletedQuantity > floorData.received) {
+      throw new ApiError(httpStatus.BAD_REQUEST, `Invalid completed quantity: must be between 0 and received quantity (${floorData.received}). Calculated total: ${newCompletedQuantity}`);
     }
     
     // Update floor-specific quantities
     const previousFloorCompleted = floorData.completed;
-    floorData.completed = updateData.completedQuantity;
-    floorData.remaining = floorData.received - updateData.completedQuantity;
+    floorData.completed = newCompletedQuantity;
+    floorData.remaining = floorData.received - newCompletedQuantity;
     
     // Update progress based on floor quantities
     article.progress = article.calculatedProgress;
@@ -118,21 +131,28 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
   await article.save();
 
   // Create logs
-  if (updateData.completedQuantity !== undefined && updateData.completedQuantity !== previousQuantity) {
-    await createArticleLog({
-      articleId: article._id.toString(),
-      orderId: article.orderId.toString(),
-      action: 'Quantity Updated',
-      quantity: updateData.completedQuantity - previousQuantity,
-      remarks: `Quantity updated from ${previousQuantity} to ${updateData.completedQuantity} on ${normalizedFloor} floor`,
-      previousValue: previousQuantity,
-      newValue: updateData.completedQuantity,
-      changeReason: 'Production progress update',
-      userId: user?.id || updateData.userId || 'system',
-      floorSupervisorId: user?.id || updateData.floorSupervisorId || 'system',
-      machineId: updateData.machineId,
-      shiftId: updateData.shiftId
-    });
+  if (updateData.completedQuantity !== undefined) {
+    const actualNewQuantity = floorData.completed; // This is the final calculated quantity
+    const isIncremental = updateData.completedQuantity < previousQuantity;
+    
+    if (actualNewQuantity !== previousQuantity) {
+      await createArticleLog({
+        articleId: article._id.toString(),
+        orderId: article.orderId.toString(),
+        action: 'Quantity Updated',
+        quantity: actualNewQuantity - previousQuantity,
+        remarks: isIncremental 
+          ? `Added ${updateData.completedQuantity} units to ${normalizedFloor} floor (${previousQuantity} + ${updateData.completedQuantity} = ${actualNewQuantity})`
+          : `Quantity updated from ${previousQuantity} to ${updateData.completedQuantity} on ${normalizedFloor} floor`,
+        previousValue: previousQuantity,
+        newValue: actualNewQuantity,
+        changeReason: 'Production progress update',
+        userId: user?.id || updateData.userId || 'system',
+        floorSupervisorId: user?.id || updateData.floorSupervisorId || 'system',
+        machineId: updateData.machineId,
+        shiftId: updateData.shiftId
+      });
+    }
   }
 
   if (article.progress !== previousProgress) {
