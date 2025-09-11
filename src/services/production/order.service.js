@@ -255,18 +255,30 @@ export const getOrdersByFloor = async (floor, filter, options) => {
     'Warehouse'
   ];
 
-  const requestedFloorIndex = floorOrder.indexOf(floor);
+  // Map URL-friendly floor names to proper enum values
+  const floorMapping = {
+    'FinalChecking': 'Final Checking',
+    'FinalChecking': 'Final Checking',
+    'finalchecking': 'Final Checking',
+    'final-checking': 'Final Checking',
+    'final_checking': 'Final Checking'
+  };
+
+  // Convert floor name if needed
+  const normalizedFloor = floorMapping[floor] || floor;
+
+  const requestedFloorIndex = floorOrder.indexOf(normalizedFloor);
   if (requestedFloorIndex === -1) {
     throw new ApiError(httpStatus.BAD_REQUEST, `Invalid floor: ${floor}`);
   }
 
   // Build complex query for floor visibility
-  const floorKey = getFloorKey(floor);
+  const floorKey = getFloorKey(normalizedFloor);
   const floorFilter = {
     ...filter,
     $or: [
       // 1. Orders currently on this floor
-      { currentFloor: floor },
+      { currentFloor: normalizedFloor },
       // 2. Orders on previous floors (if entire order not completed)
       {
         currentFloor: { $in: floorOrder.slice(0, requestedFloorIndex) },
@@ -288,14 +300,14 @@ export const getOrdersByFloor = async (floor, filter, options) => {
   // Post-process to filter out orders and articles that shouldn't be visible on this floor
   const filteredResults = orders.results.filter(order => {
     // Check if order should be visible on this floor
-    if (!shouldOrderBeVisibleOnFloor(order, floor, floorOrder)) {
+    if (!shouldOrderBeVisibleOnFloor(order, normalizedFloor, floorOrder)) {
       return false;
     }
     
     // Filter articles within the order
     if (order.articles && order.articles.length > 0) {
       order.articles = order.articles.filter(article => {
-        return shouldArticleBeVisibleOnFloor(article, floor, floorOrder);
+        return shouldArticleBeVisibleOnFloor(article, normalizedFloor, floorOrder);
       });
     }
     

@@ -42,18 +42,6 @@ const articleSchema = new mongoose.Schema({
       message: 'Planned quantity must be a positive integer between 1 and 100,000'
     }
   },
-  completedQuantity: {
-    type: Number,
-    required: true,
-    default: 0,
-    min: 0,
-    validate: {
-      validator: function(v) {
-        return v <= this.plannedQuantity;
-      },
-      message: 'Completed quantity cannot exceed planned quantity'
-    }
-  },
   
   // Article properties
   linkingType: {
@@ -77,12 +65,11 @@ const articleSchema = new mongoose.Schema({
     required: true,
     default: 0,
     min: 0,
-    max: 100,
     validate: {
       validator: function(v) {
-        return v >= 0 && v <= 100;
+        return v >= 0;
       },
-      message: 'Progress must be between 0 and 100'
+      message: 'Progress must be 0 or greater'
     }
   },
   currentFloor: {
@@ -131,13 +118,13 @@ const articleSchema = new mongoose.Schema({
       remaining: { type: Number, default: 0 },
       transferred: { type: Number, default: 0 }
     },
-    branding: {
+    finalChecking: {
       received: { type: Number, default: 0 },
       completed: { type: Number, default: 0 },
       remaining: { type: Number, default: 0 },
       transferred: { type: Number, default: 0 }
     },
-    finalChecking: {
+    branding: {
       received: { type: Number, default: 0 },
       completed: { type: Number, default: 0 },
       remaining: { type: Number, default: 0 },
@@ -214,10 +201,34 @@ articleSchema.index({ status: 1 });
 articleSchema.index({ priority: 1 });
 articleSchema.index({ createdAt: -1 });
 
-// Virtual for progress calculation
+// Virtual for progress calculation based on floor quantities
 articleSchema.virtual('calculatedProgress').get(function() {
   if (this.plannedQuantity === 0) return 0;
-  return Math.round((this.completedQuantity / this.plannedQuantity) * 100);
+  
+  // Calculate total completed across all floors
+  const floorOrder = [
+    'knitting', 'linking', 'checking', 'washing', 
+    'boarding', 'finalChecking', 'branding', 'warehouse'
+  ];
+  
+  let totalCompleted = 0;
+  
+  // Add completed work from current floor
+  const currentFloorKey = this.getFloorKey(this.currentFloor);
+  if (this.floorQuantities[currentFloorKey]) {
+    totalCompleted += this.floorQuantities[currentFloorKey].completed;
+  }
+  
+  // Add transferred work from previous floors
+  const currentFloorIndex = floorOrder.indexOf(currentFloorKey);
+  for (let i = 0; i < currentFloorIndex; i++) {
+    const floorKey = floorOrder[i];
+    if (this.floorQuantities[floorKey]) {
+      totalCompleted += this.floorQuantities[floorKey].transferred;
+    }
+  }
+  
+  return Math.round((totalCompleted / this.plannedQuantity) * 100);
 });
 
 // Virtual for quality total validation
@@ -227,7 +238,7 @@ articleSchema.virtual('qualityTotal').get(function() {
 
 // Pre-save middleware to update progress
 articleSchema.pre('save', function(next) {
-  if (this.isModified('completedQuantity') || this.isModified('plannedQuantity')) {
+  if (this.isModified('floorQuantities') || this.isModified('plannedQuantity') || this.isModified('currentFloor')) {
     this.progress = this.calculatedProgress;
   }
   next();
@@ -237,8 +248,10 @@ articleSchema.pre('save', function(next) {
 articleSchema.pre('save', function(next) {
   if (this.currentFloor === ProductionFloor.FINAL_CHECKING) {
     const qualityTotal = this.qualityTotal;
-    if (qualityTotal > this.completedQuantity) {
-      return next(new Error('Quality quantities cannot exceed completed quantity'));
+    const currentFloorKey = this.getFloorKey(this.currentFloor);
+    const currentFloorCompleted = this.floorQuantities[currentFloorKey]?.completed || 0;
+    if (qualityTotal > currentFloorCompleted) {
+      return next(new Error('Quality quantities cannot exceed completed quantity on current floor'));
     }
   }
   next();
@@ -263,8 +276,8 @@ articleSchema.methods.getFloorKey = function(floor) {
     [ProductionFloor.CHECKING]: 'checking',
     [ProductionFloor.WASHING]: 'washing',
     [ProductionFloor.BOARDING]: 'boarding',
-    [ProductionFloor.BRANDING]: 'branding',
     [ProductionFloor.FINAL_CHECKING]: 'finalChecking',
+    [ProductionFloor.BRANDING]: 'branding',
     [ProductionFloor.WAREHOUSE]: 'warehouse'
   };
   return floorMap[floor];
@@ -287,8 +300,8 @@ articleSchema.methods.updateCompletedQuantity = async function(newQuantity, user
   floorData.completed = newQuantity;
   floorData.remaining = floorData.received - newQuantity;
   
-  // Update overall completed quantity (sum of all floors)
-  this.updateOverallCompletedQuantity();
+  // Update progress based on floor quantities
+  this.progress = this.calculatedProgress;
   
   if (remarks) {
     this.remarks = remarks;
@@ -326,35 +339,6 @@ articleSchema.methods.updateCompletedQuantity = async function(newQuantity, user
   };
 };
 
-// Method to update overall completed quantity
-articleSchema.methods.updateOverallCompletedQuantity = function() {
-  // Calculate total completed quantity based on current floor and previous floors
-  const floorOrder = [
-    'knitting', 'linking', 'checking', 'washing', 
-    'boarding', 'branding', 'finalChecking', 'warehouse'
-  ];
-  
-  const currentFloorKey = this.getFloorKey(this.currentFloor);
-  const currentFloorIndex = floorOrder.indexOf(currentFloorKey);
-  
-  let totalCompleted = 0;
-  
-  // Add completed work from current floor
-  if (this.floorQuantities[currentFloorKey]) {
-    totalCompleted += this.floorQuantities[currentFloorKey].completed;
-  }
-  
-  // Add transferred work from previous floors (work that's been completed and moved forward)
-  for (let i = 0; i < currentFloorIndex; i++) {
-    const floorKey = floorOrder[i];
-    if (this.floorQuantities[floorKey]) {
-      totalCompleted += this.floorQuantities[floorKey].transferred;
-    }
-  }
-  
-  this.completedQuantity = totalCompleted;
-  this.progress = this.calculatedProgress;
-};
 
 // Method to initialize article with planned quantity on first floor
 articleSchema.methods.initializeWithPlannedQuantity = function() {
@@ -382,8 +366,8 @@ articleSchema.methods.transferToNextFloor = async function(quantity, userId, flo
     ProductionFloor.CHECKING,
     ProductionFloor.WASHING,
     ProductionFloor.BOARDING,
-    ProductionFloor.BRANDING,
     ProductionFloor.FINAL_CHECKING,
+    ProductionFloor.BRANDING,
     ProductionFloor.WAREHOUSE
   ];
   
@@ -465,8 +449,10 @@ articleSchema.methods.updateQualityCategories = async function(qualityData, user
   
   const { m1Quantity, m2Quantity, m3Quantity, m4Quantity, repairStatus, repairRemarks } = qualityData;
   
-  if (m1Quantity + m2Quantity + m3Quantity + m4Quantity > this.completedQuantity) {
-    throw new Error('Quality quantities cannot exceed completed quantity');
+  const currentFloorKey = this.getFloorKey(this.currentFloor);
+  const currentFloorCompleted = this.floorQuantities[currentFloorKey]?.completed || 0;
+  if (m1Quantity + m2Quantity + m3Quantity + m4Quantity > currentFloorCompleted) {
+    throw new Error('Quality quantities cannot exceed completed quantity on current floor');
   }
   
   const previousValues = {
@@ -672,7 +658,9 @@ articleSchema.methods.confirmFinalQuality = async function(confirmed, userId, fl
     throw new Error('Final quality confirmation can only be done in Final Checking floor');
   }
   
-  if (confirmed && this.qualityTotal !== this.completedQuantity) {
+  const currentFloorKey = this.getFloorKey(this.currentFloor);
+  const currentFloorCompleted = this.floorQuantities[currentFloorKey]?.completed || 0;
+  if (confirmed && this.qualityTotal !== currentFloorCompleted) {
     throw new Error('All completed quantity must be categorized before final confirmation');
   }
   
@@ -685,7 +673,7 @@ articleSchema.methods.confirmFinalQuality = async function(confirmed, userId, fl
       articleId: this._id,
       orderId: this.orderId,
       action: confirmed ? 'Final Quality Confirmed' : 'Final Quality Rejected',
-      quantity: this.completedQuantity,
+      quantity: this.floorQuantities[this.getFloorKey(this.currentFloor)]?.completed || 0,
       remarks: remarks || `Final quality ${confirmed ? 'confirmed' : 'rejected'} for article ${this.articleNumber}`,
       previousValue: previousValue,
       newValue: confirmed,

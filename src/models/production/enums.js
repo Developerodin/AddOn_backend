@@ -34,8 +34,8 @@ const ProductionFloor = {
   CHECKING: 'Checking',
   WASHING: 'Washing',
   BOARDING: 'Boarding',
-  BRANDING: 'Branding',
   FINAL_CHECKING: 'Final Checking',
+  BRANDING: 'Branding',
   WAREHOUSE: 'Warehouse'
 };
 

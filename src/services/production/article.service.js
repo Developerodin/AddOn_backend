@@ -17,6 +17,17 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
     throw new ApiError(httpStatus.NOT_FOUND, 'Article not found in this order');
   }
 
+  // Map URL-friendly floor names to proper enum values
+  const floorMapping = {
+    'FinalChecking': 'Final Checking',
+    'finalchecking': 'Final Checking',
+    'final-checking': 'Final Checking',
+    'final_checking': 'Final Checking'
+  };
+
+  // Convert floor name if needed
+  const normalizedFloor = floorMapping[floor] || floor;
+
   // Validate floor-specific operations - allow updates on current floor or previous floors
   const floorOrder = [
     'Knitting',
@@ -24,29 +35,33 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
     'Checking',
     'Washing',
     'Boarding',
-    'Branding',
     'Final Checking',
+    'Branding',
     'Warehouse'
   ];
   
   const currentFloorIndex = floorOrder.indexOf(article.currentFloor);
-  const requestedFloorIndex = floorOrder.indexOf(floor);
+  const requestedFloorIndex = floorOrder.indexOf(normalizedFloor);
   
   if (requestedFloorIndex === -1) {
     throw new ApiError(httpStatus.BAD_REQUEST, `Invalid floor: ${floor}`);
   }
   
   if (requestedFloorIndex > currentFloorIndex) {
-    throw new ApiError(httpStatus.BAD_REQUEST, `Cannot update work on ${floor} floor - article is currently on ${article.currentFloor} floor`);
+    throw new ApiError(httpStatus.BAD_REQUEST, `Cannot update work on ${normalizedFloor} floor - article is currently on ${article.currentFloor} floor`);
   }
 
-  const previousQuantity = article.completedQuantity;
   const previousProgress = article.progress;
+  
+  // Get previous floor completed quantity for logging
+  const floorKey = article.getFloorKey(normalizedFloor);
+  const floorData = article.floorQuantities[floorKey];
+  const previousQuantity = floorData?.completed || 0;
 
   // Update article data
   if (updateData.completedQuantity !== undefined) {
     // Get floor key for the requested floor (not necessarily current floor)
-    const floorKey = article.getFloorKey(floor);
+    const floorKey = article.getFloorKey(normalizedFloor);
     const floorData = article.floorQuantities[floorKey];
     
     if (!floorData) {
@@ -63,12 +78,12 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
     floorData.completed = updateData.completedQuantity;
     floorData.remaining = floorData.received - updateData.completedQuantity;
     
-    // Update overall completed quantity (sum of all floors)
-    article.updateOverallCompletedQuantity();
+    // Update progress based on floor quantities
+    article.progress = article.calculatedProgress;
   }
 
   // Update floor-specific fields
-  if (floor === 'Final Checking') {
+  if (normalizedFloor === 'Final Checking') {
     if (updateData.m1Quantity !== undefined) article.m1Quantity = updateData.m1Quantity;
     if (updateData.m2Quantity !== undefined) article.m2Quantity = updateData.m2Quantity;
     if (updateData.m3Quantity !== undefined) article.m3Quantity = updateData.m3Quantity;
@@ -87,7 +102,10 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
     article.startedAt = new Date().toISOString();
   }
 
-  if (article.completedQuantity === article.plannedQuantity) {
+  // Check if article is completed based on floor quantities
+  const currentFloorKey = article.getFloorKey(article.currentFloor);
+  const currentFloorData = article.floorQuantities[currentFloorKey];
+  if (currentFloorData && currentFloorData.completed === currentFloorData.received && currentFloorData.remaining === 0) {
     article.status = 'Completed';
     article.completedAt = new Date().toISOString();
   }
@@ -101,7 +119,7 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
       orderId: article.orderId.toString(),
       action: 'Quantity Updated',
       quantity: updateData.completedQuantity - previousQuantity,
-      remarks: `Quantity updated from ${previousQuantity} to ${updateData.completedQuantity}`,
+      remarks: `Quantity updated from ${previousQuantity} to ${updateData.completedQuantity} on ${normalizedFloor} floor`,
       previousValue: previousQuantity,
       newValue: updateData.completedQuantity,
       changeReason: 'Production progress update',
@@ -140,7 +158,7 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
   }
 
   // Handle transfers based on which floor was updated
-  if (floor === article.currentFloor) {
+  if (normalizedFloor === article.currentFloor) {
     // If updating current floor, transfer completed work to next floor
     const floorKey = article.getFloorKey(article.currentFloor);
     const floorData = article.floorQuantities[floorKey];
@@ -150,16 +168,16 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
     }
   } else {
     // If updating a previous floor, transfer completed work to current floor
-    const updatedFloorKey = article.getFloorKey(floor);
+    const updatedFloorKey = article.getFloorKey(normalizedFloor);
     const updatedFloorData = article.floorQuantities[updatedFloorKey];
     
     if (updatedFloorData && updatedFloorData.completed > 0) {
-      await transferFromPreviousFloor(article, floor, updatedFloorData.completed, updateData, user);
+      await transferFromPreviousFloor(article, normalizedFloor, updatedFloorData.completed, updateData, user);
     }
   }
   
   // Check if there's remaining work on other previous floors that needs to be transferred
-  await checkAndTransferPreviousFloorWork(article, updateData, user, floor);
+  await checkAndTransferPreviousFloorWork(article, updateData, user, normalizedFloor);
 
   return article;
 };
@@ -178,8 +196,8 @@ const checkAndTransferPreviousFloorWork = async (article, updateData, user = nul
     'Checking',
     'Washing',
     'Boarding',
-    'Branding',
     'Final Checking',
+    'Branding',
     'Warehouse'
   ];
 
@@ -259,15 +277,26 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
     throw new ApiError(httpStatus.NOT_FOUND, 'Article not found in this order');
   }
 
-  if (article.currentFloor !== floor) {
-    throw new ApiError(httpStatus.BAD_REQUEST, `Article is not on ${floor} floor`);
+  // Map URL-friendly floor names to proper enum values
+  const floorMapping = {
+    'FinalChecking': 'Final Checking',
+    'finalchecking': 'Final Checking',
+    'final-checking': 'Final Checking',
+    'final_checking': 'Final Checking'
+  };
+
+  // Convert floor name if needed
+  const normalizedFloor = floorMapping[floor] || floor;
+
+  if (article.currentFloor !== normalizedFloor) {
+    throw new ApiError(httpStatus.BAD_REQUEST, `Article is not on ${normalizedFloor} floor`);
   }
 
   if (article.status !== 'Completed') {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Article must be completed before transfer');
   }
 
-  const nextFloor = getNextFloor(floor);
+  const nextFloor = getNextFloor(normalizedFloor);
   if (!nextFloor) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'No next floor available');
   }
@@ -276,8 +305,12 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
   article.currentFloor = nextFloor;
   article.status = 'Pending';
   article.progress = 0;
-  article.quantityFromPreviousFloor = article.completedQuantity;
-  article.completedQuantity = 0;
+  
+  // Get completed quantity from current floor for transfer
+  const currentFloorKey = article.getFloorKey(normalizedFloor);
+  const currentFloorData = article.floorQuantities[currentFloorKey];
+  article.quantityFromPreviousFloor = currentFloorData?.completed || 0;
+  
   article.startedAt = null;
   article.completedAt = null;
 
@@ -307,10 +340,10 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
     orderId: article.orderId.toString(),
     action: `Transferred to ${nextFloor}`,
     quantity: article.quantityFromPreviousFloor,
-    fromFloor: floor,
+    fromFloor: normalizedFloor,
     toFloor: nextFloor,
-    remarks: transferData.remarks || `Transferred from ${floor} to ${nextFloor}`,
-    previousValue: floor,
+    remarks: transferData.remarks || `Transferred from ${normalizedFloor} to ${nextFloor}`,
+    previousValue: normalizedFloor,
     newValue: nextFloor,
     changeReason: 'Floor transfer',
     userId: user?.id || transferData.userId || 'system',
@@ -321,7 +354,7 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
   return {
     article,
     transferDetails: {
-      fromFloor: floor,
+      fromFloor: normalizedFloor,
       toFloor: nextFloor,
       quantity: article.quantityFromPreviousFloor,
       timestamp: new Date().toISOString()
@@ -432,7 +465,6 @@ const autoTransferToNextFloor = async (article, updateData, user = null) => {
   article.status = 'Pending';
   article.progress = 0;
   article.quantityFromPreviousFloor = transferQuantity;
-  article.completedQuantity = 0; // Reset for new floor
   article.startedAt = null;
   article.completedAt = null;
 
@@ -486,8 +518,8 @@ const getNextFloor = (currentFloor) => {
     'Checking',
     'Washing',
     'Boarding',
-    'Branding',
     'Final Checking',
+    'Branding',
     'Warehouse'
   ];
 
