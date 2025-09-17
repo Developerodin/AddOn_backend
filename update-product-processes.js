@@ -22,6 +22,7 @@ const updateProductProcesses = async () => {
     // Process names to add (excluding 'Linking' as it doesn't exist in DB)
     const processNames = [
       'Knitting',
+      'Linking',
       'Checking',
       'Washing',
       'Boarding',
