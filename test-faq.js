@@ -1,6 +1,6 @@
 import fetch from 'node-fetch';
 
-const BASE_URL = 'http://localhost:4000/v1/faq';
+const BASE_URL = 'http://localhost:3000/v1/faq';
 
 // Test datas
 const faqData = [
