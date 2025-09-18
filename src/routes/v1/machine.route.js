@@ -1,5 +1,4 @@
 import express from 'express';
-import auth from '../../middlewares/auth.js';
 import validate from '../../middlewares/validate.js';
 import * as machineValidation from '../../validations/machine.validation.js';
 import * as machineController from '../../controllers/machine.controller.js';
@@ -8,46 +7,46 @@ const router = express.Router();
 
 router
   .route('/')
-  .post(auth('manageMachines'), validate(machineValidation.createMachine), machineController.createMachine)
-  .get(auth('getMachines'), validate(machineValidation.getMachines), machineController.getMachines);
+  .post(validate(machineValidation.createMachine), machineController.createMachine)
+  .get(validate(machineValidation.getMachines), machineController.getMachines);
 
 router
   .route('/statistics')
-  .get(auth('getMachines'), machineController.getMachineStatistics);
+  .get(machineController.getMachineStatistics);
 
 router
   .route('/status')
-  .get(auth('getMachines'), validate(machineValidation.getMachinesByStatus), machineController.getMachinesByStatus);
+  .get(validate(machineValidation.getMachinesByStatus), machineController.getMachinesByStatus);
 
 router
   .route('/floor')
-  .get(auth('getMachines'), validate(machineValidation.getMachinesByFloor), machineController.getMachinesByFloor);
+  .get(validate(machineValidation.getMachinesByFloor), machineController.getMachinesByFloor);
 
 router
   .route('/maintenance-due')
-  .get(auth('getMachines'), validate(machineValidation.getMachinesNeedingMaintenance), machineController.getMachinesNeedingMaintenance);
+  .get(validate(machineValidation.getMachinesNeedingMaintenance), machineController.getMachinesNeedingMaintenance);
 
 router
   .route('/supervisor/:supervisorId')
-  .get(auth('getMachines'), machineController.getMachinesBySupervisor);
+  .get(machineController.getMachinesBySupervisor);
 
 router
   .route('/:machineId')
-  .get(auth('getMachines'), validate(machineValidation.getMachine), machineController.getMachine)
-  .patch(auth('manageMachines'), validate(machineValidation.updateMachine), machineController.updateMachine)
-  .delete(auth('manageMachines'), validate(machineValidation.deleteMachine), machineController.deleteMachine);
+  .get(validate(machineValidation.getMachine), machineController.getMachine)
+  .patch(validate(machineValidation.updateMachine), machineController.updateMachine)
+  .delete(validate(machineValidation.deleteMachine), machineController.deleteMachine);
 
 router
   .route('/:machineId/status')
-  .patch(auth('manageMachines'), validate(machineValidation.updateMachineStatus), machineController.updateMachineStatus);
+  .patch(validate(machineValidation.updateMachineStatus), machineController.updateMachineStatus);
 
 router
   .route('/:machineId/maintenance')
-  .patch(auth('manageMachines'), validate(machineValidation.updateMachineMaintenance), machineController.updateMachineMaintenance);
+  .patch(validate(machineValidation.updateMachineMaintenance), machineController.updateMachineMaintenance);
 
 router
   .route('/:machineId/assign-supervisor')
-  .patch(auth('manageMachines'), validate(machineValidation.assignSupervisor), machineController.assignSupervisor);
+  .patch(validate(machineValidation.assignSupervisor), machineController.assignSupervisor);
 
 export default router;
 
