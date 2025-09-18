@@ -12,6 +12,7 @@ import FileManager from './fileManager.model.js';
 import Forecast from './forecast.model.js';
 import Replenishment from './replenishment.model.js';
 import FaqVector from './faqVector.model.js';
+import Machine from './machine.model.js';
 
 export {
   Token,
@@ -28,4 +29,5 @@ export {
   Forecast,
   Replenishment,
   FaqVector,
+  Machine,
 };

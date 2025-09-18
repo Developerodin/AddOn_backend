@@ -84,8 +84,6 @@ router
  *                 type: object
  *                 description: User navigation permissions
  *                 properties:
- *                   Users:
- *                     type: boolean
  *                   Dashboard:
  *                     type: boolean
  *                   Catalog:
@@ -100,6 +98,8 @@ router
  *                       Processes:
  *                         type: boolean
  *                       Attributes:
+ *                         type: boolean
+ *                       Machines:
  *                         type: boolean
  *                   Sales:
  *                     type: object
@@ -116,26 +116,28 @@ router
  *                     type: boolean
  *                   'File Manager':
  *                     type: boolean
- *                   Production:
+ *                   Users:
+ *                     type: boolean
+ *                   'Production Planning':
  *                     type: object
  *                     properties:
- *                       'Production Supervisor':
+ *                       'Production Orders':
  *                         type: boolean
- *                       'Knitting Floor Supervisor':
+ *                       'Knitting Floor':
  *                         type: boolean
- *                       'Linking Floor Supervisor':
+ *                       'Linking Floor':
  *                         type: boolean
- *                       'Checking Floor Supervisor':
+ *                       'Checking Floor':
  *                         type: boolean
- *                       'Washing Floor Supervisor':
+ *                       'Washing Floor':
  *                         type: boolean
- *                       'Boarding Floor Supervisor':
+ *                       'Boarding Floor':
  *                         type: boolean
- *                       'Final Checking Floor Supervisor':
+ *                       'Final Checking Floor':
  *                         type: boolean
- *                       'Branding Floor Supervisor':
+ *                       'Branding Floor':
  *                         type: boolean
- *                       'Warehouse Floor Supervisor':
+ *                       'Warehouse Floor':
  *                         type: boolean
  *             example:
  *               name: fake name
@@ -143,7 +145,6 @@ router
  *               password: password1
  *               role: user
  *               navigation:
- *                 Users: false
  *                 Dashboard: true
  *                 Catalog:
  *                   Items: true
@@ -151,6 +152,7 @@ router
  *                   'Raw Material': false
  *                   Processes: false
  *                   Attributes: false
+ *                   Machines: false
  *                 Sales:
  *                   'All Sales': true
  *                   'Master Sales': false
@@ -158,16 +160,17 @@ router
  *                 Analytics: true
  *                 'Replenishment Agent': false
  *                 'File Manager': false
- *                 Production:
- *                   'Production Supervisor': false
- *                   'Knitting Floor Supervisor': false
- *                   'Linking Floor Supervisor': false
- *                   'Checking Floor Supervisor': false
- *                   'Washing Floor Supervisor': false
- *                   'Boarding Floor Supervisor': false
- *                   'Final Checking Floor Supervisor': false
- *                   'Branding Floor Supervisor': false
- *                   'Warehouse Floor Supervisor': false
+ *                 Users: false
+ *                 'Production Planning':
+ *                   'Production Orders': false
+ *                   'Knitting Floor': false
+ *                   'Linking Floor': false
+ *                   'Checking Floor': false
+ *                   'Washing Floor': false
+ *                   'Boarding Floor': false
+ *                   'Final Checking Floor': false
+ *                   'Branding Floor': false
+ *                   'Warehouse Floor': false
  *     responses:
  *       "201":
  *         description: Created
@@ -330,8 +333,6 @@ router
  *                 type: object
  *                 description: User navigation permissions
  *                 properties:
- *                   Users:
- *                     type: boolean
  *                   Dashboard:
  *                     type: boolean
  *                   Catalog:
@@ -346,6 +347,8 @@ router
  *                       Processes:
  *                         type: boolean
  *                       Attributes:
+ *                         type: boolean
+ *                       Machines:
  *                         type: boolean
  *                   Sales:
  *                     type: object
@@ -362,26 +365,28 @@ router
  *                     type: boolean
  *                   'File Manager':
  *                     type: boolean
- *                   Production:
+ *                   Users:
+ *                     type: boolean
+ *                   'Production Planning':
  *                     type: object
  *                     properties:
- *                       'Production Supervisor':
+ *                       'Production Orders':
  *                         type: boolean
- *                       'Knitting Floor Supervisor':
+ *                       'Knitting Floor':
  *                         type: boolean
- *                       'Linking Floor Supervisor':
+ *                       'Linking Floor':
  *                         type: boolean
- *                       'Checking Floor Supervisor':
+ *                       'Checking Floor':
  *                         type: boolean
- *                       'Washing Floor Supervisor':
+ *                       'Washing Floor':
  *                         type: boolean
- *                       'Boarding Floor Supervisor':
+ *                       'Boarding Floor':
  *                         type: boolean
- *                       'Final Checking Floor Supervisor':
+ *                       'Final Checking Floor':
  *                         type: boolean
- *                       'Branding Floor Supervisor':
+ *                       'Branding Floor':
  *                         type: boolean
- *                       'Warehouse Floor Supervisor':
+ *                       'Warehouse Floor':
  *                         type: boolean
  *             example:
  *               name: fake name
@@ -462,8 +467,6 @@ router
  *                 type: object
  *                 description: User navigation permissions
  *                 properties:
- *                   Users:
- *                     type: boolean
  *                   Dashboard:
  *                     type: boolean
  *                   Catalog:
@@ -478,6 +481,8 @@ router
  *                       Processes:
  *                         type: boolean
  *                       Attributes:
+ *                         type: boolean
+ *                       Machines:
  *                         type: boolean
  *                   Sales:
  *                     type: object
@@ -494,30 +499,31 @@ router
  *                     type: boolean
  *                   'File Manager':
  *                     type: boolean
- *                   Production:
+ *                   Users:
+ *                     type: boolean
+ *                   'Production Planning':
  *                     type: object
  *                     properties:
- *                       'Production Supervisor':
+ *                       'Production Orders':
  *                         type: boolean
- *                       'Knitting Floor Supervisor':
+ *                       'Knitting Floor':
  *                         type: boolean
- *                       'Linking Floor Supervisor':
+ *                       'Linking Floor':
  *                         type: boolean
- *                       'Checking Floor Supervisor':
+ *                       'Checking Floor':
  *                         type: boolean
- *                       'Washing Floor Supervisor':
+ *                       'Washing Floor':
  *                         type: boolean
- *                       'Boarding Floor Supervisor':
+ *                       'Boarding Floor':
  *                         type: boolean
- *                       'Final Checking Floor Supervisor':
+ *                       'Final Checking Floor':
  *                         type: boolean
- *                       'Branding Floor Supervisor':
+ *                       'Branding Floor':
  *                         type: boolean
- *                       'Warehouse Floor Supervisor':
+ *                       'Warehouse Floor':
  *                         type: boolean
  *             example:
  *               navigation:
- *                 Users: false
  *                 Dashboard: true
  *                 Catalog:
  *                   Items: true
@@ -525,6 +531,7 @@ router
  *                   'Raw Material': false
  *                   Processes: false
  *                   Attributes: false
+ *                   Machines: false
  *                 Sales:
  *                   'All Sales': true
  *                   'Master Sales': false
@@ -532,16 +539,17 @@ router
  *                 Analytics: true
  *                 'Replenishment Agent': false
  *                 'File Manager': false
- *                 Production:
- *                   'Production Supervisor': false
- *                   'Knitting Floor Supervisor': false
- *                   'Linking Floor Supervisor': false
- *                   'Checking Floor Supervisor': false
- *                   'Washing Floor Supervisor': false
- *                   'Boarding Floor Supervisor': false
- *                   'Final Checking Floor Supervisor': false
- *                   'Branding Floor Supervisor': false
- *                   'Warehouse Floor Supervisor': false
+ *                 Users: false
+ *                 'Production Planning':
+ *                   'Production Orders': false
+ *                   'Knitting Floor': false
+ *                   'Linking Floor': false
+ *                   'Checking Floor': false
+ *                   'Washing Floor': false
+ *                   'Boarding Floor': false
+ *                   'Final Checking Floor': false
+ *                   'Branding Floor': false
+ *                   'Warehouse Floor': false
  *     responses:
  *       "200":
  *         description: OK

@@ -8,14 +8,14 @@
  */
 export const DEFAULT_NAVIGATION = {
   // Main Sidebar
-  Users: false,
   Dashboard: false,
   Catalog: {
     Items: false,
     Categories: false,
     'Raw Material': false,
     Processes: false,
-    Attributes: false
+    Attributes: false,
+    Machines: false
   },
   Sales: {
     'All Sales': false,
@@ -25,16 +25,17 @@ export const DEFAULT_NAVIGATION = {
   Analytics: false,
   'Replenishment Agent': false,
   'File Manager': false,
-  Production: {
-    'Production Supervisor': false,
-    'Knitting Floor Supervisor': false,
-    'Linking Floor Supervisor': false,
-    'Checking Floor Supervisor': false,
-    'Washing Floor Supervisor': false,
-    'Boarding Floor Supervisor': false,
-    'Final Checking Floor Supervisor': false,
-    'Branding Floor Supervisor': false,
-    'Warehouse Floor Supervisor': false
+  Users: false,
+  'Production Planning': {
+    'Production Orders': false,
+    'Knitting Floor': false,
+    'Linking Floor': false,
+    'Checking Floor': false,
+    'Washing Floor': false,
+    'Boarding Floor': false,
+    'Final Checking Floor': false,
+    'Branding Floor': false,
+    'Warehouse Floor': false
   }
 };
 
@@ -43,14 +44,14 @@ export const DEFAULT_NAVIGATION = {
  */
 export const ROLE_NAVIGATION_TEMPLATES = {
   admin: {
-    Users: true,
     Dashboard: true,
     Catalog: {
       Items: true,
       Categories: true,
       'Raw Material': true,
       Processes: true,
-      Attributes: true
+      Attributes: true,
+      Machines: true
     },
     Sales: {
       'All Sales': true,
@@ -60,27 +61,28 @@ export const ROLE_NAVIGATION_TEMPLATES = {
     Analytics: true,
     'Replenishment Agent': true,
     'File Manager': true,
-    Production: {
-      'Production Supervisor': true,
-      'Knitting Floor Supervisor': true,
-      'Linking Floor Supervisor': true,
-      'Checking Floor Supervisor': true,
-      'Washing Floor Supervisor': true,
-      'Boarding Floor Supervisor': true,
-      'Final Checking Floor Supervisor': true,
-      'Branding Floor Supervisor': true,
-      'Warehouse Floor Supervisor': true
+    Users: true,
+    'Production Planning': {
+      'Production Orders': true,
+      'Knitting Floor': true,
+      'Linking Floor': true,
+      'Checking Floor': true,
+      'Washing Floor': true,
+      'Boarding Floor': true,
+      'Final Checking Floor': true,
+      'Branding Floor': true,
+      'Warehouse Floor': true
     }
   },
   user: {
-    Users: false,
     Dashboard: true,
     Catalog: {
       Items: true,
       Categories: false,
       'Raw Material': false,
       Processes: false,
-      Attributes: false
+      Attributes: false,
+      Machines: false
     },
     Sales: {
       'All Sales': true,
@@ -90,16 +92,17 @@ export const ROLE_NAVIGATION_TEMPLATES = {
     Analytics: false,
     'Replenishment Agent': false,
     'File Manager': false,
-    Production: {
-      'Production Supervisor': false,
-      'Knitting Floor Supervisor': false,
-      'Linking Floor Supervisor': false,
-      'Checking Floor Supervisor': false,
-      'Washing Floor Supervisor': false,
-      'Boarding Floor Supervisor': false,
-      'Final Checking Floor Supervisor': false,
-      'Branding Floor Supervisor': false,
-      'Warehouse Floor Supervisor': false
+    Users: false,
+    'Production Planning': {
+      'Production Orders': false,
+      'Knitting Floor': false,
+      'Linking Floor': false,
+      'Checking Floor': false,
+      'Washing Floor': false,
+      'Boarding Floor': false,
+      'Final Checking Floor': false,
+      'Branding Floor': false,
+      'Warehouse Floor': false
     }
   }
 };
@@ -144,7 +147,7 @@ export const validateNavigationStructure = (navigation) => {
   }
 
   // Check required top-level keys
-  const requiredKeys = ['Users', 'Dashboard', 'Catalog', 'Sales', 'Stores', 'Analytics', 'Replenishment Agent', 'File Manager', 'Production'];
+  const requiredKeys = ['Dashboard', 'Catalog', 'Sales', 'Stores', 'Analytics', 'Replenishment Agent', 'File Manager', 'Users', 'Production Planning'];
   for (const key of requiredKeys) {
     if (!(key in navigation)) {
       return false;
@@ -155,7 +158,7 @@ export const validateNavigationStructure = (navigation) => {
   if (!navigation.Catalog || typeof navigation.Catalog !== 'object') {
     return false;
   }
-  const catalogKeys = ['Items', 'Categories', 'Raw Material', 'Processes', 'Attributes'];
+  const catalogKeys = ['Items', 'Categories', 'Raw Material', 'Processes', 'Attributes', 'Machines'];
   for (const key of catalogKeys) {
     if (!(key in navigation.Catalog) || typeof navigation.Catalog[key] !== 'boolean') {
       return false;
@@ -173,23 +176,23 @@ export const validateNavigationStructure = (navigation) => {
     }
   }
 
-  // Check Production structure
-  if (!navigation.Production || typeof navigation.Production !== 'object') {
+  // Check Production Planning structure
+  if (!navigation['Production Planning'] || typeof navigation['Production Planning'] !== 'object') {
     return false;
   }
   const productionKeys = [
-    'Production Supervisor',
-    'Knitting Floor Supervisor',
-    'Linking Floor Supervisor',
-    'Checking Floor Supervisor',
-    'Washing Floor Supervisor',
-    'Boarding Floor Supervisor',
-    'Final Checking Floor Supervisor',
-    'Branding Floor Supervisor',
-    'Warehouse Floor Supervisor'
+    'Production Orders',
+    'Knitting Floor',
+    'Linking Floor',
+    'Checking Floor',
+    'Washing Floor',
+    'Boarding Floor',
+    'Final Checking Floor',
+    'Branding Floor',
+    'Warehouse Floor'
   ];
   for (const key of productionKeys) {
-    if (!(key in navigation.Production) || typeof navigation.Production[key] !== 'boolean') {
+    if (!(key in navigation['Production Planning']) || typeof navigation['Production Planning'][key] !== 'boolean') {
       return false;
     }
   }

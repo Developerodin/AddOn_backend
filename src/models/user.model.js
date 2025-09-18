@@ -74,14 +74,14 @@ const userSchema = mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: {
         // Main Sidebar
-        Users: false,
         Dashboard: false,
         Catalog: {
           Items: false,
           Categories: false,
           'Raw Material': false,
           Processes: false,
-          Attributes: false
+          Attributes: false,
+          Machines: false
         },
         Sales: {
           'All Sales': false,
@@ -91,16 +91,17 @@ const userSchema = mongoose.Schema(
         Analytics: false,
         'Replenishment Agent': false,
         'File Manager': false,
-        Production: {
-          'Production Supervisor': false,
-          'Knitting Floor Supervisor': false,
-          'Linking Floor Supervisor': false,
-          'Checking Floor Supervisor': false,
-          'Washing Floor Supervisor': false,
-          'Boarding Floor Supervisor': false,
-          'Final Checking Floor Supervisor': false,
-          'Branding Floor Supervisor': false,
-          'Warehouse Floor Supervisor': false
+        Users: false,
+        'Production Planning': {
+          'Production Orders': false,
+          'Knitting Floor': false,
+          'Linking Floor': false,
+          'Checking Floor': false,
+          'Washing Floor': false,
+          'Boarding Floor': false,
+          'Final Checking Floor': false,
+          'Branding Floor': false,
+          'Warehouse Floor': false
         }
       }
     }

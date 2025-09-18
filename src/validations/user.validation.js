@@ -15,14 +15,14 @@ const createUser = {
     country: Joi.string().allow(''),
     timezone: Joi.string().default('UTC'),
     navigation: Joi.object().keys({
-      Users: Joi.boolean(),
       Dashboard: Joi.boolean(),
       Catalog: Joi.object().keys({
         Items: Joi.boolean(),
         Categories: Joi.boolean(),
         'Raw Material': Joi.boolean(),
         Processes: Joi.boolean(),
-        Attributes: Joi.boolean()
+        Attributes: Joi.boolean(),
+        Machines: Joi.boolean()
       }),
       Sales: Joi.object().keys({
         'All Sales': Joi.boolean(),
@@ -32,16 +32,17 @@ const createUser = {
       Analytics: Joi.boolean(),
       'Replenishment Agent': Joi.boolean(),
       'File Manager': Joi.boolean(),
-      Production: Joi.object().keys({
-        'Production Supervisor': Joi.boolean(),
-        'Knitting Floor Supervisor': Joi.boolean(),
-        'Linking Floor Supervisor': Joi.boolean(),
-        'Checking Floor Supervisor': Joi.boolean(),
-        'Washing Floor Supervisor': Joi.boolean(),
-        'Boarding Floor Supervisor': Joi.boolean(),
-        'Final Checking Floor Supervisor': Joi.boolean(),
-        'Branding Floor Supervisor': Joi.boolean(),
-        'Warehouse Floor Supervisor': Joi.boolean()
+      Users: Joi.boolean(),
+      'Production Planning': Joi.object().keys({
+        'Production Orders': Joi.boolean(),
+        'Knitting Floor': Joi.boolean(),
+        'Linking Floor': Joi.boolean(),
+        'Checking Floor': Joi.boolean(),
+        'Washing Floor': Joi.boolean(),
+        'Boarding Floor': Joi.boolean(),
+        'Final Checking Floor': Joi.boolean(),
+        'Branding Floor': Joi.boolean(),
+        'Warehouse Floor': Joi.boolean()
       })
     }).optional(),
   }),
@@ -81,14 +82,14 @@ const updateUser = {
       timezone: Joi.string(),
       role: Joi.string().valid('user', 'admin'),
       navigation: Joi.object().keys({
-        Users: Joi.boolean(),
         Dashboard: Joi.boolean(),
         Catalog: Joi.object().keys({
           Items: Joi.boolean(),
           Categories: Joi.boolean(),
           'Raw Material': Joi.boolean(),
           Processes: Joi.boolean(),
-          Attributes: Joi.boolean()
+          Attributes: Joi.boolean(),
+          Machines: Joi.boolean()
         }),
         Sales: Joi.object().keys({
           'All Sales': Joi.boolean(),
@@ -98,16 +99,17 @@ const updateUser = {
         Analytics: Joi.boolean(),
         'Replenishment Agent': Joi.boolean(),
         'File Manager': Joi.boolean(),
-        Production: Joi.object().keys({
-          'Production Supervisor': Joi.boolean(),
-          'Knitting Floor Supervisor': Joi.boolean(),
-          'Linking Floor Supervisor': Joi.boolean(),
-          'Checking Floor Supervisor': Joi.boolean(),
-          'Washing Floor Supervisor': Joi.boolean(),
-          'Boarding Floor Supervisor': Joi.boolean(),
-          'Final Checking Floor Supervisor': Joi.boolean(),
-          'Branding Floor Supervisor': Joi.boolean(),
-          'Warehouse Floor Supervisor': Joi.boolean()
+        Users: Joi.boolean(),
+        'Production Planning': Joi.object().keys({
+          'Production Orders': Joi.boolean(),
+          'Knitting Floor': Joi.boolean(),
+          'Linking Floor': Joi.boolean(),
+          'Checking Floor': Joi.boolean(),
+          'Washing Floor': Joi.boolean(),
+          'Boarding Floor': Joi.boolean(),
+          'Final Checking Floor': Joi.boolean(),
+          'Branding Floor': Joi.boolean(),
+          'Warehouse Floor': Joi.boolean()
         })
       }),
     })
@@ -121,14 +123,14 @@ const updateUserNavigation = {
   body: Joi.object()
     .keys({
       navigation: Joi.object().keys({
-        Users: Joi.boolean(),
         Dashboard: Joi.boolean(),
         Catalog: Joi.object().keys({
           Items: Joi.boolean(),
           Categories: Joi.boolean(),
           'Raw Material': Joi.boolean(),
           Processes: Joi.boolean(),
-          Attributes: Joi.boolean()
+          Attributes: Joi.boolean(),
+          Machines: Joi.boolean()
         }),
         Sales: Joi.object().keys({
           'All Sales': Joi.boolean(),
@@ -138,16 +140,17 @@ const updateUserNavigation = {
         Analytics: Joi.boolean(),
         'Replenishment Agent': Joi.boolean(),
         'File Manager': Joi.boolean(),
-        Production: Joi.object().keys({
-          'Production Supervisor': Joi.boolean(),
-          'Knitting Floor Supervisor': Joi.boolean(),
-          'Linking Floor Supervisor': Joi.boolean(),
-          'Checking Floor Supervisor': Joi.boolean(),
-          'Washing Floor Supervisor': Joi.boolean(),
-          'Boarding Floor Supervisor': Joi.boolean(),
-          'Final Checking Floor Supervisor': Joi.boolean(),
-          'Branding Floor Supervisor': Joi.boolean(),
-          'Warehouse Floor Supervisor': Joi.boolean()
+        Users: Joi.boolean(),
+        'Production Planning': Joi.object().keys({
+          'Production Orders': Joi.boolean(),
+          'Knitting Floor': Joi.boolean(),
+          'Linking Floor': Joi.boolean(),
+          'Checking Floor': Joi.boolean(),
+          'Washing Floor': Joi.boolean(),
+          'Boarding Floor': Joi.boolean(),
+          'Final Checking Floor': Joi.boolean(),
+          'Branding Floor': Joi.boolean(),
+          'Warehouse Floor': Joi.boolean()
         })
       }).required(),
     })

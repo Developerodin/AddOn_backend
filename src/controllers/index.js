@@ -10,6 +10,7 @@ import * as rawMaterialController from './rawMaterial.controller.js';
 import * as sealsExcelMasterController from './sealsExcelMaster.controller.js';
 import * as salesController from './sales.controller.js';
 import * as analyticsController from './analytics.controller.js';
+import * as machineController from './machine.controller.js';
 
 export { 
   authController, 
@@ -23,6 +24,7 @@ export {
   rawMaterialController,
   sealsExcelMasterController,
   salesController,
-  analyticsController
+  analyticsController,
+  machineController
 };
 
