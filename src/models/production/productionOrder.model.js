@@ -16,14 +16,7 @@ const productionOrderSchema = new mongoose.Schema({
   orderNumber: {
     type: String,
     unique: true,
-    required: false, // Will be auto-generated, not required from frontend
-    validate: {
-      validator: function(v) {
-        if (!v) return true; // Allow empty values since it will be auto-generated
-        return /^ORD-\d{6}$/.test(v);
-      },
-      message: 'Order number must be in format ORD-XXXXXX'
-    }
+    required: false // Will be auto-generated, not required from frontend
   },
   
   // Order properties

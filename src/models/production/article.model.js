@@ -26,27 +26,13 @@ const articleSchema = new mongoose.Schema({
   },
   articleNumber: {
     type: String,
-    required: true,
-    validate: {
-      validator: function(v) {
-        return /^[A-Z0-9]{4,5}$/.test(v);
-      },
-      message: 'Article number must be 4-5 alphanumeric characters'
-    }
+    required: true
   },
   
   // Quantity management
   plannedQuantity: {
     type: Number,
-    required: true,
-    min: 1,
-    max: 100000,
-    validate: {
-      validator: function(v) {
-        return Number.isInteger(v) && v > 0;
-      },
-      message: 'Planned quantity must be a positive integer between 1 and 100,000'
-    }
+    required: true
   },
   
   // Article properties
@@ -69,14 +55,7 @@ const articleSchema = new mongoose.Schema({
   progress: {
     type: Number,
     required: true,
-    default: 0,
-    min: 0,
-    validate: {
-      validator: function(v) {
-        return v >= 0;
-      },
-      message: 'Progress must be 0 or greater'
-    }
+    default: 0
   },
   currentFloor: {
     type: String,
