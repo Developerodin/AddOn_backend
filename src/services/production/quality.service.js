@@ -3,7 +3,7 @@ import { Article, ArticleLog } from '../../models/production/index.js';
 import ApiError from '../../utils/ApiError.js';
 
 /**
- * Update quality categories for an article in Final Checking
+ * Update quality categories for an article in Checking or Final Checking
  * @param {ObjectId} articleId
  * @param {Object} qualityData
  * @returns {Promise<Article>}
@@ -14,8 +14,8 @@ export const updateQualityCategories = async (articleId, qualityData) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Article not found');
   }
 
-  if (article.currentFloor !== 'Final Checking') {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Article must be on Final Checking floor');
+  if (article.currentFloor !== 'Checking' && article.currentFloor !== 'Final Checking') {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Article must be on Checking or Final Checking floor');
   }
 
   const {

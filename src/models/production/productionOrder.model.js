@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { OrderStatus, Priority, ProductionFloor } from './enums.js';
 import { toJSON, paginate } from '../plugins/index.js';
+import { getFloorOrderByLinkingType } from '../../utils/productionHelper.js';
 
 /**
  * Production Order Model
@@ -145,27 +146,33 @@ productionOrderSchema.pre('save', async function(next) {
 // Pre-save middleware to update current floor based on articles
 productionOrderSchema.pre('save', async function(next) {
   if (this.articles && this.articles.length > 0) {
-    // Get the highest floor among all articles
-    const floorOrder = [
+    // Create a comprehensive floor order that includes all possible floors
+    const allFloors = [
       ProductionFloor.KNITTING,
       ProductionFloor.LINKING,
       ProductionFloor.CHECKING,
       ProductionFloor.WASHING,
       ProductionFloor.BOARDING,
-      ProductionFloor.BRANDING,
       ProductionFloor.FINAL_CHECKING,
+      ProductionFloor.BRANDING,
       ProductionFloor.WAREHOUSE
     ];
     
     let highestFloorIndex = 0;
     for (const article of this.articles) {
-      const articleFloorIndex = floorOrder.indexOf(article.currentFloor);
-      if (articleFloorIndex > highestFloorIndex) {
-        highestFloorIndex = articleFloorIndex;
+      // Get the floor order for this specific article based on its linking type
+      const articleFloorOrder = getFloorOrderByLinkingType(article.linkingType);
+      const articleFloorIndex = articleFloorOrder.indexOf(article.currentFloor);
+      
+      // Convert to global floor index for comparison
+      const globalFloorIndex = allFloors.indexOf(article.currentFloor);
+      
+      if (globalFloorIndex > highestFloorIndex) {
+        highestFloorIndex = globalFloorIndex;
       }
     }
     
-    this.currentFloor = floorOrder[highestFloorIndex];
+    this.currentFloor = allFloors[highestFloorIndex];
   }
   next();
 });

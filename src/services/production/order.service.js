@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { ProductionOrder, Article, ArticleLog } from '../../models/production/index.js';
 import ApiError from '../../utils/ApiError.js';
 import { generateArticleNumber } from '../../utils/generateId.js';
+import { getAllFloorsOrder, getFloorKey } from '../../utils/productionHelper.js';
 // import { generateOrderNumber } from '../../utils/generateId.js'; // Using model's auto-generation instead
 
 /**
@@ -214,10 +215,7 @@ export const deleteProductionOrderById = async (orderId) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Production order not found');
   }
 
-  // Check if order can be deleted (only if status is Pending or Cancelled)
-  if (!['Pending', 'Cancelled'].includes(order.status)) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Cannot delete order that is in progress or completed');
-  }
+  // Allow deletion of orders regardless of status
 
   // Delete all articles and their logs
   for (const article of order.articles) {
@@ -243,17 +241,8 @@ export const deleteProductionOrderById = async (orderId) => {
  * @returns {Promise<QueryResult>}
  */
 export const getOrdersByFloor = async (floor, filter, options) => {
-  // Define floor order for visibility logic
-  const floorOrder = [
-    'Knitting',
-    'Linking', 
-    'Checking',
-    'Washing',
-    'Boarding',
-    'Branding',
-    'Final Checking',
-    'Warehouse'
-  ];
+  // Use comprehensive floor order for visibility logic
+  const floorOrder = getAllFloorsOrder();
 
   // Map URL-friendly floor names to proper enum values
   const floorMapping = {
@@ -389,25 +378,7 @@ const shouldArticleBeVisibleOnFloor = (article, floor, floorOrder) => {
   return false;
 };
 
-/**
- * Get floor key for floorQuantities object
- * @param {string} floor - Floor name
- * @returns {string}
- */
-const getFloorKey = (floor) => {
-  const floorKeyMap = {
-    'Knitting': 'knitting',
-    'Linking': 'linking',
-    'Checking': 'checking',
-    'Washing': 'washing',
-    'Boarding': 'boarding',
-    'Branding': 'branding',
-    'Final Checking': 'finalChecking',
-    'Warehouse': 'warehouse'
-  };
-  
-  return floorKeyMap[floor] || floor.toLowerCase();
-};
+// getFloorKey function is now imported from productionHelper.js
 
 /**
  * Bulk create orders

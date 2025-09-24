@@ -144,6 +144,7 @@ const getFloorStatistics = {
 
 const updateQualityCategories = {
   params: Joi.object().keys({
+    floor: Joi.string().valid('Checking', 'Final Checking').required(),
     articleId: Joi.string().custom(objectId).required(),
   }),
   body: Joi.object().keys({
@@ -160,6 +161,7 @@ const updateQualityCategories = {
 
 const shiftM2Items = {
   params: Joi.object().keys({
+    floor: Joi.string().valid('Checking', 'Final Checking').required(),
     articleId: Joi.string().custom(objectId).required(),
   }),
   body: Joi.object().keys({
@@ -199,6 +201,37 @@ const forwardToWarehouse = {
     remarks: Joi.string().optional(),
     userId: Joi.string().custom(objectId).required(),
     floorSupervisorId: Joi.string().custom(objectId).required()
+  }),
+};
+
+const qualityInspection = {
+  params: Joi.object().keys({
+    articleId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object().keys({
+    inspectedQuantity: Joi.number().integer().min(0).allow(null).optional(),
+    m1Quantity: Joi.number().integer().min(0).required(),
+    m2Quantity: Joi.number().integer().min(0).required(),
+    m3Quantity: Joi.number().integer().min(0).required(),
+    m4Quantity: Joi.number().integer().min(0).required(),
+    repairStatus: Joi.string().valid('Not Required', 'In Review', 'Repaired', 'Rejected').optional(),
+    repairRemarks: Joi.string().allow('').optional(),
+    remarks: Joi.string().allow('').optional(),
+    userId: Joi.string().custom(objectId).optional(),
+    floorSupervisorId: Joi.string().custom(objectId).optional(),
+    machineId: Joi.string().optional(),
+    shiftId: Joi.string().optional()
+  }).custom((value, helpers) => {
+    const { inspectedQuantity, m1Quantity, m2Quantity, m3Quantity, m4Quantity } = value;
+    const totalQualityQuantities = m1Quantity + m2Quantity + m3Quantity + m4Quantity;
+    
+    // Skip validation if inspectedQuantity is null
+    if (inspectedQuantity !== null && totalQualityQuantities !== inspectedQuantity) {
+      return helpers.error('any.invalid', { 
+        message: `Total quality quantities (${totalQualityQuantities}) must equal inspected quantity (${inspectedQuantity})` 
+      });
+    }
+    return value;
   }),
 };
 
@@ -391,6 +424,7 @@ export default {
   shiftM2Items,
   confirmFinalQuality,
   forwardToWarehouse,
+  qualityInspection,
   
   // Reports validations
   getProductionDashboard,

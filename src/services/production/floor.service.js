@@ -1,6 +1,7 @@
 import httpStatus from 'http-status';
 import { FloorStatistics, Article, ProductionOrder, ArticleLog } from '../../models/production/index.js';
 import ApiError from '../../utils/ApiError.js';
+import { getAllFloorsOrder } from '../../utils/productionHelper.js';
 
 /**
  * Get floor statistics
@@ -11,11 +12,8 @@ import ApiError from '../../utils/ApiError.js';
 export const getFloorStatistics = async (floor, dateRange = {}) => {
   const { dateFrom, dateTo } = dateRange;
   
-  // Validate floor
-  const validFloors = [
-    'Knitting', 'Linking', 'Checking', 'Washing', 
-    'Boarding', 'Branding', 'Final Checking', 'Warehouse'
-  ];
+  // Validate floor using comprehensive floor list
+  const validFloors = getAllFloorsOrder();
   
   if (!validFloors.includes(floor)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid floor name');

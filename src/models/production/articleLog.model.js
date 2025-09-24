@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { LogAction } from './enums.js';
+import paginate from '../plugins/paginate.plugin.js';
 
 /**
  * Article Log Model
@@ -120,6 +121,9 @@ articleLogSchema.index({ action: 1, date: 1 });
 articleLogSchema.index({ userId: 1, date: 1 });
 articleLogSchema.index({ fromFloor: 1, toFloor: 1, date: 1 });
 
+// Apply plugins
+articleLogSchema.plugin(paginate);
+
 // Virtual for formatted date
 articleLogSchema.virtual('formattedDate').get(function() {
   return this.date.toISOString().split('T')[0];
@@ -130,9 +134,51 @@ articleLogSchema.statics.createLog = function(logData) {
   const log = new this({
     id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     ...logData,
-    timestamp: new Date()
+    date: logData.date || new Date().toISOString().split('T')[0],
+    timestamp: logData.timestamp || new Date()
   });
   return log;
+};
+
+// Static method to create log entry with proper validation
+articleLogSchema.statics.createLogEntry = function(logData) {
+  // Validate required fields
+  if (!logData.action) {
+    throw new Error('Action is required for log entry');
+  }
+  if (!logData.userId) {
+    throw new Error('UserId is required for log entry');
+  }
+  if (!logData.floorSupervisorId) {
+    throw new Error('FloorSupervisorId is required for log entry');
+  }
+  if (!logData.orderId) {
+    throw new Error('OrderId is required for log entry');
+  }
+
+  const log = new this({
+    id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    action: logData.action,
+    quantity: logData.quantity || 0,
+    fromFloor: logData.fromFloor || null,
+    toFloor: logData.toFloor || null,
+    remarks: logData.remarks || '',
+    userId: logData.userId,
+    floorSupervisorId: logData.floorSupervisorId,
+    orderId: logData.orderId,
+    articleId: logData.articleId || null,
+    previousValue: logData.previousValue || null,
+    newValue: logData.newValue || null,
+    changeReason: logData.changeReason || '',
+    qualityStatus: logData.qualityStatus || null,
+    machineId: logData.machineId || null,
+    shiftId: logData.shiftId || null,
+    batchNumber: logData.batchNumber || null,
+    date: logData.date || new Date().toISOString().split('T')[0],
+    timestamp: logData.timestamp || new Date()
+  });
+  
+  return log.save();
 };
 
 // Static method to get logs by article

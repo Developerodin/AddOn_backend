@@ -36,7 +36,8 @@ const ProductionFloor = {
   BOARDING: 'Boarding',
   FINAL_CHECKING: 'Final Checking',
   BRANDING: 'Branding',
-  WAREHOUSE: 'Warehouse'
+  WAREHOUSE: 'Warehouse',
+  DISPATCH: 'Dispatch'
 };
 
 // Quality Categories (Final Checking)
@@ -91,10 +92,12 @@ const LogAction = {
   TRANSFERRED_TO_BRANDING: 'Transferred to Branding',
   TRANSFERRED_TO_FINAL_CHECKING: 'Transferred to Final Checking',
   TRANSFERRED_TO_WAREHOUSE: 'Transferred to Warehouse',
+  TRANSFERRED_TO_DISPATCH: 'Transferred to Dispatch',
   
   // Quality Control
   QUALITY_CHECK_STARTED: 'Quality Check Started',
   QUALITY_CHECK_COMPLETED: 'Quality Check Completed',
+  QUALITY_INSPECTION: 'Quality Inspection',
   M1_QUANTITY_UPDATED: 'M1 Quantity Updated',
   M2_QUANTITY_UPDATED: 'M2 Quantity Updated',
   M3_QUANTITY_UPDATED: 'M3 Quantity Updated',

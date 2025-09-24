@@ -46,7 +46,10 @@ export const updateProductionOrder = catchAsync(async (req, res) => {
 
 export const deleteProductionOrder = catchAsync(async (req, res) => {
   await productionService.deleteProductionOrderById(req.params.orderId);
-  res.status(httpStatus.NO_CONTENT).send();
+  res.status(httpStatus.OK).json({
+    success: true,
+    message: 'Production order deleted successfully'
+  });
 });
 
 // ==================== FLOOR OPERATIONS ====================
@@ -88,13 +91,13 @@ export const getFloorStatistics = catchAsync(async (req, res) => {
 // ==================== QUALITY CONTROL (FINAL CHECKING) ====================
 
 export const updateQualityCategories = catchAsync(async (req, res) => {
-  const { articleId } = req.params;
+  const { floor, articleId } = req.params;
   const article = await productionService.updateQualityCategories(articleId, req.body, req.user);
   res.send(article);
 });
 
 export const shiftM2Items = catchAsync(async (req, res) => {
-  const { articleId } = req.params;
+  const { floor, articleId } = req.params;
   const result = await productionService.shiftM2Items(articleId, req.body, req.user);
   res.send(result);
 });
@@ -108,6 +111,12 @@ export const confirmFinalQuality = catchAsync(async (req, res) => {
 export const forwardToWarehouse = catchAsync(async (req, res) => {
   const { orderId } = req.params;
   const result = await productionService.forwardToWarehouse(orderId, req.body, req.user);
+  res.send(result);
+});
+
+export const qualityInspection = catchAsync(async (req, res) => {
+  const { articleId } = req.params;
+  const result = await productionService.qualityInspection(articleId, req.body, req.user);
   res.send(result);
 });
 
@@ -248,4 +257,23 @@ export const bulkUpdateArticles = catchAsync(async (req, res) => {
     message: 'Bulk article update completed',
     results,
   });
+});
+
+// ==================== UTILITY FUNCTIONS ====================
+
+export const fixCompletionStatus = catchAsync(async (req, res) => {
+  const result = await productionService.fixCompletionStatus();
+  res.status(httpStatus.OK).send(result);
+});
+
+export const fixDataCorruption = catchAsync(async (req, res) => {
+  const { articleId } = req.params;
+  const result = await productionService.fixDataCorruption(articleId);
+  res.status(httpStatus.OK).send(result);
+});
+
+export const fixCompletionStatusForOrder = catchAsync(async (req, res) => {
+  const { orderId } = req.params;
+  const result = await productionService.fixCompletionStatus(orderId);
+  res.status(httpStatus.OK).send(result);
 });

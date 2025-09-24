@@ -78,8 +78,7 @@ export const getOrderLogs = async (orderId, filter, options) => {
 
   const logs = await ArticleLog.paginate(logFilter, {
     ...options,
-    sortBy: 'timestamp:desc',
-    populate: 'articleId'
+    sortBy: 'timestamp:desc'
   });
 
   return logs;
@@ -360,9 +359,6 @@ export const getAuditTrail = async (orderId, options) => {
   }
 
   const logs = await ArticleLog.find(logFilter)
-    .populate('articleId', 'articleNumber')
-    .populate('userId', 'name email')
-    .populate('floorSupervisorId', 'name email')
     .sort({ timestamp: 1 });
 
   // Group logs by article for better organization
@@ -475,7 +471,7 @@ export const createManualLog = async (logData) => {
     }
   }
 
-  const log = new ArticleLog({
+  return ArticleLog.createLogEntry({
     articleId,
     orderId,
     action,
@@ -491,10 +487,6 @@ export const createManualLog = async (logData) => {
     qualityStatus,
     machineId,
     shiftId,
-    batchNumber,
-    date: new Date().toISOString().split('T')[0],
-    timestamp: new Date().toISOString()
+    batchNumber
   });
-
-  return log.save();
 };

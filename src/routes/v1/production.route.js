@@ -46,23 +46,47 @@ router
   .route('/floors/:floor/statistics')
   .get(validate(productionValidation.getFloorStatistics), productionController.getFloorStatistics);
 
+// ==================== UTILITY ROUTES ====================
+
+router
+  .route('/fix-completion-status')
+  .post(productionController.fixCompletionStatus);
+
+router
+  .route('/fix-completion-status/:orderId')
+  .post(productionController.fixCompletionStatusForOrder);
+
 // ==================== QUALITY CONTROL ROUTES ====================
 
+// Quality categories update for both Checking and Final Checking floors
 router
-  .route('/floors/final-checking/quality/:articleId')
+  .route('/floors/:floor/quality/:articleId')
   .patch(validate(productionValidation.updateQualityCategories), productionController.updateQualityCategories);
 
+// M2 shifting (primarily for Final Checking, but can work for Checking too)
 router
-  .route('/floors/final-checking/shift-m2')
+  .route('/floors/:floor/shift-m2')
   .post(validate(productionValidation.shiftM2Items), productionController.shiftM2Items);
 
+// Final quality confirmation (Final Checking only)
 router
   .route('/floors/final-checking/confirm-quality')
   .post(validate(productionValidation.confirmFinalQuality), productionController.confirmFinalQuality);
 
+// Forward to warehouse (Final Checking only)
 router
   .route('/floors/final-checking/forward-to-warehouse')
   .post(validate(productionValidation.forwardToWarehouse), productionController.forwardToWarehouse);
+
+// Direct article quality inspection (works for any floor)
+router
+  .route('/articles/:articleId/quality-inspection')
+  .post(validate(productionValidation.qualityInspection), productionController.qualityInspection);
+
+// Fix data corruption for specific article
+router
+  .route('/articles/:articleId/fix-corruption')
+  .post(productionController.fixDataCorruption);
 
 // ==================== REPORTS AND ANALYTICS ROUTES ====================
 
