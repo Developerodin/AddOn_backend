@@ -166,7 +166,7 @@ articleLogSchema.statics.createLogEntry = function(logData) {
     userId: logData.userId,
     floorSupervisorId: logData.floorSupervisorId,
     orderId: logData.orderId,
-    articleId: logData.articleId || null,
+    articleId: logData.articleId ? logData.articleId.toString() : null, // Ensure string format
     previousValue: logData.previousValue || null,
     newValue: logData.newValue || null,
     changeReason: logData.changeReason || '',

@@ -112,6 +112,11 @@ router
   .route('/logs/article/:articleId')
   .get(validate(productionValidation.getArticleLogs), productionController.getArticleLogs);
 
+// Test log creation endpoint
+router
+  .route('/logs/test')
+  .post(productionController.createTestLog);
+
 router
   .route('/logs/order/:orderId')
   .get(validate(productionValidation.getOrderLogs), productionController.getOrderLogs);

@@ -410,12 +410,10 @@ export const forwardToWarehouse = async (orderId, forwardData) => {
  * @returns {Promise<ArticleLog>}
  */
 const createArticleLog = async (logData) => {
-  const log = new ArticleLog({
-    id: `LOG-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+  // Use the proper createLogEntry method instead of creating manually
+  return ArticleLog.createLogEntry({
     ...logData,
     date: new Date().toISOString().split('T')[0],
     timestamp: new Date().toISOString()
   });
-  
-  return log.save();
 };

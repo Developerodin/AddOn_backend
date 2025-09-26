@@ -163,6 +163,27 @@ export const getArticleLogs = catchAsync(async (req, res) => {
   res.send(result);
 });
 
+// Manual log creation for testing
+export const createTestLog = catchAsync(async (req, res) => {
+  const { articleId, orderId, action, quantity, remarks } = req.body;
+  
+  const log = await productionService.createManualLog({
+    articleId,
+    orderId,
+    action: action || 'System Action',
+    quantity: quantity || 0,
+    remarks: remarks || 'Manual test log entry',
+    userId: req.user?.id || 'test-user',
+    floorSupervisorId: req.user?.id || 'test-supervisor'
+  });
+  
+  res.send({
+    success: true,
+    message: 'Test log created successfully',
+    log: log
+  });
+});
+
 export const getOrderLogs = catchAsync(async (req, res) => {
   const { orderId } = req.params;
   const allowedFilterFields = ['dateFrom', 'dateTo', 'action', 'floor'];

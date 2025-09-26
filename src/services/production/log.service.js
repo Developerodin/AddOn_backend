@@ -10,8 +10,12 @@ import ApiError from '../../utils/ApiError.js';
  * @returns {Promise<QueryResult>}
  */
 export const getArticleLogs = async (articleId, filter, options) => {
+  // Handle both string and ObjectId formats for articleId
   const logFilter = {
-    articleId,
+    $or: [
+      { articleId: articleId.toString() },
+      { articleId: articleId }
+    ],
     ...filter
   };
 

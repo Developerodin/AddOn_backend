@@ -54,10 +54,12 @@ export const createProductionLog = async (logData) => {
     });
 
     console.log(`✅ Log created: ${logData.action} - Order: ${logData.orderId}, Article: ${logData.articleId || 'N/A'}`);
+    console.log(`📝 Log details: ID=${log._id}, ArticleId=${log.articleId}, Action=${log.action}`);
     return log;
 
   } catch (error) {
     console.error('❌ Error creating production log:', error);
+    console.error('Log data that failed:', JSON.stringify(logData, null, 2));
     // Don't throw error for logging failure, just log it
     return null;
   }
