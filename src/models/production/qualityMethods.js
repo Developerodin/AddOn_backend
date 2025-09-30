@@ -330,14 +330,15 @@ export const updateCompletedQuantityWithQuality = async function(updateData, use
     throw new Error('Invalid floor for quantity update');
   }
   
-  if (completedQuantity < 0 || completedQuantity > floorData.received) {
-    throw new Error(`Invalid quantity: must be between 0 and received quantity (${floorData.received})`);
+  // Validate M1 quantity (only M1 counts as completed work)
+  if (m1Quantity < 0 || m1Quantity > floorData.received) {
+    throw new Error(`Invalid M1 quantity: must be between 0 and received quantity (${floorData.received})`);
   }
   
   // Validate quality quantities
   const qualityTotal = (m1Quantity || 0) + (m2Quantity || 0) + (m3Quantity || 0) + (m4Quantity || 0);
-  if (qualityTotal > completedQuantity) {
-    throw new Error('Quality quantities cannot exceed completed quantity');
+  if (qualityTotal > floorData.received) {
+    throw new Error('Total quality quantities cannot exceed received quantity');
   }
   
   const previousQuantity = floorData.completed;
@@ -349,9 +350,10 @@ export const updateCompletedQuantityWithQuality = async function(updateData, use
     repairStatus: floorData.repairStatus || RepairStatus.NOT_REQUIRED
   };
   
-  // Update completed quantity
-  floorData.completed = completedQuantity;
-  floorData.remaining = floorData.received - completedQuantity;
+  // Update completed quantity - only count M1 quantity as completed work
+  // M2, M3, M4 are defects and should not be counted as completed work
+  floorData.completed = m1Quantity || 0;
+  floorData.remaining = floorData.received - floorData.completed;
   
   // Update quality quantities
   floorData.m1Quantity = m1Quantity || 0;

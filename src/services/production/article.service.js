@@ -997,11 +997,13 @@ export const qualityInspection = async (articleId, inspectionData, user = null) 
       targetFloorData.m4Quantity = (targetFloorData.m4Quantity || 0) + inspectionData.m4Quantity;
     }
     
-    // FIXED: Add to completed quantity based on inspectedQuantity (additive behavior)
-    if (inspectionData.inspectedQuantity !== undefined) {
-      targetFloorData.completed = (targetFloorData.completed || 0) + inspectionData.inspectedQuantity;
+    // FIXED: Add to completed quantity based on M1 quantity only (not total inspected quantity)
+    // Only M1 quantity should be counted as "completed" work that can be transferred
+    if (inspectionData.m1Quantity !== undefined) {
+      targetFloorData.completed = (targetFloorData.completed || 0) + inspectionData.m1Quantity;
       // Recalculate remaining quantity (ensure non-negative)
       targetFloorData.remaining = Math.max(0, targetFloorData.received - targetFloorData.completed);
+      console.log(`🎯 QUALITY INSPECTION: Added M1 quantity (${inspectionData.m1Quantity}) to completed. Total completed: ${targetFloorData.completed}`);
     }
     
     if (inspectionData.repairStatus !== undefined) {
@@ -1063,13 +1065,13 @@ export const qualityInspection = async (articleId, inspectionData, user = null) 
     await createQualityCategoryLog({
       articleId: article._id.toString(),
       orderId: article.orderId.toString(),
-      floor: article.currentFloor,
+      floor: targetFloor,
       category: 'M2',
       previousQuantity: previousM2,
-      newQuantity: currentFloorData?.m2Quantity || 0,
+      newQuantity: targetFloorData?.m2Quantity || 0,
       userId: inspectionData.userId || user?.id || 'system',
       floorSupervisorId: inspectionData.floorSupervisorId || user?.id || 'system',
-      remarks: `Added ${inspectionData.m2Quantity} M2 quantity. Previous: ${previousM2}, New total: ${currentFloorData?.m2Quantity || 0}`
+      remarks: `Added ${inspectionData.m2Quantity} M2 quantity on ${targetFloor}. Previous: ${previousM2}, New total: ${targetFloorData?.m2Quantity || 0}`
     });
   }
 
@@ -1077,13 +1079,13 @@ export const qualityInspection = async (articleId, inspectionData, user = null) 
     await createQualityCategoryLog({
       articleId: article._id.toString(),
       orderId: article.orderId.toString(),
-      floor: article.currentFloor,
+      floor: targetFloor,
       category: 'M3',
       previousQuantity: previousM3,
-      newQuantity: currentFloorData?.m3Quantity || 0,
+      newQuantity: targetFloorData?.m3Quantity || 0,
       userId: inspectionData.userId || user?.id || 'system',
       floorSupervisorId: inspectionData.floorSupervisorId || user?.id || 'system',
-      remarks: `Added ${inspectionData.m3Quantity} M3 quantity. Previous: ${previousM3}, New total: ${currentFloorData?.m3Quantity || 0}`
+      remarks: `Added ${inspectionData.m3Quantity} M3 quantity on ${targetFloor}. Previous: ${previousM3}, New total: ${targetFloorData?.m3Quantity || 0}`
     });
   }
 
@@ -1091,13 +1093,13 @@ export const qualityInspection = async (articleId, inspectionData, user = null) 
     await createQualityCategoryLog({
       articleId: article._id.toString(),
       orderId: article.orderId.toString(),
-      floor: article.currentFloor,
+      floor: targetFloor,
       category: 'M4',
       previousQuantity: previousM4,
-      newQuantity: currentFloorData?.m4Quantity || 0,
+      newQuantity: targetFloorData?.m4Quantity || 0,
       userId: inspectionData.userId || user?.id || 'system',
       floorSupervisorId: inspectionData.floorSupervisorId || user?.id || 'system',
-      remarks: `Added ${inspectionData.m4Quantity} M4 quantity. Previous: ${previousM4}, New total: ${currentFloorData?.m4Quantity || 0}`
+      remarks: `Added ${inspectionData.m4Quantity} M4 quantity on ${targetFloor}. Previous: ${previousM4}, New total: ${targetFloorData?.m4Quantity || 0}`
     });
   }
 
