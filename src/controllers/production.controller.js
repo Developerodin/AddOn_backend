@@ -56,7 +56,7 @@ export const deleteProductionOrder = catchAsync(async (req, res) => {
 
 export const getFloorOrders = catchAsync(async (req, res) => {
   const { floor } = req.params;
-  const allowedFilterFields = ['status', 'priority', 'search'];
+  const allowedFilterFields = ['status', 'priority', 'search', 'machineId'];
   const filter = pick(req.query, allowedFilterFields);
   
   const allowedOptions = ['sortBy', 'limit', 'page', 'populate'];

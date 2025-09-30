@@ -136,9 +136,40 @@ productionOrderSchema.pre('save', async function(next) {
 
   // Generate order number if not provided
   if (!this.orderNumber) {
-    // Generate order number in format ORD-XXXXXX
-    const count = await this.constructor.countDocuments();
-    this.orderNumber = `ORD-${String(count + 1).padStart(6, '0')}`;
+    let orderNumber;
+    let attempts = 0;
+    const maxAttempts = 10;
+    
+    do {
+      // Find the highest existing order number
+      const lastOrder = await this.constructor.findOne(
+        { orderNumber: { $regex: /^ORD-\d{6}$/ } },
+        { orderNumber: 1 },
+        { sort: { orderNumber: -1 } }
+      );
+      
+      if (lastOrder) {
+        // Extract number from last order and increment
+        const lastNumber = parseInt(lastOrder.orderNumber.split('-')[1]);
+        orderNumber = `ORD-${String(lastNumber + 1).padStart(6, '0')}`;
+      } else {
+        // No orders exist, start with 1
+        orderNumber = 'ORD-000001';
+      }
+      
+      // Check if this order number already exists
+      const exists = await this.constructor.findOne({ orderNumber });
+      if (!exists) {
+        this.orderNumber = orderNumber;
+        break;
+      }
+      
+      attempts++;
+    } while (attempts < maxAttempts);
+    
+    if (attempts >= maxAttempts) {
+      return next(new Error('Unable to generate unique order number after multiple attempts'));
+    }
   }
   next();
 });
@@ -362,8 +393,21 @@ productionOrderSchema.statics.getOrdersByStatus = function(status, options = {})
 
 // Static method to generate next order number
 productionOrderSchema.statics.generateNextOrderNumber = async function() {
-  const count = await this.countDocuments();
-  return `ORD-${String(count + 1).padStart(6, '0')}`;
+  // Find the highest existing order number
+  const lastOrder = await this.findOne(
+    { orderNumber: { $regex: /^ORD-\d{6}$/ } },
+    { orderNumber: 1 },
+    { sort: { orderNumber: -1 } }
+  );
+  
+  if (lastOrder) {
+    // Extract number from last order and increment
+    const lastNumber = parseInt(lastOrder.orderNumber.split('-')[1]);
+    return `ORD-${String(lastNumber + 1).padStart(6, '0')}`;
+  } else {
+    // No orders exist, start with 1
+    return 'ORD-000001';
+  }
 };
 
 // Static method to get order statistics

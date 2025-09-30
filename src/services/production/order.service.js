@@ -48,7 +48,7 @@ export const createProductionOrder = async (orderBody, user = null) => {
     status: 'Pending'
   });
 
-  // Save order first to get ID
+  // Save order first to get ID and generate order number
   await order.save();
 
   // Update articles with order ID and save them
@@ -84,7 +84,13 @@ export const createProductionOrder = async (orderBody, user = null) => {
     floorSupervisorId: orderBody.createdBy || user?.id || 'system'
   });
 
-  return order.populate('articles');
+  return order.populate({
+    path: 'articles',
+    populate: {
+      path: 'machineId',
+      select: 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor'
+    }
+  });
 };
 
 /**
@@ -96,7 +102,13 @@ export const createProductionOrder = async (orderBody, user = null) => {
 export const queryProductionOrders = async (filter, options) => {
   const orders = await ProductionOrder.paginate(filter, {
     ...options,
-    populate: 'articles'
+    populate: {
+      path: 'articles',
+      populate: {
+        path: 'machineId',
+        select: 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor'
+      }
+    }
   });
   return orders;
 };
@@ -108,7 +120,13 @@ export const queryProductionOrders = async (filter, options) => {
  */
 export const getProductionOrderById = async (id) => {
   return ProductionOrder.findById(id)
-    .populate('articles')
+    .populate({
+      path: 'articles',
+      populate: {
+        path: 'machineId',
+        select: 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor'
+      }
+    })
     .populate('createdBy', 'name email')
     .populate('lastModifiedBy', 'name email');
 };
@@ -145,29 +163,49 @@ export const updateProductionOrderById = async (orderId, updateBody) => {
     // If articles are provided as objects with IDs, we need to find the actual Article documents
     const articleIds = [];
     
-    for (const article of updateBody.articles) {
+    for (const articleData of updateBody.articles) {
       let articleId = null;
+      let articleDoc = null;
       
-      if (typeof article === 'string') {
-        articleId = article;
-      } else if (article && article.id) {
-        articleId = article.id;
-      } else if (article && article._id) {
-        articleId = article._id;
+      // Determine article ID
+      if (typeof articleData === 'string') {
+        articleId = articleData;
+      } else if (articleData && articleData.id) {
+        articleId = articleData.id;
+      } else if (articleData && articleData._id) {
+        articleId = articleData._id;
       }
       
       if (articleId) {
         // Check if it's a valid MongoDB ObjectId (24 hex characters)
         if (mongoose.Types.ObjectId.isValid(articleId) && articleId.length === 24) {
-          articleIds.push(new mongoose.Types.ObjectId(articleId));
+          articleDoc = await Article.findById(articleId);
         } else {
           // If it's a custom ID (like ARTMFDVOOJCLKC), find the article by its custom id field
-          const articleDoc = await Article.findOne({ id: articleId });
-          if (articleDoc) {
-            articleIds.push(articleDoc._id);
-          } else {
-            console.warn(`Article with custom ID ${articleId} not found`);
+          articleDoc = await Article.findOne({ id: articleId });
+        }
+        
+        if (articleDoc) {
+          // Update article data if provided
+          if (typeof articleData === 'object' && articleData !== null) {
+            const updateFields = {};
+            
+            // Update allowed fields
+            if (articleData.articleNumber !== undefined) updateFields.articleNumber = articleData.articleNumber;
+            if (articleData.plannedQuantity !== undefined) updateFields.plannedQuantity = articleData.plannedQuantity;
+            if (articleData.linkingType !== undefined) updateFields.linkingType = articleData.linkingType;
+            if (articleData.priority !== undefined) updateFields.priority = articleData.priority;
+            if (articleData.remarks !== undefined) updateFields.remarks = articleData.remarks;
+            if (articleData.machineId !== undefined) updateFields.machineId = articleData.machineId;
+            
+            // Apply updates
+            Object.assign(articleDoc, updateFields);
+            await articleDoc.save();
           }
+          
+          articleIds.push(articleDoc._id);
+        } else {
+          console.warn(`Article with ID ${articleId} not found`);
         }
       }
     }
@@ -201,7 +239,14 @@ export const updateProductionOrderById = async (orderId, updateBody) => {
     floorSupervisorId: updateBody.lastModifiedBy || order.lastModifiedBy || 'system'
   });
 
-  return order;
+  // Return populated order with articles and machine data
+  return order.populate({
+    path: 'articles',
+    populate: {
+      path: 'machineId',
+      select: 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor'
+    }
+  });
 };
 
 /**
@@ -263,8 +308,19 @@ export const getOrdersByFloor = async (floor, filter, options) => {
 
   // Build complex query for floor visibility
   const floorKey = getFloorKey(normalizedFloor);
+  
+  // Handle machineId filter separately if provided
+  let machineFilter = {};
+  let originalMachineId = null;
+  if (filter.machineId) {
+    originalMachineId = filter.machineId;
+    machineFilter = { 'articles.machineId': filter.machineId };
+    delete filter.machineId; // Remove from main filter to avoid conflicts
+  }
+  
   const floorFilter = {
     ...filter,
+    ...machineFilter,
     $or: [
       // 1. Orders currently on this floor
       { currentFloor: normalizedFloor },
@@ -283,7 +339,13 @@ export const getOrdersByFloor = async (floor, filter, options) => {
   // Get orders with basic populate first
   const orders = await ProductionOrder.paginate(floorFilter, {
     ...options,
-    populate: 'articles'
+    populate: {
+      path: 'articles',
+      populate: {
+        path: 'machineId',
+        select: 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor'
+      }
+    }
   });
 
   // Post-process to filter out orders and articles that shouldn't be visible on this floor
@@ -296,6 +358,10 @@ export const getOrdersByFloor = async (floor, filter, options) => {
     // Filter articles within the order
     if (order.articles && order.articles.length > 0) {
       order.articles = order.articles.filter(article => {
+        // Check machineId filter if provided
+        if (originalMachineId && article.machineId?.toString() !== originalMachineId) {
+          return false;
+        }
         return shouldArticleBeVisibleOnFloor(article, normalizedFloor, floorOrder);
       });
     }

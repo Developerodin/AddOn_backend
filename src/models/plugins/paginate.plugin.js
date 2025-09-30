@@ -44,14 +44,20 @@ const paginate = (schema) => {
     console.log('🔍 Paginate Plugin - Skip:', skip, 'Limit:', limit);
 
     if (options.populate) {
-      options.populate.split(',').forEach((populateOption) => {
-        docsPromise = docsPromise.populate(
-          populateOption
-            .split('.')
-            .reverse()
-            .reduce((a, b) => ({ path: b, populate: a }))
-        );
-      });
+      if (typeof options.populate === 'string') {
+        // Handle string-based populate (original behavior)
+        options.populate.split(',').forEach((populateOption) => {
+          docsPromise = docsPromise.populate(
+            populateOption
+              .split('.')
+              .reverse()
+              .reduce((a, b) => ({ path: b, populate: a }))
+          );
+        });
+      } else if (typeof options.populate === 'object') {
+        // Handle object-based populate (new behavior)
+        docsPromise = docsPromise.populate(options.populate);
+      }
     }
 
     docsPromise = docsPromise.exec();

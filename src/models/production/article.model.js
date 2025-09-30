@@ -72,6 +72,13 @@ const articleSchema = new mongoose.Schema({
     required: false
   },
   
+  // Machine assignment
+  machineId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Machine',
+    required: false
+  },
+  
   
   // Floor-specific tracking
   floorQuantities: {
@@ -183,6 +190,7 @@ articleSchema.index({ orderId: 1 });
 articleSchema.index({ currentFloor: 1 });
 articleSchema.index({ status: 1 });
 articleSchema.index({ priority: 1 });
+articleSchema.index({ machineId: 1 });
 articleSchema.index({ createdAt: -1 });
 
 // Virtual for progress calculation based on floor quantities
@@ -1078,7 +1086,30 @@ articleSchema.methods.getAllFloorStatuses = function() {
 
 // Static method to get articles by order
 articleSchema.statics.getArticlesByOrder = function(orderId) {
-  return this.find({ orderId }).sort({ createdAt: 1 });
+  return this.find({ orderId })
+    .populate('machineId', 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor')
+    .sort({ createdAt: 1 });
+};
+
+// Static method to get articles by machine
+articleSchema.statics.getArticlesByMachine = function(machineId, options = {}) {
+  const query = { machineId };
+  
+  if (options.status) {
+    query.status = options.status;
+  }
+  if (options.currentFloor) {
+    query.currentFloor = options.currentFloor;
+  }
+  if (options.priority) {
+    query.priority = options.priority;
+  }
+  
+  return this.find(query)
+    .populate('machineId', 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor')
+    .sort({ priority: 1, createdAt: -1 })
+    .limit(options.limit || 50)
+    .skip(options.offset || 0);
 };
 
 export default mongoose.model('Article', articleSchema);

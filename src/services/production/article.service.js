@@ -22,7 +22,8 @@ import {
  * @returns {Promise<Article>}
  */
 export const updateArticleProgress = async (floor, orderId, articleId, updateData, user = null) => {
-  const article = await Article.findOne({ _id: articleId, orderId });
+  const article = await Article.findOne({ _id: articleId, orderId })
+    .populate('machineId', 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor');
   if (!article) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Article not found in this order');
   }
@@ -64,6 +65,10 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
   const previousQuantity = floorData?.completed || 0;
 
   // Update article data
+  if (updateData.machineId !== undefined) {
+    article.machineId = updateData.machineId;
+  }
+  
   if (updateData.completedQuantity !== undefined) {
     // Use the floor key already declared above
     const floorData = article.floorQuantities[floorKey];
@@ -395,7 +400,8 @@ const transferFromPreviousFloor = async (article, fromFloor, quantity, updateDat
  * @returns {Promise<Object>}
  */
 export const transferArticle = async (floor, orderId, articleId, transferData, user = null) => {
-  const article = await Article.findOne({ _id: articleId, orderId });
+  const article = await Article.findOne({ _id: articleId, orderId })
+    .populate('machineId', 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor');
   if (!article) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Article not found in this order');
   }
@@ -438,6 +444,11 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
   nextFloorData.received = transferQuantity;
   nextFloorData.remaining = transferQuantity;
   
+  // Update article machineId if provided
+  if (transferData.machineId !== undefined) {
+    article.machineId = transferData.machineId;
+  }
+  
   // Update article current floor to next floor (only if transferring from current floor)
   if (article.currentFloor === normalizedFloor) {
     article.currentFloor = nextFloor;
@@ -479,7 +490,8 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
     userId: user?.id || transferData.userId || 'system',
     floorSupervisorId: user?.id || transferData.floorSupervisorId || 'system',
     remarks: transferData.remarks || `Transferred from ${normalizedFloor} to ${nextFloor}`,
-    batchNumber: transferData.batchNumber
+    batchNumber: transferData.batchNumber,
+    machineId: transferData.machineId
   });
 
   return {
@@ -801,7 +813,8 @@ export const fixDataCorruption = async (articleId) => {
   try {
     console.log(`🔧 Starting data corruption fix for article ${articleId}...`);
     
-    const article = await Article.findById(articleId);
+    const article = await Article.findById(articleId)
+      .populate('machineId', 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor');
     if (!article) {
       throw new ApiError(httpStatus.NOT_FOUND, 'Article not found');
     }
@@ -838,7 +851,8 @@ export const fixDataCorruption = async (articleId) => {
 };
 
 export const qualityInspection = async (articleId, inspectionData, user = null) => {
-  const article = await Article.findById(articleId);
+  const article = await Article.findById(articleId)
+    .populate('machineId', 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor');
   if (!article) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Article not found');
   }

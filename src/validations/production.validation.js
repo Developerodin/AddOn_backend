@@ -13,7 +13,8 @@ const createProductionOrder = {
         plannedQuantity: Joi.number().integer().min(1).max(100000).required(),
         linkingType: Joi.string().valid('Auto Linking', 'Rosso Linking', 'Hand Linking').required(),
         priority: Joi.string().valid('Urgent', 'High', 'Medium', 'Low').required(),
-        remarks: Joi.string().optional()
+        remarks: Joi.string().optional(),
+        machineId: Joi.string().custom(objectId).optional()
       })
     ).min(1).required(),
     orderNote: Joi.string().optional(),
@@ -65,7 +66,19 @@ const updateProductionOrder = {
       customerOrderNumber: Joi.string(),
       plannedStartDate: Joi.date(),
       plannedEndDate: Joi.date(),
-      lastModifiedBy: Joi.string().custom(objectId)
+      lastModifiedBy: Joi.string().custom(objectId),
+      articles: Joi.array().items(
+        Joi.object().keys({
+          _id: Joi.string().custom(objectId).optional(),
+          id: Joi.string().optional(),
+          articleNumber: Joi.string().min(4).max(5).optional(),
+          plannedQuantity: Joi.number().integer().min(1).max(100000).optional(),
+          linkingType: Joi.string().valid('Auto Linking', 'Rosso Linking', 'Hand Linking').optional(),
+          priority: Joi.string().valid('Urgent', 'High', 'Medium', 'Low').optional(),
+          remarks: Joi.string().optional(),
+          machineId: Joi.string().custom(objectId).optional()
+        })
+      ).optional()
     })
     .min(1),
 };
@@ -86,6 +99,7 @@ const getFloorOrders = {
     status: Joi.string().valid('Pending', 'In Progress', 'Completed', 'On Hold', 'Cancelled'),
     priority: Joi.string().valid('Urgent', 'High', 'Medium', 'Low'),
     search: Joi.string(),
+    machineId: Joi.string().custom(objectId),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
@@ -111,7 +125,7 @@ const updateArticleProgress = {
     repairRemarks: Joi.string().optional(),
     userId: Joi.string().custom(objectId).required(),
     floorSupervisorId: Joi.string().custom(objectId).required(),
-    machineId: Joi.string().optional(),
+    machineId: Joi.string().custom(objectId).optional(),
     shiftId: Joi.string().optional()
   }),
 };
@@ -126,7 +140,8 @@ const transferArticle = {
     remarks: Joi.string().optional(),
     userId: Joi.string().custom(objectId).required(),
     floorSupervisorId: Joi.string().custom(objectId).required(),
-    batchNumber: Joi.string().optional()
+    batchNumber: Joi.string().optional(),
+    machineId: Joi.string().custom(objectId).optional()
   }),
 };
 
@@ -397,7 +412,7 @@ const bulkUpdateArticles = {
         repairRemarks: Joi.string().optional(),
         userId: Joi.string().custom(objectId).required(),
         floorSupervisorId: Joi.string().custom(objectId).required(),
-        machineId: Joi.string().optional(),
+        machineId: Joi.string().custom(objectId).optional(),
         shiftId: Joi.string().optional()
       })
     ).min(1).max(100),
