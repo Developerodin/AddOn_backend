@@ -426,6 +426,7 @@ articleSchema.methods.updateCompletedQuantity = async function(newQuantity, user
       throw new Error('Quantity cannot be negative');
     }
     // Allow overproduction in knitting (newQuantity can exceed received)
+    // This is normal behavior - machines can produce more than planned
   } else if (this.currentFloor === ProductionFloor.CHECKING || this.currentFloor === ProductionFloor.FINAL_CHECKING) {
     // For checking floors, validate against received quantity
     if (newQuantity < 0 || newQuantity > floorData.received) {
@@ -449,11 +450,11 @@ articleSchema.methods.updateCompletedQuantity = async function(newQuantity, user
   
   // Calculate remaining quantity - handle overproduction
   if (this.currentFloor === ProductionFloor.KNITTING && newQuantity > floorData.received) {
-    // Overproduction scenario: negative remaining indicates overproduction
-    floorData.remaining = floorData.received - newQuantity;
+    // Overproduction scenario: show 0 instead of negative remaining
+    floorData.remaining = 0;
   } else {
     // Normal scenario
-    floorData.remaining = floorData.received - newQuantity;
+    floorData.remaining = Math.max(0, floorData.received - newQuantity);
   }
   
   // Update progress based on floor quantities
@@ -538,6 +539,7 @@ articleSchema.methods.transferToNextFloor = async function(quantity, userId, flo
     if (quantity > currentFloorData.completed) {
       throw new Error(`Transfer quantity (${quantity}) cannot exceed completed quantity (${currentFloorData.completed}) on ${this.currentFloor} floor`);
     }
+    // Note: Transfer quantity can exceed received quantity due to overproduction - this is normal
   } else {
     // For other floors, validate against completed quantity
     if (quantity > currentFloorData.completed) {
@@ -599,7 +601,15 @@ articleSchema.methods.transferToNextFloor = async function(quantity, userId, flo
   
   // Update current floor: mark as transferred
   currentFloorData.transferred += quantity;
-  currentFloorData.remaining -= quantity;
+  
+  // Calculate remaining - handle overproduction for knitting floor
+  if (this.currentFloor === ProductionFloor.KNITTING) {
+    // For knitting floor, remaining should never go negative due to overproduction
+    currentFloorData.remaining = Math.max(0, currentFloorData.received - currentFloorData.transferred);
+  } else {
+    // For other floors, normal calculation
+    currentFloorData.remaining -= quantity;
+  }
   
   // For checking and finalChecking floors, ensure completed equals transferred
   // This fixes the issue where items are transferred without being marked as completed
@@ -801,8 +811,16 @@ articleSchema.methods.fixFloorDataCorruption = function() {
       fixes.push(`${floorKey}: reduced completed from ${oldCompleted} to ${received}`);
     }
     
-    // Fix 3: Remaining calculation
-    const expectedRemaining = Math.max(0, received - completed);
+    // Fix 3: Remaining calculation - handle overproduction for knitting floor
+    let expectedRemaining;
+    if (floorKey === 'knitting') {
+      // For knitting floor, remaining should never go negative due to overproduction
+      expectedRemaining = Math.max(0, received - completed);
+    } else {
+      // For other floors, normal calculation
+      expectedRemaining = Math.max(0, received - completed);
+    }
+    
     if (floorData.remaining !== expectedRemaining) {
       const oldRemaining = floorData.remaining;
       floorData.remaining = expectedRemaining;
