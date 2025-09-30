@@ -77,22 +77,17 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
       throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid floor for quantity update');
     }
     
-    // Handle both incremental and total quantity inputs
+    // FIXED: Always treat quantity updates as additive (incremental)
+    // When user sends completedQuantity: 200, it means "add 200 to existing completed", not "set completed to 200"
     let newCompletedQuantity;
     const currentCompleted = floorData.completed;
     
-    // If the input is less than current completed, treat it as incremental
-    if (updateData.completedQuantity < currentCompleted) {
-      // This is an incremental update
-      newCompletedQuantity = currentCompleted + updateData.completedQuantity;
-      
-      // Validate that the incremental amount is positive
-      if (updateData.completedQuantity <= 0) {
-        throw new ApiError(httpStatus.BAD_REQUEST, `Incremental quantity must be positive. You provided: ${updateData.completedQuantity}`);
-      }
-    } else {
-      // This is a total quantity update
-      newCompletedQuantity = updateData.completedQuantity;
+    // Always add the provided quantity to existing completed quantity
+    newCompletedQuantity = currentCompleted + updateData.completedQuantity;
+    
+    // Validate that the incremental amount is positive
+    if (updateData.completedQuantity <= 0) {
+      throw new ApiError(httpStatus.BAD_REQUEST, `Incremental quantity must be positive. You provided: ${updateData.completedQuantity}`);
     }
     
     // Validate final quantity against floor received quantity
@@ -125,14 +120,6 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
 
   // Update floor-specific fields for quality inspection floors
   if (normalizedFloor === 'Checking' || normalizedFloor === 'Final Checking') {
-    // Update article-level quality fields (additive)
-    if (updateData.m1Quantity !== undefined) article.m1Quantity = (article.m1Quantity || 0) + updateData.m1Quantity;
-    if (updateData.m2Quantity !== undefined) article.m2Quantity = (article.m2Quantity || 0) + updateData.m2Quantity;
-    if (updateData.m3Quantity !== undefined) article.m3Quantity = (article.m3Quantity || 0) + updateData.m3Quantity;
-    if (updateData.m4Quantity !== undefined) article.m4Quantity = (article.m4Quantity || 0) + updateData.m4Quantity;
-    if (updateData.repairStatus !== undefined) article.repairStatus = updateData.repairStatus;
-    if (updateData.repairRemarks !== undefined) article.repairRemarks = updateData.repairRemarks;
-    
     // Update floor-level quality fields (additive)
     const floorData = article.floorQuantities[floorKey];
     if (floorData) {
@@ -142,14 +129,19 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
       if (updateData.m4Quantity !== undefined) floorData.m4Quantity = (floorData.m4Quantity || 0) + updateData.m4Quantity;
       if (updateData.repairStatus !== undefined) floorData.repairStatus = updateData.repairStatus;
       if (updateData.repairRemarks !== undefined) floorData.repairRemarks = updateData.repairRemarks;
+      
+      // Update M1 remaining after adding M1 quantity
+      if (updateData.m1Quantity !== undefined) {
+        floorData.m1Remaining = Math.max(0, floorData.m1Quantity - (floorData.m1Transferred || 0));
+      }
     }
   }
   
-  // Update knitting floor m4Quantity (defect quantity)
+  // Update knitting floor m4Quantity (defect quantity) - additive
   if (normalizedFloor === 'Knitting' && updateData.m4Quantity !== undefined) {
     const knittingFloorData = article.floorQuantities.knitting;
     if (knittingFloorData) {
-      knittingFloorData.m4Quantity = updateData.m4Quantity;
+      knittingFloorData.m4Quantity = (knittingFloorData.m4Quantity || 0) + updateData.m4Quantity;
     }
   }
 
@@ -907,24 +899,39 @@ export const qualityInspection = async (articleId, inspectionData, user = null) 
   }
 
   // Determine which floor to perform quality inspection on
-  // Priority: Final Checking > Checking (if both have work)
+  // Priority: Choose the floor with remaining work to inspect
   let targetFloor = null;
   const finalCheckingData = article.floorQuantities.finalChecking;
   const checkingData = article.floorQuantities.checking;
   
-  // If Final Checking has received work, use Final Checking
-  if (finalCheckingData && finalCheckingData.received > 0) {
+  // If Final Checking has remaining work to inspect, use Final Checking
+  if (finalCheckingData && finalCheckingData.remaining > 0) {
     targetFloor = 'Final Checking';
   }
-  // Otherwise, use Checking floor
-  else if (checkingData && checkingData.received > 0) {
+  // Otherwise, if Checking has remaining work to inspect, use Checking
+  else if (checkingData && checkingData.remaining > 0) {
     targetFloor = 'Checking';
+  }
+  // If no remaining work, but there's received work, choose the floor with more remaining
+  else if (finalCheckingData && checkingData && 
+           (finalCheckingData.received > 0 || checkingData.received > 0)) {
+    // Choose the floor with more remaining work
+    if (checkingData.remaining >= finalCheckingData.remaining) {
+      targetFloor = 'Checking';
+    } else {
+      targetFloor = 'Final Checking';
+    }
   }
   else {
     throw new ApiError(httpStatus.BAD_REQUEST, 'No quality inspection work available on Checking or Final Checking floors');
   }
 
   const previousProgress = article.progress;
+  
+  // Debug: Log which floor was selected and why
+  console.log(`🔍 Quality Inspection: Selected ${targetFloor} floor`);
+  console.log(`   Checking: received=${checkingData?.received || 0}, completed=${checkingData?.completed || 0}, remaining=${checkingData?.remaining || 0}`);
+  console.log(`   Final Checking: received=${finalCheckingData?.received || 0}, completed=${finalCheckingData?.completed || 0}, remaining=${finalCheckingData?.remaining || 0}`);
   
   // Get previous quantities from the target floor
   const targetFloorKey = article.getFloorKey(targetFloor);
@@ -946,24 +953,28 @@ export const qualityInspection = async (articleId, inspectionData, user = null) 
   // Update the target floor (Checking or Final Checking)
   
   if (targetFloorData) {
-    // FIXED: Set quantities instead of adding them
-    // When user sends m1Quantity: 800, it means "set M1 to 800", not "add 800 to existing M1"
+    // Debug: Log current quantities before update
+    console.log(`📊 Before update: completed=${targetFloorData.completed || 0}, m1=${targetFloorData.m1Quantity || 0}, m2=${targetFloorData.m2Quantity || 0}, m3=${targetFloorData.m3Quantity || 0}, m4=${targetFloorData.m4Quantity || 0}`);
+    console.log(`📥 Adding: inspectedQuantity=${inspectionData.inspectedQuantity || 0}, m1=${inspectionData.m1Quantity || 0}, m2=${inspectionData.m2Quantity || 0}, m3=${inspectionData.m3Quantity || 0}, m4=${inspectionData.m4Quantity || 0}`);
+    
+    // FIXED: Add quantities instead of setting them (additive behavior)
+    // When user sends m1Quantity: 500, it means "add 500 to existing M1", not "set M1 to 500"
     if (inspectionData.m1Quantity !== undefined) {
-      targetFloorData.m1Quantity = inspectionData.m1Quantity;
+      targetFloorData.m1Quantity = (targetFloorData.m1Quantity || 0) + inspectionData.m1Quantity;
     }
     if (inspectionData.m2Quantity !== undefined) {
-      targetFloorData.m2Quantity = inspectionData.m2Quantity;
+      targetFloorData.m2Quantity = (targetFloorData.m2Quantity || 0) + inspectionData.m2Quantity;
     }
     if (inspectionData.m3Quantity !== undefined) {
-      targetFloorData.m3Quantity = inspectionData.m3Quantity;
+      targetFloorData.m3Quantity = (targetFloorData.m3Quantity || 0) + inspectionData.m3Quantity;
     }
     if (inspectionData.m4Quantity !== undefined) {
-      targetFloorData.m4Quantity = inspectionData.m4Quantity;
+      targetFloorData.m4Quantity = (targetFloorData.m4Quantity || 0) + inspectionData.m4Quantity;
     }
     
-    // FIXED: Update completed quantity based on inspectedQuantity
+    // FIXED: Add to completed quantity based on inspectedQuantity (additive behavior)
     if (inspectionData.inspectedQuantity !== undefined) {
-      targetFloorData.completed = inspectionData.inspectedQuantity;
+      targetFloorData.completed = (targetFloorData.completed || 0) + inspectionData.inspectedQuantity;
       // Recalculate remaining quantity (ensure non-negative)
       targetFloorData.remaining = Math.max(0, targetFloorData.received - targetFloorData.completed);
     }
@@ -974,6 +985,10 @@ export const qualityInspection = async (articleId, inspectionData, user = null) 
     if (inspectionData.repairRemarks !== undefined) {
       targetFloorData.repairRemarks = inspectionData.repairRemarks;
     }
+    
+    // Debug: Log final quantities after update
+    console.log(`✅ After update: completed=${targetFloorData.completed || 0}, m1=${targetFloorData.m1Quantity || 0}, m2=${targetFloorData.m2Quantity || 0}, m3=${targetFloorData.m3Quantity || 0}, m4=${targetFloorData.m4Quantity || 0}`);
+    console.log(`📊 Remaining: ${targetFloorData.remaining || 0}`);
   }
 
   // Update progress based on floor quantities

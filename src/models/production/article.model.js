@@ -59,12 +59,13 @@ const articleSchema = new mongoose.Schema({
     required: true,
     default: 0
   },
-  currentFloor: {
-    type: String,
-    required: true,
-    enum: Object.values(ProductionFloor),
-    default: ProductionFloor.KNITTING
-  },
+  // Removed currentFloor - using flow-based system instead
+  // currentFloor: {
+  //   type: String,
+  //   required: true,
+  //   enum: Object.values(ProductionFloor),
+  //   default: ProductionFloor.KNITTING
+  // },
   
   // General information
   remarks: {
@@ -106,6 +107,9 @@ const articleSchema = new mongoose.Schema({
       m2Quantity: { type: Number, default: 0, min: 0 },
       m3Quantity: { type: Number, default: 0, min: 0 },
       m4Quantity: { type: Number, default: 0, min: 0 },
+      // Additive transfer tracking for M1 (like other floors)
+      m1Transferred: { type: Number, default: 0, min: 0 },
+      m1Remaining: { type: Number, default: 0, min: 0 },
       repairStatus: { 
         type: String, 
         enum: Object.values(RepairStatus), 
@@ -135,6 +139,9 @@ const articleSchema = new mongoose.Schema({
       m2Quantity: { type: Number, default: 0, min: 0 },
       m3Quantity: { type: Number, default: 0, min: 0 },
       m4Quantity: { type: Number, default: 0, min: 0 },
+      // Additive transfer tracking for M1 (like other floors)
+      m1Transferred: { type: Number, default: 0, min: 0 },
+      m1Remaining: { type: Number, default: 0, min: 0 },
       repairStatus: { 
         type: String, 
         enum: Object.values(RepairStatus), 
@@ -187,7 +194,7 @@ const articleSchema = new mongoose.Schema({
 // Indexes for performance
 articleSchema.index({ articleNumber: 1 });
 articleSchema.index({ orderId: 1 });
-articleSchema.index({ currentFloor: 1 });
+// Removed currentFloor index - using flow-based system
 articleSchema.index({ status: 1 });
 articleSchema.index({ priority: 1 });
 articleSchema.index({ machineId: 1 });
@@ -205,15 +212,26 @@ articleSchema.virtual('calculatedProgress').get(function() {
   
   let totalCompleted = 0;
   
-  // FIXED: Calculate progress based on work completed across all floors
+  // Calculate progress based on work completed across all floors
   // For checking floors, use M1 quantity as the "good" completed work
   // For other floors, use completed quantity
   
-  const currentFloorKey = this.getFloorKey(this.currentFloor);
-  const currentFloorIndex = floorOrder.indexOf(currentFloorKey);
+  // Find the last floor that has work completed
+  let lastActiveFloor = 'knitting';
+  for (let i = floorOrder.length - 1; i >= 0; i--) {
+    const floorKey = floorOrder[i];
+    const floorData = this.floorQuantities[floorKey];
+    
+    if (floorData && floorData.completed > 0) {
+      lastActiveFloor = floorKey;
+      break;
+    }
+  }
   
-  // Add completed work from all floors up to current floor
-  for (let i = 0; i <= currentFloorIndex; i++) {
+  const lastActiveFloorIndex = floorOrder.indexOf(lastActiveFloor);
+  
+  // Add completed work from all floors up to last active floor
+  for (let i = 0; i <= lastActiveFloorIndex; i++) {
     const floorKey = floorOrder[i];
     const floorData = this.floorQuantities[floorKey];
     
@@ -233,124 +251,91 @@ articleSchema.virtual('calculatedProgress').get(function() {
   return Math.min(progress, 100);
 });
 
-// Virtual for quality total validation
+// Virtual for quality total validation - removed currentFloor dependency
 articleSchema.virtual('qualityTotal').get(function() {
-  const floorKey = this.getFloorKey(this.currentFloor);
-  const floorData = this.floorQuantities[floorKey];
-  
-  if (floorData && (this.currentFloor === ProductionFloor.KNITTING)) {
-    // For knitting floor, only track M4 (defect quantity)
-    return (floorData.m4Quantity || 0);
-  }
-  
-  if (floorData && (this.currentFloor === ProductionFloor.CHECKING || this.currentFloor === ProductionFloor.FINAL_CHECKING)) {
-    return (floorData.m1Quantity || 0) + (floorData.m2Quantity || 0) + (floorData.m3Quantity || 0) + (floorData.m4Quantity || 0);
-  }
-  
-  // No fallback needed - quality fields are now floor-specific only
+  // Quality validation is now floor-specific and doesn't depend on currentFloor
+  // This virtual is kept for backward compatibility but logic moved to individual methods
   return 0;
 });
 
 // Pre-save middleware to update progress
 articleSchema.pre('save', function(next) {
-  if (this.isModified('floorQuantities') || this.isModified('plannedQuantity') || this.isModified('currentFloor')) {
+  if (this.isModified('floorQuantities') || this.isModified('plannedQuantity')) {
     this.progress = this.calculatedProgress;
   }
   next();
 });
 
-// Pre-save middleware to validate and fix floor data corruption
+// Pre-save middleware to validate and fix floor data corruption - flow-based system
 articleSchema.pre('save', function(next) {
   // Auto-fix corrupted floor data
   this.fixFloorDataCorruption();
   
-  // Only validate if we're modifying quality-related fields
-  const isModifyingQualityFields = this.isModified('floorQuantities.knitting.m4Quantity') ||
-                                  this.isModified('floorQuantities.checking.m1Quantity') ||
-                                  this.isModified('floorQuantities.checking.m2Quantity') ||
-                                  this.isModified('floorQuantities.checking.m3Quantity') ||
-                                  this.isModified('floorQuantities.checking.m4Quantity') ||
-                                  this.isModified('floorQuantities.finalChecking.m1Quantity') ||
-                                  this.isModified('floorQuantities.finalChecking.m2Quantity') ||
-                                  this.isModified('floorQuantities.finalChecking.m3Quantity') ||
-                                  this.isModified('floorQuantities.finalChecking.m4Quantity');
+  // Flow-based validation: Check each floor independently
+  const floors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'finalChecking', 'branding', 'warehouse', 'dispatch'];
   
-  if (!isModifyingQualityFields) {
-    return next(); // Skip validation if not modifying quality fields
-  }
-  
-  if (this.currentFloor === ProductionFloor.KNITTING) {
-    const currentFloorKey = this.getFloorKey(this.currentFloor);
-    const currentFloorData = this.floorQuantities[currentFloorKey];
-    const m4Quantity = currentFloorData?.m4Quantity || 0;
-    const completedQuantity = currentFloorData?.completed || 0;
+  floors.forEach(floorKey => {
+    const floorData = this.floorQuantities[floorKey];
+    if (!floorData) return;
     
-    // M4 (defect) quantity cannot exceed completed quantity
-    if (m4Quantity > completedQuantity) {
-      return next(new Error('M4 (defect) quantity cannot exceed completed quantity on knitting floor'));
-    }
-  }
-  
-  if (this.currentFloor === ProductionFloor.CHECKING || this.currentFloor === ProductionFloor.FINAL_CHECKING) {
-    const qualityTotal = this.qualityTotal;
-    const currentFloorKey = this.getFloorKey(this.currentFloor);
-    const currentFloorReceived = this.floorQuantities[currentFloorKey]?.received || 0;
-    if (qualityTotal > currentFloorReceived) {
-      return next(new Error('Quality quantities cannot exceed received quantity on current floor'));
-    }
-  }
-  
-  // Additional validation: Check quality quantities against Checking floor received quantity
-  // This handles cases where article is on a later floor but quality inspection updates Checking floor
-  const checkingFloorKey = this.getFloorKey(ProductionFloor.CHECKING);
-  const checkingFloorData = this.floorQuantities[checkingFloorKey];
-  if (checkingFloorData) {
-    const checkingQualityTotal = (checkingFloorData.m1Quantity || 0) + 
-                                 (checkingFloorData.m2Quantity || 0) + 
-                                 (checkingFloorData.m3Quantity || 0) + 
-                                 (checkingFloorData.m4Quantity || 0);
-    const checkingFloorReceived = checkingFloorData.received || 0;
+    const received = floorData.received || 0;
+    const completed = floorData.completed || 0;
+    const transferred = floorData.transferred || 0;
     
-    if (checkingQualityTotal > checkingFloorReceived) {
-      return next(new Error('Quality quantities cannot exceed received quantity on Checking floor'));
+    // Basic validation: completed and transferred cannot exceed received
+    if (completed > received && received > 0) {
+      console.warn(`🚨 ${floorKey}: Completed (${completed}) > Received (${received}). Auto-fixing...`);
+      floorData.completed = received;
+      floorData.remaining = received - transferred;
     }
     
-    // Additional validation: Check if transferred quantity exceeds M1 quantity
-    const m1Quantity = checkingFloorData.m1Quantity || 0;
-    const transferredQuantity = checkingFloorData.transferred || 0;
+    if (transferred > received && received > 0) {
+      console.warn(`🚨 ${floorKey}: Transferred (${transferred}) > Received (${received}). Auto-fixing...`);
+      floorData.transferred = received;
+      floorData.remaining = received - completed;
+    }
     
-    if (transferredQuantity > m1Quantity && m1Quantity > 0) {
-      // Emergency fix: Auto-correct the data corruption
-      console.warn(`🚨 DATA CORRUPTION DETECTED: Transferred (${transferredQuantity}) > M1 (${m1Quantity}). Auto-fixing...`);
-      checkingFloorData.transferred = m1Quantity;
-      checkingFloorData.remaining = checkingFloorData.received - checkingFloorData.transferred;
+    // Quality validation for checking floors
+    if ((floorKey === 'checking' || floorKey === 'finalChecking') && received > 0) {
+      const m1Quantity = floorData.m1Quantity || 0;
+      const m2Quantity = floorData.m2Quantity || 0;
+      const m3Quantity = floorData.m3Quantity || 0;
+      const m4Quantity = floorData.m4Quantity || 0;
+      const totalQualityQuantity = m1Quantity + m2Quantity + m3Quantity + m4Quantity;
       
-      // Log the auto-fix
-      console.log(`✅ Auto-fixed: transferred=${m1Quantity}, remaining=${checkingFloorData.remaining}`);
+      if (totalQualityQuantity > received) {
+        console.warn(`🚨 ${floorKey}: Quality total (${totalQualityQuantity}) > Received (${received}). Auto-fixing...`);
+        // Scale down quality quantities proportionally
+        const scaleFactor = received / totalQualityQuantity;
+        floorData.m1Quantity = Math.round(m1Quantity * scaleFactor);
+        floorData.m2Quantity = Math.round(m2Quantity * scaleFactor);
+        floorData.m3Quantity = Math.round(m3Quantity * scaleFactor);
+        floorData.m4Quantity = Math.round(m4Quantity * scaleFactor);
+      }
       
-      // Continue instead of throwing error
-      return next();
+      // For checking floors, transferred should not exceed M1 quantity
+      const m1Transferred = floorData.m1Transferred || 0;
+      if (m1Transferred > m1Quantity && m1Quantity > 0) {
+        console.warn(`🚨 ${floorKey}: M1 Transferred (${m1Transferred}) > M1 Quantity (${m1Quantity}). Auto-fixing...`);
+        floorData.m1Transferred = m1Quantity;
+        floorData.m1Remaining = 0;
+        floorData.remaining = 0;
+      }
+      
+      // Update M1 remaining
+      floorData.m1Remaining = Math.max(0, m1Quantity - m1Transferred);
     }
-  }
-  
-  // NEW VALIDATION: Check for washing floor data corruption
-  const washingFloorData = this.floorQuantities.washing;
-  const knittingFloorData = this.floorQuantities.knitting;
-  if (washingFloorData && knittingFloorData) {
-    const washingReceived = washingFloorData.received || 0;
-    const knittingTransferred = knittingFloorData.transferred || 0;
     
-    // If washing received more than knitting transferred, it's corruption
-    if (washingReceived > knittingTransferred && knittingTransferred > 0) {
-      console.warn(`🚨 WASHING FLOOR CORRUPTION DETECTED: Received (${washingReceived}) > Knitting transferred (${knittingTransferred}). Auto-fixing...`);
-      washingFloorData.received = knittingTransferred;
-      washingFloorData.remaining = washingFloorData.received - (washingFloorData.transferred || 0);
-      
-      console.log(`✅ Auto-fixed washing floor: received=${knittingTransferred}, remaining=${washingFloorData.remaining}`);
-      
-      return next();
+    // Knitting floor validation
+    if (floorKey === 'knitting' && completed > 0) {
+      const m4Quantity = floorData.m4Quantity || 0;
+      if (m4Quantity > completed) {
+        console.warn(`🚨 ${floorKey}: M4 (${m4Quantity}) > Completed (${completed}). Auto-fixing...`);
+        floorData.m4Quantity = completed;
+      }
     }
-  }
+  });
+  
   next();
 });
 
@@ -411,23 +396,23 @@ articleSchema.methods.getFloorOrderByLinkingType = function() {
   }
 };
 
-// Method to update completed quantity for current floor with overproduction support
-articleSchema.methods.updateCompletedQuantity = async function(newQuantity, userId, floorSupervisorId, remarks, machineId, shiftId) {
-  const floorKey = this.getFloorKey(this.currentFloor);
+// Method to update completed quantity for any floor with overproduction support
+articleSchema.methods.updateCompletedQuantity = async function(floor, newQuantity, userId, floorSupervisorId, remarks, machineId, shiftId) {
+  const floorKey = this.getFloorKey(floor);
   const floorData = this.floorQuantities[floorKey];
   
   if (!floorData) {
-    throw new Error('Invalid floor for quantity update');
+    throw new Error(`Invalid floor: ${floor}`);
   }
   
   // Special handling for knitting floor - allow overproduction
-  if (this.currentFloor === ProductionFloor.KNITTING) {
+  if (floor === ProductionFloor.KNITTING) {
     if (newQuantity < 0) {
       throw new Error('Quantity cannot be negative');
     }
     // Allow overproduction in knitting (newQuantity can exceed received)
     // This is normal behavior - machines can produce more than planned
-  } else if (this.currentFloor === ProductionFloor.CHECKING || this.currentFloor === ProductionFloor.FINAL_CHECKING) {
+  } else if (floor === ProductionFloor.CHECKING || floor === ProductionFloor.FINAL_CHECKING) {
     // For checking floors, validate against received quantity
     if (newQuantity < 0 || newQuantity > floorData.received) {
       throw new Error(`Invalid quantity: must be between 0 and received quantity (${floorData.received})`);
@@ -449,7 +434,7 @@ articleSchema.methods.updateCompletedQuantity = async function(newQuantity, user
   floorData.completed = newQuantity;
   
   // Calculate remaining quantity - handle overproduction
-  if (this.currentFloor === ProductionFloor.KNITTING && newQuantity > floorData.received) {
+  if (floor === ProductionFloor.KNITTING && newQuantity > floorData.received) {
     // Overproduction scenario: show 0 instead of negative remaining
     floorData.remaining = 0;
   } else {
@@ -471,7 +456,7 @@ articleSchema.methods.updateCompletedQuantity = async function(newQuantity, user
       orderId: this.orderId.toString(),
       action: 'Quantity Updated',
       quantity: newQuantity - previousQuantity,
-      remarks: remarks || `Completed ${newQuantity} units on ${this.currentFloor} floor (${floorData.remaining} remaining)`,
+      remarks: remarks || `Completed ${newQuantity} units on ${floor} floor (${floorData.remaining} remaining)`,
       previousValue: previousQuantity,
       newValue: newQuantity,
       changeReason: 'Production progress update',
@@ -486,12 +471,12 @@ articleSchema.methods.updateCompletedQuantity = async function(newQuantity, user
   }
   
   return {
-    floor: this.currentFloor,
+    floor: floor,
     previousQuantity,
     newQuantity,
     deltaQuantity: newQuantity - previousQuantity,
     remaining: floorData.remaining,
-    isOverproduction: this.currentFloor === ProductionFloor.KNITTING && newQuantity > floorData.received
+    isOverproduction: floor === ProductionFloor.KNITTING && newQuantity > floorData.received
   };
 };
 
@@ -508,11 +493,6 @@ articleSchema.methods.initializeWithPlannedQuantity = function() {
   this.floorQuantities.knitting.received = this.plannedQuantity;
   this.floorQuantities.knitting.remaining = this.plannedQuantity;
   
-  // Set current floor to knitting if not already set
-  if (!this.currentFloor || this.currentFloor === ProductionFloor.KNITTING) {
-    this.currentFloor = ProductionFloor.KNITTING;
-  }
-  
   return {
     floor: ProductionFloor.KNITTING,
     received: this.plannedQuantity,
@@ -520,102 +500,107 @@ articleSchema.methods.initializeWithPlannedQuantity = function() {
   };
 };
 
-// Method to transfer to next floor with linking type logic
-articleSchema.methods.transferToNextFloor = async function(quantity, userId, floorSupervisorId, remarks, batchNumber) {
+// Method to transfer from any floor to next floor - flow-based system
+articleSchema.methods.transferFromFloor = async function(fromFloor, quantity, userId, floorSupervisorId, remarks, batchNumber) {
   // Get floor order based on linking type
   const floorOrder = this.getFloorOrderByLinkingType();
   
-  const currentIndex = floorOrder.indexOf(this.currentFloor);
-  if (currentIndex === -1 || currentIndex === floorOrder.length - 1) {
-    throw new Error('Cannot transfer from current floor');
+  const fromFloorIndex = floorOrder.indexOf(fromFloor);
+  if (fromFloorIndex === -1 || fromFloorIndex === floorOrder.length - 1) {
+    throw new Error(`Cannot transfer from ${fromFloor} floor`);
   }
   
-  const currentFloorKey = this.getFloorKey(this.currentFloor);
-  const currentFloorData = this.floorQuantities[currentFloorKey];
+  const fromFloorKey = this.getFloorKey(fromFloor);
+  const fromFloorData = this.floorQuantities[fromFloorKey];
   
-  // Validate transfer quantity - allow overproduction from knitting
-  if (this.currentFloor === ProductionFloor.KNITTING) {
+  if (!fromFloorData) {
+    throw new Error(`No data found for ${fromFloor} floor`);
+  }
+  
+  // Validate transfer quantity based on floor type
+  if (fromFloor === ProductionFloor.KNITTING) {
     // For knitting, allow transfer up to completed quantity (including overproduction)
-    if (quantity > currentFloorData.completed) {
-      throw new Error(`Transfer quantity (${quantity}) cannot exceed completed quantity (${currentFloorData.completed}) on ${this.currentFloor} floor`);
+    if (quantity > fromFloorData.completed) {
+      throw new Error(`Transfer quantity (${quantity}) cannot exceed completed quantity (${fromFloorData.completed}) on ${fromFloor} floor`);
     }
     // Note: Transfer quantity can exceed received quantity due to overproduction - this is normal
-  } else {
-    // For other floors, validate against completed quantity
-    if (quantity > currentFloorData.completed) {
-      throw new Error(`Transfer quantity (${quantity}) cannot exceed completed quantity (${currentFloorData.completed}) on ${this.currentFloor} floor`);
+  } else if (fromFloor === ProductionFloor.CHECKING || fromFloor === ProductionFloor.FINAL_CHECKING) {
+    // For checking floors, validate against M1 quantity (good quality items)
+    const m1Quantity = fromFloorData.m1Quantity || 0;
+    const m1Transferred = fromFloorData.m1Transferred || 0;
+    const m1Remaining = m1Quantity - m1Transferred;
+    
+    if (quantity > m1Remaining) {
+      throw new Error(`Transfer quantity (${quantity}) cannot exceed remaining M1 quantity (${m1Remaining}) on ${fromFloor} floor`);
     }
     
-    if (quantity > currentFloorData.remaining) {
-      throw new Error(`Transfer quantity (${quantity}) cannot exceed remaining quantity (${currentFloorData.remaining}) on ${this.currentFloor} floor`);
-    }
-  }
-  
-  // Special handling for knitting floor - allow transfer of excess quantity
-  if (this.currentFloor === ProductionFloor.KNITTING) {
-    const m4Quantity = currentFloorData.m4Quantity || 0;
-    const goodQuantity = currentFloorData.completed - m4Quantity;
-    
-    // Warn if transferring more than good quantity (excluding defects)
-    if (quantity > goodQuantity) {
-      console.warn(`Transferring ${quantity} units from knitting, but only ${goodQuantity} are good quality (excluding ${m4Quantity} defects)`);
-    }
-  }
-  
-  // Special handling for checking floor - only transfer good quality items (M1)
-  if (this.currentFloor === ProductionFloor.CHECKING) {
-    const m1Quantity = currentFloorData.m1Quantity || 0;
-    
-    // If quantity is specified, validate it doesn't exceed M1 quantity
-    if (quantity > m1Quantity) {
-      throw new Error(`Transfer quantity (${quantity}) cannot exceed good quality quantity (M1: ${m1Quantity}) on checking floor`);
-    }
-    
-    // If no quantity specified, transfer all M1 quantity
+    // If no quantity specified, transfer all remaining M1 quantity
     if (!quantity) {
-      quantity = m1Quantity;
+      quantity = m1Remaining;
     }
     
     // Additional validation: Ensure quality inspection has been completed
-    const m2Quantity = currentFloorData.m2Quantity || 0;
-    const m3Quantity = currentFloorData.m3Quantity || 0;
-    const m4Quantity = currentFloorData.m4Quantity || 0;
+    const m2Quantity = fromFloorData.m2Quantity || 0;
+    const m3Quantity = fromFloorData.m3Quantity || 0;
+    const m4Quantity = fromFloorData.m4Quantity || 0;
     const totalQualityQuantity = m1Quantity + m2Quantity + m3Quantity + m4Quantity;
     
     // If quality quantities don't match completed quantity, require quality inspection first
-    if (totalQualityQuantity !== currentFloorData.completed && currentFloorData.completed > 0) {
-      throw new Error(`Quality inspection incomplete. Completed: ${currentFloorData.completed}, Quality total: ${totalQualityQuantity}. Please complete quality inspection before transfer.`);
+    if (totalQualityQuantity !== fromFloorData.completed && fromFloorData.completed > 0) {
+      throw new Error(`Quality inspection incomplete. Completed: ${fromFloorData.completed}, Quality total: ${totalQualityQuantity}. Please complete quality inspection before transfer.`);
     }
     
     // Warn about defects that won't be transferred
     const totalDefects = m2Quantity + m3Quantity + m4Quantity;
     
     if (totalDefects > 0) {
-      console.warn(`Transferring ${quantity} good quality items from checking floor. ${totalDefects} defective items (M2: ${m2Quantity}, M3: ${m3Quantity}, M4: ${m4Quantity}) will remain for repair/rejection`);
+      console.warn(`Transferring ${quantity} good quality items from ${fromFloor} floor. ${totalDefects} defective items (M2: ${m2Quantity}, M3: ${m3Quantity}, M4: ${m4Quantity}) will remain for repair/rejection`);
+    }
+  } else {
+    // For other floors, validate against completed quantity
+    if (quantity > fromFloorData.completed) {
+      throw new Error(`Transfer quantity (${quantity}) cannot exceed completed quantity (${fromFloorData.completed}) on ${fromFloor} floor`);
+    }
+    
+    if (quantity > fromFloorData.remaining) {
+      throw new Error(`Transfer quantity (${quantity}) cannot exceed remaining quantity (${fromFloorData.remaining}) on ${fromFloor} floor`);
     }
   }
   
-  const nextFloor = floorOrder[currentIndex + 1];
+  const nextFloor = floorOrder[fromFloorIndex + 1];
   const nextFloorKey = this.getFloorKey(nextFloor);
   const nextFloorData = this.floorQuantities[nextFloorKey];
   
-  // Update current floor: mark as transferred
-  currentFloorData.transferred += quantity;
+  // Update from floor: mark as transferred (additive for checking floors)
+  if (fromFloor === ProductionFloor.CHECKING || fromFloor === ProductionFloor.FINAL_CHECKING) {
+    // For checking floors, update M1 transferred additively
+    fromFloorData.m1Transferred = (fromFloorData.m1Transferred || 0) + quantity;
+    fromFloorData.m1Remaining = Math.max(0, (fromFloorData.m1Quantity || 0) - fromFloorData.m1Transferred);
+    
+    // Also update general transferred field additively
+    fromFloorData.transferred = (fromFloorData.transferred || 0) + quantity;
+  } else {
+    // For other floors, update transferred additively
+    fromFloorData.transferred += quantity;
+  }
   
   // Calculate remaining - handle overproduction for knitting floor
-  if (this.currentFloor === ProductionFloor.KNITTING) {
+  if (fromFloor === ProductionFloor.KNITTING) {
     // For knitting floor, remaining should never go negative due to overproduction
-    currentFloorData.remaining = Math.max(0, currentFloorData.received - currentFloorData.transferred);
+    fromFloorData.remaining = Math.max(0, fromFloorData.received - fromFloorData.transferred);
+  } else if (fromFloor === ProductionFloor.CHECKING || fromFloor === ProductionFloor.FINAL_CHECKING) {
+    // For checking floors, remaining is based on M1 remaining
+    fromFloorData.remaining = fromFloorData.m1Remaining;
   } else {
     // For other floors, normal calculation
-    currentFloorData.remaining -= quantity;
+    fromFloorData.remaining -= quantity;
   }
   
   // For checking and finalChecking floors, ensure completed equals transferred
   // This fixes the issue where items are transferred without being marked as completed
-  if (this.currentFloor === ProductionFloor.CHECKING || this.currentFloor === ProductionFloor.FINAL_CHECKING) {
-    if (currentFloorData.completed < currentFloorData.transferred) {
-      currentFloorData.completed = currentFloorData.transferred;
+  if (fromFloor === ProductionFloor.CHECKING || fromFloor === ProductionFloor.FINAL_CHECKING) {
+    if (fromFloorData.completed < fromFloorData.transferred) {
+      fromFloorData.completed = fromFloorData.transferred;
     }
   }
   
@@ -628,38 +613,36 @@ articleSchema.methods.transferToNextFloor = async function(quantity, userId, flo
     nextFloorData.completed = nextFloorData.received;
   }
   
-  // Update current floor to next floor
-  this.currentFloor = nextFloor;
-  this.quantityFromPreviousFloor = quantity;
-  
   if (remarks) {
     this.remarks = remarks;
   }
   
   // Create log entry for floor transfer
   try {
-    let transferRemarks = remarks || `Article ${this.articleNumber}: ${quantity} units transferred from ${floorOrder[currentIndex]} to ${nextFloor} (${currentFloorData.remaining} remaining on ${floorOrder[currentIndex]})`;
+    let transferRemarks = remarks || `Article ${this.articleNumber}: ${quantity} units transferred from ${fromFloor} to ${nextFloor} (${fromFloorData.remaining} remaining on ${fromFloor})`;
     
     // Add quality information for checking floor transfers
-    if (this.currentFloor === ProductionFloor.CHECKING) {
-      const m1Quantity = currentFloorData.m1Quantity || 0;
-      const m2Quantity = currentFloorData.m2Quantity || 0;
-      const m3Quantity = currentFloorData.m3Quantity || 0;
-      const m4Quantity = currentFloorData.m4Quantity || 0;
+    if (fromFloor === ProductionFloor.CHECKING || fromFloor === ProductionFloor.FINAL_CHECKING) {
+      const m1Quantity = fromFloorData.m1Quantity || 0;
+      const m1Transferred = fromFloorData.m1Transferred || 0;
+      const m1Remaining = fromFloorData.m1Remaining || 0;
+      const m2Quantity = fromFloorData.m2Quantity || 0;
+      const m3Quantity = fromFloorData.m3Quantity || 0;
+      const m4Quantity = fromFloorData.m4Quantity || 0;
       const totalDefects = m2Quantity + m3Quantity + m4Quantity;
       
-      transferRemarks += ` | Quality: M1: ${m1Quantity} (transferred), M2: ${m2Quantity}, M3: ${m3Quantity}, M4: ${m4Quantity} (defects remain)`;
+      transferRemarks += ` | Quality: M1 Total: ${m1Quantity}, M1 Transferred: ${m1Transferred}, M1 Remaining: ${m1Remaining}, Defects: M2: ${m2Quantity}, M3: ${m3Quantity}, M4: ${m4Quantity}`;
     }
     
     await ArticleLog.createLogEntry({
       articleId: this._id.toString(),
       orderId: this.orderId.toString(),
-      action: `Transferred to ${nextFloor}`,
+      action: `Transferred from ${fromFloor} to ${nextFloor}`,
       quantity,
-      fromFloor: floorOrder[currentIndex],
+      fromFloor: fromFloor,
       toFloor: nextFloor,
       remarks: transferRemarks,
-      previousValue: floorOrder[currentIndex],
+      previousValue: fromFloor,
       newValue: nextFloor,
       changeReason: 'Floor transfer',
       userId: userId || 'system',
@@ -672,10 +655,101 @@ articleSchema.methods.transferToNextFloor = async function(quantity, userId, flo
   }
   
   return {
-    fromFloor: floorOrder[currentIndex],
+    fromFloor: fromFloor,
     toFloor: nextFloor,
     quantity,
-    currentFloorRemaining: currentFloorData.remaining,
+    fromFloorRemaining: fromFloorData.remaining,
+    nextFloorReceived: nextFloorData.received
+  };
+};
+
+// Method to transfer M1 quantity from checking floors - additive transfers
+articleSchema.methods.transferM1FromFloor = async function(fromFloor, quantity, userId, floorSupervisorId, remarks, batchNumber) {
+  if (fromFloor !== ProductionFloor.CHECKING && fromFloor !== ProductionFloor.FINAL_CHECKING) {
+    throw new Error('M1 transfer is only available for Checking and Final Checking floors');
+  }
+  
+  const fromFloorKey = this.getFloorKey(fromFloor);
+  const fromFloorData = this.floorQuantities[fromFloorKey];
+  
+  if (!fromFloorData) {
+    throw new Error(`No data found for ${fromFloor} floor`);
+  }
+  
+  const m1Quantity = fromFloorData.m1Quantity || 0;
+  const m1Transferred = fromFloorData.m1Transferred || 0;
+  const m1Remaining = m1Quantity - m1Transferred;
+  
+  // Validate transfer quantity
+  if (quantity > m1Remaining) {
+    throw new Error(`Transfer quantity (${quantity}) cannot exceed remaining M1 quantity (${m1Remaining}) on ${fromFloor} floor`);
+  }
+  
+  // If no quantity specified, transfer all remaining M1 quantity
+  if (!quantity) {
+    quantity = m1Remaining;
+  }
+  
+  // Get floor order based on linking type
+  const floorOrder = this.getFloorOrderByLinkingType();
+  const fromFloorIndex = floorOrder.indexOf(fromFloor);
+  
+  if (fromFloorIndex === -1 || fromFloorIndex === floorOrder.length - 1) {
+    throw new Error(`Cannot transfer from ${fromFloor} floor`);
+  }
+  
+  const nextFloor = floorOrder[fromFloorIndex + 1];
+  const nextFloorKey = this.getFloorKey(nextFloor);
+  const nextFloorData = this.floorQuantities[nextFloorKey];
+  
+  // Update from floor: mark M1 as transferred (additive)
+  fromFloorData.m1Transferred = m1Transferred + quantity;
+  fromFloorData.m1Remaining = Math.max(0, m1Quantity - fromFloorData.m1Transferred);
+  
+  // Also update general transferred field (additive)
+  fromFloorData.transferred = (fromFloorData.transferred || 0) + quantity;
+  
+  // Update remaining quantity
+  fromFloorData.remaining = fromFloorData.m1Remaining;
+  
+  // Update next floor: mark as received (additive)
+  nextFloorData.received = (nextFloorData.received || 0) + quantity;
+  nextFloorData.remaining = nextFloorData.received - (nextFloorData.completed || 0);
+  
+  if (remarks) {
+    this.remarks = remarks;
+  }
+  
+  // Create log entry for M1 transfer
+  try {
+    const transferRemarks = remarks || `Article ${this.articleNumber}: ${quantity} M1 units transferred from ${fromFloor} to ${nextFloor} (${fromFloorData.m1Remaining} M1 remaining on ${fromFloor})`;
+    
+    await ArticleLog.createLogEntry({
+      articleId: this._id.toString(),
+      orderId: this.orderId.toString(),
+      action: `M1 Transferred from ${fromFloor} to ${nextFloor}`,
+      quantity,
+      fromFloor: fromFloor,
+      toFloor: nextFloor,
+      remarks: transferRemarks,
+      previousValue: m1Transferred,
+      newValue: fromFloorData.m1Transferred,
+      changeReason: 'M1 quality transfer',
+      userId: userId || 'system',
+      floorSupervisorId: floorSupervisorId || 'system',
+      batchNumber
+    });
+  } catch (logError) {
+    console.error('Error creating M1 transfer log:', logError);
+    // Don't throw error for logging failure, just log it
+  }
+  
+  return {
+    fromFloor: fromFloor,
+    toFloor: nextFloor,
+    quantity,
+    m1Transferred: fromFloorData.m1Transferred,
+    m1Remaining: fromFloorData.m1Remaining,
     nextFloorReceived: nextFloorData.received
   };
 };
@@ -916,14 +990,16 @@ articleSchema.methods.fixAllFloorDataConsistency = function() {
     }
   }
   
-  // Fix current floor mismatch
+  // Flow-based validation: Ensure data consistency between floors
   const knittingTransferred = this.floorQuantities.knitting?.transferred || 0;
   const checkingReceived = this.floorQuantities.checking?.received || 0;
   
-  if (knittingTransferred > 0 && checkingReceived > 0 && this.currentFloor === 'Knitting') {
-    // Article should be on checking floor if knitting has transferred
-    this.currentFloor = 'Checking';
-    allFixes.push(`Fixed current floor from Knitting to Checking (knitting has transferred ${knittingTransferred})`);
+  if (knittingTransferred > 0 && checkingReceived !== knittingTransferred) {
+    // Fix checking floor received to match knitting transferred
+    const oldCheckingReceived = checkingReceived;
+    this.floorQuantities.checking.received = knittingTransferred;
+    this.floorQuantities.checking.remaining = knittingTransferred - (this.floorQuantities.checking.transferred || 0);
+    allFixes.push(`Fixed checking received from ${oldCheckingReceived} to ${knittingTransferred} (from knitting transfer)`);
     totalFixed++;
   }
   
@@ -935,7 +1011,6 @@ articleSchema.methods.fixAllFloorDataConsistency = function() {
       totalFixed,
       fixes: allFixes,
       updatedData: {
-        currentFloor: this.currentFloor,
         checking: this.floorQuantities.checking,
         washing: this.floorQuantities.washing
       }
@@ -945,41 +1020,23 @@ articleSchema.methods.fixAllFloorDataConsistency = function() {
   return { fixed: false, message: 'No inconsistencies found' };
 };
 
-// Method to validate and fix current floor status
-articleSchema.methods.validateAndFixCurrentFloor = function() {
+// Method to get the current active floor based on work progress - flow-based system
+articleSchema.methods.getCurrentActiveFloor = function() {
   const floorOrder = this.getFloorOrderByLinkingType();
-  let expectedFloor = ProductionFloor.KNITTING; // Default starting floor
   
-  // Find the last floor that has transferred items
-  for (let i = 0; i < floorOrder.length; i++) {
+  // Find the last floor that has work in progress (completed > 0)
+  for (let i = floorOrder.length - 1; i >= 0; i--) {
     const floor = floorOrder[i];
     const floorKey = this.getFloorKey(floor);
     const floorData = this.floorQuantities[floorKey];
     
-    if (floorData && floorData.transferred > 0) {
-      // This floor has transferred items, so the article should be on the next floor
-      if (i < floorOrder.length - 1) {
-        expectedFloor = floorOrder[i + 1];
-      } else {
-        // Last floor, article should be completed
-        expectedFloor = floor;
-      }
+    if (floorData && floorData.completed > 0) {
+      return floor;
     }
   }
   
-  // Check if current floor matches expected floor
-  if (this.currentFloor !== expectedFloor) {
-    const oldFloor = this.currentFloor;
-    this.currentFloor = expectedFloor;
-    return {
-      fixed: true,
-      message: `Fixed current floor from ${oldFloor} to ${expectedFloor}`,
-      oldFloor,
-      newFloor: expectedFloor
-    };
-  }
-  
-  return { fixed: false, message: 'Current floor is correct' };
+  // If no work completed, return knitting floor
+  return ProductionFloor.KNITTING;
 };
 
 // Emergency method to fix transferred quantity corruption
@@ -1046,9 +1103,14 @@ articleSchema.methods.fixTransferredQuantityCorruption = function() {
   return { fixed: false, message: 'No corruption found' };
 };
 
-// Static method to get articles by floor
+// Static method to get articles by floor - flow-based system
 articleSchema.statics.getArticlesByFloor = function(floor, options = {}) {
-  const query = { currentFloor: floor };
+  // Since we removed currentFloor, we need to find articles that have work on the specified floor
+  const query = {};
+  
+  // Check if the floor has any work (received, completed, or transferred > 0)
+  const floorKey = this.prototype.getFloorKey(floor);
+  query[`floorQuantities.${floorKey}.received`] = { $gt: 0 };
   
   if (options.status) {
     query.status = options.status;
@@ -1109,15 +1171,17 @@ articleSchema.statics.getArticlesByOrder = function(orderId) {
     .sort({ createdAt: 1 });
 };
 
-// Static method to get articles by machine
+// Static method to get articles by machine - flow-based system
 articleSchema.statics.getArticlesByMachine = function(machineId, options = {}) {
   const query = { machineId };
   
   if (options.status) {
     query.status = options.status;
   }
-  if (options.currentFloor) {
-    query.currentFloor = options.currentFloor;
+  if (options.floor) {
+    // Check if the floor has any work (received, completed, or transferred > 0)
+    const floorKey = this.prototype.getFloorKey(options.floor);
+    query[`floorQuantities.${floorKey}.received`] = { $gt: 0 };
   }
   if (options.priority) {
     query.priority = options.priority;
