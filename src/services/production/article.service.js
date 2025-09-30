@@ -77,17 +77,26 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
       throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid floor for quantity update');
     }
     
-    // FIXED: Always treat quantity updates as additive (incremental)
-    // When user sends completedQuantity: 200, it means "add 200 to existing completed", not "set completed to 200"
+    // FIXED: Handle quantity updates differently for knitting floor vs other floors
+    // For knitting floor: treat as absolute quantity (set completed to this value)
+    // For other floors: treat as additive (add to existing completed)
     let newCompletedQuantity;
     const currentCompleted = floorData.completed;
     
-    // Always add the provided quantity to existing completed quantity
-    newCompletedQuantity = currentCompleted + updateData.completedQuantity;
+    if (normalizedFloor === 'Knitting') {
+      // KNITTING FLOOR: Treat as absolute quantity (set completed to this value)
+      // This allows overproduction scenarios where you want to set completed to a specific amount
+      newCompletedQuantity = updateData.completedQuantity;
+      console.log(`🎯 KNITTING ABSOLUTE UPDATE: Setting completed from ${currentCompleted} to ${newCompletedQuantity}`);
+    } else {
+      // OTHER FLOORS: Treat as additive (add to existing completed)
+      newCompletedQuantity = currentCompleted + updateData.completedQuantity;
+      console.log(`📊 OTHER FLOOR ADDITIVE UPDATE: Adding ${updateData.completedQuantity} to existing ${currentCompleted} = ${newCompletedQuantity}`);
+    }
     
-    // Validate that the incremental amount is positive
+    // Validate that the quantity is positive
     if (updateData.completedQuantity <= 0) {
-      throw new ApiError(httpStatus.BAD_REQUEST, `Incremental quantity must be positive. You provided: ${updateData.completedQuantity}`);
+      throw new ApiError(httpStatus.BAD_REQUEST, `Quantity must be positive. You provided: ${updateData.completedQuantity}`);
     }
     
     // Validate final quantity against floor received quantity
@@ -97,9 +106,16 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
     }
     
     // For knitting floor, allow excess quantity (machines can generate more than received)
+    // This is normal behavior - machines can produce more than planned
     // For other floors, completed quantity cannot exceed received quantity
     if (normalizedFloor !== 'Knitting' && newCompletedQuantity > floorData.received) {
       throw new ApiError(httpStatus.BAD_REQUEST, `Invalid completed quantity: must be between 0 and received quantity (${floorData.received}). Calculated total: ${newCompletedQuantity}`);
+    }
+    
+    // Log overproduction for knitting floor
+    if (normalizedFloor === 'Knitting' && newCompletedQuantity > floorData.received) {
+      const overproduction = newCompletedQuantity - floorData.received;
+      console.log(`🎯 KNITTING OVERPRODUCTION: Received ${floorData.received}, Completed ${newCompletedQuantity}, Overproduction: ${overproduction}`);
     }
     
     // Update floor-specific quantities
@@ -109,8 +125,11 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
     // For knitting floor, remaining can be negative (excess generation)
     // For other floors, remaining is received - completed
     if (normalizedFloor === 'Knitting') {
+      // For knitting floor, remaining should never go negative due to overproduction
+      // If completed > received, remaining should be 0 (all planned work is done)
       floorData.remaining = Math.max(0, floorData.received - newCompletedQuantity);
     } else {
+      // For other floors, normal calculation
       floorData.remaining = floorData.received - newCompletedQuantity;
     }
     
@@ -190,7 +209,6 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
   // Create logs
   if (updateData.completedQuantity !== undefined) {
     const actualNewQuantity = floorData.completed; // This is the final calculated quantity
-    const isIncremental = updateData.completedQuantity < previousQuantity;
     
     if (actualNewQuantity !== previousQuantity) {
       await createQuantityUpdateLog({
@@ -201,9 +219,9 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
         newQuantity: actualNewQuantity,
         userId: user?.id || updateData.userId || 'system',
         floorSupervisorId: user?.id || updateData.floorSupervisorId || 'system',
-        remarks: isIncremental 
-          ? `Added ${updateData.completedQuantity} units to ${normalizedFloor} floor (${previousQuantity} + ${updateData.completedQuantity} = ${actualNewQuantity})`
-          : `Quantity updated from ${previousQuantity} to ${updateData.completedQuantity} on ${normalizedFloor} floor`,
+        remarks: normalizedFloor === 'Knitting'
+          ? `Set completed quantity to ${updateData.completedQuantity} on ${normalizedFloor} floor (was ${previousQuantity})`
+          : `Added ${updateData.completedQuantity} units to ${normalizedFloor} floor (${previousQuantity} + ${updateData.completedQuantity} = ${actualNewQuantity})`,
         machineId: updateData.machineId,
         shiftId: updateData.shiftId
       });
@@ -458,9 +476,12 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
   // For knitting floor overproduction, transfer the full completed amount (including excess)
   // For other floors, transfer the normal amount
   if (normalizedFloor === 'Knitting') {
-    nextFloorData.received = transferQuantity; // Transfer full completed amount (including overproduction)
+    // KNITTING OVERPRODUCTION: Transfer full completed amount (including overproduction)
+    nextFloorData.received = transferQuantity;
+    console.log(`🎯 KNITTING MANUAL TRANSFER: Transferring ${transferQuantity} units (including overproduction) to ${nextFloor}`);
   } else {
-    nextFloorData.received = transferQuantity; // Normal transfer
+    // Other floors: normal transfer
+    nextFloorData.received = transferQuantity;
   }
   
   nextFloorData.remaining = nextFloorData.received;
@@ -581,9 +602,13 @@ const transferCompletedWorkToNextFloor = async (article, updateData, user = null
   // For knitting floor overproduction, transfer the full completed amount (including excess)
   // For other floors, transfer the normal amount
   if (sourceFloor === 'Knitting') {
-    nextFloorData.received = sourceFloorData.completed; // Transfer full completed amount (including overproduction)
+    // KNITTING OVERPRODUCTION: Transfer full completed amount (including overproduction)
+    // Example: Received 1000, Completed 1200, Transfer 1200 to next floor
+    nextFloorData.received = sourceFloorData.completed;
+    console.log(`🎯 KNITTING TRANSFER: Transferring ${sourceFloorData.completed} units (including overproduction) to ${nextFloor}`);
   } else {
-    nextFloorData.received = sourceFloorData.transferred; // Normal transfer
+    // Other floors: normal transfer based on transferred quantity
+    nextFloorData.received = sourceFloorData.transferred;
   }
   
   nextFloorData.remaining = nextFloorData.received - (nextFloorData.completed || 0);

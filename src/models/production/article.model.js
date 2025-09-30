@@ -283,16 +283,30 @@ articleSchema.pre('save', function(next) {
     const transferred = floorData.transferred || 0;
     
     // Basic validation: completed and transferred cannot exceed received
-    if (completed > received && received > 0) {
+    // EXCEPTION: Knitting floor allows overproduction (completed can exceed received)
+    if (completed > received && received > 0 && floorKey !== 'knitting') {
       console.warn(`🚨 ${floorKey}: Completed (${completed}) > Received (${received}). Auto-fixing...`);
       floorData.completed = received;
       floorData.remaining = received - transferred;
     }
     
-    if (transferred > received && received > 0) {
+    // Special handling for knitting floor overproduction
+    if (floorKey === 'knitting' && completed > received && received > 0) {
+      console.log(`🎯 KNITTING OVERPRODUCTION DETECTED: Completed (${completed}) > Received (${received}). Overproduction: ${completed - received}`);
+      // Don't auto-fix knitting overproduction - it's allowed
+    }
+    
+    // Transferred validation: cannot exceed received (except knitting floor)
+    if (transferred > received && received > 0 && floorKey !== 'knitting') {
       console.warn(`🚨 ${floorKey}: Transferred (${transferred}) > Received (${received}). Auto-fixing...`);
       floorData.transferred = received;
       floorData.remaining = received - completed;
+    }
+    
+    // Special handling for knitting floor transferred overproduction
+    if (floorKey === 'knitting' && transferred > received && received > 0) {
+      console.log(`🎯 KNITTING TRANSFERRED OVERPRODUCTION: Transferred (${transferred}) > Received (${received}). This is allowed for knitting floor.`);
+      // Don't auto-fix knitting transferred overproduction - it's allowed
     }
     
     // Quality validation for checking floors
@@ -412,6 +426,10 @@ articleSchema.methods.updateCompletedQuantity = async function(floor, newQuantit
     }
     // Allow overproduction in knitting (newQuantity can exceed received)
     // This is normal behavior - machines can produce more than planned
+    if (newQuantity > floorData.received) {
+      const overproduction = newQuantity - floorData.received;
+      console.log(`🎯 KNITTING OVERPRODUCTION: Received ${floorData.received}, Completed ${newQuantity}, Overproduction: ${overproduction}`);
+    }
   } else if (floor === ProductionFloor.CHECKING || floor === ProductionFloor.FINAL_CHECKING) {
     // For checking floors, validate against received quantity
     if (newQuantity < 0 || newQuantity > floorData.received) {
@@ -437,6 +455,7 @@ articleSchema.methods.updateCompletedQuantity = async function(floor, newQuantit
   if (floor === ProductionFloor.KNITTING && newQuantity > floorData.received) {
     // Overproduction scenario: show 0 instead of negative remaining
     floorData.remaining = 0;
+    console.log(`🎯 KNITTING OVERPRODUCTION: Remaining set to 0 (overproduction: ${newQuantity - floorData.received})`);
   } else {
     // Normal scenario
     floorData.remaining = Math.max(0, floorData.received - newQuantity);
@@ -476,7 +495,8 @@ articleSchema.methods.updateCompletedQuantity = async function(floor, newQuantit
     newQuantity,
     deltaQuantity: newQuantity - previousQuantity,
     remaining: floorData.remaining,
-    isOverproduction: floor === ProductionFloor.KNITTING && newQuantity > floorData.received
+    isOverproduction: floor === ProductionFloor.KNITTING && newQuantity > floorData.received,
+    overproductionAmount: floor === ProductionFloor.KNITTING && newQuantity > floorData.received ? newQuantity - floorData.received : 0
   };
 };
 
@@ -524,6 +544,7 @@ articleSchema.methods.transferFromFloor = async function(fromFloor, quantity, us
       throw new Error(`Transfer quantity (${quantity}) cannot exceed completed quantity (${fromFloorData.completed}) on ${fromFloor} floor`);
     }
     // Note: Transfer quantity can exceed received quantity due to overproduction - this is normal
+    console.log(`🎯 KNITTING TRANSFER: Transferring ${quantity} units (completed: ${fromFloorData.completed}, received: ${fromFloorData.received})`);
   } else if (fromFloor === ProductionFloor.CHECKING || fromFloor === ProductionFloor.FINAL_CHECKING) {
     // For checking floors, validate against M1 quantity (good quality items)
     const m1Quantity = fromFloorData.m1Quantity || 0;
@@ -587,7 +608,9 @@ articleSchema.methods.transferFromFloor = async function(fromFloor, quantity, us
   // Calculate remaining - handle overproduction for knitting floor
   if (fromFloor === ProductionFloor.KNITTING) {
     // For knitting floor, remaining should never go negative due to overproduction
+    // If completed > received (overproduction), remaining should be 0
     fromFloorData.remaining = Math.max(0, fromFloorData.received - fromFloorData.transferred);
+    console.log(`🎯 KNITTING REMAINING: Received ${fromFloorData.received}, Transferred ${fromFloorData.transferred}, Remaining ${fromFloorData.remaining}`);
   } else if (fromFloor === ProductionFloor.CHECKING || fromFloor === ProductionFloor.FINAL_CHECKING) {
     // For checking floors, remaining is based on M1 remaining
     fromFloorData.remaining = fromFloorData.m1Remaining;
@@ -605,8 +628,16 @@ articleSchema.methods.transferFromFloor = async function(fromFloor, quantity, us
   }
   
   // Update next floor: mark as received
-  nextFloorData.received += quantity;
-  nextFloorData.remaining += quantity;
+  // For knitting floor overproduction, transfer the full completed amount (including excess)
+  if (fromFloor === ProductionFloor.KNITTING) {
+    // KNITTING OVERPRODUCTION: Transfer full completed amount (including overproduction)
+    nextFloorData.received = fromFloorData.completed;
+    console.log(`🎯 KNITTING MODEL TRANSFER: Transferring ${fromFloorData.completed} units (including overproduction) to ${nextFloor}`);
+  } else {
+    // Other floors: normal additive transfer
+    nextFloorData.received += quantity;
+  }
+  nextFloorData.remaining = nextFloorData.received - (nextFloorData.completed || 0);
   
   // Ensure next floor quantities are consistent
   if (nextFloorData.completed > nextFloorData.received) {
@@ -869,20 +900,32 @@ articleSchema.methods.fixFloorDataCorruption = function() {
     const transferred = floorData.transferred || 0;
     const remaining = floorData.remaining || 0;
     
-    // Fix 1: Transferred cannot exceed received
-    if (transferred > received && received > 0) {
+    // Fix 1: Transferred cannot exceed received (except knitting floor)
+    if (transferred > received && received > 0 && floorKey !== 'knitting') {
       const oldTransferred = transferred;
       floorData.transferred = received;
       floorData.remaining = received - completed;
       fixes.push(`${floorKey}: reduced transferred from ${oldTransferred} to ${received}`);
     }
     
-    // Fix 2: Completed cannot exceed received
-    if (completed > received && received > 0) {
+    // Special handling for knitting floor transferred overproduction in corruption fix
+    if (floorKey === 'knitting' && transferred > received && received > 0) {
+      console.log(`🎯 KNITTING TRANSFERRED OVERPRODUCTION IN CORRUPTION FIX: Transferred (${transferred}) > Received (${received}). This is allowed for knitting floor.`);
+      // Don't fix knitting transferred overproduction - it's allowed
+    }
+    
+    // Fix 2: Completed cannot exceed received (except knitting floor)
+    if (completed > received && received > 0 && floorKey !== 'knitting') {
       const oldCompleted = completed;
       floorData.completed = received;
       floorData.remaining = received - transferred;
       fixes.push(`${floorKey}: reduced completed from ${oldCompleted} to ${received}`);
+    }
+    
+    // Special handling for knitting floor overproduction in corruption fix
+    if (floorKey === 'knitting' && completed > received && received > 0) {
+      console.log(`🎯 KNITTING OVERPRODUCTION IN CORRUPTION FIX: Completed (${completed}) > Received (${received}). Overproduction: ${completed - received}. Allowing overproduction.`);
+      // Don't fix knitting overproduction - it's allowed
     }
     
     // Fix 3: Remaining calculation - handle overproduction for knitting floor
