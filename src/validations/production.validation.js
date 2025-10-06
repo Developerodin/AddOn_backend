@@ -232,6 +232,7 @@ const qualityInspection = {
     repairStatus: Joi.string().valid('Not Required', 'In Review', 'Repaired', 'Rejected').optional(),
     repairRemarks: Joi.string().allow('').optional(),
     remarks: Joi.string().allow('').optional(),
+    floor: Joi.string().valid('Checking', 'Final Checking').optional(),
     userId: Joi.string().custom(objectId).optional(),
     floorSupervisorId: Joi.string().custom(objectId).optional(),
     machineId: Joi.string().optional(),

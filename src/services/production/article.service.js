@@ -924,31 +924,52 @@ export const qualityInspection = async (articleId, inspectionData, user = null) 
   }
 
   // Determine which floor to perform quality inspection on
-  // Priority: Choose the floor with remaining work to inspect
   let targetFloor = null;
   const finalCheckingData = article.floorQuantities.finalChecking;
   const checkingData = article.floorQuantities.checking;
   
-  // If Final Checking has remaining work to inspect, use Final Checking
-  if (finalCheckingData && finalCheckingData.remaining > 0) {
-    targetFloor = 'Final Checking';
+  // If floor is specified in request, use that floor
+  if (inspectionData.floor) {
+    targetFloor = inspectionData.floor;
+    console.log(`🎯 User specified floor: ${targetFloor}`);
   }
-  // Otherwise, if Checking has remaining work to inspect, use Checking
-  else if (checkingData && checkingData.remaining > 0) {
-    targetFloor = 'Checking';
-  }
-  // If no remaining work, but there's received work, choose the floor with more remaining
-  else if (finalCheckingData && checkingData && 
-           (finalCheckingData.received > 0 || checkingData.received > 0)) {
+  // Otherwise, choose the floor with MORE remaining work to inspect
+  else {
     // Choose the floor with more remaining work
-    if (checkingData.remaining >= finalCheckingData.remaining) {
+    if (checkingData && checkingData.remaining > 0 && finalCheckingData && finalCheckingData.remaining > 0) {
+      // Both floors have remaining work - choose the one with more remaining
+      if (checkingData.remaining >= finalCheckingData.remaining) {
+        targetFloor = 'Checking';
+      } else {
+        targetFloor = 'Final Checking';
+      }
+    }
+    // If only Checking has remaining work
+    else if (checkingData && checkingData.remaining > 0) {
       targetFloor = 'Checking';
-    } else {
+    }
+    // If only Final Checking has remaining work
+    else if (finalCheckingData && finalCheckingData.remaining > 0) {
       targetFloor = 'Final Checking';
     }
+    // If no remaining work, but there's received work, choose the floor with more remaining
+    else if (finalCheckingData && checkingData && 
+             (finalCheckingData.received > 0 || checkingData.received > 0)) {
+      // Choose the floor with more remaining work
+      if (checkingData.remaining >= finalCheckingData.remaining) {
+        targetFloor = 'Checking';
+      } else {
+        targetFloor = 'Final Checking';
+      }
+    }
+    else {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'No quality inspection work available on Checking or Final Checking floors');
+    }
   }
-  else {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'No quality inspection work available on Checking or Final Checking floors');
+  
+  // Validate the target floor
+  if (targetFloor !== 'Checking' && targetFloor !== 'Final Checking') {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Target floor must be either "Checking" or "Final Checking"');
   }
 
   const previousProgress = article.progress;
@@ -980,21 +1001,21 @@ export const qualityInspection = async (articleId, inspectionData, user = null) 
   if (targetFloorData) {
     // Debug: Log current quantities before update
     console.log(`📊 Before update: completed=${targetFloorData.completed || 0}, m1=${targetFloorData.m1Quantity || 0}, m2=${targetFloorData.m2Quantity || 0}, m3=${targetFloorData.m3Quantity || 0}, m4=${targetFloorData.m4Quantity || 0}`);
-    console.log(`📥 Adding: inspectedQuantity=${inspectionData.inspectedQuantity || 0}, m1=${inspectionData.m1Quantity || 0}, m2=${inspectionData.m2Quantity || 0}, m3=${inspectionData.m3Quantity || 0}, m4=${inspectionData.m4Quantity || 0}`);
+    console.log(`📥 Processing: inspectedQuantity=${inspectionData.inspectedQuantity || 0}, m1=${inspectionData.m1Quantity || 0} (additive), m2=${inspectionData.m2Quantity || 0} (set), m3=${inspectionData.m3Quantity || 0} (set), m4=${inspectionData.m4Quantity || 0} (set)`);
     
-    // FIXED: Add quantities instead of setting them (additive behavior)
-    // When user sends m1Quantity: 500, it means "add 500 to existing M1", not "set M1 to 500"
+    // M1 quantity is additive (represents new completed work)
+    // M2, M3, M4 quantities are set directly (represents current inspection results)
     if (inspectionData.m1Quantity !== undefined) {
       targetFloorData.m1Quantity = (targetFloorData.m1Quantity || 0) + inspectionData.m1Quantity;
     }
     if (inspectionData.m2Quantity !== undefined) {
-      targetFloorData.m2Quantity = (targetFloorData.m2Quantity || 0) + inspectionData.m2Quantity;
+      targetFloorData.m2Quantity = inspectionData.m2Quantity;
     }
     if (inspectionData.m3Quantity !== undefined) {
-      targetFloorData.m3Quantity = (targetFloorData.m3Quantity || 0) + inspectionData.m3Quantity;
+      targetFloorData.m3Quantity = inspectionData.m3Quantity;
     }
     if (inspectionData.m4Quantity !== undefined) {
-      targetFloorData.m4Quantity = (targetFloorData.m4Quantity || 0) + inspectionData.m4Quantity;
+      targetFloorData.m4Quantity = inspectionData.m4Quantity;
     }
     
     // FIXED: Add to completed quantity based on M1 quantity only (not total inspected quantity)
