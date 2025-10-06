@@ -100,6 +100,46 @@ export const createProductionOrder = async (orderBody, user = null) => {
  * @returns {Promise<QueryResult>}
  */
 export const queryProductionOrders = async (filter, options) => {
+  // Handle search functionality
+  if (filter.search) {
+    const searchTerm = filter.search;
+    delete filter.search; // Remove search from filter to avoid conflicts
+    
+    // First, search for orders by orderNumber
+    const orderNumberQuery = { orderNumber: { $regex: searchTerm, $options: 'i' } };
+    
+    // Also search for articles with matching articleNumber and get their orderIds
+    const matchingArticles = await Article.find(
+      { articleNumber: { $regex: searchTerm, $options: 'i' } },
+      { orderId: 1 }
+    );
+    
+    const orderIds = matchingArticles.map(article => article.orderId);
+    
+    // Create search query combining both orderNumber and articleNumber searches
+    const searchQuery = {
+      $or: [
+        orderNumberQuery,
+        ...(orderIds.length > 0 ? [{ _id: { $in: orderIds } }] : [])
+      ]
+    };
+    
+    // Merge search query with existing filter
+    const finalFilter = { ...filter, ...searchQuery };
+    
+    const orders = await ProductionOrder.paginate(finalFilter, {
+      ...options,
+      populate: {
+        path: 'articles',
+        populate: {
+          path: 'machineId',
+          select: 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor'
+        }
+      }
+    });
+    return orders;
+  }
+  
   const orders = await ProductionOrder.paginate(filter, {
     ...options,
     populate: {

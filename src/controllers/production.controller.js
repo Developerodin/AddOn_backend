@@ -15,7 +15,7 @@ export const createProductionOrder = catchAsync(async (req, res) => {
 export const getProductionOrders = catchAsync(async (req, res) => {
   const allowedFilterFields = [
     'orderNumber', 'priority', 'status', 'currentFloor', 'customerId', 
-    'customerName', 'customerOrderNumber', 'createdBy', 'lastModifiedBy'
+    'customerName', 'customerOrderNumber', 'createdBy', 'lastModifiedBy', 'search'
   ];
   
   const filter = pick(req.query, allowedFilterFields);
