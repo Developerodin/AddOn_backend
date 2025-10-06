@@ -48,6 +48,27 @@ router
   .route('/:machineId/assign-supervisor')
   .patch(validate(machineValidation.assignSupervisor), machineController.assignSupervisor);
 
+// Machine Usage Analytics Routes
+router
+  .route('/:machineId/usage-analytics')
+  .get(machineController.getMachineUsageAnalytics);
+
+router
+  .route('/:machineId/current-status')
+  .get(machineController.getMachineCurrentStatus);
+
+router
+  .route('/:machineId/workload')
+  .get(machineController.getMachineWorkload);
+
+router
+  .route('/:machineId/performance-metrics')
+  .get(machineController.getMachinePerformanceMetrics);
+
+router
+  .route('/usage-overview')
+  .get(machineController.getAllMachinesUsageOverview);
+
 export default router;
 
 /**

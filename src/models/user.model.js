@@ -101,6 +101,7 @@ const userSchema = mongoose.Schema(
           'Boarding Floor': false,
           'Final Checking Floor': false,
           'Branding Floor': false,
+          'Machine Floor': false,
           'Warehouse Floor': false
         }
       }

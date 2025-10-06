@@ -88,6 +88,39 @@ const getMachineStatistics = catchAsync(async (req, res) => {
   res.send(statistics);
 });
 
+const getMachineUsageAnalytics = catchAsync(async (req, res) => {
+  const { machineId } = req.params;
+  const { startDate, endDate, period } = req.query;
+  const analytics = await machineService.getMachineUsageAnalytics(machineId, { startDate, endDate, period });
+  res.send(analytics);
+});
+
+const getMachineCurrentStatus = catchAsync(async (req, res) => {
+  const { machineId } = req.params;
+  const status = await machineService.getMachineCurrentStatus(machineId);
+  res.send(status);
+});
+
+const getMachineWorkload = catchAsync(async (req, res) => {
+  const { machineId } = req.params;
+  const { date } = req.query;
+  const workload = await machineService.getMachineWorkload(machineId, date);
+  res.send(workload);
+});
+
+const getMachinePerformanceMetrics = catchAsync(async (req, res) => {
+  const { machineId } = req.params;
+  const { startDate, endDate } = req.query;
+  const metrics = await machineService.getMachinePerformanceMetrics(machineId, { startDate, endDate });
+  res.send(metrics);
+});
+
+const getAllMachinesUsageOverview = catchAsync(async (req, res) => {
+  const { floor, status } = req.query;
+  const overview = await machineService.getAllMachinesUsageOverview({ floor, status });
+  res.send(overview);
+});
+
 const deleteMachine = catchAsync(async (req, res) => {
   await machineService.deleteMachineById(req.params.machineId);
   res.status(httpStatus.NO_CONTENT).send();
@@ -106,5 +139,10 @@ export {
   getMachinesNeedingMaintenance,
   getMachinesBySupervisor,
   getMachineStatistics,
+  getMachineUsageAnalytics,
+  getMachineCurrentStatus,
+  getMachineWorkload,
+  getMachinePerformanceMetrics,
+  getAllMachinesUsageOverview,
   deleteMachine,
 };

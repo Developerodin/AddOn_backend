@@ -189,6 +189,7 @@ export const validateNavigationStructure = (navigation) => {
     'Boarding Floor',
     'Final Checking Floor',
     'Branding Floor',
+    'Machine Floor',
     'Warehouse Floor'
   ];
   for (const key of productionKeys) {
