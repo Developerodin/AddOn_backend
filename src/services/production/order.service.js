@@ -176,7 +176,35 @@ export const updateProductionOrderById = async (orderId, updateBody) => {
         articleId = articleData._id;
       }
       
-      if (articleId) {
+      // If no ID found but we have article data, create a new article
+      if (!articleId && typeof articleData === 'object' && articleData !== null && articleData.articleNumber) {
+        console.log(`Creating new article for articleNumber: ${articleData.articleNumber}`);
+        
+        const currentUserId = updateBody.lastModifiedBy || order.lastModifiedBy || 'system';
+        
+        const newArticle = new Article({
+          id: `ART${Date.now()}${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
+          orderId: order._id,
+          articleNumber: articleData.articleNumber,
+          articleName: articleData.articleName || '',
+          plannedQuantity: articleData.plannedQuantity || 0,
+          linkingType: articleData.linkingType || 'Manual Linking',
+          priority: articleData.priority || 'Medium',
+          remarks: articleData.remarks || '',
+          machineId: articleData.machineId || null,
+          color: articleData.color || '',
+          size: articleData.size || '',
+          unit: articleData.unit || 'PCS',
+          createdBy: currentUserId,
+          lastModifiedBy: currentUserId
+        });
+        
+        articleDoc = await newArticle.save();
+        console.log(`Created new article: ${articleDoc._id} (${articleDoc.articleNumber})`);
+        articleIds.push(articleDoc._id);
+      } else if (articleId) {
+        console.log(`Looking for article with ID: ${articleId}`);
+        
         // Check if it's a valid MongoDB ObjectId (24 hex characters)
         if (mongoose.Types.ObjectId.isValid(articleId) && articleId.length === 24) {
           articleDoc = await Article.findById(articleId);
@@ -186,6 +214,8 @@ export const updateProductionOrderById = async (orderId, updateBody) => {
         }
         
         if (articleDoc) {
+          console.log(`Found article: ${articleDoc._id} (${articleDoc.articleNumber})`);
+          
           // Update article data if provided
           if (typeof articleData === 'object' && articleData !== null) {
             const updateFields = {};
@@ -206,11 +236,41 @@ export const updateProductionOrderById = async (orderId, updateBody) => {
           articleIds.push(articleDoc._id);
         } else {
           console.warn(`Article with ID ${articleId} not found`);
+          
+          // If article doesn't exist but we have article data, create a new one
+          if (typeof articleData === 'object' && articleData !== null && articleData.articleNumber) {
+            console.log(`Creating new article for ID: ${articleId}`);
+            
+            const currentUserId = updateBody.lastModifiedBy || order.lastModifiedBy || 'system';
+            
+            const newArticle = new Article({
+              id: articleId,
+              orderId: order._id,
+              articleNumber: articleData.articleNumber,
+              articleName: articleData.articleName || '',
+              plannedQuantity: articleData.plannedQuantity || 0,
+              linkingType: articleData.linkingType || 'Manual Linking',
+              priority: articleData.priority || 'Medium',
+              remarks: articleData.remarks || '',
+              machineId: articleData.machineId || null,
+              color: articleData.color || '',
+              size: articleData.size || '',
+              unit: articleData.unit || 'PCS',
+              createdBy: currentUserId,
+              lastModifiedBy: currentUserId
+            });
+            
+            articleDoc = await newArticle.save();
+            console.log(`Created new article: ${articleDoc._id} (${articleDoc.articleNumber})`);
+            articleIds.push(articleDoc._id);
+          }
         }
       }
     }
     
-    updateBody.articles = articleIds;
+    // Update the order's articles array with the processed article IDs
+    console.log(`Final articleIds array: ${JSON.stringify(articleIds)}`);
+    order.articles = articleIds;
   }
 
   // Update other fields
@@ -218,11 +278,6 @@ export const updateProductionOrderById = async (orderId, updateBody) => {
   delete fieldsToUpdate.articles; // Handle articles separately
 
   Object.assign(order, fieldsToUpdate);
-  
-  // Update articles if provided
-  if (updateBody.articles) {
-    order.articles = updateBody.articles;
-  }
 
   await order.save();
 
