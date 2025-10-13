@@ -77,22 +77,14 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
       throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid floor for quantity update');
     }
     
-    // FIXED: Handle quantity updates differently for knitting floor vs other floors
-    // For knitting floor: treat as absolute quantity (set completed to this value)
-    // For other floors: treat as additive (add to existing completed)
+    // Handle quantity updates as additive for all floors
+    // This allows cumulative updates where each request adds to the existing completed quantity
     let newCompletedQuantity;
     const currentCompleted = floorData.completed;
     
-    if (normalizedFloor === 'Knitting') {
-      // KNITTING FLOOR: Treat as absolute quantity (set completed to this value)
-      // This allows overproduction scenarios where you want to set completed to a specific amount
-      newCompletedQuantity = updateData.completedQuantity;
-      console.log(`🎯 KNITTING ABSOLUTE UPDATE: Setting completed from ${currentCompleted} to ${newCompletedQuantity}`);
-    } else {
-      // OTHER FLOORS: Treat as additive (add to existing completed)
-      newCompletedQuantity = currentCompleted + updateData.completedQuantity;
-      console.log(`📊 OTHER FLOOR ADDITIVE UPDATE: Adding ${updateData.completedQuantity} to existing ${currentCompleted} = ${newCompletedQuantity}`);
-    }
+    // ALL FLOORS: Treat as additive (add to existing completed)
+    newCompletedQuantity = currentCompleted + updateData.completedQuantity;
+    console.log(`📊 ADDITIVE UPDATE: Adding ${updateData.completedQuantity} to existing ${currentCompleted} = ${newCompletedQuantity}`);
     
     // Validate that the quantity is positive
     if (updateData.completedQuantity <= 0) {
@@ -100,13 +92,7 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
     }
     
     // Validate final quantity against floor received quantity
-    // Special case: Knitting floor can generate excess quantity that gets passed to next floor
-    if (newCompletedQuantity < 0) {
-      throw new ApiError(httpStatus.BAD_REQUEST, `Invalid completed quantity: must be positive. Calculated total: ${newCompletedQuantity}`);
-    }
-    
     // For knitting floor, allow excess quantity (machines can generate more than received)
-    // This is normal behavior - machines can produce more than planned
     // For other floors, completed quantity cannot exceed received quantity
     if (normalizedFloor !== 'Knitting' && newCompletedQuantity > floorData.received) {
       throw new ApiError(httpStatus.BAD_REQUEST, `Invalid completed quantity: must be between 0 and received quantity (${floorData.received}). Calculated total: ${newCompletedQuantity}`);
@@ -122,6 +108,7 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
     const previousFloorCompleted = floorData.completed;
     floorData.completed = newCompletedQuantity;
     
+    // Calculate remaining quantity
     // For knitting floor, remaining can be negative (excess generation)
     // For other floors, remaining is received - completed
     if (normalizedFloor === 'Knitting') {
