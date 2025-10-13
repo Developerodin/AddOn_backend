@@ -156,14 +156,11 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
     }
   }
   
-  // Update knitting floor m4Quantity (defect quantity) - absolute value (replace existing)
+  // Update knitting floor m4Quantity (defect quantity) - additive
   if (normalizedFloor === 'Knitting' && updateData.m4Quantity !== undefined) {
     const knittingFloorData = article.floorQuantities.knitting;
     if (knittingFloorData) {
-      const previousM4Quantity = knittingFloorData.m4Quantity || 0;
-      knittingFloorData.m4Quantity = updateData.m4Quantity; // Replace with new value
-      
-      console.log(`🎯 KNITTING M4 REPLACE: Previous=${previousM4Quantity}, New Value=${updateData.m4Quantity}`);
+      knittingFloorData.m4Quantity = (knittingFloorData.m4Quantity || 0) + updateData.m4Quantity;
     }
   }
 

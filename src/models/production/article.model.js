@@ -1,4 +1,4 @@
- import mongoose from 'mongoose';
+import mongoose from 'mongoose';
 import { OrderStatus, Priority, LinkingType, ProductionFloor, RepairStatus } from './enums.js';
 import ArticleLog from './articleLog.model.js';
 import { 
@@ -451,11 +451,11 @@ articleSchema.methods.updateCompletedQuantity = async function(floor, newQuantit
   const previousQuantity = floorData.completed;
   floorData.completed = newQuantity;
   
-  // Calculate remaining quantity - handle overproduction for all floors
-  if (newQuantity > floorData.received) {
+  // Calculate remaining quantity - handle overproduction
+  if (floor === ProductionFloor.KNITTING && newQuantity > floorData.received) {
     // Overproduction scenario: show 0 instead of negative remaining
     floorData.remaining = 0;
-    console.log(`📈 OVERPRODUCTION (${floor}): Remaining set to 0 (overproduction: ${newQuantity - floorData.received})`);
+    console.log(`🎯 KNITTING OVERPRODUCTION: Remaining set to 0 (overproduction: ${newQuantity - floorData.received})`);
   } else {
     // Normal scenario
     floorData.remaining = Math.max(0, floorData.received - newQuantity);
@@ -495,8 +495,8 @@ articleSchema.methods.updateCompletedQuantity = async function(floor, newQuantit
     newQuantity,
     deltaQuantity: newQuantity - previousQuantity,
     remaining: floorData.remaining,
-    isOverproduction: newQuantity > floorData.received,
-    overproductionAmount: newQuantity > floorData.received ? newQuantity - floorData.received : 0
+    isOverproduction: floor === ProductionFloor.KNITTING && newQuantity > floorData.received,
+    overproductionAmount: floor === ProductionFloor.KNITTING && newQuantity > floorData.received ? newQuantity - floorData.received : 0
   };
 };
 
