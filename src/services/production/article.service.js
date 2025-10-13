@@ -143,11 +143,11 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
     }
   }
   
-  // Update knitting floor m4Quantity (defect quantity) - additive
+  // Update knitting floor m4Quantity (defect quantity) - replace existing value
   if (normalizedFloor === 'Knitting' && updateData.m4Quantity !== undefined) {
     const knittingFloorData = article.floorQuantities.knitting;
     if (knittingFloorData) {
-      knittingFloorData.m4Quantity = (knittingFloorData.m4Quantity || 0) + updateData.m4Quantity;
+      knittingFloorData.m4Quantity = updateData.m4Quantity;
     }
   }
 
