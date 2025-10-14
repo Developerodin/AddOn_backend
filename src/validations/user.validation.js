@@ -44,6 +44,12 @@ const createUser = {
         'Branding Floor': Joi.boolean(),
         'Machine Floor': Joi.boolean(),
         'Warehouse Floor': Joi.boolean()
+      }),
+      'Yarn Management': Joi.object().keys({
+        'Cataloguing': Joi.boolean(),
+        'Purchase': Joi.boolean(),
+        'Inventory': Joi.boolean(),
+        'Yarn Issue': Joi.boolean()
       })
     }).optional(),
   }),
@@ -112,6 +118,12 @@ const updateUser = {
           'Branding Floor': Joi.boolean(),
           'Machine Floor': Joi.boolean(),
           'Warehouse Floor': Joi.boolean()
+        }),
+        'Yarn Management': Joi.object().keys({
+          'Cataloguing': Joi.boolean(),
+          'Purchase': Joi.boolean(),
+          'Inventory': Joi.boolean(),
+          'Yarn Issue': Joi.boolean()
         })
       }),
     })
@@ -154,6 +166,12 @@ const updateUserNavigation = {
           'Branding Floor': Joi.boolean(),
           'Machine Floor': Joi.boolean(),
           'Warehouse Floor': Joi.boolean()
+        }),
+        'Yarn Management': Joi.object().keys({
+          'Cataloguing': Joi.boolean(),
+          'Purchase': Joi.boolean(),
+          'Inventory': Joi.boolean(),
+          'Yarn Issue': Joi.boolean()
         })
       }).required(),
     })

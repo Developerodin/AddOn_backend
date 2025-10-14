@@ -147,7 +147,7 @@ export const validateNavigationStructure = (navigation) => {
   }
 
   // Check required top-level keys
-  const requiredKeys = ['Dashboard', 'Catalog', 'Sales', 'Stores', 'Analytics', 'Replenishment Agent', 'File Manager', 'Users', 'Production Planning'];
+  const requiredKeys = ['Dashboard', 'Catalog', 'Sales', 'Stores', 'Analytics', 'Replenishment Agent', 'File Manager', 'Users', 'Production Planning', 'Yarn Management'];
   for (const key of requiredKeys) {
     if (!(key in navigation)) {
       return false;
@@ -194,6 +194,17 @@ export const validateNavigationStructure = (navigation) => {
   ];
   for (const key of productionKeys) {
     if (!(key in navigation['Production Planning']) || typeof navigation['Production Planning'][key] !== 'boolean') {
+      return false;
+    }
+  }
+
+  // Check Yarn Management structure
+  if (!navigation['Yarn Management'] || typeof navigation['Yarn Management'] !== 'object') {
+    return false;
+  }
+  const yarnKeys = ['Cataloguing', 'Purchase', 'Inventory', 'Yarn Issue'];
+  for (const key of yarnKeys) {
+    if (!(key in navigation['Yarn Management']) || typeof navigation['Yarn Management'][key] !== 'boolean') {
       return false;
     }
   }

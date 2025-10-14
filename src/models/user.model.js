@@ -103,6 +103,12 @@ const userSchema = mongoose.Schema(
           'Branding Floor': false,
           'Machine Floor': false,
           'Warehouse Floor': false
+        },
+        'Yarn Management': {
+          'Cataloguing': false,
+          'Purchase': false,
+          'Inventory': false,
+          'Yarn Issue': false
         }
       }
     }
