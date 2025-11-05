@@ -109,6 +109,13 @@ const userSchema = mongoose.Schema(
           'Purchase': false,
           'Inventory': false,
           'Yarn Issue': false
+        },
+        'Warehouse Management': {
+          'Orders': false,
+          'Pick&Pack': false,
+          'Layout': false,
+          'Stock': false,
+          'Reports': false
         }
       }
     }

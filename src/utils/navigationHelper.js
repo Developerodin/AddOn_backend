@@ -36,6 +36,19 @@ export const DEFAULT_NAVIGATION = {
     'Final Checking Floor': false,
     'Branding Floor': false,
     'Warehouse Floor': false
+  },
+  'Yarn Management': {
+    'Cataloguing': false,
+    'Purchase': false,
+    'Inventory': false,
+    'Yarn Issue': false
+  },
+  'Warehouse Management': {
+    'Orders': false,
+    'Pick&Pack': false,
+    'Layout': false,
+    'Stock': false,
+    'Reports': false
   }
 };
 
@@ -72,6 +85,19 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Final Checking Floor': true,
       'Branding Floor': true,
       'Warehouse Floor': true
+    },
+    'Yarn Management': {
+      'Cataloguing': true,
+      'Purchase': true,
+      'Inventory': true,
+      'Yarn Issue': true
+    },
+    'Warehouse Management': {
+      'Orders': true,
+      'Pick&Pack': true,
+      'Layout': true,
+      'Stock': true,
+      'Reports': true
     }
   },
   user: {
@@ -103,6 +129,19 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Final Checking Floor': false,
       'Branding Floor': false,
       'Warehouse Floor': false
+    },
+    'Yarn Management': {
+      'Cataloguing': false,
+      'Purchase': false,
+      'Inventory': false,
+      'Yarn Issue': false
+    },
+    'Warehouse Management': {
+      'Orders': false,
+      'Pick&Pack': false,
+      'Layout': false,
+      'Stock': false,
+      'Reports': false
     }
   }
 };
@@ -147,7 +186,7 @@ export const validateNavigationStructure = (navigation) => {
   }
 
   // Check required top-level keys
-  const requiredKeys = ['Dashboard', 'Catalog', 'Sales', 'Stores', 'Analytics', 'Replenishment Agent', 'File Manager', 'Users', 'Production Planning', 'Yarn Management'];
+  const requiredKeys = ['Dashboard', 'Catalog', 'Sales', 'Stores', 'Analytics', 'Replenishment Agent', 'File Manager', 'Users', 'Production Planning', 'Yarn Management', 'Warehouse Management'];
   for (const key of requiredKeys) {
     if (!(key in navigation)) {
       return false;
@@ -205,6 +244,17 @@ export const validateNavigationStructure = (navigation) => {
   const yarnKeys = ['Cataloguing', 'Purchase', 'Inventory', 'Yarn Issue'];
   for (const key of yarnKeys) {
     if (!(key in navigation['Yarn Management']) || typeof navigation['Yarn Management'][key] !== 'boolean') {
+      return false;
+    }
+  }
+
+  // Check Warehouse Management structure
+  if (!navigation['Warehouse Management'] || typeof navigation['Warehouse Management'] !== 'object') {
+    return false;
+  }
+  const warehouseKeys = ['Orders', 'Pick&Pack', 'Layout', 'Stock', 'Reports'];
+  for (const key of warehouseKeys) {
+    if (!(key in navigation['Warehouse Management']) || typeof navigation['Warehouse Management'][key] !== 'boolean') {
       return false;
     }
   }

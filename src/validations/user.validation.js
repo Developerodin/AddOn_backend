@@ -50,6 +50,13 @@ const createUser = {
         'Purchase': Joi.boolean(),
         'Inventory': Joi.boolean(),
         'Yarn Issue': Joi.boolean()
+      }),
+      'Warehouse Management': Joi.object().keys({
+        'Orders': Joi.boolean(),
+        'Pick&Pack': Joi.boolean(),
+        'Layout': Joi.boolean(),
+        'Stock': Joi.boolean(),
+        'Reports': Joi.boolean()
       })
     }).optional(),
   }),
@@ -124,6 +131,13 @@ const updateUser = {
           'Purchase': Joi.boolean(),
           'Inventory': Joi.boolean(),
           'Yarn Issue': Joi.boolean()
+        }),
+        'Warehouse Management': Joi.object().keys({
+          'Orders': Joi.boolean(),
+          'Pick&Pack': Joi.boolean(),
+          'Layout': Joi.boolean(),
+          'Stock': Joi.boolean(),
+          'Reports': Joi.boolean()
         })
       }),
     })
@@ -172,6 +186,13 @@ const updateUserNavigation = {
           'Purchase': Joi.boolean(),
           'Inventory': Joi.boolean(),
           'Yarn Issue': Joi.boolean()
+        }),
+        'Warehouse Management': Joi.object().keys({
+          'Orders': Joi.boolean(),
+          'Pick&Pack': Joi.boolean(),
+          'Layout': Joi.boolean(),
+          'Stock': Joi.boolean(),
+          'Reports': Joi.boolean()
         })
       }).required(),
     })
