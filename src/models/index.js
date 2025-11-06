@@ -13,6 +13,7 @@ import Forecast from './forecast.model.js';
 import Replenishment from './replenishment.model.js';
 import FaqVector from './faqVector.model.js';
 import Machine from './machine.model.js';
+import Order from './order.model.js';
 
 export {
   Token,
@@ -30,4 +31,5 @@ export {
   Replenishment,
   FaqVector,
   Machine,
+  Order,
 };

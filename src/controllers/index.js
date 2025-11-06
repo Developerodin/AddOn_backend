@@ -11,6 +11,7 @@ import * as sealsExcelMasterController from './sealsExcelMaster.controller.js';
 import * as salesController from './sales.controller.js';
 import * as analyticsController from './analytics.controller.js';
 import * as machineController from './machine.controller.js';
+import * as orderController from './order.controller.js';
 
 export { 
   authController, 
@@ -25,6 +26,7 @@ export {
   sealsExcelMasterController,
   salesController,
   analyticsController,
-  machineController
+  machineController,
+  orderController
 };
 

@@ -20,6 +20,7 @@ import chatbotRoute from './chatbot.route.js';
 import faqRoute from './faq.route.js';
 import productionRoute from './production.route.js';
 import machineRoute from './machine.route.js';
+import orderRoute from './order.route.js';
 import config from '../../config/config.js';
 
 const router = express.Router();
@@ -104,6 +105,10 @@ const defaultRoutes = [
   {
     path: '/machines',
     route: machineRoute,
+  },
+  {
+    path: '/orders',
+    route: orderRoute,
   },
 ];
 
