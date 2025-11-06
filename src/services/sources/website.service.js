@@ -17,6 +17,8 @@ const fetchOrders = async ({ startDate, endDate, limit = 100 }) => {
     
     const url = new URL(`${medusaBaseUrl}/admin/orders`);
     url.searchParams.append('limit', limit.toString());
+    // Expand variant details to get SKU information
+    url.searchParams.append('expand', 'items.variant');
     if (startDate) {
       url.searchParams.append('created_at[gte]', startDate.toISOString());
     }
@@ -53,37 +55,79 @@ const normalizeOrder = (medusaOrder) => {
   const customer = medusaOrder.customer || {};
   const shippingAddress = medusaOrder.shipping_address || {};
   
+  // Handle Medusa v2 structure - total can be in summary.accounting_total or total
+  const orderTotal = medusaOrder.summary?.accounting_total || 
+                     medusaOrder.summary?.current_order_total || 
+                     medusaOrder.total || 0;
+  
+  // Convert from smallest currency unit (cents/paisa) to dollars
+  const totalAmount = typeof orderTotal === 'number' ? orderTotal / 100 : 0;
+  
   return {
     source: 'Website',
     externalOrderId: medusaOrder.id || medusaOrder.display_id?.toString(),
     customer: {
-      name: `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 'Guest',
-      phone: customer.phone || shippingAddress.phone || '',
+      name: `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 
+             `${shippingAddress.first_name || ''} ${shippingAddress.last_name || ''}`.trim() || 
+             'Guest',
+      phone: customer.phone || shippingAddress.phone || medusaOrder.phone || '',
       email: customer.email || medusaOrder.email || '',
       address: {
         street: shippingAddress.address_1 || '',
         city: shippingAddress.city || '',
-        state: shippingAddress.province || '',
-        country: shippingAddress.country_code || '',
-        zipCode: shippingAddress.postal_code || '',
+        state: shippingAddress.province || shippingAddress.state || '',
+        country: shippingAddress.country_code || shippingAddress.country || '',
+        zipCode: shippingAddress.postal_code || shippingAddress.zip || '',
         addressLine1: shippingAddress.address_1 || '',
         addressLine2: shippingAddress.address_2 || '',
       },
     },
-    items: (medusaOrder.items || []).map((item) => ({
-      sku: item.variant?.sku || item.variant_id || '',
-      name: item.title || item.variant?.title || 'Unknown Product',
-      quantity: item.quantity || 1,
-      price: item.unit_price / 100 || 0, // Medusa stores prices in cents
-    })),
+    items: (medusaOrder.items || []).map((item) => {
+      // Handle Medusa v2 - SKU can be at item level or in expanded variant
+      // Try multiple possible locations for SKU (prefer actual SKU fields)
+      let sku = item.variant_sku || 
+                item.variant?.sku || 
+                item.variant?.product?.variants?.[0]?.sku ||
+                item.sku ||
+                item.product?.variants?.[0]?.sku;
+      
+      // If no SKU found, use variant/product IDs as fallback identifiers
+      if (!sku || (typeof sku === 'string' && sku.trim() === '')) {
+        sku = item.variant_id || 
+              item.variant?.id || 
+              item.product_id || 
+              item.id;
+        
+        // If still no identifier, generate a unique fallback
+        if (!sku || (typeof sku === 'string' && sku.trim() === '')) {
+          sku = `FALLBACK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        }
+        
+        logger.warn(`Missing SKU for item ${item.id || 'unknown'}, using identifier: ${sku}`);
+      }
+      
+      const itemPrice = item.unit_price || item.price || 0;
+      const price = typeof itemPrice === 'number' ? itemPrice / 100 : 0; // Convert cents to dollars
+      
+      return {
+        sku: String(sku).trim(),
+        name: item.title || item.product_title || item.variant?.title || 'Unknown Product',
+        quantity: item.quantity || 1,
+        price,
+      };
+    }),
     payment: {
-      method: medusaOrder.payment_method || 'unknown',
-      status: medusaOrder.payment_status === 'captured' ? 'completed' : 'pending',
-      amount: medusaOrder.total / 100 || 0,
+      method: medusaOrder.payment_method || 
+              medusaOrder.payments?.[0]?.provider_id || 
+              'unknown',
+      status: getPaymentStatus(medusaOrder.payment_status),
+      amount: totalAmount,
     },
     logistics: {
       status: getLogisticsStatus(medusaOrder.fulfillment_status),
-      trackingId: medusaOrder.fulfillments?.[0]?.tracking_numbers?.[0] || '',
+      trackingId: medusaOrder.fulfillments?.[0]?.tracking_numbers?.[0] || 
+                  medusaOrder.shipments?.[0]?.tracking_number || 
+                  '',
       warehouse: medusaOrder.metadata?.warehouse || '',
       picker: medusaOrder.metadata?.picker || '',
     },
@@ -95,10 +139,28 @@ const normalizeOrder = (medusaOrder) => {
     meta: {
       displayId: medusaOrder.display_id,
       region: medusaOrder.region,
-      currency: medusaOrder.currency_code,
+      currency: medusaOrder.currency_code || medusaOrder.currency || 'USD',
       originalData: medusaOrder,
     },
   };
+};
+
+/**
+ * Map Medusa payment status to internal payment status
+ */
+const getPaymentStatus = (paymentStatus) => {
+  const statusMap = {
+    not_paid: 'pending',
+    awaiting: 'pending',
+    authorized: 'pending',
+    captured: 'completed',
+    partially_captured: 'completed',
+    partially_refunded: 'completed',
+    refunded: 'refunded',
+    canceled: 'failed',
+    requires_action: 'pending',
+  };
+  return statusMap[paymentStatus] || 'pending';
 };
 
 /**
