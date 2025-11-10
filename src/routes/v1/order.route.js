@@ -44,4 +44,17 @@ router
   .route('/:orderId/logistics')
   .patch(auth('manageOrders'), validate(orderValidation.updateLogisticsStatus), orderController.updateLogistics);
 
+// Website order status actions
+router
+  .route('/website/:externalOrderId/cancel')
+  .post(auth('manageOrders'), validate(orderValidation.updateWebsiteOrderStatus), orderController.cancelWebsiteOrder);
+
+router
+  .route('/website/:externalOrderId/complete')
+  .post(auth('manageOrders'), validate(orderValidation.updateWebsiteOrderStatus), orderController.completeWebsiteOrder);
+
+router
+  .route('/website/:externalOrderId/archive')
+  .post(auth('manageOrders'), validate(orderValidation.updateWebsiteOrderStatus), orderController.archiveWebsiteOrder);
+
 export default router;

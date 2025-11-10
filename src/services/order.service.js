@@ -237,7 +237,7 @@ const updateOrderById = async (orderId, updateBody) => {
     order.orderStatus = updateBody.orderStatus;
   }
 
-  // Update timestamps
+  // Update
   order.timestamps.updatedAt = new Date();
 
   await order.save();
@@ -260,6 +260,96 @@ const updateOrderStatus = async (orderId, orderStatus) => {
   order.timestamps.updatedAt = new Date();
   await order.save();
   return order;
+};
+
+/**
+ * Update Medusa website order status via external API
+ * @param {string} externalOrderId
+ * @param {('cancel'|'complete'|'archive')} action
+ * @returns {Promise<{medusaOrder: Object, order: Order|null}>}
+ */
+const updateWebsiteOrderStatus = async (externalOrderId, action) => {
+  if (!externalOrderId) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'externalOrderId is required');
+  }
+
+  const allowedActions = ['cancel', 'complete', 'archive'];
+  if (!allowedActions.includes(action)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, `Unsupported action: ${action}`);
+  }
+
+  logger.debug(
+    `Calling Medusa website update ${JSON.stringify({ externalOrderId, action })}`
+  );
+
+  let medusaResponse;
+  try {
+    medusaResponse = await websiteService.updateOrderStatus({ orderId: externalOrderId, status: action });
+  } catch (error) {
+    logger.error(
+      `Medusa website update failed ${JSON.stringify({
+        externalOrderId,
+        action,
+        message: error.message,
+        stack: error.stack,
+      })}`
+    );
+    throw error;
+  }
+
+  const medusaOrder = medusaResponse?.order || medusaResponse;
+  logger.debug(
+    `Medusa website update response received ${JSON.stringify({
+      externalOrderId,
+      action,
+      hasOrderPayload: Boolean(medusaOrder),
+      responseKeys:
+        medusaResponse && typeof medusaResponse === 'object'
+          ? Object.keys(medusaResponse)
+          : null,
+    })}`
+  );
+
+  let order = null;
+  if (medusaOrder) {
+    const normalizedOrder = websiteService.normalizeOrder(medusaOrder);
+    logger.debug(
+      `Syncing local website order ${JSON.stringify({
+        externalOrderId: normalizedOrder.externalOrderId,
+        action,
+      })}`
+    );
+    order = await Order.findBySourceAndExternalId('Website', normalizedOrder.externalOrderId);
+
+    if (order) {
+      Object.assign(order, normalizedOrder);
+      order.timestamps.updatedAt = new Date();
+      await order.save();
+      logger.debug(
+        `Updated existing local website order ${JSON.stringify({
+          localOrderId: order._id,
+          externalOrderId: normalizedOrder.externalOrderId,
+        })}`
+      );
+    } else {
+      order = await Order.create(normalizedOrder);
+      logger.debug(
+        `Created new local website order ${JSON.stringify({
+          localOrderId: order._id,
+          externalOrderId: normalizedOrder.externalOrderId,
+        })}`
+      );
+    }
+  } else {
+    logger.warn(
+      `No Medusa order payload returned after status update ${JSON.stringify({
+        externalOrderId,
+        action,
+      })}`
+    );
+  }
+
+  return { medusaOrder, order };
 };
 
 /**
@@ -341,6 +431,7 @@ export {
   getOrderBySourceAndExternalId,
   updateOrderById,
   updateOrderStatus,
+  updateWebsiteOrderStatus,
   updateLogistics,
   deleteOrderById,
   getOrderStatistics,

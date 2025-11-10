@@ -1,5 +1,4 @@
 import fetch from 'node-fetch';
-import config from '../../config/config.js';
 import logger from '../../config/logger.js';
 
 /**
@@ -194,4 +193,94 @@ const getOrderStatus = (status) => {
   return statusMap[status] || 'pending';
 };
 
-export { fetchOrders, normalizeOrder };
+/**
+ * Update the status of a Medusa order via admin endpoints
+ * @param {Object} options
+ * @param {string} options.orderId - Medusa order id (e.g. order_01K8ZXHQMJRQ9VEBEZPVSX42K0)
+ * @param {('cancel'|'complete'|'archive'|'cancelled'|'completed'|'archived')} options.status - Desired status/action
+ * @returns {Promise<Object>} Updated Medusa order response
+ */
+const updateOrderStatus = async ({ orderId, status }) => {
+  if (!orderId) {
+    throw new Error('orderId is required to update website order status');
+  }
+
+  const actionMap = {
+    cancel: 'cancel',
+    cancelled: 'cancel',
+    canceled: 'cancel',
+    complete: 'complete',
+    completed: 'complete',
+    archive: 'archive',
+    archived: 'archive',
+  };
+
+  const action = actionMap[status];
+
+  if (!action) {
+    throw new Error(`Unsupported status update for website order: ${status}`);
+  }
+
+  const medusaBaseUrl = process.env.MEDUSA_BACKEND_URL || 'http://localhost:9000';
+  const medusaApiKey = process.env.MEDUSA_API_KEY || '';
+
+  const endpoint = `${medusaBaseUrl}/admin/orders/${orderId}/${action}`;
+
+  const requestHeaders = {
+    'Authorization': `Bearer ${medusaApiKey}`,
+    'Content-Type': 'application/json',
+  };
+
+  logger.debug(
+    `Sending Medusa order status update ${JSON.stringify({
+      orderId,
+      requestedStatus: status,
+      action,
+      endpoint,
+      medusaBaseUrl,
+      hasApiKey: Boolean(medusaApiKey),
+      apiKeyLength: medusaApiKey ? medusaApiKey.length : 0,
+      headers: {
+        ...requestHeaders,
+        Authorization: medusaApiKey ? `Bearer ${medusaApiKey.substring(0, 10)}...` : 'Bearer (missing)',
+      },
+    })}`
+  );
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: requestHeaders,
+    body: JSON.stringify({}), // Send empty body as some APIs expect it
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    logger.error(
+      `Error updating website order status ${JSON.stringify({
+        orderId,
+        status,
+        action,
+        statusCode: response.status,
+        statusText: response.statusText,
+        requestUrl: endpoint,
+        responseUrl: response.url,
+        body: errorBody,
+        headers: Object.fromEntries(response.headers.entries()),
+      })}`
+    );
+    throw new Error(`Failed to update order ${orderId} status to ${status}: ${response.status} ${response.statusText}`);
+  }
+
+  const updatedOrder = await response.json();
+  logger.debug(
+    `Received Medusa order status update response ${JSON.stringify({
+      orderId,
+      action,
+      responseKeys: updatedOrder && typeof updatedOrder === 'object' ? Object.keys(updatedOrder) : null,
+    })}`
+  );
+  logger.info(`Updated website order ${orderId} status via ${action}`);
+  return updatedOrder;
+};
+
+export { fetchOrders, normalizeOrder, updateOrderStatus };

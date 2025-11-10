@@ -3,6 +3,7 @@ import pick from '../utils/pick.js';
 import ApiError from '../utils/ApiError.js';
 import catchAsync from '../utils/catchAsync.js';
 import * as orderService from '../services/order.service.js';
+import logger from '../config/logger.js';
 
 /**
  * Sync orders from a specific source
@@ -117,6 +118,39 @@ const updateOrderStatus = catchAsync(async (req, res) => {
   res.send(order);
 });
 
+const buildWebsiteStatusHandler = (action) =>
+  catchAsync(async (req, res) => {
+    const { externalOrderId } = req.params;
+    logger.debug(
+      `Website status update request received ${JSON.stringify({
+        action,
+        externalOrderId,
+        params: req.params,
+        query: req.query,
+        body: req.body,
+      })}`
+    );
+    const result = await orderService.updateWebsiteOrderStatus(externalOrderId, action);
+    logger.debug(
+      `Website status update succeeded ${JSON.stringify({
+        action,
+        externalOrderId,
+        medusaOrderId: result?.medusaOrder?.id || result?.medusaOrder?.order?.id,
+        hasLocalOrder: Boolean(result?.order?._id),
+      })}`
+    );
+
+    res.status(httpStatus.OK).json({
+      success: true,
+      message: `Website order ${externalOrderId} updated via ${action}`,
+      data: result,
+    });
+  });
+
+const cancelWebsiteOrder = buildWebsiteStatusHandler('cancel');
+const completeWebsiteOrder = buildWebsiteStatusHandler('complete');
+const archiveWebsiteOrder = buildWebsiteStatusHandler('archive');
+
 /**
  * Update logistics information
  * @route PATCH /v1/orders/:orderId/logistics
@@ -154,6 +188,9 @@ export {
   getOrderBySourceAndExternalId,
   updateOrder,
   updateOrderStatus,
+  cancelWebsiteOrder,
+  completeWebsiteOrder,
+  archiveWebsiteOrder,
   updateLogistics,
   deleteOrder,
   getOrderStatistics,

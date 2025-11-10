@@ -105,6 +105,12 @@ const updateOrderStatus = {
   }),
 };
 
+const updateWebsiteOrderStatus = {
+  params: Joi.object().keys({
+    externalOrderId: Joi.string().required(),
+  }),
+};
+
 const updateLogisticsStatus = {
   params: Joi.object().keys({
     orderId: Joi.string().custom(objectId).required(),
@@ -146,6 +152,7 @@ export {
   getOrderBySourceAndExternalId,
   updateOrder,
   updateOrderStatus,
+  updateWebsiteOrderStatus,
   updateLogisticsStatus,
   deleteOrder,
   syncOrders,
