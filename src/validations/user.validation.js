@@ -49,7 +49,13 @@ const createUser = {
         'Cataloguing': Joi.boolean(),
         'Purchase': Joi.boolean(),
         'Inventory': Joi.boolean(),
-        'Yarn Issue': Joi.boolean()
+        'Yarn Issue': Joi.boolean(),
+        'Yarn Master': Joi.object().keys({
+          'Brand': Joi.boolean(),
+          'Yarn Type': Joi.boolean(),
+          'Count/Size': Joi.boolean(),
+          'Color': Joi.boolean()
+        })
       }),
       'Warehouse Management': Joi.object().keys({
         'Orders': Joi.boolean(),
@@ -130,7 +136,13 @@ const updateUser = {
           'Cataloguing': Joi.boolean(),
           'Purchase': Joi.boolean(),
           'Inventory': Joi.boolean(),
-          'Yarn Issue': Joi.boolean()
+          'Yarn Issue': Joi.boolean(),
+          'Yarn Master': Joi.object().keys({
+            'Brand': Joi.boolean(),
+            'Yarn Type': Joi.boolean(),
+            'Count/Size': Joi.boolean(),
+            'Color': Joi.boolean()
+          })
         }),
         'Warehouse Management': Joi.object().keys({
           'Orders': Joi.boolean(),
@@ -159,11 +171,11 @@ const updateUserNavigation = {
           Processes: Joi.boolean(),
           Attributes: Joi.boolean(),
           Machines: Joi.boolean()
-        }),
+        }).unknown(true),
         Sales: Joi.object().keys({
           'All Sales': Joi.boolean(),
           'Master Sales': Joi.boolean()
-        }),
+        }).unknown(true),
         Stores: Joi.boolean(),
         Analytics: Joi.boolean(),
         'Replenishment Agent': Joi.boolean(),
@@ -180,21 +192,27 @@ const updateUserNavigation = {
           'Branding Floor': Joi.boolean(),
           'Machine Floor': Joi.boolean(),
           'Warehouse Floor': Joi.boolean()
-        }),
+        }).unknown(true),
         'Yarn Management': Joi.object().keys({
           'Cataloguing': Joi.boolean(),
           'Purchase': Joi.boolean(),
           'Inventory': Joi.boolean(),
-          'Yarn Issue': Joi.boolean()
-        }),
+          'Yarn Issue': Joi.boolean(),
+          'Yarn Master': Joi.object().keys({
+            'Brand': Joi.boolean(),
+            'Yarn Type': Joi.boolean(),
+            'Count/Size': Joi.boolean(),
+            'Color': Joi.boolean()
+          }).unknown(true)
+        }).unknown(true),
         'Warehouse Management': Joi.object().keys({
           'Orders': Joi.boolean(),
           'Pick&Pack': Joi.boolean(),
           'Layout': Joi.boolean(),
           'Stock': Joi.boolean(),
           'Reports': Joi.boolean()
-        })
-      }).required(),
+        }).unknown(true)
+      }).unknown(true).required(),
     })
     .min(1),
 };

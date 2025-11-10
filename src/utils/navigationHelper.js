@@ -35,13 +35,20 @@ export const DEFAULT_NAVIGATION = {
     'Boarding Floor': false,
     'Final Checking Floor': false,
     'Branding Floor': false,
+    'Machine Floor': false,
     'Warehouse Floor': false
   },
   'Yarn Management': {
     'Cataloguing': false,
     'Purchase': false,
     'Inventory': false,
-    'Yarn Issue': false
+    'Yarn Issue': false,
+    'Yarn Master': {
+      'Brand': false,
+      'Yarn Type': false,
+      'Count/Size': false,
+      'Color': false
+    }
   },
   'Warehouse Management': {
     'Orders': false,
@@ -84,13 +91,20 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Boarding Floor': true,
       'Final Checking Floor': true,
       'Branding Floor': true,
+      'Machine Floor': true,
       'Warehouse Floor': true
     },
     'Yarn Management': {
       'Cataloguing': true,
       'Purchase': true,
       'Inventory': true,
-      'Yarn Issue': true
+      'Yarn Issue': true,
+      'Yarn Master': {
+        'Brand': true,
+        'Yarn Type': true,
+        'Count/Size': true,
+        'Color': true
+      }
     },
     'Warehouse Management': {
       'Orders': true,
@@ -128,13 +142,20 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Boarding Floor': false,
       'Final Checking Floor': false,
       'Branding Floor': false,
+      'Machine Floor': false,
       'Warehouse Floor': false
     },
     'Yarn Management': {
       'Cataloguing': false,
       'Purchase': false,
       'Inventory': false,
-      'Yarn Issue': false
+      'Yarn Issue': false,
+      'Yarn Master': {
+        'Brand': false,
+        'Yarn Type': false,
+        'Count/Size': false,
+        'Color': false
+      }
     },
     'Warehouse Management': {
       'Orders': false,
@@ -182,6 +203,7 @@ export const mergeNavigation = (target, source) => {
  */
 export const validateNavigationStructure = (navigation) => {
   if (!navigation || typeof navigation !== 'object') {
+    console.error('Validation failed: navigation is not an object');
     return false;
   }
 
@@ -189,34 +211,40 @@ export const validateNavigationStructure = (navigation) => {
   const requiredKeys = ['Dashboard', 'Catalog', 'Sales', 'Stores', 'Analytics', 'Replenishment Agent', 'File Manager', 'Users', 'Production Planning', 'Yarn Management', 'Warehouse Management'];
   for (const key of requiredKeys) {
     if (!(key in navigation)) {
+      console.error(`Validation failed: Missing top-level key: ${key}`);
       return false;
     }
   }
 
   // Check Catalog structure
   if (!navigation.Catalog || typeof navigation.Catalog !== 'object') {
+    console.error('Validation failed: Catalog is not an object');
     return false;
   }
   const catalogKeys = ['Items', 'Categories', 'Raw Material', 'Processes', 'Attributes', 'Machines'];
   for (const key of catalogKeys) {
     if (!(key in navigation.Catalog) || typeof navigation.Catalog[key] !== 'boolean') {
+      console.error(`Validation failed: Catalog.${key} is missing or not a boolean`);
       return false;
     }
   }
 
   // Check Sales structure
   if (!navigation.Sales || typeof navigation.Sales !== 'object') {
+    console.error('Validation failed: Sales is not an object');
     return false;
   }
   const salesKeys = ['All Sales', 'Master Sales'];
   for (const key of salesKeys) {
     if (!(key in navigation.Sales) || typeof navigation.Sales[key] !== 'boolean') {
+      console.error(`Validation failed: Sales.${key} is missing or not a boolean`);
       return false;
     }
   }
 
   // Check Production Planning structure
   if (!navigation['Production Planning'] || typeof navigation['Production Planning'] !== 'object') {
+    console.error('Validation failed: Production Planning is not an object');
     return false;
   }
   const productionKeys = [
@@ -233,28 +261,49 @@ export const validateNavigationStructure = (navigation) => {
   ];
   for (const key of productionKeys) {
     if (!(key in navigation['Production Planning']) || typeof navigation['Production Planning'][key] !== 'boolean') {
+      console.error(`Validation failed: Production Planning.${key} is missing or not a boolean`);
+      console.error('Production Planning keys:', Object.keys(navigation['Production Planning']));
       return false;
     }
   }
 
   // Check Yarn Management structure
   if (!navigation['Yarn Management'] || typeof navigation['Yarn Management'] !== 'object') {
+    console.error('Validation failed: Yarn Management is not an object');
     return false;
   }
-  const yarnKeys = ['Cataloguing', 'Purchase', 'Inventory', 'Yarn Issue'];
+  const yarnKeys = ['Cataloguing', 'Purchase', 'Inventory', 'Yarn Issue', 'Yarn Master'];
   for (const key of yarnKeys) {
-    if (!(key in navigation['Yarn Management']) || typeof navigation['Yarn Management'][key] !== 'boolean') {
-      return false;
+    if (key === 'Yarn Master') {
+      // Yarn Master is a nested object
+      if (!navigation['Yarn Management']['Yarn Master'] || typeof navigation['Yarn Management']['Yarn Master'] !== 'object') {
+        console.error('Validation failed: Yarn Management.Yarn Master is missing or not an object');
+        return false;
+      }
+      const yarnMasterKeys = ['Brand', 'Yarn Type', 'Count/Size', 'Color'];
+      for (const masterKey of yarnMasterKeys) {
+        if (!(masterKey in navigation['Yarn Management']['Yarn Master']) || typeof navigation['Yarn Management']['Yarn Master'][masterKey] !== 'boolean') {
+          console.error(`Validation failed: Yarn Management.Yarn Master.${masterKey} is missing or not a boolean`);
+          return false;
+        }
+      }
+    } else {
+      if (!(key in navigation['Yarn Management']) || typeof navigation['Yarn Management'][key] !== 'boolean') {
+        console.error(`Validation failed: Yarn Management.${key} is missing or not a boolean`);
+        return false;
+      }
     }
   }
 
   // Check Warehouse Management structure
   if (!navigation['Warehouse Management'] || typeof navigation['Warehouse Management'] !== 'object') {
+    console.error('Validation failed: Warehouse Management is not an object');
     return false;
   }
   const warehouseKeys = ['Orders', 'Pick&Pack', 'Layout', 'Stock', 'Reports'];
   for (const key of warehouseKeys) {
     if (!(key in navigation['Warehouse Management']) || typeof navigation['Warehouse Management'][key] !== 'boolean') {
+      console.error(`Validation failed: Warehouse Management.${key} is missing or not a boolean`);
       return false;
     }
   }

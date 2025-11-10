@@ -14,6 +14,7 @@ import Replenishment from './replenishment.model.js';
 import FaqVector from './faqVector.model.js';
 import Machine from './machine.model.js';
 import Order from './order.model.js';
+import Supplier from './yarnManagement/supplier.model.js';
 
 export {
   Token,
@@ -32,4 +33,5 @@ export {
   FaqVector,
   Machine,
   Order,
+  Supplier,
 };

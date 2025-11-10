@@ -108,7 +108,13 @@ const userSchema = mongoose.Schema(
           'Cataloguing': false,
           'Purchase': false,
           'Inventory': false,
-          'Yarn Issue': false
+          'Yarn Issue': false,
+          'Yarn Master': {
+            'Brand': false,
+            'Yarn Type': false,
+            'Count/Size': false,
+            'Color': false
+          }
         },
         'Warehouse Management': {
           'Orders': false,

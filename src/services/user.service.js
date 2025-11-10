@@ -94,13 +94,31 @@ const updateUserNavigationById = async (userId, navigationBody) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
   }
   
-  // Validate navigation structure
-  if (!validateNavigationStructure(navigationBody.navigation)) {
+  // Always start with complete default navigation for the user's role
+  // This ensures all required fields are present
+  const defaultNavigation = getDefaultNavigationByRole(user.role || 'user');
+  
+  // Merge existing user navigation into defaults (preserve user's current permissions)
+  const baseNavigation = mergeNavigation(defaultNavigation, user.navigation || {});
+  
+  // Merge incoming navigation updates on top
+  const updatedNavigation = mergeNavigation(baseNavigation, navigationBody.navigation);
+  
+  // Validate the merged navigation structure
+  if (!validateNavigationStructure(updatedNavigation)) {
+    // Log the issue for debugging
+    console.error('Navigation validation failed for user:', userId);
+    console.error('Merged navigation keys:', Object.keys(updatedNavigation));
+    if (updatedNavigation['Yarn Management']) {
+      console.error('Yarn Management keys:', Object.keys(updatedNavigation['Yarn Management']));
+      if (updatedNavigation['Yarn Management']['Yarn Master']) {
+        console.error('Yarn Master keys:', Object.keys(updatedNavigation['Yarn Management']['Yarn Master']));
+      } else {
+        console.error('Yarn Master is missing!');
+      }
+    }
     throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid navigation structure');
   }
-  
-  // Merge with existing navigation to preserve other permissions
-  const updatedNavigation = mergeNavigation(user.navigation, navigationBody.navigation);
   
   Object.assign(user, { navigation: updatedNavigation });
   await user.save();
