@@ -47,7 +47,8 @@ const createUser = {
       }),
       'Yarn Management': Joi.object().keys({
         'Cataloguing': Joi.boolean(),
-        'Purchase': Joi.boolean(),
+        'Purchase Order': Joi.boolean(),
+        'Purchase Order Recevied': Joi.boolean(),
         'Inventory': Joi.boolean(),
         'Yarn Issue': Joi.boolean(),
         'Yarn Master': Joi.object().keys({
@@ -134,7 +135,8 @@ const updateUser = {
         }),
         'Yarn Management': Joi.object().keys({
           'Cataloguing': Joi.boolean(),
-          'Purchase': Joi.boolean(),
+          'Purchase Order': Joi.boolean(),
+          'Purchase Order Recevied': Joi.boolean(),
           'Inventory': Joi.boolean(),
           'Yarn Issue': Joi.boolean(),
           'Yarn Master': Joi.object().keys({
@@ -195,7 +197,8 @@ const updateUserNavigation = {
         }).unknown(true),
         'Yarn Management': Joi.object().keys({
           'Cataloguing': Joi.boolean(),
-          'Purchase': Joi.boolean(),
+          'Purchase Order': Joi.boolean(),
+          'Purchase Order Recevied': Joi.boolean(),
           'Inventory': Joi.boolean(),
           'Yarn Issue': Joi.boolean(),
           'Yarn Master': Joi.object().keys({

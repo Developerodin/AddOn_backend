@@ -40,7 +40,8 @@ export const DEFAULT_NAVIGATION = {
   },
   'Yarn Management': {
     'Cataloguing': false,
-    'Purchase': false,
+    'Purchase Order': false,
+    'Purchase Order Recevied': false,
     'Inventory': false,
     'Yarn Issue': false,
     'Yarn Master': {
@@ -96,7 +97,8 @@ export const ROLE_NAVIGATION_TEMPLATES = {
     },
     'Yarn Management': {
       'Cataloguing': true,
-      'Purchase': true,
+      'Purchase Order': true,
+      'Purchase Order Recevied': true,
       'Inventory': true,
       'Yarn Issue': true,
       'Yarn Master': {
@@ -147,7 +149,8 @@ export const ROLE_NAVIGATION_TEMPLATES = {
     },
     'Yarn Management': {
       'Cataloguing': false,
-      'Purchase': false,
+      'Purchase Order': false,
+      'Purchase Order Recevied': false,
       'Inventory': false,
       'Yarn Issue': false,
       'Yarn Master': {
@@ -272,7 +275,7 @@ export const validateNavigationStructure = (navigation) => {
     console.error('Validation failed: Yarn Management is not an object');
     return false;
   }
-  const yarnKeys = ['Cataloguing', 'Purchase', 'Inventory', 'Yarn Issue', 'Yarn Master'];
+  const yarnKeys = ['Cataloguing', 'Purchase Order', 'Purchase Order Recevied', 'Inventory', 'Yarn Issue', 'Yarn Master'];
   for (const key of yarnKeys) {
     if (key === 'Yarn Master') {
       // Yarn Master is a nested object
