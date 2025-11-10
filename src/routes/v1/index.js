@@ -21,6 +21,10 @@ import faqRoute from './faq.route.js';
 import productionRoute from './production.route.js';
 import machineRoute from './machine.route.js';
 import orderRoute from './order.route.js';
+import colorRoute from './color.route.js';
+import countSizeRoute from './countSize.route.js';
+import yarnTypeRoute from './yarnType.route.js';
+import supplierRoute from './supplier.route.js';
 import config from '../../config/config.js';
 
 const router = express.Router();
@@ -109,6 +113,22 @@ const defaultRoutes = [
   {
     path: '/orders',
     route: orderRoute,
+  },
+  {
+    path: '/yarn-management/colors',
+    route: colorRoute,
+  },
+  {
+    path: '/yarn-management/count-sizes',
+    route: countSizeRoute,
+  },
+  {
+    path: '/yarn-management/yarn-types',
+    route: yarnTypeRoute,
+  },
+  {
+    path: '/yarn-management/suppliers',
+    route: supplierRoute,
   },
 ];
 

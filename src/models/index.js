@@ -15,6 +15,9 @@ import FaqVector from './faqVector.model.js';
 import Machine from './machine.model.js';
 import Order from './order.model.js';
 import Supplier from './yarnManagement/supplier.model.js';
+import YarnType from './yarnManagement/yarnType.model.js';
+import CountSize from './yarnManagement/countSize.model.js';
+import Color from './yarnManagement/color.model.js';
 
 export {
   Token,
@@ -34,4 +37,7 @@ export {
   Machine,
   Order,
   Supplier,
+  YarnType,
+  CountSize,
+  Color,
 };
