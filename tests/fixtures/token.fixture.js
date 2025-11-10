@@ -1,8 +1,8 @@
 import moment from 'moment';
-import config from '../../src/config/config';
-import { tokenTypes } from '../../src/config/tokens';
-import tokenService from '../../src/services/token.service';
-import { userOne, admin } from './user.fixture';
+import config from '../../src/config/config.js';
+import { tokenTypes } from '../../src/config/tokens.js';
+import tokenService from '../../src/services/token.service.js';
+import { userOne, admin } from './user.fixture.js';
 
 
 const accessTokenExpires = moment().add(config.jwt.accessExpirationMinutes, 'minutes');

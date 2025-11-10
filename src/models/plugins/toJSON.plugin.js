@@ -36,8 +36,16 @@ const toJSON = (schema) => {
       delete ret.__v;
       
       // Only delete timestamps for specific models that don't need them
-      // Keep timestamps for production orders and other models that need them
-      if (schema.modelName !== 'ProductionOrder' && schema.modelName !== 'Article') {
+      // Keep timestamps for production orders, yarn management models, and other models that need them
+      const modelsWithTimestamps = [
+        'ProductionOrder',
+        'Article',
+        'Color',
+        'CountSize',
+        'YarnType',
+        'Supplier',
+      ];
+      if (!modelsWithTimestamps.includes(schema.modelName)) {
         delete ret.createdAt;
         delete ret.updatedAt;
       }

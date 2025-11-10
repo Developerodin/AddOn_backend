@@ -106,7 +106,8 @@ const userSchema = mongoose.Schema(
         },
         'Yarn Management': {
           'Cataloguing': false,
-          'Purchase': false,
+          'Purchase Order': false,
+          'Purchase Order Recevied': false,
           'Inventory': false,
           'Yarn Issue': false,
           'Yarn Master': {
