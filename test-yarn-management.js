@@ -392,6 +392,54 @@ async function testYarnTypesAPI() {
 async function testSuppliersAPI() {
   log.section('SUPPLIERS API TESTS');
   
+  // First, ensure we have a color and yarn type to use
+  let yarnTypeId = createdIds.yarnTypes[0];
+  let colorId = createdIds.colors[0];
+  
+  // If no yarn type exists, create one
+  if (!yarnTypeId) {
+    log.test('Creating a yarn type for supplier test...');
+    const createYarnTypeData = {
+      name: `TestYarnType_${Date.now()}`,
+      details: [
+        {
+          subtype: 'Test Subtype',
+          countSize: [],
+          weight: 'Light',
+        },
+      ],
+      status: 'active',
+    };
+    let yarnTypeResult = await apiRequest('POST', '/yarn-management/yarn-types', createYarnTypeData);
+    if (yarnTypeResult.ok) {
+      yarnTypeId = yarnTypeResult.data.id;
+      createdIds.yarnTypes.push(yarnTypeId);
+      log.success(`Yarn type created for test: ${yarnTypeId}`);
+    } else {
+      log.error(`Failed to create yarn type: ${yarnTypeResult.data.message || 'Unknown error'}`);
+      return;
+    }
+  }
+  
+  // If no color exists, create one
+  if (!colorId) {
+    log.test('Creating a color for supplier test...');
+    const createColorData = {
+      name: `TestColor_${Date.now()}`,
+      colorCode: '#FF5733',
+      status: 'active',
+    };
+    let colorResult = await apiRequest('POST', '/yarn-management/colors', createColorData);
+    if (colorResult.ok) {
+      colorId = colorResult.data.id;
+      createdIds.colors.push(colorId);
+      log.success(`Color created for test: ${colorId}`);
+    } else {
+      log.error(`Failed to create color: ${colorResult.data.message || 'Unknown error'}`);
+      return;
+    }
+  }
+  
   // Test 1: Create Supplier
   log.test('1. Creating a new supplier...');
   const createSupplierData = {
@@ -403,8 +451,8 @@ async function testSuppliersAPI() {
     gstNo: `27ATEST${Date.now().toString().slice(-6)}R1ZX`,
     yarnDetails: [
       {
-        yarnType: 'Cotton',
-        color: 'Red',
+        yarnType: yarnTypeId,
+        color: colorId,
         shadeNumber: 'RD-001',
       },
     ],

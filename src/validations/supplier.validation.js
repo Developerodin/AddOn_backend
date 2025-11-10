@@ -2,8 +2,8 @@ import Joi from 'joi';
 import { objectId } from './custom.validation.js';
 
 const yarnDetailsSchema = Joi.object().keys({
-  yarnType: Joi.string().required().trim(),
-  color: Joi.string().required().trim(),
+  yarnType: Joi.string().custom(objectId).required(),
+  color: Joi.string().custom(objectId).required(),
   shadeNumber: Joi.string().required().trim(),
 });
 

@@ -28,6 +28,16 @@ export const createSupplier = async (supplierBody) => {
  */
 export const querySuppliers = async (filter, options) => {
   const suppliers = await Supplier.paginate(filter, options);
+  if (suppliers.results && suppliers.results.length > 0) {
+    await Supplier.populate(suppliers.results, {
+      path: 'yarnDetails.yarnType',
+      select: 'name status',
+    });
+    await Supplier.populate(suppliers.results, {
+      path: 'yarnDetails.color',
+      select: 'name colorCode status',
+    });
+  }
   return suppliers;
 };
 
@@ -37,7 +47,9 @@ export const querySuppliers = async (filter, options) => {
  * @returns {Promise<Supplier>}
  */
 export const getSupplierById = async (id) => {
-  return Supplier.findById(id);
+  return Supplier.findById(id)
+    .populate('yarnDetails.yarnType', 'name status')
+    .populate('yarnDetails.color', 'name colorCode status');
 };
 
 /**

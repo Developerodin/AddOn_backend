@@ -617,8 +617,16 @@ describe('Yarn Management APIs', () => {
   describe('Suppliers API', () => {
     describe('POST /v1/yarn-management/suppliers', () => {
       let newSupplier;
+      let testYarnType;
+      let testColor;
 
-      beforeEach(() => {
+      beforeEach(async () => {
+        // Insert test yarn type and color first
+        await insertYarnTypes([yarnTypeOne]);
+        await insertColors([colorOne]);
+        testYarnType = yarnTypeOne._id;
+        testColor = colorOne._id;
+
         newSupplier = {
           brandName: 'New Yarn Suppliers',
           contactPersonName: 'Test Person',
@@ -628,8 +636,8 @@ describe('Yarn Management APIs', () => {
           gstNo: '27ATESTU9603R1ZX',
           yarnDetails: [
             {
-              yarnType: 'Cotton',
-              color: 'Red',
+              yarnType: testYarnType.toHexString(),
+              color: testColor.toHexString(),
               shadeNumber: 'RD-001',
             },
           ],
@@ -654,8 +662,14 @@ describe('Yarn Management APIs', () => {
           gstNo: newSupplier.gstNo,
           yarnDetails: expect.arrayContaining([
             expect.objectContaining({
-              yarnType: newSupplier.yarnDetails[0].yarnType,
-              color: newSupplier.yarnDetails[0].color,
+              yarnType: expect.objectContaining({
+                id: testYarnType.toHexString(),
+                name: yarnTypeOne.name,
+              }),
+              color: expect.objectContaining({
+                id: testColor.toHexString(),
+                name: colorOne.name,
+              }),
               shadeNumber: newSupplier.yarnDetails[0].shadeNumber,
             }),
           ]),
@@ -664,7 +678,9 @@ describe('Yarn Management APIs', () => {
           updatedAt: expect.anything(),
         });
 
-        const dbSupplier = await Supplier.findById(res.body.id);
+        const dbSupplier = await Supplier.findById(res.body.id)
+          .populate('yarnDetails.yarnType')
+          .populate('yarnDetails.color');
         expect(dbSupplier).toBeDefined();
         expect(dbSupplier).toMatchObject({
           brandName: newSupplier.brandName,
@@ -673,6 +689,8 @@ describe('Yarn Management APIs', () => {
       });
 
       test('should return 400 error if email is already taken', async () => {
+        await insertYarnTypes([yarnTypeOne]);
+        await insertColors([colorOne]);
         await insertSuppliers([supplierOne]);
         newSupplier.email = supplierOne.email;
 
@@ -684,6 +702,8 @@ describe('Yarn Management APIs', () => {
       });
 
       test('should return 400 error if GST number is already taken', async () => {
+        await insertYarnTypes([yarnTypeOne]);
+        await insertColors([colorOne]);
         await insertSuppliers([supplierOne]);
         newSupplier.gstNo = supplierOne.gstNo;
 
@@ -727,6 +747,8 @@ describe('Yarn Management APIs', () => {
 
     describe('GET /v1/yarn-management/suppliers', () => {
       test('should return 200 and apply the default query options', async () => {
+        await insertYarnTypes([yarnTypeOne, yarnTypeTwo]);
+        await insertColors([colorOne, colorTwo]);
         await insertSuppliers([supplierOne, supplierTwo]);
 
         const res = await request(app)
@@ -746,6 +768,8 @@ describe('Yarn Management APIs', () => {
       });
 
       test('should correctly apply filter on brandName field', async () => {
+        await insertYarnTypes([yarnTypeOne, yarnTypeTwo]);
+        await insertColors([colorOne, colorTwo]);
         await insertSuppliers([supplierOne, supplierTwo]);
 
         const res = await request(app)
@@ -761,6 +785,8 @@ describe('Yarn Management APIs', () => {
 
     describe('GET /v1/yarn-management/suppliers/:supplierId', () => {
       test('should return 200 and the supplier object if data is ok', async () => {
+        await insertYarnTypes([yarnTypeOne]);
+        await insertColors([colorOne]);
         await insertSuppliers([supplierOne]);
 
         const res = await request(app)
@@ -777,7 +803,19 @@ describe('Yarn Management APIs', () => {
           email: supplierOne.email,
           address: supplierOne.address,
           gstNo: supplierOne.gstNo,
-          yarnDetails: expect.any(Array),
+          yarnDetails: expect.arrayContaining([
+            expect.objectContaining({
+              yarnType: expect.objectContaining({
+                id: yarnTypeOne._id.toHexString(),
+                name: yarnTypeOne.name,
+              }),
+              color: expect.objectContaining({
+                id: colorOne._id.toHexString(),
+                name: colorOne.name,
+              }),
+              shadeNumber: supplierOne.yarnDetails[0].shadeNumber,
+            }),
+          ]),
           status: supplierOne.status,
           createdAt: expect.anything(),
           updatedAt: expect.anything(),
@@ -787,6 +825,8 @@ describe('Yarn Management APIs', () => {
 
     describe('PATCH /v1/yarn-management/suppliers/:supplierId', () => {
       test('should return 200 and successfully update supplier if data is ok', async () => {
+        await insertYarnTypes([yarnTypeOne]);
+        await insertColors([colorOne]);
         await insertSuppliers([supplierOne]);
         const updateBody = {
           brandName: 'Updated Brand Name',
@@ -804,6 +844,8 @@ describe('Yarn Management APIs', () => {
       });
 
       test('should return 400 error if email is already taken', async () => {
+        await insertYarnTypes([yarnTypeOne, yarnTypeTwo]);
+        await insertColors([colorOne, colorTwo]);
         await insertSuppliers([supplierOne, supplierTwo]);
         const updateBody = { email: supplierTwo.email };
 
@@ -817,6 +859,8 @@ describe('Yarn Management APIs', () => {
 
     describe('DELETE /v1/yarn-management/suppliers/:supplierId', () => {
       test('should return 204 if data is ok', async () => {
+        await insertYarnTypes([yarnTypeOne]);
+        await insertColors([colorOne]);
         await insertSuppliers([supplierOne]);
 
         await request(app)

@@ -63,8 +63,8 @@ const supplierOne = {
   gstNo: '27AABCU9603R1ZX',
   yarnDetails: [
     {
-      yarnType: 'Cotton',
-      color: 'Red',
+      yarnType: yarnTypeOne._id,
+      color: colorOne._id,
       shadeNumber: 'RD-001',
     },
   ],
@@ -81,8 +81,8 @@ const supplierTwo = {
   gstNo: '29BXYZU9603R1ZY',
   yarnDetails: [
     {
-      yarnType: 'Polyester',
-      color: 'Blue',
+      yarnType: yarnTypeTwo._id,
+      color: colorTwo._id,
       shadeNumber: 'BL-002',
     },
   ],

@@ -6,14 +6,14 @@ import paginate from '../plugins/paginate.plugin.js';
 const yarnDetailsSchema = mongoose.Schema(
   {
     yarnType: {
-      type: String,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'YarnType',
       required: true,
-      trim: true,
     },
     color: {
-      type: String,
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Color',
       required: true,
-      trim: true,
     },
     shadeNumber: {
       type: String,
