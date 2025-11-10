@@ -3,7 +3,7 @@ import { objectId } from './custom.validation.js';
 
 const yarnTypeDetailSchema = Joi.object().keys({
   subtype: Joi.string().required().trim(),
-  countSize: Joi.array().items(Joi.string()),
+  countSize: Joi.array().items(Joi.string().custom(objectId)),
   weight: Joi.string(),
 });
 

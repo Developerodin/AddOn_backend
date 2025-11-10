@@ -33,7 +33,7 @@ const yarnTypeOne = {
   details: [
     {
       subtype: 'Combed Cotton',
-      countSize: ['40s', '60s'],
+      countSize: [countSizeOne._id, countSizeTwo._id],
       weight: 'Light',
     },
   ],
@@ -46,7 +46,7 @@ const yarnTypeTwo = {
   details: [
     {
       subtype: 'Polyester Blend',
-      countSize: ['30s', '40s'],
+      countSize: [countSizeOne._id],
       weight: 'Medium',
     },
   ],

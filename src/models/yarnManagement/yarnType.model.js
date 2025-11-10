@@ -10,7 +10,8 @@ const yarnTypeDetailSchema = mongoose.Schema(
       trim: true,
     },
     countSize: {
-      type: [String],
+      type: [mongoose.Schema.Types.ObjectId],
+      ref: 'CountSize',
       default: [],
     },
     weight: {

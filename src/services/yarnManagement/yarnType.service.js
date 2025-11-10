@@ -24,7 +24,18 @@ export const createYarnType = async (yarnTypeBody) => {
  * @returns {Promise<QueryResult>}
  */
 export const queryYarnTypes = async (filter, options) => {
-  const yarnTypes = await YarnType.paginate(filter, options);
+  const queryOptions = {
+    ...options,
+    populate: 'details.countSize',
+  };
+  const yarnTypes = await YarnType.paginate(filter, queryOptions);
+  // Manually populate countSize with selected fields
+  if (yarnTypes.results && yarnTypes.results.length > 0) {
+    await YarnType.populate(yarnTypes.results, {
+      path: 'details.countSize',
+      select: 'name status',
+    });
+  }
   return yarnTypes;
 };
 
@@ -34,7 +45,7 @@ export const queryYarnTypes = async (filter, options) => {
  * @returns {Promise<YarnType>}
  */
 export const getYarnTypeById = async (id) => {
-  return YarnType.findById(id);
+  return YarnType.findById(id).populate('details.countSize', 'name status');
 };
 
 /**
