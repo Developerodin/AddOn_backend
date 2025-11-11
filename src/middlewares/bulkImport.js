@@ -32,12 +32,12 @@ export const validateBulkImportSize = (req, res, next) => {
   const arrayField = req.body.stores || req.body.products || req.body.items || req.body.data || 
                      req.body.salesRecords || req.body.salesIds || req.body.blends || 
                      req.body.colors || req.body.countSizes || req.body.suppliers || 
-                     req.body.yarnTypes;
+                     req.body.yarnTypes || req.body.yarnCatalogs;
   
   if (!arrayField || !Array.isArray(arrayField)) {
     return res.status(400).json({
       status: 'error',
-      message: 'Array field (stores/products/items/blends/colors/countSizes/suppliers/yarnTypes) is required'
+      message: 'Array field (stores/products/items/blends/colors/countSizes/suppliers/yarnTypes/yarnCatalogs) is required'
     });
   }
   

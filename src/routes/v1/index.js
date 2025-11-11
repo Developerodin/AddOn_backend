@@ -26,6 +26,7 @@ import countSizeRoute from './countSize.route.js';
 import blendRoute from './blend.route.js';
 import yarnTypeRoute from './yarnType.route.js';
 import supplierRoute from './supplier.route.js';
+import yarnCatalogRoute from './yarnCatalog.route.js';
 import config from '../../config/config.js';
 
 const router = express.Router();
@@ -134,6 +135,10 @@ const defaultRoutes = [
   {
     path: '/yarn-management/suppliers',
     route: supplierRoute,
+  },
+  {
+    path: '/yarn-management/yarn-catalogs',
+    route: yarnCatalogRoute,
   },
 ];
 
