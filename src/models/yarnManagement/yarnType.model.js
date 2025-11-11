@@ -61,8 +61,16 @@ yarnTypeSchema.plugin(paginate);
  * Auto-generate yarnName from name, subtype, and countSize
  */
 yarnTypeSchema.pre('save', async function (next) {
-  // Only generate if yarnName is not already set
-  if (this.yarnName) {
+  // Check if yarnName was manually set in this operation
+  const yarnNameManuallySet = this.isModified('yarnName') && this.yarnName;
+  
+  // Regenerate yarnName if:
+  // 1. yarnName is not set, OR
+  // 2. name or details changed and yarnName wasn't manually set
+  const shouldRegenerate = !this.yarnName || 
+    (!yarnNameManuallySet && (this.isModified('name') || this.isModified('details')));
+
+  if (!shouldRegenerate) {
     return next();
   }
 
