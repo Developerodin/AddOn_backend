@@ -5,7 +5,7 @@ const yarnDetailsSchema = Joi.object().keys({
   yarnType: Joi.string().custom(objectId).required(),
   yarnsubtype: Joi.string().custom(objectId).allow(null, ''),
   color: Joi.string().custom(objectId).required(),
-  shadeNumber: Joi.string().required().trim(),
+  shadeNumber: Joi.string().allow('', null).trim(),
 });
 
 export const createSupplier = {

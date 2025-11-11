@@ -18,6 +18,7 @@ import Supplier from './yarnManagement/supplier.model.js';
 import YarnType from './yarnManagement/yarnType.model.js';
 import CountSize from './yarnManagement/countSize.model.js';
 import Color from './yarnManagement/color.model.js';
+import YarnCatalog from './yarnManagement/yarnCatalog.model.js';
 
 export {
   Token,
@@ -40,4 +41,5 @@ export {
   YarnType,
   CountSize,
   Color,
+  YarnCatalog,
 };
