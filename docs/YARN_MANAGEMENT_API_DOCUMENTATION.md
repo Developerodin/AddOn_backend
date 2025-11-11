@@ -27,7 +27,14 @@ Authorization: Bearer {your-jwt-token}
    - [Update Count Size](#4-update-count-size)
    - [Delete Count Size](#5-delete-count-size)
 
-3. [Yarn Types API](#yarn-types-api)
+3. [Blends API](#blends-api)
+   - [Create Blend](#1-create-blend)
+   - [Get All Blends](#2-get-all-blends)
+   - [Get Blend by ID](#3-get-blend-by-id)
+   - [Update Blend](#4-update-blend)
+   - [Delete Blend](#5-delete-blend)
+
+4. [Yarn Types API](#yarn-types-api)
    - [Create Yarn Type](#1-create-yarn-type)
    - [Get All Yarn Types](#2-get-all-yarn-types)
    - [Get Yarn Type by ID](#3-get-yarn-type-by-id)
@@ -464,6 +471,215 @@ No response body
 **Error Responses:**
 - `404 Not Found`: Count size not found
 - `400 Bad Request`: Invalid count size ID format
+
+---
+
+## Blends API
+
+**Base Path:** `/v1/yarn-management/blends`
+
+### 1. Create Blend
+
+**Endpoint:** `POST /v1/yarn-management/blends`
+
+**Description:** Create a new blend entry.
+
+**Request Body:**
+```json
+{
+  "name": "Cotton-Polyester",
+  "status": "active"
+}
+```
+
+**Field Descriptions:**
+- `name` (required, string): Blend name (must be unique)
+- `status` (optional, string): Status - "active" or "inactive" (default: "active")
+
+**cURL Example:**
+```bash
+curl -X POST \
+  'http://localhost:3000/v1/yarn-management/blends' \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer YOUR_JWT_TOKEN' \
+  -d '{
+    "name": "Cotton-Polyester",
+    "status": "active"
+  }'
+```
+
+**Response (201 Created):**
+```json
+{
+  "id": "65f1a2b3c4d5e6f7g8h9i0j1",
+  "name": "Cotton-Polyester",
+  "status": "active",
+  "createdAt": "2024-01-15T10:30:00.000Z",
+  "updatedAt": "2024-01-15T10:30:00.000Z"
+}
+```
+
+**Error Responses:**
+- `400 Bad Request`: Blend name already taken
+
+---
+
+### 2. Get All Blends
+
+**Endpoint:** `GET /v1/yarn-management/blends`
+
+**Description:** Retrieve all blends with pagination, filtering, and sorting support.
+
+**Query Parameters:**
+- `name` (optional, string): Filter by blend name
+- `status` (optional, string): Filter by status ("active" or "inactive")
+- `sortBy` (optional, string): Sort field and order (e.g., "name:asc", "createdAt:desc")
+- `limit` (optional, number): Number of results per page (default: 10)
+- `page` (optional, number): Page number (default: 1)
+
+**cURL Example:**
+```bash
+curl -X GET \
+  'http://localhost:3000/v1/yarn-management/blends?status=active&sortBy=name:asc&limit=20&page=1' \
+  -H 'Authorization: Bearer YOUR_JWT_TOKEN'
+```
+
+**Response (200 OK):**
+```json
+{
+  "results": [
+    {
+      "id": "65f1a2b3c4d5e6f7g8h9i0j1",
+      "name": "Cotton-Polyester",
+      "status": "active",
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "updatedAt": "2024-01-15T10:30:00.000Z"
+    },
+    {
+      "id": "65f1a2b3c4d5e6f7g8h9i0j2",
+      "name": "Wool-Cashmere",
+      "status": "active",
+      "createdAt": "2024-01-15T10:31:00.000Z",
+      "updatedAt": "2024-01-15T10:31:00.000Z"
+    }
+  ],
+  "page": 1,
+  "limit": 20,
+  "totalPages": 1,
+  "totalResults": 2
+}
+```
+
+**Error Responses:**
+- `400 Bad Request`: Invalid query parameters
+
+---
+
+### 3. Get Blend by ID
+
+**Endpoint:** `GET /v1/yarn-management/blends/:blendId`
+
+**Description:** Retrieve a specific blend by its ID.
+
+**Path Parameters:**
+- `blendId` (required, string): MongoDB ObjectId of the blend
+
+**cURL Example:**
+```bash
+curl -X GET \
+  'http://localhost:3000/v1/yarn-management/blends/65f1a2b3c4d5e6f7g8h9i0j1' \
+  -H 'Authorization: Bearer YOUR_JWT_TOKEN'
+```
+
+**Response (200 OK):**
+```json
+{
+  "id": "65f1a2b3c4d5e6f7g8h9i0j1",
+  "name": "Cotton-Polyester",
+  "status": "active",
+  "createdAt": "2024-01-15T10:30:00.000Z",
+  "updatedAt": "2024-01-15T10:30:00.000Z"
+}
+```
+
+**Error Responses:**
+- `404 Not Found`: Blend not found
+- `400 Bad Request`: Invalid blend ID format
+
+---
+
+### 4. Update Blend
+
+**Endpoint:** `PATCH /v1/yarn-management/blends/:blendId`
+
+**Description:** Update a blend's information. All fields are optional.
+
+**Path Parameters:**
+- `blendId` (required, string): MongoDB ObjectId of the blend
+
+**Request Body:**
+```json
+{
+  "name": "Cotton-Polyester 60/40",
+  "status": "inactive"
+}
+```
+
+**Field Descriptions:**
+- `name` (optional, string): Updated blend name (must be unique if changed)
+- `status` (optional, string): Updated status - "active" or "inactive"
+
+**cURL Example:**
+```bash
+curl -X PATCH \
+  'http://localhost:3000/v1/yarn-management/blends/65f1a2b3c4d5e6f7g8h9i0j1' \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer YOUR_JWT_TOKEN' \
+  -d '{
+    "name": "Cotton-Polyester 60/40",
+    "status": "inactive"
+  }'
+```
+
+**Response (200 OK):**
+```json
+{
+  "id": "65f1a2b3c4d5e6f7g8h9i0j1",
+  "name": "Cotton-Polyester 60/40",
+  "status": "inactive",
+  "createdAt": "2024-01-15T10:30:00.000Z",
+  "updatedAt": "2024-01-15T11:45:00.000Z"
+}
+```
+
+**Error Responses:**
+- `404 Not Found`: Blend not found
+- `400 Bad Request`: Blend name already taken
+
+---
+
+### 5. Delete Blend
+
+**Endpoint:** `DELETE /v1/yarn-management/blends/:blendId`
+
+**Description:** Delete a blend from the system.
+
+**Path Parameters:**
+- `blendId` (required, string): MongoDB ObjectId of the blend
+
+**cURL Example:**
+```bash
+curl -X DELETE \
+  'http://localhost:3000/v1/yarn-management/blends/65f1a2b3c4d5e6f7g8h9i0j1' \
+  -H 'Authorization: Bearer YOUR_JWT_TOKEN'
+```
+
+**Response (204 No Content):**
+No response body
+
+**Error Responses:**
+- `404 Not Found`: Blend not found
+- `400 Bad Request`: Invalid blend ID format
 
 ---
 

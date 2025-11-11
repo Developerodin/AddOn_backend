@@ -48,7 +48,8 @@ export const DEFAULT_NAVIGATION = {
       'Brand': false,
       'Yarn Type': false,
       'Count/Size': false,
-      'Color': false
+      'Color': false,
+      'Blend': false
     }
   },
   'Warehouse Management': {
@@ -105,7 +106,8 @@ export const ROLE_NAVIGATION_TEMPLATES = {
         'Brand': true,
         'Yarn Type': true,
         'Count/Size': true,
-        'Color': true
+        'Color': true,
+        'Blend': true
       }
     },
     'Warehouse Management': {
@@ -157,7 +159,8 @@ export const ROLE_NAVIGATION_TEMPLATES = {
         'Brand': false,
         'Yarn Type': false,
         'Count/Size': false,
-        'Color': false
+        'Color': false,
+        'Blend': false
       }
     },
     'Warehouse Management': {
@@ -283,7 +286,7 @@ export const validateNavigationStructure = (navigation) => {
         console.error('Validation failed: Yarn Management.Yarn Master is missing or not an object');
         return false;
       }
-      const yarnMasterKeys = ['Brand', 'Yarn Type', 'Count/Size', 'Color'];
+      const yarnMasterKeys = ['Brand', 'Yarn Type', 'Count/Size', 'Color', 'Blend'];
       for (const masterKey of yarnMasterKeys) {
         if (!(masterKey in navigation['Yarn Management']['Yarn Master']) || typeof navigation['Yarn Management']['Yarn Master'][masterKey] !== 'boolean') {
           console.error(`Validation failed: Yarn Management.Yarn Master.${masterKey} is missing or not a boolean`);

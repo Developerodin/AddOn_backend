@@ -21,7 +21,7 @@ const embeddedCountSizeSchema = mongoose.Schema(
       default: 'active',
     },
   },
-  { _id: false, timestamps: false }
+  { _id: true, timestamps: false }
 );
 
 const yarnTypeDetailSchema = mongoose.Schema(
@@ -67,6 +67,78 @@ const yarnTypeSchema = mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Post-find hook: Convert ObjectIds to embedded objects when reading (for backward compatibility)
+yarnTypeSchema.post(['find', 'findOne', 'findOneAndUpdate'], async function (docs) {
+  if (!docs) return;
+  
+  const documents = Array.isArray(docs) ? docs : [docs];
+  
+  for (const doc of documents) {
+    if (!doc || !doc.details) continue;
+    
+    for (const detail of doc.details) {
+      if (!detail.countSize || detail.countSize.length === 0) continue;
+      
+      const firstItem = detail.countSize[0];
+      // Check if it's still an ObjectId (old data format)
+      const isObjectId = mongoose.Types.ObjectId.isValid(firstItem) || 
+                        (firstItem && firstItem._bsontype === 'ObjectID') ||
+                        (firstItem && typeof firstItem === 'object' && !firstItem.name);
+      
+      if (isObjectId) {
+        try {
+          const countSizeIds = detail.countSize.map(cs => {
+            // Handle ObjectId buffer format from MongoDB
+            if (cs && cs._bsontype === 'ObjectID') {
+              if (cs.id && cs.id.data) {
+                // Buffer format: { _bsontype: 'ObjectID', id: { type: 'Buffer', data: [...] } }
+                return new mongoose.Types.ObjectId(Buffer.from(cs.id.data));
+              }
+              if (cs.id) {
+                return new mongoose.Types.ObjectId(cs.id);
+              }
+            }
+            // Handle regular ObjectId
+            if (mongoose.Types.ObjectId.isValid(cs)) {
+              return cs;
+            }
+            // Handle string ID
+            if (typeof cs === 'string' && mongoose.Types.ObjectId.isValid(cs)) {
+              return new mongoose.Types.ObjectId(cs);
+            }
+            // Already an embedded object
+            if (cs && typeof cs === 'object' && cs._id) {
+              return mongoose.Types.ObjectId.isValid(cs._id) ? cs._id : new mongoose.Types.ObjectId(cs._id);
+            }
+            return cs;
+          }).filter(id => id && mongoose.Types.ObjectId.isValid(id));
+          
+          const countSizes = await CountSize.find({ _id: { $in: countSizeIds } });
+          const countSizeMap = new Map();
+          countSizes.forEach(cs => {
+            countSizeMap.set(cs._id.toString(), {
+              _id: cs._id,
+              name: cs.name,
+              status: cs.status,
+            });
+          });
+          
+          detail.countSize = countSizeIds.map((id) => {
+            const idStr = id.toString();
+            return countSizeMap.get(idStr) || {
+              _id: id,
+              name: 'Unknown',
+              status: 'deleted',
+            };
+          });
+        } catch (error) {
+          console.error('Error converting countSize in post-find hook:', error);
+        }
+      }
+    }
+  }
+});
 
 // Pre-save hook: Automatically converts countSize IDs to embedded objects
 // Frontend can send just IDs, and this hook will fetch and store full CountSize data
@@ -153,6 +225,49 @@ yarnTypeSchema.pre('save', async function (next) {
 // Add plugins for converting MongoDB document to JSON and pagination support
 yarnTypeSchema.plugin(toJSON);
 yarnTypeSchema.plugin(paginate);
+
+// Wrap the plugin's transform to add our custom countSize formatting
+const originalToJSON = yarnTypeSchema.options.toJSON;
+if (originalToJSON && originalToJSON.transform) {
+  const pluginTransform = originalToJSON.transform;
+  yarnTypeSchema.set('toJSON', {
+    ...originalToJSON,
+    transform(doc, ret, options) {
+      // Call plugin's transform first
+      let result = pluginTransform(doc, ret, options);
+      
+      // Use result if plugin returned something, otherwise use modified ret
+      const finalRet = result !== undefined ? result : ret;
+      
+      // Ensure finalRet is defined
+      if (!finalRet) {
+        return {};
+      }
+      
+      // Format embedded countSize objects
+      if (finalRet.details && Array.isArray(finalRet.details)) {
+        finalRet.details = finalRet.details.map(detail => {
+          if (detail && detail.countSize && Array.isArray(detail.countSize)) {
+            detail.countSize = detail.countSize.map(cs => {
+              // Format embedded object: convert _id to id
+              if (cs && typeof cs === 'object' && cs.name) {
+                return {
+                  id: cs._id ? cs._id.toString() : (cs.id || null),
+                  name: cs.name,
+                  status: cs.status || 'active'
+                };
+              }
+              return cs;
+            });
+          }
+          return detail;
+        });
+      }
+      
+      return finalRet;
+    }
+  });
+}
 
 /**
  * Check if yarn type name is taken

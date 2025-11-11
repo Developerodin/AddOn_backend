@@ -1,6 +1,123 @@
 import httpStatus from 'http-status';
-import { Supplier, YarnType } from '../../models/index.js';
+import mongoose from 'mongoose';
+import { Supplier, YarnType, Color } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
+
+/**
+ * Convert yarnDetails IDs to embedded objects
+ * @param {Array} yarnDetails - Supplier yarnDetails array
+ */
+const convertYarnDetailsToEmbedded = async (yarnDetails) => {
+  if (!yarnDetails || !Array.isArray(yarnDetails)) return;
+  
+  for (const detail of yarnDetails) {
+    // Convert yarnType ID to embedded object
+    if (detail.yarnType) {
+      const isObjectId = mongoose.Types.ObjectId.isValid(detail.yarnType) || 
+                        (typeof detail.yarnType === 'string' && mongoose.Types.ObjectId.isValid(detail.yarnType)) ||
+                        (detail.yarnType && typeof detail.yarnType === 'object' && !detail.yarnType.name);
+      
+      if (isObjectId) {
+        try {
+          const yarnTypeId = mongoose.Types.ObjectId.isValid(detail.yarnType) 
+            ? detail.yarnType 
+            : new mongoose.Types.ObjectId(detail.yarnType);
+          const yarnType = await YarnType.findById(yarnTypeId);
+          
+          if (yarnType) {
+            detail.yarnType = {
+              _id: yarnType._id,
+              name: yarnType.name,
+              status: yarnType.status,
+            };
+          } else {
+            detail.yarnType = {
+              _id: yarnTypeId,
+              name: 'Unknown',
+              status: 'deleted',
+            };
+          }
+        } catch (error) {
+          console.error('Error converting yarnType to embedded object:', error);
+        }
+      }
+    }
+    
+    // Convert color ID to embedded object
+    if (detail.color) {
+      const isObjectId = mongoose.Types.ObjectId.isValid(detail.color) || 
+                        (typeof detail.color === 'string' && mongoose.Types.ObjectId.isValid(detail.color)) ||
+                        (detail.color && typeof detail.color === 'object' && !detail.color.name);
+      
+      if (isObjectId) {
+        try {
+          const colorId = mongoose.Types.ObjectId.isValid(detail.color) 
+            ? detail.color 
+            : new mongoose.Types.ObjectId(detail.color);
+          const color = await Color.findById(colorId);
+          
+          if (color) {
+            detail.color = {
+              _id: color._id,
+              name: color.name,
+              colorCode: color.colorCode,
+              status: color.status,
+            };
+          } else {
+            detail.color = {
+              _id: colorId,
+              name: 'Unknown',
+              colorCode: '#000000',
+              status: 'deleted',
+            };
+          }
+        } catch (error) {
+          console.error('Error converting color to embedded object:', error);
+        }
+      }
+    }
+    
+    // Convert yarnsubtype ID to embedded object (from YarnType details)
+    if (detail.yarnsubtype && detail.yarnType) {
+      const isObjectId = mongoose.Types.ObjectId.isValid(detail.yarnsubtype) || 
+                        (typeof detail.yarnsubtype === 'string' && mongoose.Types.ObjectId.isValid(detail.yarnsubtype)) ||
+                        (detail.yarnsubtype && typeof detail.yarnsubtype === 'object' && !detail.yarnsubtype.subtype);
+      
+      if (isObjectId) {
+        try {
+          const yarnTypeId = detail.yarnType._id || detail.yarnType;
+          const yarnType = await YarnType.findById(yarnTypeId);
+          
+          if (yarnType && yarnType.details) {
+            const subtypeId = mongoose.Types.ObjectId.isValid(detail.yarnsubtype) 
+              ? detail.yarnsubtype 
+              : new mongoose.Types.ObjectId(detail.yarnsubtype);
+            
+            const subtypeDetail = yarnType.details.find(d => d._id.toString() === subtypeId.toString());
+            
+            if (subtypeDetail) {
+              detail.yarnsubtype = {
+                _id: subtypeDetail._id,
+                subtype: subtypeDetail.subtype,
+                countSize: subtypeDetail.countSize || [],
+                tearWeight: subtypeDetail.tearWeight || '',
+              };
+            } else {
+              detail.yarnsubtype = {
+                _id: subtypeId,
+                subtype: 'Unknown',
+                countSize: [],
+                tearWeight: '',
+              };
+            }
+          }
+        } catch (error) {
+          console.error('Error converting yarnsubtype to embedded object:', error);
+        }
+      }
+    }
+  }
+};
 
 /**
  * Validate yarnsubtype exists in the YarnType's details array
@@ -31,13 +148,19 @@ export const createSupplier = async (supplierBody) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'GST number already taken');
   }
   
-  // Validate yarnsubtype if provided
+  // Convert IDs to embedded objects BEFORE creating (so Mongoose validation passes)
   if (supplierBody.yarnDetails && Array.isArray(supplierBody.yarnDetails)) {
+    await convertYarnDetailsToEmbedded(supplierBody.yarnDetails);
+    
+    // Validate yarnsubtype if provided (after conversion, we can check the embedded object)
     for (const detail of supplierBody.yarnDetails) {
       if (detail.yarnsubtype && detail.yarnType) {
-        const isValid = await validateYarnSubtype(detail.yarnType, detail.yarnsubtype);
-        if (!isValid) {
-          throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid yarnsubtype - does not exist in YarnType details');
+        // If yarnsubtype is still an ID, validate it exists
+        if (mongoose.Types.ObjectId.isValid(detail.yarnsubtype) || typeof detail.yarnsubtype === 'string') {
+          const isValid = await validateYarnSubtype(detail.yarnType._id || detail.yarnType, detail.yarnsubtype);
+          if (!isValid) {
+            throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid yarnsubtype - does not exist in YarnType details');
+          }
         }
       }
     }
@@ -56,17 +179,8 @@ export const createSupplier = async (supplierBody) => {
  * @returns {Promise<QueryResult>}
  */
 export const querySuppliers = async (filter, options) => {
+  // No need to populate - yarnDetails are now embedded objects
   const suppliers = await Supplier.paginate(filter, options);
-  if (suppliers.results && suppliers.results.length > 0) {
-    await Supplier.populate(suppliers.results, {
-      path: 'yarnDetails.yarnType',
-      select: 'name status',
-    });
-    await Supplier.populate(suppliers.results, {
-      path: 'yarnDetails.color',
-      select: 'name colorCode status',
-    });
-  }
   return suppliers;
 };
 
@@ -76,9 +190,8 @@ export const querySuppliers = async (filter, options) => {
  * @returns {Promise<Supplier>}
  */
 export const getSupplierById = async (id) => {
-  return Supplier.findById(id)
-    .populate('yarnDetails.yarnType', 'name status')
-    .populate('yarnDetails.color', 'name colorCode status');
+  // No need to populate - yarnDetails are now embedded objects
+  return Supplier.findById(id);
 };
 
 /**
@@ -99,13 +212,19 @@ export const updateSupplierById = async (supplierId, updateBody) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'GST number already taken');
   }
   
-  // Validate yarnsubtype if provided
+  // Convert IDs to embedded objects BEFORE updating (so Mongoose validation passes)
   if (updateBody.yarnDetails && Array.isArray(updateBody.yarnDetails)) {
+    await convertYarnDetailsToEmbedded(updateBody.yarnDetails);
+    
+    // Validate yarnsubtype if provided
     for (const detail of updateBody.yarnDetails) {
       if (detail.yarnsubtype && detail.yarnType) {
-        const isValid = await validateYarnSubtype(detail.yarnType, detail.yarnsubtype);
-        if (!isValid) {
-          throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid yarnsubtype - does not exist in YarnType details');
+        // If yarnsubtype is still an ID, validate it exists
+        if (mongoose.Types.ObjectId.isValid(detail.yarnsubtype) || typeof detail.yarnsubtype === 'string') {
+          const isValid = await validateYarnSubtype(detail.yarnType._id || detail.yarnType, detail.yarnsubtype);
+          if (!isValid) {
+            throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid yarnsubtype - does not exist in YarnType details');
+          }
         }
       }
     }

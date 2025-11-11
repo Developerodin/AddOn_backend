@@ -114,7 +114,8 @@ const userSchema = mongoose.Schema(
             'Brand': false,
             'Yarn Type': false,
             'Count/Size': false,
-            'Color': false
+            'Color': false,
+            'Blend': false
           }
         },
         'Warehouse Management': {

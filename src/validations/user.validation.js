@@ -55,7 +55,8 @@ const createUser = {
           'Brand': Joi.boolean(),
           'Yarn Type': Joi.boolean(),
           'Count/Size': Joi.boolean(),
-          'Color': Joi.boolean()
+          'Color': Joi.boolean(),
+          'Blend': Joi.boolean()
         })
       }),
       'Warehouse Management': Joi.object().keys({
@@ -143,7 +144,8 @@ const updateUser = {
             'Brand': Joi.boolean(),
             'Yarn Type': Joi.boolean(),
             'Count/Size': Joi.boolean(),
-            'Color': Joi.boolean()
+            'Color': Joi.boolean(),
+            'Blend': Joi.boolean()
           })
         }),
         'Warehouse Management': Joi.object().keys({
@@ -205,7 +207,8 @@ const updateUserNavigation = {
             'Brand': Joi.boolean(),
             'Yarn Type': Joi.boolean(),
             'Count/Size': Joi.boolean(),
-            'Color': Joi.boolean()
+            'Color': Joi.boolean(),
+            'Blend': Joi.boolean()
           }).unknown(true)
         }).unknown(true),
         'Warehouse Management': Joi.object().keys({

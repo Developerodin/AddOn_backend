@@ -23,6 +23,7 @@ import machineRoute from './machine.route.js';
 import orderRoute from './order.route.js';
 import colorRoute from './color.route.js';
 import countSizeRoute from './countSize.route.js';
+import blendRoute from './blend.route.js';
 import yarnTypeRoute from './yarnType.route.js';
 import supplierRoute from './supplier.route.js';
 import config from '../../config/config.js';
@@ -121,6 +122,10 @@ const defaultRoutes = [
   {
     path: '/yarn-management/count-sizes',
     route: countSizeRoute,
+  },
+  {
+    path: '/yarn-management/blends',
+    route: blendRoute,
   },
   {
     path: '/yarn-management/yarn-types',
