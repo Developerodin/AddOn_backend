@@ -10,7 +10,7 @@ export const createYarnType = catchAsync(async (req, res) => {
 });
 
 export const getYarnTypes = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['name', 'status']);
+  const filter = pick(req.query, ['name', 'yarnName', 'status']);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
   const result = await yarnTypeService.queryYarnTypes(filter, options);
   res.send(result);
