@@ -28,12 +28,6 @@ const yarnTypeSchema = mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       auto: true,
     },
-    yarnName:{
-      type: String,
-      required: false,
-      trim: true,
-      unique: true,
-    },
     name: {
       type: String,
       required: true,
@@ -58,60 +52,6 @@ yarnTypeSchema.plugin(toJSON);
 yarnTypeSchema.plugin(paginate);
 
 /**
- * Auto-generate yarnName from name, subtype, and countSize
- */
-yarnTypeSchema.pre('save', async function (next) {
-  // Check if yarnName was manually set in this operation
-  const yarnNameManuallySet = this.isModified('yarnName') && this.yarnName;
-  
-  // Regenerate yarnName if:
-  // 1. yarnName is not set, OR
-  // 2. name or details changed and yarnName wasn't manually set
-  const shouldRegenerate = !this.yarnName || 
-    (!yarnNameManuallySet && (this.isModified('name') || this.isModified('details')));
-
-  if (!shouldRegenerate) {
-    return next();
-  }
-
-  // Generate yarnName from name and first detail
-  if (this.name && this.details && this.details.length > 0) {
-    const detail = this.details[0];
-    const parts = [this.name];
-
-    // Add subtype if exists
-    if (detail.subtype) {
-      parts.push(detail.subtype);
-    }
-
-    // Add countSize names if exists
-    if (detail.countSize && detail.countSize.length > 0) {
-      // Check if populated or need to fetch
-      if (typeof detail.countSize[0] === 'object' && detail.countSize[0].name) {
-        // Already populated
-        const countSizeNames = detail.countSize.map(cs => cs.name).join('-');
-        parts.push(countSizeNames);
-      } else {
-        // Need to fetch from database
-        const CountSize = mongoose.model('CountSize');
-        const countSizes = await CountSize.find({ _id: { $in: detail.countSize } });
-        if (countSizes.length > 0) {
-          const countSizeNames = countSizes.map(cs => cs.name).join('-');
-          parts.push(countSizeNames);
-        }
-      }
-    }
-
-    this.yarnName = parts.join('-');
-  } else if (this.name) {
-    // Fallback to just name if no details
-    this.yarnName = this.name;
-  }
-
-  next();
-});
-
-/**
  * Check if yarn type name is taken
  * @param {string} name - The yarn type name
  * @param {ObjectId} [excludeYarnTypeId] - The id of the yarn type to be excluded
@@ -119,18 +59,6 @@ yarnTypeSchema.pre('save', async function (next) {
  */
 yarnTypeSchema.statics.isNameTaken = async function (name, excludeYarnTypeId) {
   const yarnType = await this.findOne({ name, _id: { $ne: excludeYarnTypeId } });
-  return !!yarnType;
-};
-
-/**
- * Check if yarn name is taken
- * @param {string} yarnName - The yarn name
- * @param {ObjectId} [excludeYarnTypeId] - The id of the yarn type to be excluded
- * @returns {Promise<boolean>}
- */
-yarnTypeSchema.statics.isYarnNameTaken = async function (yarnName, excludeYarnTypeId) {
-  if (!yarnName) return false;
-  const yarnType = await this.findOne({ yarnName, _id: { $ne: excludeYarnTypeId } });
   return !!yarnType;
 };
 

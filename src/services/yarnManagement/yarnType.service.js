@@ -11,9 +11,6 @@ export const createYarnType = async (yarnTypeBody) => {
   if (await YarnType.isNameTaken(yarnTypeBody.name)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Yarn type name already taken');
   }
-  if (yarnTypeBody.yarnName && (await YarnType.isYarnNameTaken(yarnTypeBody.yarnName))) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Yarn name already taken');
-  }
   return YarnType.create(yarnTypeBody);
 };
 
@@ -64,9 +61,6 @@ export const updateYarnTypeById = async (yarnTypeId, updateBody) => {
   }
   if (updateBody.name && (await YarnType.isNameTaken(updateBody.name, yarnTypeId))) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Yarn type name already taken');
-  }
-  if (updateBody.yarnName && (await YarnType.isYarnNameTaken(updateBody.yarnName, yarnTypeId))) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Yarn name already taken');
   }
   Object.assign(yarnType, updateBody);
   await yarnType.save();
