@@ -11,8 +11,8 @@ const yarnDetailsSchema = mongoose.Schema(
       required: true,
     },
     yarnsubtype: {
-      type: String,
-      trim: true,
+      type: mongoose.Schema.Types.ObjectId,
+      required: false,
     },
     color: {
       type: mongoose.Schema.Types.ObjectId,
@@ -21,7 +21,7 @@ const yarnDetailsSchema = mongoose.Schema(
     },
     shadeNumber: {
       type: String,
-      required: true,
+      required: false,
       trim: true,
     },
   },
@@ -66,6 +66,16 @@ const supplierSchema = mongoose.Schema(
       },
     },
     address: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    city: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    state: {
       type: String,
       required: true,
       trim: true,

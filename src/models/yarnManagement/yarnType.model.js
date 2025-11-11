@@ -19,7 +19,7 @@ const yarnTypeDetailSchema = mongoose.Schema(
       trim: true,
     }
   },
-  { _id: false }
+  { _id: true }
 );
 
 const yarnTypeSchema = mongoose.Schema(

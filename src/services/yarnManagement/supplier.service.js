@@ -1,6 +1,22 @@
 import httpStatus from 'http-status';
-import { Supplier } from '../../models/index.js';
+import { Supplier, YarnType } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
+
+/**
+ * Validate yarnsubtype exists in the YarnType's details array
+ * @param {ObjectId} yarnTypeId - The YarnType ID
+ * @param {ObjectId} yarnsubtypeId - The detail item ID
+ * @returns {Promise<boolean>}
+ */
+const validateYarnSubtype = async (yarnTypeId, yarnsubtypeId) => {
+  if (!yarnsubtypeId) return true; // Optional field
+  
+  const yarnType = await YarnType.findById(yarnTypeId);
+  if (!yarnType) return false;
+  
+  // Check if the detail ID exists in the details array
+  return yarnType.details.some(detail => detail._id.toString() === yarnsubtypeId.toString());
+};
 
 /**
  * Create a supplier
@@ -14,6 +30,19 @@ export const createSupplier = async (supplierBody) => {
   if (supplierBody.gstNo && (await Supplier.isGstNoTaken(supplierBody.gstNo))) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'GST number already taken');
   }
+  
+  // Validate yarnsubtype if provided
+  if (supplierBody.yarnDetails && Array.isArray(supplierBody.yarnDetails)) {
+    for (const detail of supplierBody.yarnDetails) {
+      if (detail.yarnsubtype && detail.yarnType) {
+        const isValid = await validateYarnSubtype(detail.yarnType, detail.yarnsubtype);
+        if (!isValid) {
+          throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid yarnsubtype - does not exist in YarnType details');
+        }
+      }
+    }
+  }
+  
   return Supplier.create(supplierBody);
 };
 
@@ -69,6 +98,19 @@ export const updateSupplierById = async (supplierId, updateBody) => {
   if (updateBody.gstNo && (await Supplier.isGstNoTaken(updateBody.gstNo, supplierId))) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'GST number already taken');
   }
+  
+  // Validate yarnsubtype if provided
+  if (updateBody.yarnDetails && Array.isArray(updateBody.yarnDetails)) {
+    for (const detail of updateBody.yarnDetails) {
+      if (detail.yarnsubtype && detail.yarnType) {
+        const isValid = await validateYarnSubtype(detail.yarnType, detail.yarnsubtype);
+        if (!isValid) {
+          throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid yarnsubtype - does not exist in YarnType details');
+        }
+      }
+    }
+  }
+  
   Object.assign(supplier, updateBody);
   await supplier.save();
   return supplier;

@@ -3,7 +3,7 @@ import { objectId } from './custom.validation.js';
 
 const yarnDetailsSchema = Joi.object().keys({
   yarnType: Joi.string().custom(objectId).required(),
-  yarnsubtype: Joi.string().trim().allow('', null),
+  yarnsubtype: Joi.string().custom(objectId).allow(null, ''),
   color: Joi.string().custom(objectId).required(),
   shadeNumber: Joi.string().required().trim(),
 });
@@ -20,6 +20,8 @@ export const createSupplier = {
       }),
     email: Joi.string().required().email().trim().lowercase(),
     address: Joi.string().required().trim(),
+    city: Joi.string().required().trim(),
+    state: Joi.string().required().trim(),
     gstNo: Joi.string()
       .pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/)
       .uppercase()
@@ -64,6 +66,8 @@ export const updateSupplier = {
         }),
       email: Joi.string().email().trim().lowercase(),
       address: Joi.string().trim(),
+      city: Joi.string().trim(),
+      state: Joi.string().trim(),
       gstNo: Joi.string()
         .pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/)
         .uppercase()
