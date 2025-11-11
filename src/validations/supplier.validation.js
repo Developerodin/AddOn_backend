@@ -100,3 +100,48 @@ export const deleteSupplier = {
   }),
 };
 
+export const bulkImportSuppliers = {
+  body: Joi.object().keys({
+    suppliers: Joi.array().items(
+      Joi.object().keys({
+        id: Joi.string().custom(objectId).optional().description('MongoDB ObjectId for updating existing supplier'),
+        brandName: Joi.string().required().trim(),
+        contactPersonName: Joi.string().required().trim(),
+        contactNumber: Joi.string()
+          .required()
+          .pattern(/^\+?[\d\s\-\(\)]{10,15}$/)
+          .messages({
+            'string.pattern.base': 'Invalid contact number format',
+          }),
+        email: Joi.string().required().email().trim().lowercase(),
+        address: Joi.string().required().trim(),
+        city: Joi.string().required().trim(),
+        state: Joi.string().required().trim(),
+        pincode: Joi.string()
+          .required()
+          .pattern(/^[0-9]{6}$/)
+          .messages({
+            'string.pattern.base': 'Invalid pincode format. Must be 6 digits',
+          }),
+        country: Joi.string().required().trim(),
+        gstNo: Joi.string()
+          .pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/)
+          .uppercase()
+          .allow('', null)
+          .messages({
+            'string.pattern.base': 'Invalid GST number format',
+          }),
+        yarnDetails: Joi.array().items(yarnDetailsSchema),
+        status: Joi.string().valid('active', 'inactive', 'suspended').default('active'),
+      })
+    ).min(1).max(1000).messages({
+      'array.min': 'At least one supplier is required',
+      'array.max': 'Maximum 1000 suppliers allowed per request'
+    }),
+    batchSize: Joi.number().integer().min(1).max(100).default(50).messages({
+      'number.min': 'Batch size must be at least 1',
+      'number.max': 'Batch size cannot exceed 100'
+    }),
+  }),
+};
+

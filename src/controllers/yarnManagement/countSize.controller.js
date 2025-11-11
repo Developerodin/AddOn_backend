@@ -34,3 +34,35 @@ export const deleteCountSize = catchAsync(async (req, res) => {
   res.status(httpStatus.NO_CONTENT).send();
 });
 
+export const bulkImportCountSizes = catchAsync(async (req, res) => {
+  const { countSizes, batchSize = 50 } = req.body;
+  
+  if (!countSizes || !Array.isArray(countSizes) || countSizes.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Count sizes array is required and must not be empty');
+  }
+
+  const results = await countSizeService.bulkImportCountSizes(countSizes, batchSize);
+  
+  const response = {
+    message: 'Bulk import completed',
+    summary: {
+      total: results.total,
+      created: results.created,
+      updated: results.updated,
+      failed: results.failed,
+      successRate: results.total > 0 ? ((results.created + results.updated) / results.total * 100).toFixed(2) + '%' : '0%',
+      processingTime: `${results.processingTime}ms`
+    },
+    details: {
+      successful: results.created + results.updated,
+      errors: results.errors
+    }
+  };
+
+  const statusCode = results.failed === 0 ? httpStatus.OK : 
+                    results.failed === results.total ? httpStatus.BAD_REQUEST : 
+                    httpStatus.PARTIAL_CONTENT;
+
+  res.status(statusCode).send(response);
+});
+

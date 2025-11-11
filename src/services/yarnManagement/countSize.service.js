@@ -70,3 +70,129 @@ export const deleteCountSizeById = async (countSizeId) => {
   return countSize;
 };
 
+/**
+ * Bulk import count sizes with batch processing
+ * @param {Array} countSizes - Array of count size objects
+ * @param {number} batchSize - Number of count sizes to process in each batch
+ * @returns {Promise<Object>} - Results of the bulk import operation
+ */
+export const bulkImportCountSizes = async (countSizes, batchSize = 50) => {
+  const results = {
+    total: countSizes.length,
+    created: 0,
+    updated: 0,
+    failed: 0,
+    errors: [],
+    processingTime: 0,
+  };
+
+  const startTime = Date.now();
+
+  try {
+    // Validate input size
+    if (countSizes.length > 1000) {
+      throw new Error('Maximum 1000 count sizes allowed per request');
+    }
+
+    // Process count sizes in batches
+    for (let i = 0; i < countSizes.length; i += batchSize) {
+      const batch = countSizes.slice(i, i + batchSize);
+      const batchStartTime = Date.now();
+      
+      try {
+        const batchPromises = batch.map(async (countSizeData, batchIndex) => {
+          const globalIndex = i + batchIndex;
+          
+          try {
+            const hasId = countSizeData.id && countSizeData.id.trim() !== '';
+            
+            // Validate required fields
+            if (!countSizeData.name || countSizeData.name.trim() === '') {
+              throw new Error('Count size name is required');
+            }
+
+            const processedData = {
+              name: countSizeData.name.trim(),
+              status: countSizeData.status || 'active',
+            };
+
+            if (hasId) {
+              // Validate ObjectId format
+              if (!/^[0-9a-fA-F]{24}$/.test(countSizeData.id.trim())) {
+                throw new Error('Invalid count size ID format');
+              }
+
+              const existingCountSize = await CountSize.findById(countSizeData.id).lean();
+              if (!existingCountSize) {
+                throw new Error(`Count size with ID ${countSizeData.id} not found`);
+              }
+              
+              // Check for name conflicts
+              if (processedData.name !== existingCountSize.name) {
+                if (await CountSize.isNameTaken(processedData.name, countSizeData.id)) {
+                  throw new Error(`Count size name "${processedData.name}" already taken`);
+                }
+              }
+              
+              await CountSize.updateOne(
+                { _id: countSizeData.id },
+                { $set: processedData }
+              );
+              results.updated++;
+            } else {
+              // Check for name conflicts
+              if (await CountSize.isNameTaken(processedData.name)) {
+                throw new Error(`Count size name "${processedData.name}" already taken`);
+              }
+              
+              await CountSize.create(processedData);
+              results.created++;
+            }
+          } catch (error) {
+            results.failed++;
+            results.errors.push({
+              index: globalIndex,
+              name: countSizeData.name || 'N/A',
+              error: error.message,
+            });
+          }
+        });
+        
+        await Promise.all(batchPromises);
+        
+        const batchEndTime = Date.now();
+        console.log(`CountSize batch ${Math.floor(i / batchSize) + 1} completed in ${batchEndTime - batchStartTime}ms`);
+        
+      } catch (error) {
+        console.error(`Error processing countSize batch ${Math.floor(i / batchSize) + 1}:`, error);
+        batch.forEach((countSizeData, batchIndex) => {
+          const globalIndex = i + batchIndex;
+          results.failed++;
+          results.errors.push({
+            index: globalIndex,
+            name: countSizeData.name || 'N/A',
+            error: `Batch processing error: ${error.message}`,
+          });
+        });
+      }
+    }
+    
+    const endTime = Date.now();
+    results.processingTime = endTime - startTime;
+    
+    console.log(`Bulk import count sizes completed in ${results.processingTime}ms: ${results.created} created, ${results.updated} updated, ${results.failed} failed`);
+    
+    return results;
+    
+  } catch (error) {
+    const endTime = Date.now();
+    results.processingTime = endTime - startTime;
+    results.errors.push({
+      index: -1,
+      name: 'N/A',
+      error: `Bulk import failed: ${error.message}`,
+    });
+    throw error;
+  }
+};
+

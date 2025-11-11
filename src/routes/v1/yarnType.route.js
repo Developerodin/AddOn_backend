@@ -1,5 +1,6 @@
 import express from 'express';
 import validate from '../../middlewares/validate.js';
+import { bulkImportMiddleware, validateBulkImportSize } from '../../middlewares/bulkImport.js';
 import * as yarnTypeValidation from '../../validations/yarnType.validation.js';
 import * as yarnTypeController from '../../controllers/yarnManagement/yarnType.controller.js';
 
@@ -9,6 +10,15 @@ router
   .route('/')
   .post(validate(yarnTypeValidation.createYarnType), yarnTypeController.createYarnType)
   .get(validate(yarnTypeValidation.getYarnTypes), yarnTypeController.getYarnTypes);
+
+router
+  .route('/bulk-import')
+  .post(
+    bulkImportMiddleware,
+    validateBulkImportSize,
+    validate(yarnTypeValidation.bulkImportYarnTypes),
+    yarnTypeController.bulkImportYarnTypes
+  );
 
 router
   .route('/:yarnTypeId')

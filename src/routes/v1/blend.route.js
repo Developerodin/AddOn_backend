@@ -1,5 +1,6 @@
 import express from 'express';
 import validate from '../../middlewares/validate.js';
+import { bulkImportMiddleware, validateBulkImportSize } from '../../middlewares/bulkImport.js';
 import * as blendValidation from '../../validations/blend.validation.js';
 import * as blendController from '../../controllers/yarnManagement/blend.controller.js';
 
@@ -9,6 +10,15 @@ router
   .route('/')
   .post(validate(blendValidation.createBlend), blendController.createBlend)
   .get(validate(blendValidation.getBlends), blendController.getBlends);
+
+router
+  .route('/bulk-import')
+  .post(
+    bulkImportMiddleware,
+    validateBulkImportSize,
+    validate(blendValidation.bulkImportBlends),
+    blendController.bulkImportBlends
+  );
 
 router
   .route('/:blendId')

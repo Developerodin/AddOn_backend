@@ -1,5 +1,6 @@
 import express from 'express';
 import validate from '../../middlewares/validate.js';
+import { bulkImportMiddleware, validateBulkImportSize } from '../../middlewares/bulkImport.js';
 import * as countSizeValidation from '../../validations/countSize.validation.js';
 import * as countSizeController from '../../controllers/yarnManagement/countSize.controller.js';
 
@@ -9,6 +10,15 @@ router
   .route('/')
   .post(validate(countSizeValidation.createCountSize), countSizeController.createCountSize)
   .get(validate(countSizeValidation.getCountSizes), countSizeController.getCountSizes);
+
+router
+  .route('/bulk-import')
+  .post(
+    bulkImportMiddleware,
+    validateBulkImportSize,
+    validate(countSizeValidation.bulkImportCountSizes),
+    countSizeController.bulkImportCountSizes
+  );
 
 router
   .route('/:countSizeId')

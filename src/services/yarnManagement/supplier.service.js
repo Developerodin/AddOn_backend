@@ -249,3 +249,188 @@ export const deleteSupplierById = async (supplierId) => {
   return supplier;
 };
 
+/**
+ * Bulk import suppliers with batch processing
+ * @param {Array} suppliers - Array of supplier objects
+ * @param {number} batchSize - Number of suppliers to process in each batch
+ * @returns {Promise<Object>} - Results of the bulk import operation
+ */
+export const bulkImportSuppliers = async (suppliers, batchSize = 50) => {
+  const results = {
+    total: suppliers.length,
+    created: 0,
+    updated: 0,
+    failed: 0,
+    errors: [],
+    processingTime: 0,
+  };
+
+  const startTime = Date.now();
+
+  try {
+    // Validate input size
+    if (suppliers.length > 1000) {
+      throw new Error('Maximum 1000 suppliers allowed per request');
+    }
+
+    // Process suppliers in batches
+    for (let i = 0; i < suppliers.length; i += batchSize) {
+      const batch = suppliers.slice(i, i + batchSize);
+      const batchStartTime = Date.now();
+      
+      try {
+        const batchPromises = batch.map(async (supplierData, batchIndex) => {
+          const globalIndex = i + batchIndex;
+          
+          try {
+            const hasId = supplierData.id && supplierData.id.trim() !== '';
+            
+            // Validate required fields
+            const requiredFields = ['brandName', 'contactPersonName', 'contactNumber', 'email', 'address', 'city', 'state', 'pincode', 'country'];
+            const missingFields = requiredFields.filter(field => !supplierData[field] || supplierData[field].toString().trim() === '');
+            
+            if (missingFields.length > 0) {
+              throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
+            }
+
+            // Validate formats
+            if (!/^\+?[\d\s\-\(\)]{10,15}$/.test(supplierData.contactNumber.trim())) {
+              throw new Error('Invalid contact number format');
+            }
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(supplierData.email.trim())) {
+              throw new Error('Invalid email format');
+            }
+            if (!/^[0-9]{6}$/.test(supplierData.pincode.trim())) {
+              throw new Error('Invalid pincode format. Must be 6 digits');
+            }
+            if (supplierData.gstNo && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(supplierData.gstNo.trim())) {
+              throw new Error('Invalid GST number format');
+            }
+
+            const processedData = {
+              brandName: supplierData.brandName.trim(),
+              contactPersonName: supplierData.contactPersonName.trim(),
+              contactNumber: supplierData.contactNumber.trim(),
+              email: supplierData.email.trim().toLowerCase(),
+              address: supplierData.address.trim(),
+              city: supplierData.city.trim(),
+              state: supplierData.state.trim(),
+              pincode: supplierData.pincode.trim(),
+              country: supplierData.country.trim(),
+              gstNo: supplierData.gstNo ? supplierData.gstNo.trim().toUpperCase() : undefined,
+              yarnDetails: supplierData.yarnDetails || [],
+              status: supplierData.status || 'active',
+            };
+
+            // Convert yarnDetails IDs to embedded objects if provided
+            if (processedData.yarnDetails && Array.isArray(processedData.yarnDetails)) {
+              await convertYarnDetailsToEmbedded(processedData.yarnDetails);
+              
+              // Validate yarnsubtype if provided
+              for (const detail of processedData.yarnDetails) {
+                if (detail.yarnsubtype && detail.yarnType) {
+                  if (mongoose.Types.ObjectId.isValid(detail.yarnsubtype) || typeof detail.yarnsubtype === 'string') {
+                    const isValid = await validateYarnSubtype(detail.yarnType._id || detail.yarnType, detail.yarnsubtype);
+                    if (!isValid) {
+                      throw new Error('Invalid yarnsubtype - does not exist in YarnType details');
+                    }
+                  }
+                }
+              }
+            }
+
+            if (hasId) {
+              // Validate ObjectId format
+              if (!/^[0-9a-fA-F]{24}$/.test(supplierData.id.trim())) {
+                throw new Error('Invalid supplier ID format');
+              }
+
+              const existingSupplier = await Supplier.findById(supplierData.id).lean();
+              if (!existingSupplier) {
+                throw new Error(`Supplier with ID ${supplierData.id} not found`);
+              }
+              
+              // Check for email conflicts
+              if (processedData.email !== existingSupplier.email) {
+                if (await Supplier.isEmailTaken(processedData.email, supplierData.id)) {
+                  throw new Error(`Email "${processedData.email}" already taken`);
+                }
+              }
+              
+              // Check for GST number conflicts
+              if (processedData.gstNo && processedData.gstNo !== existingSupplier.gstNo) {
+                if (await Supplier.isGstNoTaken(processedData.gstNo, supplierData.id)) {
+                  throw new Error(`GST number "${processedData.gstNo}" already taken`);
+                }
+              }
+              
+              await Supplier.updateOne(
+                { _id: supplierData.id },
+                { $set: processedData }
+              );
+              results.updated++;
+            } else {
+              // Check for email conflicts
+              if (await Supplier.isEmailTaken(processedData.email)) {
+                throw new Error(`Email "${processedData.email}" already taken`);
+              }
+              
+              // Check for GST number conflicts
+              if (processedData.gstNo && await Supplier.isGstNoTaken(processedData.gstNo)) {
+                throw new Error(`GST number "${processedData.gstNo}" already taken`);
+              }
+              
+              await Supplier.create(processedData);
+              results.created++;
+            }
+          } catch (error) {
+            results.failed++;
+            results.errors.push({
+              index: globalIndex,
+              brandName: supplierData.brandName || 'N/A',
+              email: supplierData.email || 'N/A',
+              error: error.message,
+            });
+          }
+        });
+        
+        await Promise.all(batchPromises);
+        
+        const batchEndTime = Date.now();
+        console.log(`Supplier batch ${Math.floor(i / batchSize) + 1} completed in ${batchEndTime - batchStartTime}ms`);
+        
+      } catch (error) {
+        console.error(`Error processing supplier batch ${Math.floor(i / batchSize) + 1}:`, error);
+        batch.forEach((supplierData, batchIndex) => {
+          const globalIndex = i + batchIndex;
+          results.failed++;
+          results.errors.push({
+            index: globalIndex,
+            brandName: supplierData.brandName || 'N/A',
+            email: supplierData.email || 'N/A',
+            error: `Batch processing error: ${error.message}`,
+          });
+        });
+      }
+    }
+    
+    const endTime = Date.now();
+    results.processingTime = endTime - startTime;
+    
+    console.log(`Bulk import suppliers completed in ${results.processingTime}ms: ${results.created} created, ${results.updated} updated, ${results.failed} failed`);
+    
+    return results;
+    
+  } catch (error) {
+    const endTime = Date.now();
+    results.processingTime = endTime - startTime;
+    results.errors.push({
+      index: -1,
+      brandName: 'N/A',
+      email: 'N/A',
+      error: `Bulk import failed: ${error.message}`,
+    });
+    throw error;
+  }
+};
+

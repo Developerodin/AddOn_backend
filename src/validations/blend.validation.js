@@ -42,3 +42,25 @@ export const deleteBlend = {
   }),
 };
 
+export const bulkImportBlends = {
+  body: Joi.object().keys({
+    blends: Joi.array().items(
+      Joi.object().keys({
+        id: Joi.string().custom(objectId).optional().description('MongoDB ObjectId for updating existing blend'),
+        name: Joi.string().required().trim().messages({
+          'string.empty': 'Blend name is required',
+          'any.required': 'Blend name is required'
+        }),
+        status: Joi.string().valid('active', 'inactive').default('active'),
+      })
+    ).min(1).max(1000).messages({
+      'array.min': 'At least one blend is required',
+      'array.max': 'Maximum 1000 blends allowed per request'
+    }),
+    batchSize: Joi.number().integer().min(1).max(100).default(50).messages({
+      'number.min': 'Batch size must be at least 1',
+      'number.max': 'Batch size cannot exceed 100'
+    }),
+  }),
+};
+

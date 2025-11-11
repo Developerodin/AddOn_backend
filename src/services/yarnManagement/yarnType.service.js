@@ -166,3 +166,135 @@ export const deleteYarnTypeById = async (yarnTypeId) => {
   return yarnType;
 };
 
+/**
+ * Bulk import yarn types with batch processing
+ * @param {Array} yarnTypes - Array of yarn type objects
+ * @param {number} batchSize - Number of yarn types to process in each batch
+ * @returns {Promise<Object>} - Results of the bulk import operation
+ */
+export const bulkImportYarnTypes = async (yarnTypes, batchSize = 50) => {
+  const results = {
+    total: yarnTypes.length,
+    created: 0,
+    updated: 0,
+    failed: 0,
+    errors: [],
+    processingTime: 0,
+  };
+
+  const startTime = Date.now();
+
+  try {
+    // Validate input size
+    if (yarnTypes.length > 1000) {
+      throw new Error('Maximum 1000 yarn types allowed per request');
+    }
+
+    // Process yarn types in batches
+    for (let i = 0; i < yarnTypes.length; i += batchSize) {
+      const batch = yarnTypes.slice(i, i + batchSize);
+      const batchStartTime = Date.now();
+      
+      try {
+        const batchPromises = batch.map(async (yarnTypeData, batchIndex) => {
+          const globalIndex = i + batchIndex;
+          
+          try {
+            const hasId = yarnTypeData.id && yarnTypeData.id.trim() !== '';
+            
+            // Validate required fields
+            if (!yarnTypeData.name || yarnTypeData.name.trim() === '') {
+              throw new Error('Yarn type name is required');
+            }
+
+            const processedData = {
+              name: yarnTypeData.name.trim(),
+              details: yarnTypeData.details || [],
+              status: yarnTypeData.status || 'active',
+            };
+
+            // Convert countSize IDs to embedded objects if provided
+            if (processedData.details && Array.isArray(processedData.details)) {
+              await convertCountSizeToEmbedded(processedData.details);
+            }
+
+            if (hasId) {
+              // Validate ObjectId format
+              if (!/^[0-9a-fA-F]{24}$/.test(yarnTypeData.id.trim())) {
+                throw new Error('Invalid yarn type ID format');
+              }
+
+              const existingYarnType = await YarnType.findById(yarnTypeData.id).lean();
+              if (!existingYarnType) {
+                throw new Error(`Yarn type with ID ${yarnTypeData.id} not found`);
+              }
+              
+              // Check for name conflicts
+              if (processedData.name !== existingYarnType.name) {
+                if (await YarnType.isNameTaken(processedData.name, yarnTypeData.id)) {
+                  throw new Error(`Yarn type name "${processedData.name}" already taken`);
+                }
+              }
+              
+              await YarnType.updateOne(
+                { _id: yarnTypeData.id },
+                { $set: processedData }
+              );
+              results.updated++;
+            } else {
+              // Check for name conflicts
+              if (await YarnType.isNameTaken(processedData.name)) {
+                throw new Error(`Yarn type name "${processedData.name}" already taken`);
+              }
+              
+              await YarnType.create(processedData);
+              results.created++;
+            }
+          } catch (error) {
+            results.failed++;
+            results.errors.push({
+              index: globalIndex,
+              name: yarnTypeData.name || 'N/A',
+              error: error.message,
+            });
+          }
+        });
+        
+        await Promise.all(batchPromises);
+        
+        const batchEndTime = Date.now();
+        console.log(`YarnType batch ${Math.floor(i / batchSize) + 1} completed in ${batchEndTime - batchStartTime}ms`);
+        
+      } catch (error) {
+        console.error(`Error processing yarnType batch ${Math.floor(i / batchSize) + 1}:`, error);
+        batch.forEach((yarnTypeData, batchIndex) => {
+          const globalIndex = i + batchIndex;
+          results.failed++;
+          results.errors.push({
+            index: globalIndex,
+            name: yarnTypeData.name || 'N/A',
+            error: `Batch processing error: ${error.message}`,
+          });
+        });
+      }
+    }
+    
+    const endTime = Date.now();
+    results.processingTime = endTime - startTime;
+    
+    console.log(`Bulk import yarn types completed in ${results.processingTime}ms: ${results.created} created, ${results.updated} updated, ${results.failed} failed`);
+    
+    return results;
+    
+  } catch (error) {
+    const endTime = Date.now();
+    results.processingTime = endTime - startTime;
+    results.errors.push({
+      index: -1,
+      name: 'N/A',
+      error: `Bulk import failed: ${error.message}`,
+    });
+    throw error;
+  }
+};
+
