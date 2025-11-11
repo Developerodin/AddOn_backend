@@ -22,6 +22,13 @@ export const createSupplier = {
     address: Joi.string().required().trim(),
     city: Joi.string().required().trim(),
     state: Joi.string().required().trim(),
+    pincode: Joi.string()
+      .required()
+      .pattern(/^[0-9]{6}$/)
+      .messages({
+        'string.pattern.base': 'Invalid pincode format. Must be 6 digits',
+      }),
+    country: Joi.string().required().trim(),
     gstNo: Joi.string()
       .pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/)
       .uppercase()
@@ -68,6 +75,12 @@ export const updateSupplier = {
       address: Joi.string().trim(),
       city: Joi.string().trim(),
       state: Joi.string().trim(),
+      pincode: Joi.string()
+        .pattern(/^[0-9]{6}$/)
+        .messages({
+          'string.pattern.base': 'Invalid pincode format. Must be 6 digits',
+        }),
+      country: Joi.string().trim(),
       gstNo: Joi.string()
         .pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/)
         .uppercase()

@@ -80,6 +80,21 @@ const supplierSchema = mongoose.Schema(
       required: true,
       trim: true,
     },
+    pincode: {
+      type: String,
+      required: true,
+      trim: true,
+      validate(value) {
+        if (!/^[0-9]{6}$/.test(value)) {
+          throw new Error('Invalid pincode format. Must be 6 digits');
+        }
+      },
+    },
+    country: {
+      type: String,
+      required: true,
+      trim: true,
+    },
     gstNo: {
       type: String,
       trim: true,
