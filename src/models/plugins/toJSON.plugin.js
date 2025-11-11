@@ -44,8 +44,13 @@ const toJSON = (schema) => {
         'CountSize',
         'YarnType',
         'Supplier',
+        'Blend',
+        'YarnCatalog',
+        'YarnOrder',
       ];
-      if (!modelsWithTimestamps.includes(schema.modelName)) {
+      // Get model name from document constructor or schema
+      const modelName = doc?.constructor?.modelName || schema.modelName;
+      if (!modelsWithTimestamps.includes(modelName)) {
         delete ret.createdAt;
         delete ret.updatedAt;
       }
