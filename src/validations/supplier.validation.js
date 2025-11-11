@@ -3,6 +3,7 @@ import { objectId } from './custom.validation.js';
 
 const yarnDetailsSchema = Joi.object().keys({
   yarnType: Joi.string().custom(objectId).required(),
+  yarnsubtype: Joi.string().trim().allow('', null),
   color: Joi.string().custom(objectId).required(),
   shadeNumber: Joi.string().required().trim(),
 });

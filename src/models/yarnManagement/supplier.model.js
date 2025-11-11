@@ -10,6 +10,10 @@ const yarnDetailsSchema = mongoose.Schema(
       ref: 'YarnType',
       required: true,
     },
+    yarnsubtype: {
+      type: String,
+      trim: true,
+    },
     color: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Color',
