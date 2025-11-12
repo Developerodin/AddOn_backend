@@ -39,11 +39,18 @@ export const DEFAULT_NAVIGATION = {
     'Warehouse Floor': false
   },
   'Yarn Management': {
-    'Cataloguing': false,
-    'Purchase Order': false,
-    'Purchase Order Recevied': false,
+    'Dashboard': false,
     'Inventory': false,
+    'Cataloguing': false,
+    'Purchase Management': {
+      'Requisition list': false,
+      'Purchase Order': false,
+      'Purchase Order Recevied': false,
+      'Yarn QC': false,
+      'Yarn Storage': false
+    },
     'Yarn Issue': false,
+    'Yarn Return': false,
     'Yarn Master': {
       'Brand': false,
       'Yarn Type': false,
@@ -97,11 +104,18 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Warehouse Floor': true
     },
     'Yarn Management': {
-      'Cataloguing': true,
-      'Purchase Order': true,
-      'Purchase Order Recevied': true,
+      'Dashboard': true,
       'Inventory': true,
+      'Cataloguing': true,
+      'Purchase Management': {
+        'Requisition list': true,
+        'Purchase Order': true,
+        'Purchase Order Recevied': true,
+        'Yarn QC': true,
+        'Yarn Storage': true
+      },
       'Yarn Issue': true,
+      'Yarn Return': true,
       'Yarn Master': {
         'Brand': true,
         'Yarn Type': true,
@@ -150,11 +164,18 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Warehouse Floor': false
     },
     'Yarn Management': {
-      'Cataloguing': false,
-      'Purchase Order': false,
-      'Purchase Order Recevied': false,
+      'Dashboard': false,
       'Inventory': false,
+      'Cataloguing': false,
+      'Purchase Management': {
+        'Requisition list': false,
+        'Purchase Order': false,
+        'Purchase Order Recevied': false,
+        'Yarn QC': false,
+        'Yarn Storage': false
+      },
       'Yarn Issue': false,
+      'Yarn Return': false,
       'Yarn Master': {
         'Brand': false,
         'Yarn Type': false,
@@ -278,7 +299,7 @@ export const validateNavigationStructure = (navigation) => {
     console.error('Validation failed: Yarn Management is not an object');
     return false;
   }
-  const yarnKeys = ['Cataloguing', 'Purchase Order', 'Purchase Order Recevied', 'Inventory', 'Yarn Issue', 'Yarn Master'];
+  const yarnKeys = ['Dashboard', 'Inventory', 'Cataloguing', 'Purchase Management', 'Yarn Issue', 'Yarn Return', 'Yarn Master'];
   for (const key of yarnKeys) {
     if (key === 'Yarn Master') {
       // Yarn Master is a nested object
@@ -290,6 +311,19 @@ export const validateNavigationStructure = (navigation) => {
       for (const masterKey of yarnMasterKeys) {
         if (!(masterKey in navigation['Yarn Management']['Yarn Master']) || typeof navigation['Yarn Management']['Yarn Master'][masterKey] !== 'boolean') {
           console.error(`Validation failed: Yarn Management.Yarn Master.${masterKey} is missing or not a boolean`);
+          return false;
+        }
+      }
+    } else if (key === 'Purchase Management') {
+      // Purchase Management is a nested object
+      if (!navigation['Yarn Management']['Purchase Management'] || typeof navigation['Yarn Management']['Purchase Management'] !== 'object') {
+        console.error('Validation failed: Yarn Management.Purchase Management is missing or not an object');
+        return false;
+      }
+      const purchaseManagementKeys = ['Requisition list', 'Purchase Order', 'Purchase Order Recevied', 'Yarn QC', 'Yarn Storage'];
+      for (const purchaseKey of purchaseManagementKeys) {
+        if (!(purchaseKey in navigation['Yarn Management']['Purchase Management']) || typeof navigation['Yarn Management']['Purchase Management'][purchaseKey] !== 'boolean') {
+          console.error(`Validation failed: Yarn Management.Purchase Management.${purchaseKey} is missing or not a boolean`);
           return false;
         }
       }

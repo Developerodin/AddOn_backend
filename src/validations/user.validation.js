@@ -46,11 +46,18 @@ const createUser = {
         'Warehouse Floor': Joi.boolean()
       }),
       'Yarn Management': Joi.object().keys({
-        'Cataloguing': Joi.boolean(),
-        'Purchase Order': Joi.boolean(),
-        'Purchase Order Recevied': Joi.boolean(),
+        'Dashboard': Joi.boolean(),
         'Inventory': Joi.boolean(),
+        'Cataloguing': Joi.boolean(),
+        'Purchase Management': Joi.object().keys({
+          'Requisition list': Joi.boolean(),
+          'Purchase Order': Joi.boolean(),
+          'Purchase Order Recevied': Joi.boolean(),
+          'Yarn QC': Joi.boolean(),
+          'Yarn Storage': Joi.boolean()
+        }),
         'Yarn Issue': Joi.boolean(),
+        'Yarn Return': Joi.boolean(),
         'Yarn Master': Joi.object().keys({
           'Brand': Joi.boolean(),
           'Yarn Type': Joi.boolean(),
@@ -135,11 +142,18 @@ const updateUser = {
           'Warehouse Floor': Joi.boolean()
         }),
         'Yarn Management': Joi.object().keys({
-          'Cataloguing': Joi.boolean(),
-          'Purchase Order': Joi.boolean(),
-          'Purchase Order Recevied': Joi.boolean(),
+          'Dashboard': Joi.boolean(),
           'Inventory': Joi.boolean(),
+          'Cataloguing': Joi.boolean(),
+          'Purchase Management': Joi.object().keys({
+            'Requisition list': Joi.boolean(),
+            'Purchase Order': Joi.boolean(),
+            'Purchase Order Recevied': Joi.boolean(),
+            'Yarn QC': Joi.boolean(),
+            'Yarn Storage': Joi.boolean()
+          }),
           'Yarn Issue': Joi.boolean(),
+          'Yarn Return': Joi.boolean(),
           'Yarn Master': Joi.object().keys({
             'Brand': Joi.boolean(),
             'Yarn Type': Joi.boolean(),
@@ -198,11 +212,18 @@ const updateUserNavigation = {
           'Warehouse Floor': Joi.boolean()
         }).unknown(true),
         'Yarn Management': Joi.object().keys({
-          'Cataloguing': Joi.boolean(),
-          'Purchase Order': Joi.boolean(),
-          'Purchase Order Recevied': Joi.boolean(),
+          'Dashboard': Joi.boolean(),
           'Inventory': Joi.boolean(),
+          'Cataloguing': Joi.boolean(),
+          'Purchase Management': Joi.object().keys({
+            'Requisition list': Joi.boolean(),
+            'Purchase Order': Joi.boolean(),
+            'Purchase Order Recevied': Joi.boolean(),
+            'Yarn QC': Joi.boolean(),
+            'Yarn Storage': Joi.boolean()
+          }).unknown(true),
           'Yarn Issue': Joi.boolean(),
+          'Yarn Return': Joi.boolean(),
           'Yarn Master': Joi.object().keys({
             'Brand': Joi.boolean(),
             'Yarn Type': Joi.boolean(),

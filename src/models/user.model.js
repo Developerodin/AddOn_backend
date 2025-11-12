@@ -105,18 +105,26 @@ const userSchema = mongoose.Schema(
           'Warehouse Floor': false
         },
         'Yarn Management': {
-          'Cataloguing': false,
-          'Purchase Order': false,
-          'Purchase Order Recevied': false,
+          'Dashboard': false,
           'Inventory': false,
+          'Cataloguing': false,
+          'Purchase Management':{
+            'Requisition list': false,
+            'Purchase Order': false,
+            'Purchase Order Recevied': false,
+            'Yarn QC': false,
+            'Yarn Storage': false,
+          },
           'Yarn Issue': false,
+          'Yarn Return': false,
           'Yarn Master': {
             'Brand': false,
             'Yarn Type': false,
             'Count/Size': false,
             'Color': false,
             'Blend': false
-          }
+          },
+
         },
         'Warehouse Management': {
           'Orders': false,
