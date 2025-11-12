@@ -91,6 +91,10 @@ const yarnDetailsSchema = mongoose.Schema(
       required: false,
       trim: true,
     },
+    tearweight: {
+      type: Number,
+      required: true,
+    },
   },
   { _id: false }
 );
