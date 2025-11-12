@@ -176,6 +176,10 @@ const yarnCatalogSchema = mongoose.Schema(
       trim: true,
       uppercase: true,
     },
+    minQuantity: {
+      type: Number,
+      min: 0,
+    },
     status: {
       type: String,
       enum: ['active', 'inactive', 'suspended'],

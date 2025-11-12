@@ -15,6 +15,7 @@ export const createYarnCatalog = {
     gst: Joi.number().min(0).max(100).allow(null),
     remark: Joi.string().trim().allow('', null),
     hsnCode: Joi.string().trim().uppercase().allow('', null),
+    minQuantity: Joi.number().min(0).allow(null),
     status: Joi.string().valid('active', 'inactive', 'suspended'),
   }),
 };
@@ -57,6 +58,7 @@ export const updateYarnCatalog = {
       gst: Joi.number().min(0).max(100).allow(null),
       remark: Joi.string().trim().allow('', null),
       hsnCode: Joi.string().trim().uppercase().allow('', null),
+      minQuantity: Joi.number().min(0).allow(null),
       status: Joi.string().valid('active', 'inactive', 'suspended'),
     })
     .min(1),
@@ -94,6 +96,7 @@ export const bulkImportYarnCatalogs = {
         gst: Joi.number().min(0).max(100).allow(null),
         remark: Joi.string().trim().allow('', null),
         hsnCode: Joi.string().trim().uppercase().allow('', null),
+        minQuantity: Joi.number().min(0).allow(null),
         status: Joi.string().valid('active', 'inactive', 'suspended').default('active'),
       })
     ).min(1).max(1000).messages({
