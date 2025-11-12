@@ -130,6 +130,10 @@ export const bulkImportColors = async (colors, batchSize = 50) => {
               colorCode: colorData.colorCode.trim().toUpperCase(),
               status: colorData.status || 'active',
             };
+            
+            if (colorData.pantoneName && colorData.pantoneName.trim() !== '') {
+              processedData.pantoneName = colorData.pantoneName.trim();
+            }
 
             if (hasId) {
               // Validate ObjectId format

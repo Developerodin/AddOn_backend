@@ -25,6 +25,10 @@ const colorSchema = mongoose.Schema(
         }
       },
     },
+    pantoneName: {
+      type: String,
+      trim: true,
+    },
     status: {
       type: String,
       enum: ['active', 'inactive'],

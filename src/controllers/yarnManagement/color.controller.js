@@ -10,7 +10,7 @@ export const createColor = catchAsync(async (req, res) => {
 });
 
 export const getColors = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['name', 'status']);
+  const filter = pick(req.query, ['name', 'pantoneName', 'status']);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
   const result = await colorService.queryColors(filter, options);
   res.send(result);

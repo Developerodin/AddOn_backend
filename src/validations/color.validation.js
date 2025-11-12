@@ -10,6 +10,7 @@ export const createColor = {
       .messages({
         'string.pattern.base': 'Color code must be a valid hex color (e.g., #FF5733)',
       }),
+    pantoneName: Joi.string().trim(),
     status: Joi.string().valid('active', 'inactive'),
   }),
 };
@@ -17,6 +18,7 @@ export const createColor = {
 export const getColors = {
   query: Joi.object().keys({
     name: Joi.string(),
+    pantoneName: Joi.string(),
     status: Joi.string(),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
@@ -42,6 +44,7 @@ export const updateColor = {
         .messages({
           'string.pattern.base': 'Color code must be a valid hex color (e.g., #FF5733)',
         }),
+      pantoneName: Joi.string().trim(),
       status: Joi.string().valid('active', 'inactive'),
     })
     .min(1),
@@ -70,6 +73,7 @@ export const bulkImportColors = {
             'string.empty': 'Color code is required',
             'any.required': 'Color code is required'
           }),
+        pantoneName: Joi.string().trim(),
         status: Joi.string().valid('active', 'inactive').default('active'),
       })
     ).min(1).max(1000).messages({
