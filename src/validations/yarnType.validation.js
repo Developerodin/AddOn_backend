@@ -4,7 +4,6 @@ import { objectId } from './custom.validation.js';
 const yarnTypeDetailSchema = Joi.object().keys({
   subtype: Joi.string().required().trim(),
   countSize: Joi.array().items(Joi.string().custom(objectId)),
-  tearWeight: Joi.string().trim().allow('', null),
 });
 
 export const createYarnType = {

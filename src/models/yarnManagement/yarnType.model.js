@@ -34,10 +34,6 @@ const yarnTypeDetailSchema = mongoose.Schema(
     countSize: {
       type: [embeddedCountSizeSchema],
       default: [],
-    },
-    tearWeight: {
-      type: String,
-      trim: true,
     }
   },
   { _id: true }

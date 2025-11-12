@@ -163,7 +163,6 @@ const convertIdsToEmbedded = async (yarnCatalogBody) => {
               _id: subtypeDetail._id,
               subtype: subtypeDetail.subtype,
               countSize: subtypeDetail.countSize || [],
-              tearWeight: subtypeDetail.tearWeight || '',
             };
           } else {
             throw new ApiError(httpStatus.BAD_REQUEST, `Yarn subtype with ID ${subtypeId} not found in yarn type ${yarnTypeId}`);

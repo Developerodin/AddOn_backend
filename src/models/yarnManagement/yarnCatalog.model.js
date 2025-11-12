@@ -90,10 +90,6 @@ const embeddedYarnSubtypeSchema = mongoose.Schema(
       type: [mongoose.Schema.Types.Mixed], // Array of embedded countSize objects
       default: [],
     },
-    tearWeight: {
-      type: String,
-      trim: true,
-    },
   },
   { _id: true, timestamps: false }
 );
@@ -351,14 +347,12 @@ yarnCatalogSchema.post(['find', 'findOne', 'findOneAndUpdate'], async function (
                 _id: subtypeDetail._id,
                 subtype: subtypeDetail.subtype,
                 countSize: subtypeDetail.countSize || [],
-                tearWeight: subtypeDetail.tearWeight || '',
               };
             } else {
               doc.yarnSubtype = {
                 _id: subtypeId,
                 subtype: 'Unknown',
                 countSize: [],
-                tearWeight: '',
               };
             }
           }
@@ -547,14 +541,12 @@ yarnCatalogSchema.pre('save', async function (next) {
               _id: subtypeDetail._id,
               subtype: subtypeDetail.subtype,
               countSize: subtypeDetail.countSize || [],
-              tearWeight: subtypeDetail.tearWeight || '',
             };
           } else {
             this.yarnSubtype = {
               _id: subtypeId,
               subtype: 'Unknown',
               countSize: [],
-              tearWeight: '',
             };
           }
         }
@@ -564,7 +556,6 @@ yarnCatalogSchema.pre('save', async function (next) {
           _id: mongoose.Types.ObjectId.isValid(this.yarnSubtype) ? this.yarnSubtype : new mongoose.Types.ObjectId(this.yarnSubtype),
           subtype: 'Unknown',
           countSize: [],
-          tearWeight: '',
         };
       }
     }
@@ -672,7 +663,6 @@ if (originalToJSON && originalToJSON.transform) {
           id: finalRet.yarnSubtype._id ? finalRet.yarnSubtype._id.toString() : (finalRet.yarnSubtype.id || null),
           subtype: finalRet.yarnSubtype.subtype,
           countSize: finalRet.yarnSubtype.countSize || [],
-          tearWeight: finalRet.yarnSubtype.tearWeight || ''
         };
       }
       

@@ -68,10 +68,6 @@ const embeddedYarnSubtypeSchema = mongoose.Schema(
       type: [mongoose.Schema.Types.Mixed], // Array of embedded countSize objects
       default: [],
     },
-    tearWeight: {
-      type: String,
-      trim: true,
-    },
   },
   { _id: true, timestamps: false }
 );
@@ -294,14 +290,12 @@ supplierSchema.pre('save', async function (next) {
                   _id: subtypeDetail._id,
                   subtype: subtypeDetail.subtype,
                   countSize: subtypeDetail.countSize || [],
-                  tearWeight: subtypeDetail.tearWeight || '',
                 };
               } else {
                 detail.yarnsubtype = {
                   _id: subtypeId,
                   subtype: 'Unknown',
                   countSize: [],
-                  tearWeight: '',
                 };
               }
             }
@@ -311,7 +305,6 @@ supplierSchema.pre('save', async function (next) {
               _id: mongoose.Types.ObjectId.isValid(detail.yarnsubtype) ? detail.yarnsubtype : new mongoose.Types.ObjectId(detail.yarnsubtype),
               subtype: 'Unknown',
               countSize: [],
-              tearWeight: '',
             };
           }
         }

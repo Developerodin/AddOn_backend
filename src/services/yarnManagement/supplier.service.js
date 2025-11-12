@@ -100,14 +100,12 @@ const convertYarnDetailsToEmbedded = async (yarnDetails) => {
                 _id: subtypeDetail._id,
                 subtype: subtypeDetail.subtype,
                 countSize: subtypeDetail.countSize || [],
-                tearWeight: subtypeDetail.tearWeight || '',
               };
             } else {
               detail.yarnsubtype = {
                 _id: subtypeId,
                 subtype: 'Unknown',
                 countSize: [],
-                tearWeight: '',
               };
             }
           }
