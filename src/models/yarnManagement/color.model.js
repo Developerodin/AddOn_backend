@@ -19,11 +19,6 @@ const colorSchema = mongoose.Schema(
       required: true,
       trim: true,
       uppercase: true,
-      validate(value) {
-        if (!/^#[0-9A-F]{6}$/i.test(value)) {
-          throw new Error('Invalid color code format. Must be a valid hex color (e.g., #FF5733)');
-        }
-      },
     },
     pantoneName: {
       type: String,

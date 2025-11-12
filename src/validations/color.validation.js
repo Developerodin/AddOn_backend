@@ -4,12 +4,7 @@ import { objectId } from './custom.validation.js';
 export const createColor = {
   body: Joi.object().keys({
     name: Joi.string().required().trim(),
-    colorCode: Joi.string()
-      .required()
-      .pattern(/^#[0-9A-F]{6}$/i)
-      .messages({
-        'string.pattern.base': 'Color code must be a valid hex color (e.g., #FF5733)',
-      }),
+    colorCode: Joi.string().required(),
     pantoneName: Joi.string().trim(),
     status: Joi.string().valid('active', 'inactive'),
   }),
@@ -39,11 +34,7 @@ export const updateColor = {
   body: Joi.object()
     .keys({
       name: Joi.string().trim(),
-      colorCode: Joi.string()
-        .pattern(/^#[0-9A-F]{6}$/i)
-        .messages({
-          'string.pattern.base': 'Color code must be a valid hex color (e.g., #FF5733)',
-        }),
+      colorCode: Joi.string(),
       pantoneName: Joi.string().trim(),
       status: Joi.string().valid('active', 'inactive'),
     })
@@ -67,9 +58,7 @@ export const bulkImportColors = {
         }),
         colorCode: Joi.string()
           .required()
-          .pattern(/^#[0-9A-F]{6}$/i)
           .messages({
-            'string.pattern.base': 'Color code must be a valid hex color (e.g., #FF5733)',
             'string.empty': 'Color code is required',
             'any.required': 'Color code is required'
           }),

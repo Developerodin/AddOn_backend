@@ -120,11 +120,6 @@ export const bulkImportColors = async (colors, batchSize = 50) => {
               throw new Error('Color code is required');
             }
 
-            // Validate color code format
-            if (!/^#[0-9A-F]{6}$/i.test(colorData.colorCode.trim())) {
-              throw new Error('Invalid color code format. Must be a valid hex color (e.g., #FF5733)');
-            }
-
             const processedData = {
               name: colorData.name.trim(),
               colorCode: colorData.colorCode.trim().toUpperCase(),
