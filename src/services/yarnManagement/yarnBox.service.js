@@ -26,6 +26,22 @@ export const createYarnBox = async (yarnBoxBody) => {
   return yarnBox;
 };
 
+export const getYarnBoxById = async (yarnBoxId) => {
+  const yarnBox = await YarnBox.findById(yarnBoxId);
+  if (!yarnBox) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Yarn box not found');
+  }
+  return yarnBox;
+};
+
+export const getYarnBoxByBarcode = async (barcode) => {
+  const yarnBox = await YarnBox.findOne({ barcode });
+  if (!yarnBox) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Yarn box not found with this barcode');
+  }
+  return yarnBox;
+};
+
 export const updateYarnBoxById = async (yarnBoxId, updateBody) => {
   const yarnBox = await YarnBox.findById(yarnBoxId);
   if (!yarnBox) {
@@ -128,6 +144,59 @@ export const bulkCreateYarnBoxes = async (bulkData) => {
     createdCount: createdBoxes.length,
     boxes: createdBoxes,
     created: true,
+  };
+};
+
+export const updateQcStatusByPoNumber = async (poNumber, qcStatus, qcData = {}) => {
+  const validStatuses = ['qc_approved', 'qc_rejected'];
+  
+  if (!validStatuses.includes(qcStatus)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, `Status must be one of: ${validStatuses.join(', ')}`);
+  }
+
+  // Find all boxes for this PO number
+  const boxes = await YarnBox.find({ poNumber });
+  
+  if (boxes.length === 0) {
+    throw new ApiError(httpStatus.NOT_FOUND, `No boxes found for PO number: ${poNumber}`);
+  }
+
+  // Prepare update object
+  const updateFields = {
+    'qcData.status': qcStatus,
+    'qcData.date': qcData.date ? new Date(qcData.date) : new Date(),
+  };
+
+  if (qcData.user) {
+    updateFields['qcData.user'] = qcData.user;
+  }
+  if (qcData.username) {
+    updateFields['qcData.username'] = qcData.username;
+  }
+  if (qcData.remarks !== undefined) {
+    updateFields['qcData.remarks'] = qcData.remarks;
+  }
+  if (qcData.mediaUrl && typeof qcData.mediaUrl === 'object') {
+    // Set the mediaUrl object (can contain multiple keys like video1, image1, image2, etc.)
+    updateFields['qcData.mediaUrl'] = qcData.mediaUrl;
+  }
+
+  // Update QC data for all boxes
+  const updateResult = await YarnBox.updateMany(
+    { poNumber },
+    { $set: updateFields }
+  );
+
+  // Fetch updated boxes
+  const updatedBoxes = await YarnBox.find({ poNumber });
+
+  return {
+    message: `Successfully updated QC status to ${qcStatus} for ${updateResult.modifiedCount} boxes`,
+    poNumber,
+    status: qcStatus,
+    updatedCount: updateResult.modifiedCount,
+    totalBoxes: boxes.length,
+    boxes: updatedBoxes,
   };
 };
 

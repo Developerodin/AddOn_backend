@@ -24,8 +24,8 @@ const qcDataSchema = mongoose.Schema(
       trim: true,
     },
     mediaUrl: {
-      type: String,
-      trim: true,
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
     },
   },
   { _id: false }

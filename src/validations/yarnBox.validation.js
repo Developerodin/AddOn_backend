@@ -8,7 +8,7 @@ const qcDataSchema = Joi.object()
     date: Joi.date().iso().allow(null),
     remarks: Joi.string().trim().allow('', null),
     status: Joi.string().trim().allow('', null),
-    mediaUrl: Joi.string().uri().allow('', null),
+    mediaUrl: Joi.object().pattern(Joi.string(), Joi.string().uri()).allow(null),
   })
   .optional();
 
@@ -45,6 +45,18 @@ export const createYarnBox = {
       coneData: coneDataSchema,
     })
     .required(),
+};
+
+export const getYarnBoxById = {
+  params: Joi.object().keys({
+    yarnBoxId: Joi.string().custom(objectId).required(),
+  }),
+};
+
+export const getYarnBoxByBarcode = {
+  params: Joi.object().keys({
+    barcode: Joi.string().trim().required(),
+  }),
 };
 
 export const updateYarnBox = {
@@ -85,6 +97,20 @@ export const bulkCreateYarnBoxes = {
       boxWeight: Joi.number().min(0).optional(),
       numberOfCones: Joi.number().min(0).optional(),
       storageLocation: Joi.string().trim().optional(),
+    })
+    .required(),
+};
+
+export const updateQcStatusByPoNumber = {
+  body: Joi.object()
+    .keys({
+      poNumber: Joi.string().trim().required(),
+      status: Joi.string().valid('qc_approved', 'qc_rejected').required(),
+      user: Joi.string().custom(objectId).optional(),
+      username: Joi.string().trim().optional(),
+      date: Joi.date().iso().optional(),
+      remarks: Joi.string().trim().allow('', null).optional(),
+      mediaUrl: Joi.object().pattern(Joi.string(), Joi.string().uri()).allow(null).optional(),
     })
     .required(),
 };

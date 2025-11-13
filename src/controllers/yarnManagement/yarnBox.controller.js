@@ -8,6 +8,18 @@ export const createYarnBox = catchAsync(async (req, res) => {
   res.status(httpStatus.CREATED).send(yarnBox);
 });
 
+export const getYarnBox = catchAsync(async (req, res) => {
+  const { yarnBoxId } = req.params;
+  const yarnBox = await yarnBoxService.getYarnBoxById(yarnBoxId);
+  res.status(httpStatus.OK).send(yarnBox);
+});
+
+export const getYarnBoxByBarcode = catchAsync(async (req, res) => {
+  const { barcode } = req.params;
+  const yarnBox = await yarnBoxService.getYarnBoxByBarcode(barcode);
+  res.status(httpStatus.OK).send(yarnBox);
+});
+
 export const updateYarnBox = catchAsync(async (req, res) => {
   const { yarnBoxId } = req.params;
   const yarnBox = await yarnBoxService.updateYarnBoxById(yarnBoxId, req.body);
@@ -23,6 +35,13 @@ export const getYarnBoxes = catchAsync(async (req, res) => {
   const filters = pick(req.query, ['po_number', 'yarn_name', 'shade_code', 'storage_location', 'cones_issued']);
   const yarnBoxes = await yarnBoxService.queryYarnBoxes(filters);
   res.status(httpStatus.OK).send(yarnBoxes);
+});
+
+export const updateQcStatusByPoNumber = catchAsync(async (req, res) => {
+  const { poNumber } = req.body;
+  const { status, ...qcData } = req.body;
+  const result = await yarnBoxService.updateQcStatusByPoNumber(poNumber, status, qcData);
+  res.status(httpStatus.OK).send(result);
 });
 
 

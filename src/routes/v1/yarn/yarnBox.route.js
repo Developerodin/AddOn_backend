@@ -24,7 +24,25 @@ router
   );
 
 router
+  .route('/update-qc-status')
+  .patch(
+    validate(yarnBoxValidation.updateQcStatusByPoNumber),
+    yarnBoxController.updateQcStatusByPoNumber
+  );
+
+router
+  .route('/barcode/:barcode')
+  .get(
+    validate(yarnBoxValidation.getYarnBoxByBarcode),
+    yarnBoxController.getYarnBoxByBarcode
+  );
+
+router
   .route('/:yarnBoxId')
+  .get(
+    validate(yarnBoxValidation.getYarnBoxById),
+    yarnBoxController.getYarnBox
+  )
   .patch(
     validate(yarnBoxValidation.updateYarnBox),
     yarnBoxController.updateYarnBox
