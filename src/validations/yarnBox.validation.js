@@ -38,7 +38,7 @@ export const createYarnBox = {
       orderQty: Joi.number().min(0).optional(),
       lotNumber: Joi.string().trim().optional(),
       boxWeight: Joi.number().min(0).optional(),
-      barcode: Joi.string().trim().required(),
+      barcode: Joi.string().trim().optional(),
       numberOfCones: Joi.number().min(0).optional(),
       qcData: qcDataSchema,
       storageLocation: Joi.string().trim().optional(),
@@ -69,6 +69,24 @@ export const updateYarnBox = {
       coneData: coneDataSchema,
     })
     .min(1),
+};
+
+export const bulkCreateYarnBoxes = {
+  body: Joi.object()
+    .keys({
+      poNumber: Joi.string().trim().required(),
+      numberOfBoxes: Joi.number().min(1).required(),
+      orderDate: Joi.date().iso().optional(),
+      orderQty: Joi.number().min(0).optional(),
+      yarnName: Joi.string().trim().optional(),
+      shadeCode: Joi.string().trim().optional(),
+      lotNumber: Joi.string().trim().optional(),
+      receivedDate: Joi.date().iso().optional(),
+      boxWeight: Joi.number().min(0).optional(),
+      numberOfCones: Joi.number().min(0).optional(),
+      storageLocation: Joi.string().trim().optional(),
+    })
+    .required(),
 };
 
 export const getYarnBoxes = {

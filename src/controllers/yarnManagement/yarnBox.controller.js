@@ -14,6 +14,11 @@ export const updateYarnBox = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(yarnBox);
 });
 
+export const bulkCreateYarnBoxes = catchAsync(async (req, res) => {
+  const yarnBoxes = await yarnBoxService.bulkCreateYarnBoxes(req.body);
+  res.status(httpStatus.CREATED).send(yarnBoxes);
+});
+
 export const getYarnBoxes = catchAsync(async (req, res) => {
   const filters = pick(req.query, ['po_number', 'yarn_name', 'shade_code', 'storage_location', 'cones_issued']);
   const yarnBoxes = await yarnBoxService.queryYarnBoxes(filters);

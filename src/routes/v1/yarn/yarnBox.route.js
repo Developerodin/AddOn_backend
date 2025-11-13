@@ -17,6 +17,13 @@ router
   );
 
 router
+  .route('/bulk')
+  .post(
+    validate(yarnBoxValidation.bulkCreateYarnBoxes),
+    yarnBoxController.bulkCreateYarnBoxes
+  );
+
+router
   .route('/:yarnBoxId')
   .patch(
     validate(yarnBoxValidation.updateYarnBox),

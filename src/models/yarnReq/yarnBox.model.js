@@ -112,6 +112,7 @@ const yarnBoxSchema = mongoose.Schema(
       type: Number,
       min: 0,
     },
+    
     qcData: qcDataSchema,
     storageLocation: {
       type: String,

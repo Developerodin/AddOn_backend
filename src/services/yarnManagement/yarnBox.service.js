@@ -1,4 +1,5 @@
 import httpStatus from 'http-status';
+import mongoose from 'mongoose';
 import { YarnBox } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 
@@ -13,9 +14,12 @@ export const createYarnBox = async (yarnBoxBody) => {
     }
   }
 
-  const existingBarcode = await YarnBox.findOne({ barcode: yarnBoxBody.barcode });
-  if (existingBarcode) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Barcode already exists');
+  // Only check for existing barcode if provided (otherwise it will be auto-generated)
+  if (yarnBoxBody.barcode) {
+    const existingBarcode = await YarnBox.findOne({ barcode: yarnBoxBody.barcode });
+    if (existingBarcode) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Barcode already exists');
+    }
   }
 
   const yarnBox = await YarnBox.create(yarnBoxBody);
@@ -72,6 +76,59 @@ export const queryYarnBoxes = async (filters = {}) => {
 
   const yarnBoxes = await YarnBox.find(mongooseFilter).sort({ createdAt: -1 }).lean();
   return yarnBoxes;
+};
+
+export const bulkCreateYarnBoxes = async (bulkData) => {
+  const { numberOfBoxes, poNumber, ...commonFields } = bulkData;
+
+  if (numberOfBoxes < 1) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Number of boxes must be at least 1');
+  }
+
+  // Check how many boxes already exist for this PO number
+  const existingBoxesCount = await YarnBox.countDocuments({ poNumber });
+
+  // If boxes already exist, return existing boxes without creating new ones
+  if (existingBoxesCount > 0) {
+    const existingBoxes = await YarnBox.find({ poNumber }).sort({ createdAt: -1 });
+    return {
+      message: `Boxes already exist for PO ${poNumber}`,
+      existingCount: existingBoxesCount,
+      boxes: existingBoxes,
+      created: false,
+    };
+  }
+
+  // Create new boxes only if none exist
+  const boxesToCreate = [];
+  const baseTimestamp = Date.now();
+
+  for (let i = 0; i < numberOfBoxes; i++) {
+    const boxId = `BOX-${poNumber}-${baseTimestamp}-${i + 1}`;
+    // Generate unique barcode using ObjectId (insertMany doesn't trigger pre-save hooks)
+    const uniqueBarcode = new mongoose.Types.ObjectId().toString();
+
+    boxesToCreate.push({
+      boxId,
+      poNumber,
+      barcode: uniqueBarcode,
+      // Set required fields with defaults if not provided
+      yarnName: commonFields.yarnName || `Yarn-${poNumber}`,
+      orderDate: commonFields.orderDate || new Date(),
+      orderQty: commonFields.orderQty || 0,
+      ...commonFields,
+      // receivedDate defaults to current date if not provided
+      receivedDate: commonFields.receivedDate || new Date(),
+    });
+  }
+
+  const createdBoxes = await YarnBox.insertMany(boxesToCreate);
+  return {
+    message: `Successfully created ${numberOfBoxes} boxes for PO ${poNumber}`,
+    createdCount: createdBoxes.length,
+    boxes: createdBoxes,
+    created: true,
+  };
 };
 
 
