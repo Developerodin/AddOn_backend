@@ -27,6 +27,8 @@ import blendRoute from './blend.route.js';
 import yarnTypeRoute from './yarnType.route.js';
 import supplierRoute from './supplier.route.js';
 import yarnCatalogRoute from './yarnCatalog.route.js';
+import yarnPurchaseOrderRoute from './yarn/yarnPurchaseOrder.route.js';
+import yarnReqRoute from './yarn/yarnReq.route.js';
 import config from '../../config/config.js';
 
 const router = express.Router();
@@ -139,6 +141,14 @@ const defaultRoutes = [
   {
     path: '/yarn-management/yarn-catalogs',
     route: yarnCatalogRoute,
+  },
+  {
+    path: '/yarn-management/yarn-requisitions',
+    route: yarnReqRoute,
+  },
+  {
+    path: '/yarn-management/yarn-purchase-orders',
+    route: yarnPurchaseOrderRoute,
   },
 ];
 

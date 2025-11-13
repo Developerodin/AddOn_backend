@@ -1,0 +1,172 @@
+{
+  "info": {
+    "_postman_id": "yarn-purchase-orders-collection",
+    "name": "Yarn Purchase Orders API",
+    "description": "Collection for managing Yarn Purchase Orders",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Get Purchase Orders",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-purchase-orders?start_date={{start_date}}&end_date={{end_date}}&status_code=submitted_to_supplier",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-purchase-orders"],
+          "query": [
+            {
+              "key": "start_date",
+              "value": "{{start_date}}"
+            },
+            {
+              "key": "end_date",
+              "value": "{{end_date}}"
+            },
+            {
+              "key": "status_code",
+              "value": "submitted_to_supplier",
+              "description": "Optional status filter",
+              "disabled": false
+            }
+          ]
+        },
+        "description": "Retrieve purchase orders within a date range and optional status filter"
+      },
+      "response": []
+    },
+    {
+      "name": "Create Purchase Order",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"poNumber\": \"PO-2025-001\",\n  \"supplierName\": \"Alpha Yarns\",\n  \"supplier\": \"{{supplier_id}}\",\n  \"poItems\": [\n    {\n      \"yarn\": \"{{yarn_catalog_id}}\",\n      \"yarnName\": \"20s Cotton Combed\",\n      \"sizeCount\": \"20s\",\n      \"shadeCode\": \"COT-20-RED\",\n      \"rate\": 180,\n      \"quantity\": 1000,\n      \"estimatedDeliveryDate\": \"2025-02-15\",\n      \"gstRate\": 12\n    }\n  ],\n  \"notes\": \"Urgent PO for February production\",\n  \"subTotal\": 180000,\n  \"gst\": 21600,\n  \"total\": 201600,\n  \"currentStatus\": \"submitted_to_supplier\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-purchase-orders",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-purchase-orders"]
+        },
+        "description": "Create a new purchase order"
+      },
+      "response": []
+    },
+    {
+      "name": "Get Purchase Order By ID",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-purchase-orders/{{purchase_order_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-purchase-orders", "{{purchase_order_id}}"]
+        },
+        "description": "Fetch a single purchase order by its ID"
+      },
+      "response": []
+    },
+    {
+      "name": "Update Purchase Order",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"notes\": \"Update packing details\",\n  \"packListDetails\": {\n    \"packingNumber\": \"PK-2025-015\",\n    \"courierName\": \"Fast Courier\",\n    \"dispatchDate\": \"2025-02-12\",\n    \"estimatedDeliveryDate\": \"2025-02-18\",\n    \"lotNumber\": \"LOT-789\",\n    \"numberOfCones\": 500,\n    \"totalWeight\": 250\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-purchase-orders/{{purchase_order_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-purchase-orders", "{{purchase_order_id}}"]
+        },
+        "description": "Edit an existing purchase order"
+      },
+      "response": []
+    },
+    {
+      "name": "Update Purchase Order Status",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status_code\": \"in_transit\",\n  \"updated_by\": {\n    \"username\": \"operations.manager\",\n    \"user_id\": \"{{user_id}}\"\n  },\n  \"notes\": \"Shipment collected by courier\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-purchase-orders/{{purchase_order_id}}/status",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-purchase-orders", "{{purchase_order_id}}", "status"]
+        },
+        "description": "Update purchase order status and append to status logs"
+      },
+      "response": []
+    },
+    {
+      "name": "Delete Purchase Order",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-purchase-orders/{{purchase_order_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-purchase-orders", "{{purchase_order_id}}"]
+        },
+        "description": "Remove a purchase order"
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3001"
+    },
+    {
+      "key": "start_date",
+      "value": "2025-01-01"
+    },
+    {
+      "key": "end_date",
+      "value": "2025-03-31"
+    },
+    {
+      "key": "purchase_order_id",
+      "value": "purchase_order_id_here"
+    },
+    {
+      "key": "supplier_id",
+      "value": "supplier_id_here"
+    },
+    {
+      "key": "yarn_catalog_id",
+      "value": "yarn_catalog_id_here"
+    },
+    {
+      "key": "user_id",
+      "value": "user_id_here"
+    }
+  ]
+}
+
+

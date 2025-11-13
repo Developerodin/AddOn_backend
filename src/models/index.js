@@ -20,6 +20,8 @@ import CountSize from './yarnManagement/countSize.model.js';
 import Color from './yarnManagement/color.model.js';
 import Blend from './yarnManagement/blend.model.js';
 import YarnCatalog from './yarnManagement/yarnCatalog.model.js';
+import YarnRequisition from './yarnReq/yarnRequisition.model.js';
+import YarnPurchaseOrder from './yarnReq/yarnPurchaseOrder.model.js';
 
 export {
   Token,
@@ -44,4 +46,6 @@ export {
   Color,
   Blend,
   YarnCatalog,
+  YarnRequisition,
+  YarnPurchaseOrder,
 };

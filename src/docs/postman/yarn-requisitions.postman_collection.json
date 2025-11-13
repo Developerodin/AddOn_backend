@@ -1,0 +1,112 @@
+{
+  "info": {
+    "_postman_id": "yarn-requisitions-collection",
+    "name": "Yarn Requisitions API",
+    "description": "Collection for Yarn Requisition management APIs",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Get Yarn Requisition List",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-requisitions?startDate={{start_date}}&endDate={{end_date}}&poSent=false",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-requisitions"],
+          "query": [
+            {
+              "key": "startDate",
+              "value": "{{start_date}}"
+            },
+            {
+              "key": "endDate",
+              "value": "{{end_date}}"
+            },
+            {
+              "key": "poSent",
+              "value": "false",
+              "description": "Filter by PO sent status",
+              "disabled": false
+            }
+          ]
+        },
+        "description": "Retrieve yarn requisitions filtered by date range and PO status"
+      },
+      "response": []
+    },
+    {
+      "name": "Create Yarn Requisition",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"yarnName\": \"20s Cotton Combed\",\n  \"yarn\": \"{{yarn_catalog_id}}\",\n  \"minQty\": 500,\n  \"availableQty\": 320,\n  \"blockedQty\": 50,\n  \"alertStatus\": \"below_minimum\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-requisitions",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-requisitions"]
+        },
+        "description": "Create a new yarn requisition entry"
+      },
+      "response": []
+    },
+    {
+      "name": "Update Yarn Requisition Status",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"poSent\": true\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-requisitions/{{yarn_requisition_id}}/status",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-requisitions", "{{yarn_requisition_id}}", "status"]
+        },
+        "description": "Update the PO sent status for a yarn requisition"
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3001"
+    },
+    {
+      "key": "start_date",
+      "value": "2025-01-01"
+    },
+    {
+      "key": "end_date",
+      "value": "2025-01-31"
+    },
+    {
+      "key": "yarn_catalog_id",
+      "value": "yarn_catalog_id_here"
+    },
+    {
+      "key": "yarn_requisition_id",
+      "value": "yarn_requisition_id_here"
+    }
+  ]
+}
+
+

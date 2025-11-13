@@ -1,0 +1,148 @@
+import Joi from 'joi';
+import { objectId } from './custom.validation.js';
+import { yarnPurchaseOrderStatuses } from '../models/yarnReq/yarnPurchaseOrder.model.js';
+
+const statusCodeField = Joi.string().valid(...yarnPurchaseOrderStatuses);
+
+const poItemSchema = Joi.object().keys({
+  yarnName: Joi.string().trim(),
+  yarn: Joi.string().custom(objectId).required(),
+  sizeCount: Joi.string().trim().required(),
+  shadeCode: Joi.string().trim().allow('', null),
+  rate: Joi.number().min(0).required(),
+  quantity: Joi.number().min(0).required(),
+  estimatedDeliveryDate: Joi.date().iso().allow(null),
+  gstRate: Joi.number().min(0).allow(null),
+});
+
+export const getPurchaseOrders = {
+  query: Joi.object()
+    .keys({
+      start_date: Joi.date().iso().required(),
+      end_date: Joi.date().iso().required(),
+      status_code: statusCodeField.optional(),
+    })
+    .with('start_date', 'end_date')
+    .with('end_date', 'start_date')
+    .custom((value, helpers) => {
+      const { start_date: startDate, end_date: endDate } = value;
+      if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+        return helpers.error('any.invalid');
+      }
+      return value;
+    }, 'start and end date validation'),
+};
+
+export const createPurchaseOrder = {
+  body: Joi.object()
+    .keys({
+      poNumber: Joi.string().trim().required(),
+      supplierName: Joi.string().trim().required(),
+      supplier: Joi.string().custom(objectId).required(),
+      poItems: Joi.array().items(poItemSchema).min(1).required(),
+      notes: Joi.string().trim().allow('', null),
+      subTotal: Joi.number().min(0).required(),
+      gst: Joi.number().min(0).required(),
+      total: Joi.number().min(0).required(),
+      currentStatus: statusCodeField.default('submitted_to_supplier'),
+      statusLogs: Joi.array()
+        .items(
+          Joi.object().keys({
+            statusCode: statusCodeField.required(),
+            updatedBy: Joi.object()
+              .keys({
+                username: Joi.string().trim().required(),
+                user: Joi.string().custom(objectId).required(),
+              })
+              .required(),
+            updatedAt: Joi.date().iso(),
+            notes: Joi.string().trim().allow('', null),
+          })
+        )
+        .default([]),
+      goodsReceivedDate: Joi.forbidden(),
+      packListDetails: Joi.forbidden(),
+      receivedBy: Joi.forbidden(),
+    })
+    .required(),
+};
+
+export const getPurchaseOrderById = {
+  params: Joi.object().keys({
+    purchaseOrderId: Joi.string().custom(objectId).required(),
+  }),
+};
+
+export const deletePurchaseOrder = {
+  params: Joi.object().keys({
+    purchaseOrderId: Joi.string().custom(objectId).required(),
+  }),
+};
+
+export const updatePurchaseOrder = {
+  params: Joi.object().keys({
+    purchaseOrderId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object()
+    .keys({
+      poNumber: Joi.string().trim(),
+      supplierName: Joi.string().trim(),
+      supplier: Joi.string().custom(objectId),
+      poItems: Joi.array().items(poItemSchema).min(1),
+      notes: Joi.string().trim().allow('', null),
+      subTotal: Joi.number().min(0),
+      gst: Joi.number().min(0),
+      total: Joi.number().min(0),
+      currentStatus: statusCodeField,
+      statusLogs: Joi.array().items(
+        Joi.object().keys({
+          statusCode: statusCodeField.required(),
+          updatedBy: Joi.object()
+            .keys({
+              username: Joi.string().trim().required(),
+              user: Joi.string().custom(objectId).required(),
+            })
+            .required(),
+          updatedAt: Joi.date().iso(),
+          notes: Joi.string().trim().allow('', null),
+        })
+      ),
+      goodsReceivedDate: Joi.date().iso().allow(null),
+      packListDetails: Joi.object().keys({
+        packingNumber: Joi.string().trim().allow('', null),
+        courierName: Joi.string().trim().allow('', null),
+        dispatchDate: Joi.date().iso().allow(null),
+        estimatedDeliveryDate: Joi.date().iso().allow(null),
+        lotNumber: Joi.string().trim().allow('', null),
+        notes: Joi.string().trim().allow('', null),
+        numberOfCones: Joi.number().min(0).allow(null),
+        totalWeight: Joi.number().min(0).allow(null),
+      }),
+      receivedBy: Joi.object().keys({
+        username: Joi.string().trim().allow('', null),
+        user: Joi.string().custom(objectId).allow(null),
+        receivedAt: Joi.date().iso().allow(null),
+      }),
+    })
+    .min(1),
+};
+
+export const updatePurchaseOrderStatus = {
+  params: Joi.object().keys({
+    purchaseOrderId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object()
+    .keys({
+      status_code: statusCodeField.required(),
+      updated_by: Joi.object()
+        .keys({
+          username: Joi.string().trim().required(),
+          user_id: Joi.string().custom(objectId).required(),
+        })
+        .required(),
+      notes: Joi.string().trim().allow('', null),
+    })
+    .required(),
+};
+
+
