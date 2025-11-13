@@ -56,14 +56,62 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"yarn\": \"{{yarn_id}}\",\n  \"yarnName\": \"20s Cotton Combed\",\n  \"transactionType\": \"yarn_stocked\",\n  \"transactionDate\": \"2025-02-14\",\n  \"transactionNetWeight\": 980,\n  \"transactionTotalWeight\": 1000,\n  \"transactionTearWeight\": 20\n}"
+          "raw": "{\n  \"yarn\": \"{{yarn_id}}\",\n  \"yarnName\": \"20s Cotton Combed\",\n  \"transactionType\": \"yarn_stocked\",\n  \"transactionDate\": \"2025-02-14\",\n  \"totalNetWeight\": 980,\n  \"totalWeight\": 1000,\n  \"totalTearWeight\": 20,\n  \"numberOfCones\": 480\n}"
         },
         "url": {
           "raw": "{{base_url}}/v1/yarn-management/yarn-transactions",
           "host": ["{{base_url}}"],
           "path": ["v1", "yarn-management", "yarn-transactions"]
         },
-        "description": "Create a new yarn transaction entry"
+        "description": "Create a new yarn transaction entry. For `yarn_blocked` send `totalBlockedWeight` instead of the other quantity fields. For all other types provide `totalWeight`, `totalTearWeight`, `totalNetWeight`, and `numberOfCones`."
+      },
+      "response": []
+    },
+    {
+      "name": "Block Yarn (reserve against future issuance)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"yarn\": \"{{yarn_id}}\",\n  \"yarnName\": \"20s Cotton Combed\",\n  \"transactionType\": \"yarn_blocked\",\n  \"transactionDate\": \"2025-02-14\",\n  \"totalBlockedWeight\": 450\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-transactions",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-transactions"]
+        },
+        "description": "Reserve yarn without moving physical inventory. The blocked weight increases the `blockedNetWeight` counters and marks the yarn as overbooked when it exceeds available stock."
+      },
+      "response": []
+    },
+    {
+      "name": "Issue Yarn (deduct from short-term)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"yarn\": \"{{yarn_id}}\",\n  \"yarnName\": \"20s Cotton Combed\",\n  \"transactionType\": \"yarn_issued\",\n  \"transactionDate\": \"2025-02-15\",\n  \"totalWeight\": 320,\n  \"totalTearWeight\": 8,\n  \"totalNetWeight\": 312,\n  \"numberOfCones\": 150\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-transactions",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-transactions"]
+        },
+        "description": "Deduct yarn from short-term storage, automatically reducing blocked weight and recalculating inventory totals."
       },
       "response": []
     }

@@ -14,7 +14,46 @@ export const createYarnTransaction = {
       transactionNetWeight: Joi.number().min(0).allow(null),
       transactionTotalWeight: Joi.number().min(0).allow(null),
       transactionTearWeight: Joi.number().min(0).allow(null),
+      transactionConeCount: Joi.number().min(0).allow(null),
+      totalWeight: Joi.number().min(0).allow(null),
+      totalNetWeight: Joi.number().min(0).allow(null),
+      totalTearWeight: Joi.number().min(0).allow(null),
+      numberOfCones: Joi.number().min(0).allow(null),
+      totalBlockedWeight: Joi.number().min(0).allow(null),
     })
+    .custom((value, helpers) => {
+      const type = value.transactionType;
+      const isBlocked = type === 'yarn_blocked';
+
+      if (isBlocked) {
+        if (value.totalBlockedWeight === undefined && value.transactionNetWeight === undefined) {
+          return helpers.error('any.custom', { message: 'totalBlockedWeight is required when transactionType is yarn_blocked' });
+        }
+        return value;
+      }
+
+      const requiredFields = [
+        ['transactionTotalWeight', 'totalWeight'],
+        ['transactionNetWeight', 'totalNetWeight'],
+        ['transactionTearWeight', 'totalTearWeight'],
+        ['transactionConeCount', 'numberOfCones'],
+      ];
+
+      const missing = requiredFields.filter(
+        ([primary, fallback]) =>
+          value[primary] === undefined && value[fallback] === undefined
+      );
+
+      if (missing.length) {
+        return helpers.error('any.custom', {
+          message: `Missing required inventory metrics for ${type}: please provide ${missing
+            .map(([primary, fallback]) => primary ?? fallback)
+            .join(', ')}`,
+        });
+      }
+
+      return value;
+    }, 'transaction payload completeness validation')
     .required(),
 };
 

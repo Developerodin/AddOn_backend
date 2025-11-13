@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import toJSON from '../plugins/toJSON.plugin.js';
 import paginate from '../plugins/paginate.plugin.js';
 
-export const yarnTransactionTypes = ['yarn_issued', 'yarn_stocked', 'internal_transfer', 'yarn_returned'];
+export const yarnTransactionTypes = ['yarn_issued', 'yarn_blocked', 'yarn_stocked', 'internal_transfer', 'yarn_returned'];
 
 const yarnTransactionSchema = mongoose.Schema(
   {
@@ -34,6 +34,10 @@ const yarnTransactionSchema = mongoose.Schema(
       min: 0,
     },
     transactionTearWeight: {
+      type: Number,
+      min: 0,
+    },
+    transactionConeCount: {
       type: Number,
       min: 0,
     },
