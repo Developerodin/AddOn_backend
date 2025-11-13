@@ -22,6 +22,7 @@ import Blend from './yarnManagement/blend.model.js';
 import YarnCatalog from './yarnManagement/yarnCatalog.model.js';
 import YarnRequisition from './yarnReq/yarnRequisition.model.js';
 import YarnPurchaseOrder from './yarnReq/yarnPurchaseOrder.model.js';
+import YarnBox from './yarnReq/yarnBox.model.js';
 
 export {
   Token,
@@ -48,4 +49,5 @@ export {
   YarnCatalog,
   YarnRequisition,
   YarnPurchaseOrder,
+  YarnBox,
 };

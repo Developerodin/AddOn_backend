@@ -1,0 +1,123 @@
+{
+  "info": {
+    "_postman_id": "yarn-boxes-collection",
+    "name": "Yarn Boxes API",
+    "description": "Collection for managing Yarn Box records",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Get Yarn Boxes",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-boxes?po_number={{po_number}}&yarn_name=20s%20Cotton&cones_issued=false",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-boxes"],
+          "query": [
+            {
+              "key": "po_number",
+              "value": "{{po_number}}",
+              "description": "Filter by PO number",
+              "disabled": false
+            },
+            {
+              "key": "yarn_name",
+              "value": "20s Cotton",
+              "description": "Partial match on yarn name",
+              "disabled": false
+            },
+            {
+              "key": "shade_code",
+              "value": "COT-20-RED",
+              "description": "Search by shade code",
+              "disabled": true
+            },
+            {
+              "key": "storage_location",
+              "value": "Warehouse-A",
+              "description": "Filter by storage location",
+              "disabled": true
+            },
+            {
+              "key": "cones_issued",
+              "value": "false",
+              "description": "Filter by cone issuance flag"
+            }
+          ]
+        },
+        "description": "Retrieve yarn boxes with optional filters"
+      },
+      "response": []
+    },
+    {
+      "name": "Create Yarn Box",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"poNumber\": \"PO-2025-001\",\n  \"receivedDate\": \"2025-02-12\",\n  \"orderDate\": \"2025-02-01\",\n  \"barcode\": \"BARCODE-123456\",\n  \"yarnName\": \"20s Cotton Combed\",\n  \"shadeCode\": \"COT-20-RED\",\n  \"orderQty\": 1000,\n  \"lotNumber\": \"LOT-789\",\n  \"boxWeight\": 25,\n  \"numberOfCones\": 50,\n  \"storageLocation\": \"Warehouse-A/Bin-5\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-boxes",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-boxes"]
+        },
+        "description": "Create a new yarn box record"
+      },
+      "response": []
+    },
+    {
+      "name": "Update Yarn Box",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"storageLocation\": \"Warehouse-B/Bin-2\",\n  \"coneData\": {\n    \"conesIssued\": true,\n    \"coneIssueDate\": \"2025-02-15\",\n    \"coneIssueBy\": {\n      \"username\": \"floor.manager\",\n      \"user\": \"{{user_id}}\"\n    },\n    \"numberOfCones\": 20\n  },\n  \"qcData\": {\n    \"username\": \"qc.inspector\",\n    \"user\": \"{{user_id}}\",\n    \"date\": \"2025-02-13\",\n    \"remarks\": \"All cones passed QC\",\n    \"status\": \"approved\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-boxes/{{yarn_box_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-boxes", "{{yarn_box_id}}"]
+        },
+        "description": "Update an existing yarn box record"
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3001"
+    },
+    {
+      "key": "po_number",
+      "value": "PO-2025-001"
+    },
+    {
+      "key": "yarn_box_id",
+      "value": "yarn_box_id_here"
+    },
+    {
+      "key": "user_id",
+      "value": "user_id_here"
+    }
+  ]
+}
+
+
