@@ -1,0 +1,134 @@
+{
+  "info": {
+    "_postman_id": "yarn-cones-collection",
+    "name": "Yarn Cones API",
+    "description": "Collection for managing Yarn Cone records",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Get Yarn Cones",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-cones?po_number={{po_number}}&issue_status=issued&storage_id=STG-01",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-cones"],
+          "query": [
+            {
+              "key": "po_number",
+              "value": "{{po_number}}",
+              "description": "Filter cones by purchase order number",
+              "disabled": false
+            },
+            {
+              "key": "issue_status",
+              "value": "issued",
+              "description": "Filter by issuance status",
+              "disabled": false
+            },
+            {
+              "key": "storage_id",
+              "value": "STG-01",
+              "description": "Filter by storage location",
+              "disabled": false
+            },
+            {
+              "key": "yarn_name",
+              "value": "20s Cotton",
+              "description": "Partial match on yarn name",
+              "disabled": true
+            },
+            {
+              "key": "yarn_id",
+              "value": "{{yarn_id}}",
+              "description": "Exact match on yarn catalog id",
+              "disabled": true
+            },
+            {
+              "key": "shade_code",
+              "value": "COT-20-RED",
+              "description": "Partial match on shade code",
+              "disabled": true
+            }
+          ]
+        },
+        "description": "Retrieve yarn cones with flexible filters"
+      },
+      "response": []
+    },
+    {
+      "name": "Create Yarn Cone",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"poNumber\": \"PO-2025-001\",\n  \"boxId\": \"BOX-1734336000000\",\n  \"coneWeight\": 1.2,\n  \"tearWeight\": 0.05,\n  \"yarnName\": \"20s Cotton Combed\",\n  \"yarn\": \"{{yarn_id}}\",\n  \"shadeCode\": \"COT-20-RED\",\n  \"issueStatus\": \"not_issued\",\n  \"returnStatus\": \"not_returned\",\n  \"coneStorageId\": \"STG-01-BIN-04\",\n  \"barcode\": \"CONE-00001\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-cones",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-cones"]
+        },
+        "description": "Create a new yarn cone record"
+      },
+      "response": []
+    },
+    {
+      "name": "Update Yarn Cone",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"issueStatus\": \"issued\",\n  \"issuedBy\": {\n    \"username\": \"floor.manager\",\n    \"user\": \"{{user_id}}\"\n  },\n  \"issueDate\": \"2025-02-15\",\n  \"issueWeight\": 1.15,\n  \"returnStatus\": \"returned\",\n  \"returnDate\": \"2025-03-01\",\n  \"returnWeight\": 1.1,\n  \"returnBy\": {\n    \"username\": \"inventory.clerk\",\n    \"user\": \"{{user_id}}\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-cones/{{yarn_cone_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-cones", "{{yarn_cone_id}}"]
+        },
+        "description": "Update issuance/return details for a yarn cone"
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3001"
+    },
+    {
+      "key": "po_number",
+      "value": "PO-2025-001"
+    },
+    {
+      "key": "yarn_id",
+      "value": "yarn_catalog_id_here"
+    },
+    {
+      "key": "yarn_cone_id",
+      "value": "yarn_cone_id_here"
+    },
+    {
+      "key": "user_id",
+      "value": "user_id_here"
+    }
+  ]
+}
+
+

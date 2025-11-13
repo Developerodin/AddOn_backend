@@ -1,0 +1,28 @@
+import express from 'express';
+import validate from '../../../middlewares/validate.js';
+import * as yarnConeValidation from '../../../validations/yarnCone.validation.js';
+import * as yarnConeController from '../../../controllers/yarnManagement/yarnCone.controller.js';
+
+const router = express.Router();
+
+router
+  .route('/')
+  .get(
+    validate(yarnConeValidation.getYarnCones),
+    yarnConeController.getYarnCones
+  )
+  .post(
+    validate(yarnConeValidation.createYarnCone),
+    yarnConeController.createYarnCone
+  );
+
+router
+  .route('/:yarnConeId')
+  .patch(
+    validate(yarnConeValidation.updateYarnCone),
+    yarnConeController.updateYarnCone
+  );
+
+export default router;
+
+
