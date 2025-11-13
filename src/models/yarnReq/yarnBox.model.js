@@ -112,11 +112,19 @@ const yarnBoxSchema = mongoose.Schema(
       type: Number,
       min: 0,
     },
-    
+    tearweight: {
+      type: Number,
+      min: 0,
+      default: 0
+    },
     qcData: qcDataSchema,
     storageLocation: {
       type: String,
       trim: true,
+    },
+    storedStatus: {
+      type: Boolean,
+      default: false,
     },
     coneData: coneDataSchema,
   },

@@ -40,8 +40,10 @@ export const createYarnBox = {
       boxWeight: Joi.number().min(0).optional(),
       barcode: Joi.string().trim().optional(),
       numberOfCones: Joi.number().min(0).optional(),
+      tearweight: Joi.number().min(0).optional(),
       qcData: qcDataSchema,
       storageLocation: Joi.string().trim().optional(),
+      storedStatus: Joi.boolean().optional(),
       coneData: coneDataSchema,
     })
     .required(),
@@ -76,8 +78,10 @@ export const updateYarnBox = {
       boxWeight: Joi.number().min(0).allow(null),
       barcode: Joi.string().trim(),
       numberOfCones: Joi.number().min(0).allow(null),
+      tearweight: Joi.number().min(0).allow(null),
       qcData: qcDataSchema,
       storageLocation: Joi.string().trim().allow('', null),
+      storedStatus: Joi.boolean().allow(null),
       coneData: coneDataSchema,
     })
     .min(1),
@@ -96,7 +100,9 @@ export const bulkCreateYarnBoxes = {
       receivedDate: Joi.date().iso().optional(),
       boxWeight: Joi.number().min(0).optional(),
       numberOfCones: Joi.number().min(0).optional(),
+      tearweight: Joi.number().min(0).optional(),
       storageLocation: Joi.string().trim().optional(),
+      storedStatus: Joi.boolean().optional(),
     })
     .required(),
 };
