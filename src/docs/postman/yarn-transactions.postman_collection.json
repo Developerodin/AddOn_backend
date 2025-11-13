@@ -1,0 +1,91 @@
+{
+  "info": {
+    "_postman_id": "yarn-transactions-collection",
+    "name": "Yarn Transactions API",
+    "description": "Collection for creating and viewing yarn transactions",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Get Yarn Transactions",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-transactions?start_date={{start_date}}&end_date={{end_date}}&transaction_type=yarn_issued&yarn_name=20s%20Cotton",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-transactions"],
+          "query": [
+            {
+              "key": "start_date",
+              "value": "{{start_date}}"
+            },
+            {
+              "key": "end_date",
+              "value": "{{end_date}}"
+            },
+            {
+              "key": "transaction_type",
+              "value": "yarn_issued"
+            },
+            {
+              "key": "yarn_name",
+              "value": "20s Cotton"
+            },
+            {
+              "key": "yarn_id",
+              "value": "{{yarn_id}}",
+              "disabled": true
+            }
+          ]
+        },
+        "description": "Retrieve yarn transactions with optional filters"
+      },
+      "response": []
+    },
+    {
+      "name": "Create Yarn Transaction",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"yarn\": \"{{yarn_id}}\",\n  \"yarnName\": \"20s Cotton Combed\",\n  \"transactionType\": \"yarn_stocked\",\n  \"transactionDate\": \"2025-02-14\",\n  \"transactionNetWeight\": 980,\n  \"transactionTotalWeight\": 1000,\n  \"transactionTearWeight\": 20\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-transactions",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-transactions"]
+        },
+        "description": "Create a new yarn transaction entry"
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3001"
+    },
+    {
+      "key": "start_date",
+      "value": "2025-02-01"
+    },
+    {
+      "key": "end_date",
+      "value": "2025-02-28"
+    },
+    {
+      "key": "yarn_id",
+      "value": "yarn_catalog_id_here"
+    }
+  ]
+}
+
+

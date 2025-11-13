@@ -24,6 +24,7 @@ import YarnRequisition from './yarnReq/yarnRequisition.model.js';
 import YarnPurchaseOrder from './yarnReq/yarnPurchaseOrder.model.js';
 import YarnBox from './yarnReq/yarnBox.model.js';
 import YarnCone from './yarnReq/yarnCone.model.js';
+import YarnTransaction from './yarnReq/yarnTransaction.model.js';
 
 export {
   Token,
@@ -52,4 +53,5 @@ export {
   YarnPurchaseOrder,
   YarnBox,
   YarnCone,
+  YarnTransaction,
 };

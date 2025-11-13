@@ -30,6 +30,7 @@ import yarnCatalogRoute from './yarnCatalog.route.js';
 import yarnPurchaseOrderRoute from './yarn/yarnPurchaseOrder.route.js';
 import yarnBoxRoute from './yarn/yarnBox.route.js';
 import yarnConeRoute from './yarn/yarnCone.route.js';
+import yarnTransactionRoute from './yarn/yarnTransaction.route.js';
 import yarnReqRoute from './yarn/yarnReq.route.js';
 import config from '../../config/config.js';
 
@@ -159,6 +160,10 @@ const defaultRoutes = [
   {
     path: '/yarn-management/yarn-cones',
     route: yarnConeRoute,
+  },
+  {
+    path: '/yarn-management/yarn-transactions',
+    route: yarnTransactionRoute,
   },
 ];
 
