@@ -102,10 +102,6 @@ const packListDetailsSchema = mongoose.Schema(
     estimatedDeliveryDate: {
       type: Date,
     },
-    lotNumber: {
-      type: String,
-      trim: true,
-    },
     notes: {
       type: String,
       trim: true,
@@ -115,6 +111,10 @@ const packListDetailsSchema = mongoose.Schema(
       min: 0,
     },
     totalWeight: {
+      type: Number,
+      min: 0,
+    },
+    numberOfBoxes: {
       type: Number,
       min: 0,
     },

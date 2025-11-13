@@ -113,10 +113,10 @@ export const updatePurchaseOrder = {
         courierName: Joi.string().trim().allow('', null),
         dispatchDate: Joi.date().iso().allow(null),
         estimatedDeliveryDate: Joi.date().iso().allow(null),
-        lotNumber: Joi.string().trim().allow('', null),
         notes: Joi.string().trim().allow('', null),
         numberOfCones: Joi.number().min(0).allow(null),
         totalWeight: Joi.number().min(0).allow(null),
+        numberOfBoxes: Joi.number().min(0).allow(null),
       }),
       receivedBy: Joi.object().keys({
         username: Joi.string().trim().allow('', null),
