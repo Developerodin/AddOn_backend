@@ -56,5 +56,14 @@ Requisitions reuse the existing `/v1/yarn-management/yarn-requisitions` workflow
 3. Consume updated inventory summaries by querying the inventory endpoints (to be added) or by fetching the yarn entity.
 4. Handle validation errors (HTTP 400) which indicate the request would drive inventory negative.
 
-With this pipeline the UI does not need to orchestrate manual inventory adjustments—the service layer keeps yarn stock, blocked reservations, and requisition records consistent.***
+With this pipeline the UI does not need to orchestrate manual inventory adjustments—the service layer keeps yarn stock, blocked reservations, and requisition records consistent.
 
+## Storage Slot Prefabrication
+
+The `StorageSlot` model represents both LT and ST zones with 150 shelves × 4 floors each. Run:
+
+```
+npm run seed:storage-slots
+```
+
+to pre-generate the canonical 1,200 slots (`LT-S001-F1` … `ST-S150-F4`). The seeder is idempotent—it upserts missing slots, so you can run it safely multiple times (for example after cleaning a database).

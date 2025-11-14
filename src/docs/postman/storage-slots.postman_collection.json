@@ -1,0 +1,84 @@
+{
+  "info": {
+    "_postman_id": "storage-slots-collection",
+    "name": "Storage Slots API",
+    "description": "Retrieve LT/ST storage slots with optional filters",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "List Storage Slots (All)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/storage/slots",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "storage", "slots"]
+        },
+        "description": "Fetch all slots (paginated). Defaults to 200 per page sorted by zone/shelf/floor."
+      },
+      "response": []
+    },
+    {
+      "name": "List Long-term Shelf 23",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/storage/slots?zone=LT&shelf=23",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "storage", "slots"],
+          "query": [
+            {
+              "key": "zone",
+              "value": "LT"
+            },
+            {
+              "key": "shelf",
+              "value": "23"
+            }
+          ]
+        },
+        "description": "Filter slots to the long-term (LT) zone and a specific shelf."
+      },
+      "response": []
+    },
+    {
+      "name": "List Active Short-term Floor 2",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/storage/slots?zone=ST&floor=2&isActive=true",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "storage", "slots"],
+          "query": [
+            {
+              "key": "zone",
+              "value": "ST"
+            },
+            {
+              "key": "floor",
+              "value": "2"
+            },
+            {
+              "key": "isActive",
+              "value": "true"
+            }
+          ]
+        },
+        "description": "Filter slots by short-term zone, floor, and active flag."
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3001"
+    }
+  ]
+}
+
+
