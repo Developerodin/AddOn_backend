@@ -1,10 +1,16 @@
 import mongoose from 'mongoose';
 import { toJSON, paginate } from './plugins/index.js';
+import YarnCatalog from './yarnManagement/yarnCatalog.model.js';
 
 const bomItemSchema = mongoose.Schema({
-  materialId: {
+  yarnCatalogId: {
     type: mongoose.SchemaTypes.ObjectId,
-    ref: 'RawMaterial',
+    ref: 'YarnCatalog',
+    required: false,
+  },
+  yarnName: {
+    type: String,
+    trim: true,
     required: false,
   },
   quantity: {
@@ -90,6 +96,25 @@ const productSchema = mongoose.Schema(
     timestamps: true,
   }
 );
+
+// Pre-save hook: Auto-populate yarnName from yarnCatalogId if not provided
+productSchema.pre('save', async function (next) {
+  if (this.bom && Array.isArray(this.bom)) {
+    for (const bomItem of this.bom) {
+      if (bomItem.yarnCatalogId && !bomItem.yarnName) {
+        try {
+          const yarnCatalog = await YarnCatalog.findById(bomItem.yarnCatalogId);
+          if (yarnCatalog && yarnCatalog.yarnName) {
+            bomItem.yarnName = yarnCatalog.yarnName;
+          }
+        } catch (error) {
+          console.error('Error populating yarnName from yarnCatalogId:', error);
+        }
+      }
+    }
+  }
+  next();
+});
 
 // add plugins
 productSchema.plugin(toJSON);
