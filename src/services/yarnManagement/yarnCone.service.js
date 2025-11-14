@@ -1,5 +1,6 @@
 import httpStatus from 'http-status';
-import { YarnCone } from '../../models/index.js';
+import mongoose from 'mongoose';
+import { YarnCone, YarnBox } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import { yarnConeIssueStatuses, yarnConeReturnStatuses } from '../../models/yarnReq/yarnCone.model.js';
 
@@ -95,6 +96,143 @@ export const queryYarnCones = async (filters = {}) => {
     .lean();
 
   return yarnCones;
+};
+
+export const generateConesByBox = async (boxId, options = {}) => {
+  const yarnBox = await YarnBox.findOne({ boxId });
+
+  if (!yarnBox) {
+    throw new ApiError(httpStatus.NOT_FOUND, `Yarn box not found for boxId: ${boxId}`);
+  }
+
+  const existingConeCount = await YarnCone.countDocuments({ boxId: yarnBox.boxId });
+  const force = Boolean(options.force);
+
+  if (existingConeCount > 0 && !force) {
+    const existingCones = await YarnCone.find({ boxId: yarnBox.boxId }).lean();
+    const boxData = yarnBox.toObject();
+
+    return {
+      message: `Yarn cones already exist for box ${boxId}`,
+      created: false,
+      box: boxData,
+      cones: existingCones,
+    };
+  }
+
+  if (existingConeCount > 0 && force) {
+    await YarnCone.deleteMany({ boxId: yarnBox.boxId });
+  }
+
+  const numberOfCones =
+    options.numberOfCones ??
+    yarnBox.numberOfCones ??
+    yarnBox?.coneData?.numberOfCones;
+
+  if (!numberOfCones || numberOfCones <= 0) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Number of cones must be provided and greater than zero'
+    );
+  }
+
+  const issueStatus = options.issueStatus ?? 'not_issued';
+  if (!yarnConeIssueStatuses.includes(issueStatus)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid issue status');
+  }
+
+  const returnStatus = options.returnStatus ?? 'not_returned';
+  if (!yarnConeReturnStatuses.includes(returnStatus)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid return status');
+  }
+
+  const toDate = (value) => (value ? new Date(value) : undefined);
+  const safeNumber = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const derivedConeWeight =
+    options.coneWeight ??
+    (yarnBox.boxWeight && numberOfCones
+      ? safeNumber(yarnBox.boxWeight / numberOfCones)
+      : null);
+
+  const derivedTearWeight =
+    options.tearWeight ?? safeNumber(yarnBox.tearweight);
+
+  const derivedIssueWeight =
+    options.issueWeight ?? derivedConeWeight ?? null;
+
+  const derivedReturnWeight =
+    options.returnWeight ?? derivedConeWeight ?? null;
+
+  const derivedStorageId =
+    options.coneStorageId ?? yarnBox.storageLocation ?? null;
+
+  const basePayload = {
+    poNumber: yarnBox.poNumber,
+    boxId: yarnBox.boxId,
+    coneWeight: derivedConeWeight,
+    tearWeight: derivedTearWeight,
+    yarnName: options.yarnName ?? yarnBox.yarnName ?? null,
+    shadeCode: options.shadeCode ?? yarnBox.shadeCode ?? null,
+    issueStatus,
+    issueWeight: derivedIssueWeight,
+    returnStatus,
+    returnWeight: derivedReturnWeight,
+    coneStorageId: derivedStorageId,
+  };
+
+  if (options.issuedBy) {
+    basePayload.issuedBy = options.issuedBy;
+  }
+
+  if (options.issueDate) {
+    basePayload.issueDate = toDate(options.issueDate);
+  }
+
+  if (options.returnBy) {
+    basePayload.returnBy = options.returnBy;
+  }
+
+  if (options.returnDate) {
+    basePayload.returnDate = toDate(options.returnDate);
+  }
+
+  if (options.yarn) {
+    basePayload.yarn = options.yarn;
+  }
+
+  const conesToCreate = Array.from({ length: numberOfCones }, () => ({
+    ...basePayload,
+    barcode: new mongoose.Types.ObjectId().toString(),
+  }));
+
+  const createdCones = await YarnCone.insertMany(conesToCreate);
+
+  yarnBox.set('numberOfCones', numberOfCones);
+  yarnBox.set('coneData.conesIssued', true);
+  yarnBox.set('coneData.numberOfCones', numberOfCones);
+  yarnBox.set(
+    'coneData.coneIssueDate',
+    toDate(options.coneIssueDate) ?? new Date()
+  );
+
+  if (options.coneIssueBy) {
+    yarnBox.set('coneData.coneIssueBy', options.coneIssueBy);
+  }
+
+  await yarnBox.save();
+
+  const updatedBox = await YarnBox.findById(yarnBox._id).lean();
+
+  return {
+    message: `Successfully created ${createdCones.length} cones for box ${boxId}`,
+    created: true,
+    box: updatedBox,
+    cones: createdCones.map((cone) => cone.toObject()),
+  };
 };
 
 

@@ -30,4 +30,11 @@ export const getYarnCones = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(yarnCones);
 });
 
+export const generateConesByBox = catchAsync(async (req, res) => {
+  const { boxId } = req.params;
+  const result = await yarnConeService.generateConesByBox(boxId, req.body);
+  const statusCode = result.created ? httpStatus.CREATED : httpStatus.OK;
+  res.status(statusCode).send(result);
+});
+
 

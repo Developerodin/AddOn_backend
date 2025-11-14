@@ -17,6 +17,13 @@ router
   );
 
 router
+  .route('/generate-by-box/:boxId')
+  .post(
+    validate(yarnConeValidation.generateConesByBox),
+    yarnConeController.generateConesByBox
+  );
+
+router
   .route('/:yarnConeId')
   .patch(
     validate(yarnConeValidation.updateYarnCone),

@@ -77,4 +77,32 @@ export const getYarnCones = {
   }),
 };
 
+export const generateConesByBox = {
+  params: Joi.object().keys({
+    boxId: Joi.string().trim().required(),
+  }),
+  body: Joi.object()
+    .keys({
+      numberOfCones: Joi.number().integer().min(1).optional(),
+      coneWeight: Joi.number().min(0).allow(null),
+      tearWeight: Joi.number().min(0).allow(null),
+      yarnName: Joi.string().trim().allow('', null),
+      yarn: Joi.string().custom(objectId).allow(null),
+      shadeCode: Joi.string().trim().allow('', null),
+      coneStorageId: Joi.string().trim().allow('', null),
+      issueStatus: issueStatusField,
+      issuedBy: userRefSchema,
+      issueDate: Joi.date().iso().allow(null),
+      issueWeight: Joi.number().min(0).allow(null),
+      returnStatus: returnStatusField,
+      returnDate: Joi.date().iso().allow(null),
+      returnWeight: Joi.number().min(0).allow(null),
+      returnBy: userRefSchema,
+      coneIssueDate: Joi.date().iso().allow(null),
+      coneIssueBy: userRefSchema,
+      force: Joi.boolean().default(false),
+    })
+    .optional(),
+};
+
 
