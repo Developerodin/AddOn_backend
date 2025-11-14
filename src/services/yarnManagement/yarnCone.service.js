@@ -162,8 +162,7 @@ export const generateConesByBox = async (boxId, options = {}) => {
   const derivedReturnWeight =
     options.returnWeight ?? derivedConeWeight ?? null;
 
-  const derivedStorageId =
-    options.coneStorageId ?? yarnBox.storageLocation ?? null;
+  const derivedStorageId = options.coneStorageId ?? null;
 
   const basePayload = {
     poNumber: yarnBox.poNumber,
