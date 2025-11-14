@@ -16,7 +16,8 @@ const createProduct = {
     attributes: Joi.object().pattern(Joi.string(), Joi.string()),
     bom: Joi.array().items(
       Joi.object().keys({
-        materialId: Joi.string().custom(objectId),
+        yarnCatalogId: Joi.string().custom(objectId),
+        yarnName: Joi.string().trim(),
         quantity: Joi.number().min(0),
       })
     ),
@@ -72,8 +73,9 @@ const updateProduct = {
       attributes: Joi.object().pattern(Joi.string(), Joi.string()),
       bom: Joi.array().items(
         Joi.object().keys({
-          materialId: Joi.string().custom(objectId).required(),
-          quantity: Joi.number().min(0).required(),
+          yarnCatalogId: Joi.string().custom(objectId),
+          yarnName: Joi.string().trim(),
+          quantity: Joi.number().min(0),
         })
       ),
       processes: Joi.array().items(

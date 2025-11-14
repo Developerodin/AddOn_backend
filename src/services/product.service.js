@@ -71,7 +71,7 @@ export const queryProducts = async (filter, options) => {
 export const getProductById = async (id) => {
   return Product.findById(id)
     .populate('category', 'name')
-    .populate('bom.materialId', 'itemName printName')
+    .populate('bom.yarnCatalogId', 'yarnName yarnType countSize blend colorFamily')
     .populate('processes.processId', 'name type');
 };
 
