@@ -152,14 +152,9 @@ export const generateConesByBox = async (boxId, options = {}) => {
     return Number.isFinite(parsed) ? parsed : null;
   };
 
-  const derivedConeWeight =
-    options.coneWeight ??
-    (yarnBox.boxWeight && numberOfCones
-      ? safeNumber(yarnBox.boxWeight / numberOfCones)
-      : null);
+  const derivedConeWeight = options.coneWeight ?? 0;
 
-  const derivedTearWeight =
-    options.tearWeight ?? safeNumber(yarnBox.tearweight);
+  const derivedTearWeight = options.tearWeight ?? 0;
 
   const derivedIssueWeight =
     options.issueWeight ?? derivedConeWeight ?? null;
