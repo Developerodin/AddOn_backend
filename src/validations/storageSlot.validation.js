@@ -29,4 +29,10 @@ export const getStorageSlotsByZone = {
   }),
 };
 
+export const getStorageContentsByBarcode = {
+  params: Joi.object().keys({
+    barcode: Joi.string().required().trim(),
+  }),
+};
+
 

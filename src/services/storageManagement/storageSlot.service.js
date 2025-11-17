@@ -1,5 +1,8 @@
-import { StorageSlot } from '../../models/index.js';
+import { StorageSlot, YarnBox, YarnCone } from '../../models/index.js';
 import pick from '../../utils/pick.js';
+import ApiError from '../../utils/ApiError.js';
+import httpStatus from 'http-status';
+import { STORAGE_ZONES } from '../../models/storageManagement/storageSlot.model.js';
 
 const filterableFields = ['zoneCode', 'shelfNumber', 'floorNumber', 'isActive'];
 const paginationOptions = ['limit', 'page', 'sortBy'];
@@ -76,6 +79,48 @@ export const getStorageSlotsByZone = async (zoneCode, query = {}) => {
     totalResults: total,
     zoneCode,
   };
+};
+
+export const getStorageContentsByBarcode = async (barcode) => {
+  const storageSlot = await StorageSlot.findOne({ barcode }).lean();
+
+  if (!storageSlot) {
+    throw new ApiError(httpStatus.NOT_FOUND, `Storage slot with barcode ${barcode} not found`);
+  }
+
+  const { zoneCode } = storageSlot;
+
+  if (zoneCode === STORAGE_ZONES.LONG_TERM) {
+    // For long-term storage, return yarn boxes
+    const yarnBoxes = await YarnBox.find({ storageLocation: barcode })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return {
+      storageSlot,
+      zoneType: 'LONG_TERM',
+      type: 'boxes',
+      count: yarnBoxes.length,
+      data: yarnBoxes,
+    };
+  }
+
+  if (zoneCode === STORAGE_ZONES.SHORT_TERM) {
+    // For short-term storage, return yarn cones
+    const yarnCones = await YarnCone.find({ coneStorageId: barcode })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return {
+      storageSlot,
+      zoneType: 'SHORT_TERM',
+      type: 'cones',
+      count: yarnCones.length,
+      data: yarnCones,
+    };
+  }
+
+  throw new ApiError(httpStatus.BAD_REQUEST, `Unknown zone code: ${zoneCode}`);
 };
 
 

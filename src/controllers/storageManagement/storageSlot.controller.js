@@ -12,4 +12,9 @@ export const getStorageSlotsByZone = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(result);
 });
 
+export const getStorageContentsByBarcode = catchAsync(async (req, res) => {
+  const result = await storageSlotService.getStorageContentsByBarcode(req.params.barcode);
+  res.status(httpStatus.OK).send(result);
+});
+
 

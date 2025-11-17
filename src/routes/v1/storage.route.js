@@ -13,6 +13,10 @@ router
   .route('/slots/zone/:zone')
   .get(validate(storageSlotValidation.getStorageSlotsByZone), storageSlotController.getStorageSlotsByZone);
 
+router
+  .route('/slots/barcode/:barcode')
+  .get(validate(storageSlotValidation.getStorageContentsByBarcode), storageSlotController.getStorageContentsByBarcode);
+
 export default router;
 
 
