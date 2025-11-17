@@ -9,6 +9,10 @@ router
   .route('/slots')
   .get(validate(storageSlotValidation.listStorageSlots), storageSlotController.getStorageSlots);
 
+router
+  .route('/slots/zone/:zone')
+  .get(validate(storageSlotValidation.getStorageSlotsByZone), storageSlotController.getStorageSlotsByZone);
+
 export default router;
 
 
