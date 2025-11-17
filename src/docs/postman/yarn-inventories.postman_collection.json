@@ -1,0 +1,188 @@
+{
+  "info": {
+    "_postman_id": "yarn-inventories-collection",
+    "name": "Yarn Inventories API",
+    "description": "Collection for Yarn Inventory management APIs. These endpoints provide LTS/STS breakdown with blocked weight included in net weight calculations.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Get All Yarn Inventories",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-inventories?limit=10&page=1",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-inventories"],
+          "query": [
+            {
+              "key": "limit",
+              "value": "10",
+              "description": "Number of results per page"
+            },
+            {
+              "key": "page",
+              "value": "1",
+              "description": "Page number"
+            },
+            {
+              "key": "yarn_id",
+              "value": "",
+              "description": "Filter by yarn catalog ID",
+              "disabled": true
+            },
+            {
+              "key": "yarn_name",
+              "value": "",
+              "description": "Filter by yarn name (case-insensitive search)",
+              "disabled": true
+            },
+            {
+              "key": "inventory_status",
+              "value": "",
+              "description": "Filter by status: in_stock, low_stock, soon_to_be_low",
+              "disabled": true
+            },
+            {
+              "key": "overbooked",
+              "value": "",
+              "description": "Filter by overbooked status (true/false)",
+              "disabled": true
+            },
+            {
+              "key": "sortBy",
+              "value": "createdAt:desc",
+              "description": "Sort option (e.g., createdAt:desc, yarnName:asc)",
+              "disabled": true
+            }
+          ]
+        },
+        "description": "Retrieve all yarn inventories with optional filters.\n\n**Response includes:**\n- yarn_name, yarn_id\n- Total Weight (LTS/STS)\n- Net Weight (LTS/STS + blocked weight)\n- Number of cones (LTS/STS)\n- inventoryStatus\n- overbooked"
+      },
+      "response": []
+    },
+    {
+      "name": "Get Yarn Inventory by Yarn ID",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-inventories/yarn/{{yarn_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-inventories", "yarn", "{{yarn_id}}"]
+        },
+        "description": "Get yarn inventory by yarn catalog ID.\n\n**Response includes:**\n- yarn_name, yarn_id\n- Long Term Storage: totalWeight, netWeight (includes blocked), numberOfCones\n- Short Term Storage: totalWeight, netWeight (includes blocked), numberOfCones\n- inventoryStatus\n- overbooked"
+      },
+      "response": []
+    },
+    {
+      "name": "Get Yarn Inventory by Inventory ID",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-inventories/{{inventory_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-inventories", "{{inventory_id}}"]
+        },
+        "description": "Get a single yarn inventory by inventory ID"
+      },
+      "response": []
+    },
+    {
+      "name": "Create/Initialize Yarn Inventory",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"yarn\": \"{{yarn_id}}\",\n  \"yarnName\": \"20s Cotton Combed\",\n  \"longTermInventory\": {\n    \"totalWeight\": 1000,\n    \"totalTearWeight\": 50,\n    \"totalNetWeight\": 950,\n    \"numberOfCones\": 100\n  },\n  \"shortTermInventory\": {\n    \"totalWeight\": 500,\n    \"totalTearWeight\": 25,\n    \"totalNetWeight\": 475,\n    \"numberOfCones\": 50\n  },\n  \"blockedNetWeight\": 100,\n  \"inventoryStatus\": \"in_stock\",\n  \"overbooked\": false\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-inventories",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-inventories"]
+        },
+        "description": "Initialize/create a new yarn inventory record.\n\n**Notes:**\n- If totalInventory is not provided, it will be automatically calculated from longTermInventory + shortTermInventory\n- yarnName will be validated against the yarn catalog\n- Returns error if inventory already exists for this yarn (use update instead)\n\n**Payload Fields:**\n- yarn (required): Yarn catalog ObjectId\n- yarnName (required): Display name\n- longTermInventory (optional): {totalWeight, totalTearWeight, totalNetWeight, numberOfCones}\n- shortTermInventory (optional): {totalWeight, totalTearWeight, totalNetWeight, numberOfCones}\n- blockedNetWeight (optional, default: 0)\n- inventoryStatus (optional, default: in_stock)\n- overbooked (optional, default: false)"
+      },
+      "response": []
+    },
+    {
+      "name": "Get Inventories - Filter by Status",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-inventories?inventory_status=low_stock&overbooked=false",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-inventories"],
+          "query": [
+            {
+              "key": "inventory_status",
+              "value": "low_stock",
+              "description": "Filter by status: in_stock, low_stock, soon_to_be_low"
+            },
+            {
+              "key": "overbooked",
+              "value": "false",
+              "description": "Filter by overbooked status"
+            }
+          ]
+        },
+        "description": "Example: Get all inventories with low_stock status that are not overbooked"
+      },
+      "response": []
+    },
+    {
+      "name": "Get Inventories - Search by Yarn Name",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/v1/yarn-management/yarn-inventories?yarn_name=cotton&limit=20",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "yarn-management", "yarn-inventories"],
+          "query": [
+            {
+              "key": "yarn_name",
+              "value": "cotton",
+              "description": "Search yarns by name (case-insensitive)"
+            },
+            {
+              "key": "limit",
+              "value": "20",
+              "description": "Number of results"
+            }
+          ]
+        },
+        "description": "Example: Search inventories by yarn name"
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3001",
+      "description": "Base URL for the API"
+    },
+    {
+      "key": "yarn_id",
+      "value": "yarn_catalog_id_here",
+      "description": "Yarn catalog ObjectId"
+    },
+    {
+      "key": "inventory_id",
+      "value": "inventory_id_here",
+      "description": "Yarn inventory ObjectId"
+    }
+  ]
+}
+
