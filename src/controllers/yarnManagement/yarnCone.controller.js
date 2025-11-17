@@ -30,6 +30,12 @@ export const getYarnCones = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(yarnCones);
 });
 
+export const getYarnConeByBarcode = catchAsync(async (req, res) => {
+  const { barcode } = req.params;
+  const yarnCone = await yarnConeService.getYarnConeByBarcode(barcode);
+  res.status(httpStatus.OK).send(yarnCone);
+});
+
 export const generateConesByBox = catchAsync(async (req, res) => {
   const { boxId } = req.params;
   const result = await yarnConeService.generateConesByBox(boxId, req.body);

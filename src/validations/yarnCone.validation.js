@@ -77,6 +77,12 @@ export const getYarnCones = {
   }),
 };
 
+export const getYarnConeByBarcode = {
+  params: Joi.object().keys({
+    barcode: Joi.string().trim().required(),
+  }),
+};
+
 export const generateConesByBox = {
   params: Joi.object().keys({
     boxId: Joi.string().trim().required(),

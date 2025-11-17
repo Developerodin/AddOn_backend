@@ -24,6 +24,13 @@ router
   );
 
 router
+  .route('/barcode/:barcode')
+  .get(
+    validate(yarnConeValidation.getYarnConeByBarcode),
+    yarnConeController.getYarnConeByBarcode
+  );
+
+router
   .route('/:yarnConeId')
   .patch(
     validate(yarnConeValidation.updateYarnCone),

@@ -48,6 +48,21 @@ export const updateYarnConeById = async (yarnConeId, updateBody) => {
   return yarnCone;
 };
 
+export const getYarnConeByBarcode = async (barcode) => {
+  const yarnCone = await YarnCone.findOne({ barcode })
+    .populate({
+      path: 'yarn',
+      select: '_id yarnName yarnType status',
+    })
+    .lean();
+
+  if (!yarnCone) {
+    throw new ApiError(httpStatus.NOT_FOUND, `Yarn cone with barcode ${barcode} not found`);
+  }
+
+  return yarnCone;
+};
+
 export const queryYarnCones = async (filters = {}) => {
   const mongooseFilter = {};
 
