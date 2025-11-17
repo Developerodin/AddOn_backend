@@ -20,6 +20,7 @@ export const createYarnTransaction = {
       totalTearWeight: Joi.number().min(0).allow(null),
       numberOfCones: Joi.number().min(0).allow(null),
       totalBlockedWeight: Joi.number().min(0).allow(null),
+      orderno: Joi.string().trim().allow(null, ''),
     })
     .custom((value, helpers) => {
       const type = value.transactionType;
@@ -64,6 +65,7 @@ export const getYarnTransactions = {
     transaction_type: transactionTypeField.optional(),
     yarn_id: Joi.string().custom(objectId).optional(),
     yarn_name: Joi.string().trim().optional(),
+    orderno: Joi.string().trim().optional(),
   }),
 };
 

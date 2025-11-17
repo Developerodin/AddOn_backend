@@ -91,6 +91,7 @@ const normaliseTransactionPayload = (inputBody) => {
     transactionTotalWeight: 0,
     transactionTearWeight: 0,
     transactionConeCount: 0,
+    orderno: body.orderno,
   };
 
   if (isBlocked) {
@@ -354,6 +355,10 @@ export const queryYarnTransactions = async (filters = {}) => {
 
   if (filters.yarn_name) {
     mongooseFilter.yarnName = { $regex: filters.yarn_name, $options: 'i' };
+  }
+
+  if (filters.orderno) {
+    mongooseFilter.orderno = { $regex: filters.orderno, $options: 'i' };
   }
 
   if (filters.start_date || filters.end_date) {

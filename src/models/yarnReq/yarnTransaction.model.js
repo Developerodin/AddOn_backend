@@ -41,6 +41,10 @@ const yarnTransactionSchema = mongoose.Schema(
       type: Number,
       min: 0,
     },
+    orderno: {
+      type: String,
+      trim: true,
+    },
   },
   {
     timestamps: true,
