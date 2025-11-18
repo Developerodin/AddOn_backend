@@ -17,6 +17,7 @@ router
   .route('/slots/barcode/:barcode')
   .get(validate(storageSlotValidation.getStorageContentsByBarcode), storageSlotController.getStorageContentsByBarcode);
 
-export default router;
+
+  export default router;
 
 
