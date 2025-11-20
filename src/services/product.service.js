@@ -22,13 +22,15 @@ export const createProduct = async (productBody) => {
  * @param {number} [options.limit] - Maximum number of results per page (default = 10)
  * @param {number} [options.page] - Current page (default = 1)
  * @param {string} [options.populate] - Populate options
+ * @param {string} [search] - Search term to filter across multiple fields
  * @returns {Promise<QueryResult>}
  */
-export const queryProducts = async (filter, options) => {
+export const queryProducts = async (filter, options, search) => {
   try {
     // Additional validation and debugging
     console.log('Service received filter:', filter);
     console.log('Service received options:', options);
+    console.log('Service received search:', search);
     
     // Ensure filter is a valid object
     if (!filter || typeof filter !== 'object') {
@@ -39,6 +41,39 @@ export const queryProducts = async (filter, options) => {
     if (filter._id) {
       console.warn('Removing _id from filter to prevent ObjectId casting issues');
       delete filter._id;
+    }
+    
+    // Handle search parameter - search across multiple fields
+    if (search && typeof search === 'string' && search.trim()) {
+      const searchTerm = search.trim();
+      // Escape special regex characters
+      const escapedSearch = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const searchRegex = new RegExp(escapedSearch, 'i');
+      
+      // Build $or query to search across multiple fields
+      const searchFilter = {
+        $or: [
+          { name: searchRegex },
+          { softwareCode: searchRegex },
+          { internalCode: searchRegex },
+          { vendorCode: searchRegex },
+          { factoryCode: searchRegex },
+          { styleCode: searchRegex },
+          { eanCode: searchRegex },
+          { description: searchRegex },
+        ],
+      };
+      
+      // Combine search filter with existing filter using $and
+      if (Object.keys(filter).length > 0) {
+        filter = {
+          $and: [filter, searchFilter],
+        };
+      } else {
+        filter = searchFilter;
+      }
+      
+      console.log('Applied search filter:', JSON.stringify(filter));
     }
     
     // Add default population for category if not specified

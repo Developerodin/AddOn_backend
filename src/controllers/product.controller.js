@@ -17,7 +17,11 @@ export const getProducts = catchAsync(async (req, res) => {
   // Pick only valid filter fields
   const filter = pick(req.query, allowedFilterFields);
   
+  // Extract search parameter separately
+  const search = req.query.search;
+  
   console.log('Original filter:', filter);
+  console.log('Search term:', search);
   console.log('Query params:', req.query);
   
   // Clean the filter - remove empty values and validate ObjectId fields
@@ -37,7 +41,7 @@ export const getProducts = catchAsync(async (req, res) => {
     options.page = parseInt(options.page, 10);
   }
   
-  const result = await productService.queryProducts(cleanFilter, options);
+  const result = await productService.queryProducts(cleanFilter, options, search);
   res.send(result);
 });
 
