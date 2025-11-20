@@ -84,22 +84,44 @@ export const getProductById = async (id) => {
 export const getProductByCode = async (factoryCode, internalCode) => {
   const filter = {};
   
+  // Handle factoryCode - case-insensitive exact match with trimmed value
   if (factoryCode) {
-    filter.factoryCode = factoryCode.trim();
+    const trimmedCode = String(factoryCode).trim();
+    if (trimmedCode) {
+      // Use case-insensitive regex for exact match
+      filter.factoryCode = { $regex: new RegExp(`^${trimmedCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') };
+    }
   }
   
+  // Handle internalCode - case-insensitive exact match with trimmed value
   if (internalCode) {
-    filter.internalCode = internalCode.trim();
+    const trimmedCode = String(internalCode).trim();
+    if (trimmedCode) {
+      // Use case-insensitive regex for exact match
+      filter.internalCode = { $regex: new RegExp(`^${trimmedCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') };
+    }
   }
   
   if (!factoryCode && !internalCode) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Either factoryCode or internalCode must be provided');
   }
   
-  return Product.findOne(filter)
+  if (Object.keys(filter).length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Valid factoryCode or internalCode must be provided');
+  }
+  
+  console.log('Searching product with filter:', JSON.stringify(filter));
+  
+  const product = await Product.findOne(filter)
     .populate('category', 'name')
     .populate('bom.yarnCatalogId', 'yarnName yarnType countSize blend colorFamily')
     .populate('processes.processId', 'name type');
+  
+  if (!product) {
+    console.log('Product not found with filter:', JSON.stringify(filter));
+  }
+  
+  return product;
 };
 
 /**
