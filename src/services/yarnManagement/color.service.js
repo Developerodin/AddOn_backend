@@ -8,9 +8,6 @@ import ApiError from '../../utils/ApiError.js';
  * @returns {Promise<Color>}
  */
 export const createColor = async (colorBody) => {
-  if (await Color.isColorCodeTaken(colorBody.colorCode)) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Color code already taken');
-  }
   return Color.create(colorBody);
 };
 
@@ -47,9 +44,6 @@ export const updateColorById = async (colorId, updateBody) => {
   const color = await getColorById(colorId);
   if (!color) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Color not found');
-  }
-  if (updateBody.colorCode && (await Color.isColorCodeTaken(updateBody.colorCode, colorId))) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Color code already taken');
   }
   Object.assign(color, updateBody);
   await color.save();
@@ -135,24 +129,12 @@ export const bulkImportColors = async (colors, batchSize = 50) => {
                 throw new Error(`Color with ID ${colorData.id} not found`);
               }
               
-              // Check for color code conflicts
-              if (processedData.colorCode !== existingColor.colorCode) {
-                if (await Color.isColorCodeTaken(processedData.colorCode, colorData.id)) {
-                  throw new Error(`Color code "${processedData.colorCode}" already taken`);
-                }
-              }
-              
               await Color.updateOne(
                 { _id: colorData.id },
                 { $set: processedData }
               );
               results.updated++;
             } else {
-              // Check for color code conflicts
-              if (await Color.isColorCodeTaken(processedData.colorCode)) {
-                throw new Error(`Color code "${processedData.colorCode}" already taken`);
-              }
-              
               await Color.create(processedData);
               results.created++;
             }
