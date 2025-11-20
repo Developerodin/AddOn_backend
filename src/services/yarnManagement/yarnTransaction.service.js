@@ -30,25 +30,13 @@ const ensureBucket = (inventory, key) => {
 };
 
 /**
- * Adds the provided delta to the bucket and ensures we never drop below zero.
+ * Adds the provided delta to the bucket. Negative values are allowed.
  */
 const applyDelta = (bucket, delta, bucketName) => {
   bucket.totalWeight += toNumber(delta.totalWeight);
   bucket.totalTearWeight += toNumber(delta.totalTearWeight);
   bucket.netWeight += toNumber(delta.totalNetWeight);
   bucket.numberOfCones += toNumber(delta.numberOfCones);
-
-  ['totalWeight', 'totalTearWeight', 'netWeight', 'numberOfCones'].forEach((field) => {
-    if (bucket[field] < 0 - Number.EPSILON) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        `Operation would result in negative ${field} for ${bucketName}. Aborting transaction.`
-      );
-    }
-    if (bucket[field] < 0) {
-      bucket[field] = 0;
-    }
-  });
 };
 
 /**
@@ -140,8 +128,7 @@ const ensureInventoryDocument = async (session, transactionPayload) => {
 };
 
 /**
- * Applies the transaction delta to inventory buckets. Negative deltas are validated
- * via applyDelta to guarantee the "never negative inventory" rule.
+ * Applies the transaction delta to inventory buckets. Negative values are allowed.
  */
 const updateInventoryBuckets = (inventory, transaction) => {
   const delta = {
@@ -164,10 +151,7 @@ const updateInventoryBuckets = (inventory, transaction) => {
         },
         'short-term inventory'
       );
-      inventory.blockedNetWeight = Math.max(
-        0,
-        toNumber(inventory.blockedNetWeight) - toNumber(delta.totalNetWeight)
-      );
+      inventory.blockedNetWeight = toNumber(inventory.blockedNetWeight) - toNumber(delta.totalNetWeight);
       break;
     }
     case 'yarn_blocked': {
@@ -205,18 +189,6 @@ const updateInventoryBuckets = (inventory, transaction) => {
   }
 
   recalcTotalInventory(inventory);
-
-  const totalNet = toNumber(inventory.totalInventory.netWeight);
-  if (totalNet < 0 - Number.EPSILON) {
-    throw new ApiError(
-      httpStatus.BAD_REQUEST,
-      'Operation would result in negative total net weight. Aborting transaction.'
-    );
-  }
-
-  if (totalNet < 0) {
-    inventory.totalInventory.netWeight = 0;
-  }
 };
 
 /**
@@ -316,16 +288,6 @@ export const createYarnTransaction = async (transactionBody) => {
 
     validateBlockedDoesNotExceedInventory(inventory, transaction);
     updateInventoryBuckets(inventory, transaction);
-
-    if (inventory.blockedNetWeight < 0 - Number.EPSILON) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'Operation would result in negative blocked weight. Aborting transaction.'
-      );
-    }
-    if (inventory.blockedNetWeight < 0) {
-      inventory.blockedNetWeight = 0;
-    }
 
     await updateInventoryStatusAndMaybeRaiseRequisition(
       session,

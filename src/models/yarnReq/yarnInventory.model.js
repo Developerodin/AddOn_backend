@@ -10,28 +10,23 @@ const inventoryBucketSchema = mongoose.Schema(
     totalWeight: {
       type: Number,
       default: 0,
-      min: 0,
     },
     totalTearWeight: {
       type: Number,
       default: 0,
-      min: 0,
     },
     totalNetWeight: {
       type: Number,
       default: 0,
-      min: 0,
     },
     totalBlockedWeight: {
       type: Number,
       default: 0,
-      min: 0,
     },
     
     numberOfCones: {
       type: Number,
       default: 0,
-      min: 0,
     },
   
   },
@@ -66,7 +61,6 @@ const yarnInventorySchema = mongoose.Schema(
     blockedNetWeight: {
       type: Number,
       default: 0,
-      min: 0,
     },
     inventoryStatus: {
       type: String,
