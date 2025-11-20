@@ -76,6 +76,33 @@ export const getProductById = async (id) => {
 };
 
 /**
+ * Get product by factoryCode or internalCode
+ * @param {string} factoryCode - Factory code (optional)
+ * @param {string} internalCode - Internal code (optional)
+ * @returns {Promise<Product|null>}
+ */
+export const getProductByCode = async (factoryCode, internalCode) => {
+  const filter = {};
+  
+  if (factoryCode) {
+    filter.factoryCode = factoryCode.trim();
+  }
+  
+  if (internalCode) {
+    filter.internalCode = internalCode.trim();
+  }
+  
+  if (!factoryCode && !internalCode) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Either factoryCode or internalCode must be provided');
+  }
+  
+  return Product.findOne(filter)
+    .populate('category', 'name')
+    .populate('bom.yarnCatalogId', 'yarnName yarnType countSize blend colorFamily')
+    .populate('processes.processId', 'name type');
+};
+
+/**
  * Update product by id
  * @param {ObjectId} productId
  * @param {Object} updateBody

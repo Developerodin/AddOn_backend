@@ -114,6 +114,18 @@ const bulkImportProducts = {
   }),
 };
 
+const getProductByCode = {
+  query: Joi.object()
+    .keys({
+      factoryCode: Joi.string().trim().optional(),
+      internalCode: Joi.string().trim().optional(),
+    })
+    .or('factoryCode', 'internalCode')
+    .messages({
+      'object.missing': 'Either factoryCode or internalCode must be provided',
+    }),
+};
+
 export default {
   createProduct,
   getProducts,
@@ -121,4 +133,5 @@ export default {
   updateProduct,
   deleteProduct,
   bulkImportProducts,
+  getProductByCode,
 }; 

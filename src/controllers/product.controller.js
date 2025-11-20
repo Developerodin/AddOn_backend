@@ -82,4 +82,13 @@ export const debugQuery = catchAsync(async (req, res) => {
     url: req.url,
     method: req.method
   });
+});
+
+export const getProductByCode = catchAsync(async (req, res) => {
+  const { factoryCode, internalCode } = req.query;
+  const product = await productService.getProductByCode(factoryCode, internalCode);
+  if (!product) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Product not found');
+  }
+  res.send(product);
 }); 

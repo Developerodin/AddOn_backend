@@ -25,6 +25,10 @@ router
   );
 
 router
+  .route('/by-code')
+  .get(validate(productValidation.getProductByCode), productController.getProductByCode);
+
+router
   .route('/:productId')
   .get(validate(productValidation.getProduct), productController.getProduct)
   .patch(validate(productValidation.updateProduct), productController.updateProduct)
