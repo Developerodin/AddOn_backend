@@ -12,7 +12,6 @@ const colorSchema = mongoose.Schema(
       type: String,
       required: true,
       trim: true,
-      unique: true,
     },
     colorCode: {
       type: String,
@@ -36,17 +35,6 @@ const colorSchema = mongoose.Schema(
 // Add plugins for converting MongoDB document to JSON and pagination support
 colorSchema.plugin(toJSON);
 colorSchema.plugin(paginate);
-
-/**
- * Check if color name is taken
- * @param {string} name - The color name
- * @param {ObjectId} [excludeColorId] - The id of the color to be excluded
- * @returns {Promise<boolean>}
- */
-colorSchema.statics.isNameTaken = async function (name, excludeColorId) {
-  const color = await this.findOne({ name, _id: { $ne: excludeColorId } });
-  return !!color;
-};
 
 /**
  * Check if color code is taken

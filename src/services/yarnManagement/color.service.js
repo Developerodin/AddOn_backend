@@ -8,9 +8,6 @@ import ApiError from '../../utils/ApiError.js';
  * @returns {Promise<Color>}
  */
 export const createColor = async (colorBody) => {
-  if (await Color.isNameTaken(colorBody.name)) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Color name already taken');
-  }
   if (await Color.isColorCodeTaken(colorBody.colorCode)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Color code already taken');
   }
@@ -50,9 +47,6 @@ export const updateColorById = async (colorId, updateBody) => {
   const color = await getColorById(colorId);
   if (!color) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Color not found');
-  }
-  if (updateBody.name && (await Color.isNameTaken(updateBody.name, colorId))) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Color name already taken');
   }
   if (updateBody.colorCode && (await Color.isColorCodeTaken(updateBody.colorCode, colorId))) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Color code already taken');
@@ -141,13 +135,6 @@ export const bulkImportColors = async (colors, batchSize = 50) => {
                 throw new Error(`Color with ID ${colorData.id} not found`);
               }
               
-              // Check for name conflicts
-              if (processedData.name !== existingColor.name) {
-                if (await Color.isNameTaken(processedData.name, colorData.id)) {
-                  throw new Error(`Color name "${processedData.name}" already taken`);
-                }
-              }
-              
               // Check for color code conflicts
               if (processedData.colorCode !== existingColor.colorCode) {
                 if (await Color.isColorCodeTaken(processedData.colorCode, colorData.id)) {
@@ -161,11 +148,6 @@ export const bulkImportColors = async (colors, batchSize = 50) => {
               );
               results.updated++;
             } else {
-              // Check for name conflicts
-              if (await Color.isNameTaken(processedData.name)) {
-                throw new Error(`Color name "${processedData.name}" already taken`);
-              }
-              
               // Check for color code conflicts
               if (await Color.isColorCodeTaken(processedData.colorCode)) {
                 throw new Error(`Color code "${processedData.colorCode}" already taken`);
