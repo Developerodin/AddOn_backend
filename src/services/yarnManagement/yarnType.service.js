@@ -142,12 +142,55 @@ export const updateYarnTypeById = async (yarnTypeId, updateBody) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Yarn type name already taken');
   }
   
-  // Convert countSize IDs to embedded objects BEFORE updating (so Mongoose validation passes)
+  // Handle details update separately to preserve existing IDs
   if (updateBody.details && Array.isArray(updateBody.details)) {
+    // Convert countSize IDs to embedded objects BEFORE updating
     await convertCountSizeToEmbedded(updateBody.details);
+    
+    // Preserve existing detail IDs by matching
+    const existingDetails = yarnType.details || [];
+    const updatedDetails = [];
+    
+    for (const updateDetail of updateBody.details) {
+      let existingDetail = null;
+      
+      // Try to match by _id if provided
+      if (updateDetail._id || updateDetail.id) {
+        const detailId = updateDetail._id || updateDetail.id;
+        const idStr = detailId.toString();
+        existingDetail = existingDetails.find(d => d._id && d._id.toString() === idStr);
+      }
+      
+      // If not found by ID, try to match by subtype name
+      if (!existingDetail && updateDetail.subtype) {
+        existingDetail = existingDetails.find(d => d.subtype === updateDetail.subtype);
+      }
+      
+      if (existingDetail) {
+        // Update existing detail - preserve the _id
+        existingDetail.subtype = updateDetail.subtype;
+        existingDetail.countSize = updateDetail.countSize || [];
+        updatedDetails.push(existingDetail);
+      } else {
+        // New detail - will get a new _id from MongoDB
+        updatedDetails.push({
+          subtype: updateDetail.subtype,
+          countSize: updateDetail.countSize || [],
+        });
+      }
+    }
+    
+    // Replace the details array with merged details
+    yarnType.details = updatedDetails;
+    
+    // Remove details from updateBody so we don't overwrite with Object.assign
+    const { details, ...restUpdateBody } = updateBody;
+    Object.assign(yarnType, restUpdateBody);
+  } else {
+    // No details update, proceed normally
+    Object.assign(yarnType, updateBody);
   }
   
-  Object.assign(yarnType, updateBody);
   await yarnType.save();
   return yarnType;
 };
@@ -224,7 +267,7 @@ export const bulkImportYarnTypes = async (yarnTypes, batchSize = 50) => {
                 throw new Error('Invalid yarn type ID format');
               }
 
-              const existingYarnType = await YarnType.findById(yarnTypeData.id).lean();
+              const existingYarnType = await YarnType.findById(yarnTypeData.id);
               if (!existingYarnType) {
                 throw new Error(`Yarn type with ID ${yarnTypeData.id} not found`);
               }
@@ -236,10 +279,48 @@ export const bulkImportYarnTypes = async (yarnTypes, batchSize = 50) => {
                 }
               }
               
-              await YarnType.updateOne(
-                { _id: yarnTypeData.id },
-                { $set: processedData }
-              );
+              // Handle details update separately to preserve existing IDs
+              if (processedData.details && Array.isArray(processedData.details)) {
+                const existingDetails = existingYarnType.details || [];
+                const updatedDetails = [];
+                
+                for (const updateDetail of processedData.details) {
+                  let existingDetail = null;
+                  
+                  // Try to match by _id if provided
+                  if (updateDetail._id || updateDetail.id) {
+                    const detailId = updateDetail._id || updateDetail.id;
+                    const idStr = detailId.toString();
+                    existingDetail = existingDetails.find(d => d._id && d._id.toString() === idStr);
+                  }
+                  
+                  // If not found by ID, try to match by subtype name
+                  if (!existingDetail && updateDetail.subtype) {
+                    existingDetail = existingDetails.find(d => d.subtype === updateDetail.subtype);
+                  }
+                  
+                  if (existingDetail) {
+                    // Update existing detail - preserve the _id
+                    existingDetail.subtype = updateDetail.subtype;
+                    existingDetail.countSize = updateDetail.countSize || [];
+                    updatedDetails.push(existingDetail);
+                  } else {
+                    // New detail - will get a new _id from MongoDB
+                    updatedDetails.push({
+                      subtype: updateDetail.subtype,
+                      countSize: updateDetail.countSize || [],
+                    });
+                  }
+                }
+                
+                existingYarnType.details = updatedDetails;
+              }
+              
+              // Update other fields
+              if (processedData.name) existingYarnType.name = processedData.name;
+              if (processedData.status) existingYarnType.status = processedData.status;
+              
+              await existingYarnType.save();
               results.updated++;
             } else {
               // Check for name conflicts
