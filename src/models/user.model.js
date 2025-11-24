@@ -156,6 +156,20 @@ userSchema.statics.isEmailTaken = async function (email, excludeUserId) {
 };
 
 /**
+ * Get user by email or username (name)
+ * @param {string} emailOrUsername - The user's email or username (name)
+ * @returns {Promise<User>}
+ */
+userSchema.statics.findByEmailOrUsername = async function (emailOrUsername) {
+  return this.findOne({
+    $or: [
+      { email: emailOrUsername.toLowerCase() },
+      { name: emailOrUsername }
+    ]
+  });
+};
+
+/**
  * Check if password matches the user's password
  * @param {string} password
  * @returns {Promise<boolean>}

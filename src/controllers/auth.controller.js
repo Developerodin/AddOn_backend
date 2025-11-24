@@ -15,8 +15,10 @@ const register = catchAsync(async (req, res) => {
 });
 
 const login = catchAsync(async (req, res) => {
-  const { email, password } = req.body;
-  const user = await loginUserWithEmailAndPassword(email, password);
+  const { email, username, password } = req.body;
+  // Support both 'email' and 'username' fields, or use 'email' as fallback for backward compatibility
+  const emailOrUsername = username || email;
+  const user = await loginUserWithEmailAndPassword(emailOrUsername, password);
   const tokens = await generateAuthTokens(user);
   res.send({ user, tokens });
 });
