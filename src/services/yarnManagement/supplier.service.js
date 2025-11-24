@@ -1,16 +1,69 @@
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
-import { Supplier, YarnType, Color } from '../../models/index.js';
+import { Supplier, YarnType, Color, YarnCatalog } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 
 /**
  * Convert yarnDetails IDs to embedded objects
+ * Also handles yarnName lookup from catalog to populate yarnType and yarnSubtype
  * @param {Array} yarnDetails - Supplier yarnDetails array
  */
 const convertYarnDetailsToEmbedded = async (yarnDetails) => {
   if (!yarnDetails || !Array.isArray(yarnDetails)) return;
   
   for (const detail of yarnDetails) {
+    // Validate that either yarnName or yarnType is provided
+    if (!detail.yarnName && !detail.yarnType) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Either yarnName or yarnType must be provided in yarnDetails'
+      );
+    }
+    
+    // If yarnName is provided, fetch yarnType and yarnSubtype from catalog
+    if (detail.yarnName && (!detail.yarnType || !detail.yarnsubtype)) {
+      try {
+        const catalog = await YarnCatalog.findOne({ 
+          yarnName: detail.yarnName.trim(),
+          status: { $ne: 'deleted' }
+        });
+        
+        if (catalog) {
+          // Populate yarnType from catalog if not already provided
+          if (!detail.yarnType && catalog.yarnType) {
+            detail.yarnType = {
+              _id: catalog.yarnType._id,
+              name: catalog.yarnType.name,
+              status: catalog.yarnType.status,
+            };
+          }
+          
+          // Populate yarnSubtype from catalog if not already provided
+          if (!detail.yarnsubtype && catalog.yarnSubtype) {
+            detail.yarnsubtype = {
+              _id: catalog.yarnSubtype._id,
+              subtype: catalog.yarnSubtype.subtype,
+              countSize: catalog.yarnSubtype.countSize || [],
+            };
+          }
+        } else {
+          throw new ApiError(
+            httpStatus.BAD_REQUEST, 
+            `Yarn catalog not found for yarnName: ${detail.yarnName}`
+          );
+        }
+      } catch (error) {
+        if (error instanceof ApiError) {
+          throw error;
+        }
+        console.error('Error fetching yarn catalog by yarnName:', error);
+        throw new ApiError(
+          httpStatus.INTERNAL_SERVER_ERROR,
+          `Failed to fetch yarn catalog for yarnName: ${detail.yarnName}`
+        );
+      }
+    }
+    
     // Convert yarnType ID to embedded object
     if (detail.yarnType) {
       const isObjectId = mongoose.Types.ObjectId.isValid(detail.yarnType) || 

@@ -4,6 +4,7 @@ import toJSON from '../plugins/toJSON.plugin.js';
 import paginate from '../plugins/paginate.plugin.js';
 import YarnType from './yarnType.model.js';
 import Color from './color.model.js';
+import YarnCatalog from './yarnCatalog.model.js';
 
 // Embedded YarnType schema
 const embeddedYarnTypeSchema = mongoose.Schema(
@@ -74,9 +75,14 @@ const embeddedYarnSubtypeSchema = mongoose.Schema(
 
 const yarnDetailsSchema = mongoose.Schema(
   {
+    yarnName: {
+      type: String,
+      required: false,
+      trim: true,
+    },
     yarnType: {
       type: embeddedYarnTypeSchema,
-      required: true,
+      required: false, // Validated in pre-save hook and service layer
     },
     yarnsubtype: {
       type: embeddedYarnSubtypeSchema,
@@ -191,9 +197,50 @@ const supplierSchema = mongoose.Schema(
 
 // Pre-save hook: Automatically converts IDs to embedded objects
 // Frontend can send just IDs, and this hook will fetch and store full object data
+// Also handles yarnName lookup from catalog to populate yarnType and yarnSubtype
 supplierSchema.pre('save', async function (next) {
   if (this.isModified('yarnDetails')) {
     for (const detail of this.yarnDetails || []) {
+      // Validate that either yarnName or yarnType is provided
+      if (!detail.yarnName && !detail.yarnType) {
+        return next(new Error('Either yarnName or yarnType must be provided in yarnDetails'));
+      }
+      
+      // If yarnName is provided, fetch yarnType and yarnSubtype from catalog
+      if (detail.yarnName && (!detail.yarnType || !detail.yarnsubtype)) {
+        try {
+          const catalog = await YarnCatalog.findOne({ 
+            yarnName: detail.yarnName,
+            status: { $ne: 'deleted' }
+          });
+          
+          if (catalog) {
+            // Populate yarnType from catalog
+            if (!detail.yarnType && catalog.yarnType) {
+              detail.yarnType = {
+                _id: catalog.yarnType._id,
+                name: catalog.yarnType.name,
+                status: catalog.yarnType.status,
+              };
+            }
+            
+            // Populate yarnSubtype from catalog
+            if (!detail.yarnsubtype && catalog.yarnSubtype) {
+              detail.yarnsubtype = {
+                _id: catalog.yarnSubtype._id,
+                subtype: catalog.yarnSubtype.subtype,
+                countSize: catalog.yarnSubtype.countSize || [],
+              };
+            }
+          } else {
+            return next(new Error(`Yarn catalog not found for yarnName: ${detail.yarnName}`));
+          }
+        } catch (error) {
+          console.error('Error fetching yarn catalog by yarnName:', error);
+          return next(error);
+        }
+      }
+      
       // Convert yarnType ID to embedded object
       if (detail.yarnType) {
         const isObjectId = mongoose.Types.ObjectId.isValid(detail.yarnType) || 

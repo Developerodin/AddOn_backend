@@ -2,11 +2,18 @@ import Joi from 'joi';
 import { objectId } from './custom.validation.js';
 
 const yarnDetailsSchema = Joi.object().keys({
-  yarnType: Joi.string().custom(objectId).required(),
+  yarnName: Joi.string().trim().allow('', null),
+  yarnType: Joi.string().custom(objectId).when('yarnName', {
+    is: Joi.string().min(1),
+    then: Joi.optional(),
+    otherwise: Joi.required(),
+  }),
   yarnsubtype: Joi.string().custom(objectId).allow(null, ''),
   color: Joi.string().custom(objectId).required(),
   shadeNumber: Joi.string().allow('', null).trim(),
   tearweight: Joi.number().required(),
+}).or('yarnName', 'yarnType').messages({
+  'object.missing': 'Either yarnName or yarnType must be provided',
 });
 
 export const createSupplier = {
