@@ -14,4 +14,16 @@ export const getYarnTransactions = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(transactions);
 });
 
+export const getYarnIssuedByOrder = catchAsync(async (req, res) => {
+  const { orderno } = req.params;
+  const transactions = await yarnTransactionService.getYarnIssuedByOrder(orderno);
+  res.status(httpStatus.OK).send(transactions);
+});
+
+export const getAllYarnIssued = catchAsync(async (req, res) => {
+  const filters = pick(req.query, ['start_date', 'end_date']);
+  const transactions = await yarnTransactionService.getAllYarnIssued(filters);
+  res.status(httpStatus.OK).send(transactions);
+});
+
 

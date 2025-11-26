@@ -69,4 +69,17 @@ export const getYarnTransactions = {
   }),
 };
 
+export const getYarnIssuedByOrder = {
+  params: Joi.object().keys({
+    orderno: Joi.string().trim().required(),
+  }),
+};
+
+export const getAllYarnIssued = {
+  query: Joi.object().keys({
+    start_date: Joi.date().iso().optional(),
+    end_date: Joi.date().iso().optional(),
+  }),
+};
+
 

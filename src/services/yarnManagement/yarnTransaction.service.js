@@ -348,4 +348,58 @@ export const queryYarnTransactions = async (filters = {}) => {
   return transactions;
 };
 
+/**
+ * Gets all yarn_issued transactions for a specific order number.
+ * Returns all transactions with different yarnName values for the given order.
+ */
+export const getYarnIssuedByOrder = async (orderno) => {
+  const transactions = await YarnTransaction.find({
+    orderno: orderno,
+    transactionType: 'yarn_issued',
+  })
+    .populate({
+      path: 'yarn',
+      select: '_id yarnName yarnType status',
+    })
+    .sort({ transactionDate: -1 })
+    .lean();
+
+  return transactions;
+};
+
+/**
+ * Gets all yarn_issued transactions.
+ * Returns all transactions with transactionType 'yarn_issued' regardless of order number.
+ * Optionally filters by date range if start_date and/or end_date are provided.
+ */
+export const getAllYarnIssued = async (filters = {}) => {
+  const mongooseFilter = {
+    transactionType: 'yarn_issued',
+  };
+
+  if (filters.start_date || filters.end_date) {
+    mongooseFilter.transactionDate = {};
+    if (filters.start_date) {
+      const start = new Date(filters.start_date);
+      start.setHours(0, 0, 0, 0);
+      mongooseFilter.transactionDate.$gte = start;
+    }
+    if (filters.end_date) {
+      const end = new Date(filters.end_date);
+      end.setHours(23, 59, 59, 999);
+      mongooseFilter.transactionDate.$lte = end;
+    }
+  }
+
+  const transactions = await YarnTransaction.find(mongooseFilter)
+    .populate({
+      path: 'yarn',
+      select: '_id yarnName yarnType status',
+    })
+    .sort({ transactionDate: -1 })
+    .lean();
+
+  return transactions;
+};
+
 
