@@ -3,6 +3,17 @@ import FaqVector from '../models/faqVector.model.js';
 import ApiError from '../utils/ApiError.js';
 import config from '../config/config.js';
 import * as aiToolService from './aiToolService.js';
+import * as blendService from './yarnManagement/blend.service.js';
+import * as yarnTypeService from './yarnManagement/yarnType.service.js';
+import * as countSizeService from './yarnManagement/countSize.service.js';
+import * as colorService from './yarnManagement/color.service.js';
+import * as supplierService from './yarnManagement/supplier.service.js';
+import * as yarnCatalogService from './yarnManagement/yarnCatalog.service.js';
+import * as yarnInventoryService from './yarnManagement/yarnInventory.service.js';
+import * as yarnTransactionService from './yarnManagement/yarnTransaction.service.js';
+import * as rawMaterialService from './rawMaterial.service.js';
+import * as processService from './process.service.js';
+import * as productAttributeService from './productAttribute.service.js';
 
 const openai = new OpenAI({
   apiKey: config.openai.apiKey,
@@ -169,8 +180,183 @@ export const bulkTrainFAQ = async (faqList) => {
 };
 
 /**
+ * Detect context category from question
+ * @param {string} question - User's question
+ * @returns {string|null} Context category or null
+ */
+const detectContextCategory = (question) => {
+  const normalized = question.toLowerCase().trim();
+  
+  // Map keywords to categories - ordered by specificity (longer/more specific first)
+  // This ensures "yarn blend" matches before just "blend"
+  const contextMap = [
+    // Most specific first
+    { keyword: 'yarn blend', category: 'yarn_blends' },
+    { keyword: 'yarn blends', category: 'yarn_blends' },
+    { keyword: 'yarn type', category: 'yarn_types' },
+    { keyword: 'yarn types', category: 'yarn_types' },
+    { keyword: 'yarn supplier', category: 'yarn_suppliers' },
+    { keyword: 'yarn suppliers', category: 'yarn_suppliers' },
+    { keyword: 'yarn color', category: 'yarn_colors' },
+    { keyword: 'yarn colors', category: 'yarn_colors' },
+    { keyword: 'yarn count size', category: 'yarn_count_sizes' },
+    { keyword: 'yarn count sizes', category: 'yarn_count_sizes' },
+    { keyword: 'yarn catalog', category: 'yarn_catalog' },
+    { keyword: 'yarn catalogue', category: 'yarn_catalog' },
+    { keyword: 'yarn inventory', category: 'yarn_inventory' },
+    { keyword: 'yarn stock', category: 'yarn_inventory' },
+    { keyword: 'yarn transaction', category: 'yarn_transactions' },
+    { keyword: 'yarn transactions', category: 'yarn_transactions' },
+    { keyword: 'yarn issue', category: 'yarn_issue' },
+    { keyword: 'yarn issued', category: 'yarn_issue' },
+    { keyword: 'yarn return', category: 'yarn_return' },
+    { keyword: 'yarn returned', category: 'yarn_return' },
+    { keyword: 'raw material', category: 'raw_materials' },
+    { keyword: 'raw materials', category: 'raw_materials' },
+    { keyword: 'product attribute', category: 'product_attributes' },
+    { keyword: 'product attributes', category: 'product_attributes' },
+    { keyword: 'storage slot', category: 'storage_slots' },
+    { keyword: 'storage slots', category: 'storage_slots' },
+    // Less specific (check after specific ones)
+    { keyword: 'count size', category: 'yarn_count_sizes' },
+    { keyword: 'count sizes', category: 'yarn_count_sizes' },
+    { keyword: 'blends', category: 'yarn_blends' },
+    { keyword: 'blend', category: 'yarn_blends' },
+    { keyword: 'types', category: 'yarn_types' },
+    { keyword: 'type', category: 'yarn_types' },
+    { keyword: 'suppliers', category: 'yarn_suppliers' },
+    { keyword: 'supplier', category: 'yarn_suppliers' },
+    { keyword: 'brands', category: 'yarn_suppliers' },
+    { keyword: 'brand', category: 'yarn_suppliers' },
+    { keyword: 'colors', category: 'yarn_colors' },
+    { keyword: 'color', category: 'yarn_colors' },
+    { keyword: 'categories', category: 'categories' },
+    { keyword: 'category', category: 'categories' },
+    { keyword: 'storage', category: 'storage_slots' },
+    { keyword: 'processes', category: 'processes' },
+    { keyword: 'process', category: 'processes' },
+    { keyword: 'attributes', category: 'product_attributes' },
+    { keyword: 'attribute', category: 'product_attributes' },
+    { keyword: 'machines', category: 'machines' },
+    { keyword: 'machine', category: 'machines' },
+    { keyword: 'products', category: 'products' },
+    { keyword: 'product', category: 'products' },
+    { keyword: 'items', category: 'products' },
+    { keyword: 'item', category: 'products' },
+  ];
+  
+  // Check for context keywords (most specific first)
+  for (const { keyword, category } of contextMap) {
+    // Use word boundaries to avoid partial matches
+    const regex = new RegExp(`\\b${keyword.replace(/\s+/g, '\\s+')}\\b`, 'i');
+    if (regex.test(normalized)) {
+      return category;
+    }
+  }
+  
+  return null;
+};
+
+/**
+ * Fetch context data for a category
+ * @param {string} category - Context category
+ * @returns {Promise<Object|null>} Context data or null
+ */
+const fetchContextData = async (category) => {
+  try {
+    switch (category) {
+      case 'yarn_blends':
+        const blends = await blendService.queryBlends({}, { limit: 20 });
+        return {
+          category: 'Yarn Blends',
+          data: blends.results || [],
+          total: blends.totalResults || 0
+        };
+      
+      case 'yarn_types':
+        const yarnTypes = await yarnTypeService.queryYarnTypes({}, { limit: 20 });
+        return {
+          category: 'Yarn Types',
+          data: yarnTypes.results || [],
+          total: yarnTypes.totalResults || 0
+        };
+      
+      case 'yarn_suppliers':
+        const suppliers = await supplierService.querySuppliers({}, { limit: 20 });
+        return {
+          category: 'Yarn Suppliers',
+          data: suppliers.results || [],
+          total: suppliers.totalResults || 0
+        };
+      
+      case 'yarn_colors':
+        const colors = await colorService.queryColors({}, { limit: 20 });
+        return {
+          category: 'Yarn Colors',
+          data: colors.results || [],
+          total: colors.totalResults || 0
+        };
+      
+      case 'yarn_count_sizes':
+        const countSizes = await countSizeService.queryCountSizes({}, { limit: 20 });
+        return {
+          category: 'Yarn Count Sizes',
+          data: countSizes.results || [],
+          total: countSizes.totalResults || 0
+        };
+      
+      case 'yarn_catalog':
+        const yarnCatalogs = await yarnCatalogService.queryYarnCatalogs({}, { limit: 20 });
+        return {
+          category: 'Yarn Catalog',
+          data: yarnCatalogs.results || [],
+          total: yarnCatalogs.totalResults || 0
+        };
+      
+      case 'yarn_inventory':
+        const inventories = await yarnInventoryService.queryYarnInventories({}, { limit: 20 });
+        return {
+          category: 'Yarn Inventory',
+          data: inventories.results || [],
+          total: inventories.totalResults || 0
+        };
+      
+      case 'raw_materials':
+        const rawMaterials = await rawMaterialService.queryRawMaterials({}, { limit: 20 });
+        return {
+          category: 'Raw Materials',
+          data: rawMaterials.results || [],
+          total: rawMaterials.totalResults || 0
+        };
+      
+      case 'processes':
+        const processes = await processService.queryProcesses({}, { limit: 20 });
+        return {
+          category: 'Processes',
+          data: processes.results || [],
+          total: processes.totalResults || 0
+        };
+      
+      case 'product_attributes':
+        const attributes = await productAttributeService.queryProductAttributes({}, { limit: 20 });
+        return {
+          category: 'Product Attributes',
+          data: attributes.results || [],
+          total: attributes.totalResults || 0
+        };
+      
+      default:
+        return null;
+    }
+  } catch (error) {
+    console.error(`Error fetching context data for ${category}:`, error);
+    return null;
+  }
+};
+
+/**
  * Ask question with AI tool calling and FAQ vector search
- * @param {string> question - User's question
+ * @param {string} question - User's question
  * @returns {Promise<Object>} Response object
  */
 export const askQuestion = async (question) => {
@@ -182,6 +368,26 @@ export const askQuestion = async (question) => {
     const normalizedQuestion = question.trim();
     if (normalizedQuestion.length === 0) {
       throw new ApiError(400, 'Question cannot be empty');
+    }
+    
+    // Check for slash commands (e.g., /commands, /help)
+    if (normalizedQuestion.startsWith('/')) {
+      const command = normalizedQuestion.toLowerCase();
+      if (command === '/commands' || command === '/help' || command === '/') {
+        const commandsResult = await aiToolService.getCommands();
+        return {
+          type: 'ai_tool',
+          intent: commandsResult.intent,
+          response: commandsResult.response,
+          confidence: 1.0,
+          source: 'slash_command',
+          data: {
+            type: 'ai_tool',
+            intent: commandsResult.intent,
+            response: commandsResult.response
+          }
+        };
+      }
     }
     
     // Step 1: Check FAQ vector search first for existing knowledge
@@ -343,150 +549,104 @@ Please provide a helpful response based on this FAQ knowledge.`
     
     // Step 4: Final fallback - no FAQ match and no AI tool
     if (allFAQs.length === 0) {
-      return {
-        type: 'faq',
-        response: "I don't have any FAQ knowledge yet. Please train me with some questions and answers first.",
-        confidence: 0,
-        source: 'faq_vector_search',
-        fallback: true
-      };
+      // Use conversation service for natural conversation handling
+      console.log('No FAQ knowledge, using conversation service for:', normalizedQuestion);
+      try {
+        const conversationResponse = await conversationService.processNaturalConversation(question, 'faq-session');
+        
+        // Convert conversation service response to FAQ service format
+        if (conversationResponse.type === 'data_response') {
+          return {
+            type: 'ai_tool',
+            intent: conversationResponse.intent,
+            response: conversationResponse.dataHtml,
+            conversationalMessage: conversationResponse.conversationalMessage,
+            confidence: 0.9,
+            source: 'conversation_service'
+          };
+        } else if (conversationResponse.type === 'clarification') {
+          return {
+            type: 'faq',
+            response: conversationResponse.message,
+            suggestions: conversationResponse.options || conversationResponse.suggestions,
+            confidence: 0.8,
+            source: 'conversation_service',
+            clarification: true
+          };
+        } else {
+          return {
+            type: 'faq',
+            response: conversationResponse.message,
+            suggestions: conversationResponse.suggestions,
+            confidence: 0.8,
+            source: 'conversation_service'
+          };
+        }
+      } catch (convError) {
+        console.error('Conversation service error:', convError);
+        return {
+          type: 'faq',
+          response: "I don't have any FAQ knowledge yet. Please train me with some questions and answers first.",
+          confidence: 0,
+          source: 'faq_vector_search',
+          fallback: true
+        };
+      }
     } else {
-      // Step 5: AI Agent Fallback - Handle queries not covered by FAQ or AI tools
-      console.log('No FAQ or AI tool match found, using AI agent fallback for:', normalizedQuestion);
+      // Step 5: Use conversation service for queries not covered by FAQ or AI tools
+      console.log('No FAQ or AI tool match found, using conversation service for:', normalizedQuestion);
       
       try {
-        const aiAgentResponse = await openai.chat.completions.create({
-          model: 'gpt-3.5-turbo',
-          messages: [
-            {
-              role: 'system',
-              content: `You are an AI agent of the Addon System, a comprehensive retail business intelligence platform. 
-
-SYSTEM CAPABILITIES & USE CASES:
-
-📊 Analytics & Reporting (Complete)
-- Sales trends, product performance, store analysis
-- Real-time business insights and KPI tracking
-
-🔮 Demand Forecasting (Advanced)
-- Product & store-level predictions
-- AI-powered sales forecasting
-
-📦 Inventory Management (Smart)
-- Replenishment recommendations
-- Stock optimization and demand planning
-
-🏪 Store Performance (Real-time)
-- Individual store analytics
-- Performance comparison and optimization
-
-🎯 KEY USE CASES:
-1. Sales Analysis: Track product performance, identify top sellers, analyze trends
-2. Store Optimization: Compare store performance, identify improvement opportunities  
-3. Demand Planning: Forecast future sales, optimize inventory levels
-4. Product Insights: Analyze individual product performance across stores
-5. Geographic Analysis: City-wise performance, regional trends
-6. Inventory Optimization: Prevent stockouts, reduce excess inventory
-
-💡 HOW TO USE:
-• Ask for reports: "Show me top products", "Generate sales report"
-• Analyze specific items: "Give me PE Mens Full Rib analysis"
-• Check store performance: "Show me store ABC data"
-• Get forecasts: "Next month sales forecast for Product X in Mumbai"
-• Compare performance: "Store performance analysis"
-
-IMPORTANT: You are in development and learning phase, improving day by day. Some advanced features may still be in development.
-
-RESPONSE GUIDELINES:
-- Be helpful, professional, and conversational
-- Acknowledge what you can do and what's in development
-- Suggest specific questions they can ask that you can handle
-- If they ask about capabilities, explain what's available
-- If they ask about something not yet implemented, explain it's in development
-- Always provide helpful alternatives they can ask about
-- Be encouraging about future improvements`
-            },
-            {
-              role: 'user',
-              content: `User Query: "${normalizedQuestion}"
-
-Please respond as the Addon System AI agent, helping the user understand what you can do and suggesting alternative questions they can ask.`
-            }
-          ],
-          max_tokens: 400,
-          temperature: 0.7
-        });
+        const conversationResponse = await conversationService.processNaturalConversation(question, 'faq-session');
         
-        const aiAgentAnswer = aiAgentResponse.choices[0]?.message?.content?.trim();
-        
+        // Convert conversation service response to FAQ service format
+        if (conversationResponse.type === 'data_response') {
+          return {
+            type: 'ai_tool',
+            intent: conversationResponse.intent,
+            response: conversationResponse.dataHtml,
+            conversationalMessage: conversationResponse.conversationalMessage,
+            confidence: 0.9,
+            source: 'conversation_service'
+          };
+        } else if (conversationResponse.type === 'clarification') {
+          return {
+            type: 'faq',
+            response: conversationResponse.message,
+            suggestions: conversationResponse.options || conversationResponse.suggestions,
+            confidence: 0.8,
+            source: 'conversation_service',
+            clarification: true
+          };
+        } else {
+          return {
+            type: 'faq',
+            response: conversationResponse.message,
+            suggestions: conversationResponse.suggestions,
+            confidence: 0.8,
+            source: 'conversation_service'
+          };
+        }
+      } catch (convError) {
+        console.error('Conversation service error:', convError);
+        // Final fallback if conversation service fails
         return {
-          type: 'ai_agent',
-          response: aiAgentAnswer,
-          confidence: 0.8,
-          source: 'ai_agent_fallback',
-          originalQuery: normalizedQuestion,
+          type: 'faq',
+          response: "I apologize, but I'm having trouble processing your question right now. Could you please rephrase it or try asking about sales data, products, stores, yarn management, or production?",
+          confidence: 0.5,
+          source: 'faq_fallback',
           suggestions: [
             "Show me top products",
-            "Generate sales report",
-            "Give me product analysis for [Product Name]",
-            "Show me store performance data",
-            "What are your capabilities?",
-            "Show me analytics dashboard"
-          ]
-        };
-        
-      } catch (aiAgentError) {
-        console.error('AI Agent fallback failed:', aiAgentError);
-        
-        // Final fallback response
-        return {
-          type: 'ai_agent',
-          response: `I'm the Addon System AI agent, and I'm here to help you with retail business intelligence! 
-
-While I'm still learning and some features are in development, I can currently help you with:
-
-📊 **Analytics & Reports**
-- Show top products and sales data
-- Generate sales reports and performance analysis
-- Analyze individual products and stores
-
-🔮 **Forecasting & Planning**
-- Sales forecasts for products and locations
-- Demand planning and inventory insights
-
-💡 **Try asking me:**
-• "Show me top products"
-• "Generate sales report" 
-• "Give me [Product Name] analysis"
-• "What are your capabilities?"
-
-I'm improving every day and will be able to handle more complex queries soon!`,
-          confidence: 0.7,
-          source: 'ai_agent_fallback',
-          originalQuery: normalizedQuestion,
-          suggestions: [
-            "Show me top products",
-            "Generate sales report", 
-            "What are your capabilities?",
-            "Show me analytics dashboard"
+            "Show me sales data",
+            "Show me yarn inventory",
+            "Show me stores"
           ]
         };
       }
     }
-    
   } catch (error) {
-    console.error('Error in askQuestion:', error);
-    
-    if (error instanceof ApiError) throw error;
-    
-    // Return a helpful error message
-    return {
-      type: 'error',
-      response: "I'm having trouble processing your question right now. Please try again in a moment.",
-      confidence: 0,
-      source: 'error_handler',
-      error: error.message
-    };
+    console.error('FAQ service error:', error);
+    throw error;
   }
 };
 
@@ -542,15 +702,13 @@ export const getAllFAQs = async (options = {}) => {
  */
 export const deleteFAQ = async (faqId) => {
   try {
-    const faq = await FaqVector.findByIdAndDelete(faqId);
-    
-    if (!faq) {
+    const deletedFaq = await FaqVector.findByIdAndDelete(faqId);
+    if (!deletedFaq) {
       throw new ApiError(404, 'FAQ not found');
     }
-    
     return {
       message: 'FAQ deleted successfully',
-      faqId: faq._id
+      faq: deletedFaq
     };
   } catch (error) {
     if (error instanceof ApiError) throw error;
@@ -562,37 +720,15 @@ export const deleteFAQ = async (faqId) => {
  * Update FAQ by ID
  * @param {string} faqId - FAQ ID
  * @param {Object} updateData - Update data
- * @returns {Promise<Object>} - Update result
+ * @returns {Promise<Object>} - Updated FAQ
  */
 export const updateFAQ = async (faqId, updateData) => {
   try {
-    const { question, answer } = updateData;
-    
-    if (question && question.trim()) {
-      // Generate new embedding if question changed
-      const embedding = await generateEmbedding(question.trim());
-      updateData.embedding = embedding;
-    }
-    
-    const faq = await FaqVector.findByIdAndUpdate(
-      faqId,
-      { ...updateData, updatedAt: new Date() },
-      { new: true, runValidators: true }
-    );
-    
-    if (!faq) {
+    const updatedFaq = await FaqVector.findByIdAndUpdate(faqId, updateData, { new: true });
+    if (!updatedFaq) {
       throw new ApiError(404, 'FAQ not found');
     }
-    
-    return {
-      message: 'FAQ updated successfully',
-      faq: {
-        id: faq._id,
-        question: faq.question,
-        answer: faq.answer,
-        updatedAt: faq.updatedAt
-      }
-    };
+    return updatedFaq;
   } catch (error) {
     if (error instanceof ApiError) throw error;
     throw new ApiError(500, `Failed to update FAQ: ${error.message}`);
@@ -605,21 +741,10 @@ export const updateFAQ = async (faqId, updateData) => {
  */
 export const getFAQStats = async () => {
   try {
-    const [totalFAQs, recentFAQs, topQuestions] = await Promise.all([
-      FaqVector.countDocuments(),
-      FaqVector.countDocuments({ createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } }),
-      FaqVector.aggregate([
-        { $sort: { createdAt: -1 } },
-        { $limit: 5 },
-        { $project: { question: 1, createdAt: 1 } }
-      ])
-    ]);
-    
+    const total = await FaqVector.countDocuments();
     return {
-      totalFAQs,
-      recentFAQs,
-      topQuestions,
-      lastUpdated: new Date()
+      total,
+      message: `Total FAQs: ${total}`
     };
   } catch (error) {
     throw new ApiError(500, `Failed to get FAQ stats: ${error.message}`);
@@ -671,15 +796,13 @@ export const getFaqVectors = async (filter = {}, options = {}) => {
  */
 export const deleteFaqVector = async (faqId) => {
   try {
-    const faq = await FaqVector.findByIdAndDelete(faqId);
-    
-    if (!faq) {
-      throw new ApiError(404, 'FAQ vector not found');
+    const deletedFaq = await FaqVector.findByIdAndDelete(faqId);
+    if (!deletedFaq) {
+      throw new ApiError(404, 'FAQ not found');
     }
-    
     return {
-      message: 'FAQ vector deleted successfully',
-      faqId: faq._id
+      message: 'FAQ deleted successfully',
+      faq: deletedFaq
     };
   } catch (error) {
     if (error instanceof ApiError) throw error;

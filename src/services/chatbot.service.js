@@ -1,6 +1,7 @@
 import * as analyticsService from './analytics.service.js';
 import * as productService from './product.service.js';
 import * as replenishmentService from './replenishment.service.js';
+import * as conversationService from './conversation.service.js';
 import Store from '../models/store.model.js';
 import Sales from '../models/sales.model.js';
 
@@ -1016,7 +1017,80 @@ export const processMessage = async (message, options = {}) => {
     };
   }
   
-  
+  // Natural conversation fallback - use GPT for natural language understanding
+  // This handles queries that don't match predefined patterns
+  try {
+    const sessionId = options.sessionId || 'default';
+    const conversationResponse = await conversationService.processNaturalConversation(message, sessionId);
+    
+    if (conversationResponse.type === 'data_response') {
+      // Data was fetched, combine conversational message with data HTML
+      return {
+        type: 'success',
+        message: conversationResponse.conversationalMessage,
+        data: conversationResponse.intent,
+        html: conversationResponse.dataHtml,
+        suggestions: conversationResponse.suggestions,
+        conversationType: 'natural',
+        debug: debug ? {
+          intent: conversationResponse.intent,
+          conversationType: 'natural'
+        } : undefined
+      };
+    } else if (conversationResponse.type === 'clarification') {
+      // Need to ask for clarification
+      const clarificationSuggestions = conversationResponse.options || conversationResponse.suggestions || [];
+      return {
+        type: 'clarification',
+        message: conversationResponse.message,
+        context: conversationResponse.context,
+        suggestions: clarificationSuggestions,
+        html: generateConversationalHTML(conversationResponse.message, clarificationSuggestions, true),
+        conversationType: 'natural',
+        debug: debug ? {
+          context: conversationResponse.context,
+          conversationType: 'natural'
+        } : undefined
+      };
+    } else if (conversationResponse.type === 'conversation') {
+      // Pure conversational response
+      return {
+        type: 'conversation',
+        message: conversationResponse.message,
+        suggestions: conversationResponse.suggestions,
+        html: generateConversationalHTML(conversationResponse.message, conversationResponse.suggestions, false),
+        conversationType: 'natural',
+        debug: debug ? {
+          conversationType: 'natural'
+        } : undefined
+      };
+    } else {
+      // Error in conversation
+      return {
+        type: 'error',
+        message: conversationResponse.message || 'I apologize, but I encountered an error. Could you please rephrase your question?',
+        suggestions: conversationResponse.suggestions || [],
+        html: generateErrorHTML([conversationResponse.message || 'Error processing request']),
+        conversationType: 'natural'
+      };
+    }
+  } catch (error) {
+    console.error('Error in natural conversation fallback:', error);
+    // Final fallback - return a helpful message
+    return {
+      type: 'error',
+      message: 'I apologize, but I couldn\'t process your request. Could you please try rephrasing your question or use one of the suggested commands?',
+      suggestions: [
+        'Show me top 5 products',
+        'Show me sales data',
+        'Show me stores',
+        'Show me analytics dashboard',
+        'Help'
+      ],
+      html: generateErrorHTML(['Unable to process request. Please try rephrasing.']),
+      debug: debug ? { error: error.message, stack: error.stack } : undefined
+    };
+  }
 };
 
 /**
@@ -2226,15 +2300,168 @@ const generateErrorHTML = (suggestions) => {
   let html = CHATBOT_STYLES + '<div class="chatbot-response error">';
   html += '<h3>🤖 I\'m Here to Help!</h3>';
   html += '<p>I\'m your business analytics assistant, and I can help you with various business insights. While I couldn\'t understand that specific request, here are some things I can definitely help you with:</p>';
-  html += '<p>Try these suggestions:</p>';
-  html += '<ul class="suggestions-list">';
   
-  suggestions.forEach(suggestion => {
-    html += `<li>${suggestion}</li>`;
-  });
+  // Only render suggestions if they exist and are valid
+  if (suggestions && Array.isArray(suggestions) && suggestions.length > 0) {
+    const validSuggestions = suggestions.filter(s => s && typeof s === 'string' && s.trim().length > 0);
+    if (validSuggestions.length > 0) {
+      html += '<p>Try these suggestions:</p>';
+      html += '<ul class="suggestions-list">';
+      
+      validSuggestions.forEach(suggestion => {
+        // Escape HTML to prevent XSS and ensure valid HTML structure
+        const escapedSuggestion = String(suggestion)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+        html += `<li>${escapedSuggestion}</li>`;
+      });
+      
+      html += '</ul>';
+    }
+  }
   
-  html += '</ul>';
   html += '<p><em>💡 Try asking about products, stores, sales, analytics, or replenishment. I\'m here to help you get the business insights you need!</em></p>';
+  html += '</div>';
+  return html;
+};
+
+/**
+ * Generate HTML for conversational responses with improved UI
+ * @param {string} message - Conversational message
+ * @param {Array<string>} suggestions - Optional suggestions
+ * @param {boolean} isClarification - Whether this is a clarification question
+ * @returns {string} HTML string
+ */
+const generateConversationalHTML = (message, suggestions = [], isClarification = false) => {
+  const styles = `
+    <style>
+      .conversation-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 16px;
+        padding: 24px;
+        margin: 16px 0;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+        color: white;
+        position: relative;
+        overflow: hidden;
+      }
+      .conversation-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: rgba(255, 255, 255, 0.3);
+      }
+      .conversation-card.clarification {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      }
+      .conversation-message {
+        font-size: 16px;
+        line-height: 1.6;
+        margin-bottom: ${suggestions.length > 0 ? '20px' : '0'};
+      }
+      .conversation-message p {
+        margin: 0 0 12px 0;
+      }
+      .conversation-message p:last-child {
+        margin-bottom: 0;
+      }
+      .conversation-suggestions {
+        margin-top: 20px;
+        padding-top: 20px;
+        border-top: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      .suggestions-title {
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 12px;
+        opacity: 0.95;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .suggestions-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .suggestion-chip {
+        background: rgba(255, 255, 255, 0.15);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+        padding: 12px 16px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-size: 14px;
+        text-align: center;
+        color: white;
+        font-weight: 500;
+      }
+      .suggestion-chip:hover {
+        background: rgba(255, 255, 255, 0.25);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+      }
+      .suggestion-chip:active {
+        transform: translateY(0);
+      }
+      .clarification-badge {
+        display: inline-block;
+        background: rgba(255, 255, 255, 0.2);
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+        margin-bottom: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      @media (max-width: 768px) {
+        .suggestions-grid {
+          grid-template-columns: 1fr;
+        }
+        .conversation-card {
+          padding: 20px;
+        }
+      }
+    </style>
+  `;
+
+  let html = CHATBOT_STYLES + styles + `<div class="conversation-card ${isClarification ? 'clarification' : ''}">`;
+  
+  if (isClarification) {
+    html += '<div class="clarification-badge">💬 Clarification Needed</div>';
+  }
+  
+  html += '<div class="conversation-message">';
+  // Convert newlines to <br> and preserve formatting
+  const formattedMessage = message
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/\n/g, '<br>');
+  html += `<p>${formattedMessage}</p>`;
+  html += '</div>';
+  
+  if (suggestions && suggestions.length > 0) {
+    html += '<div class="conversation-suggestions">';
+    html += '<div class="suggestions-title">';
+    html += isClarification ? '🔍 Choose what you\'d like to know:' : '💡 You might also want to ask:';
+    html += '</div>';
+    html += '<div class="suggestions-grid">';
+    suggestions.forEach(suggestion => {
+      const escapedSuggestion = suggestion.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      html += `<div class="suggestion-chip" onclick="if(window.handleSuggestionClick) window.handleSuggestionClick('${escapedSuggestion}')">${suggestion}</div>`;
+    });
+    html += '</div>';
+    html += '</div>';
+  }
+  
   html += '</div>';
   return html;
 };
