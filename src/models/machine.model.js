@@ -5,29 +5,29 @@ const machineSchema = mongoose.Schema(
   {
     machineCode: {
       type: String,
-      required: true,
+      required: false,
       trim: true,
       unique: true,
     },
     machineNumber: {
       type: String,
-      required: true,
+      required: false,
       trim: true,
       unique: true,
     },
     needleSize: {
       type: String,
-      required: true,
+      required: false,
       trim: true,
     },
     model: {
       type: String,
-      required: true,
+      required: false,
       trim: true,
     },
     floor: {
       type: String,
-      required: true,
+      required: false,
       trim: true,
     },
     company: {
@@ -45,7 +45,7 @@ const machineSchema = mongoose.Schema(
       type: String,
       enum: ['Active', 'Under Maintenance', 'Idle'],
       default: 'Idle',
-      required: true,
+      required: false,
     },
     assignedSupervisor: {
       type: mongoose.SchemaTypes.ObjectId,
@@ -65,12 +65,12 @@ const machineSchema = mongoose.Schema(
     // Maintenance details
     installationDate: {
       type: Date,
-      required: true,
+      required: false,
     },
     maintenanceRequirement: {
       type: String,
       enum: ['1 month', '3 months', '6 months', '12 months'],
-      required: true,
+      required: false,
     },
     lastMaintenanceDate: {
       type: Date,

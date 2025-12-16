@@ -11,11 +11,11 @@ import mongoose from 'mongoose';
  * @returns {Promise<Machine>}
  */
 const createMachine = async (machineBody) => {
-  if (await Machine.isMachineCodeTaken(machineBody.machineCode)) {
+  if (machineBody.machineCode && await Machine.isMachineCodeTaken(machineBody.machineCode)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Machine code already taken');
   }
   
-  if (await Machine.isMachineNumberTaken(machineBody.machineNumber)) {
+  if (machineBody.machineNumber && await Machine.isMachineNumberTaken(machineBody.machineNumber)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Machine number already taken');
   }
 
@@ -144,16 +144,19 @@ const updateMachineMaintenance = async (machineId, maintenanceBody) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Machine not found');
   }
 
-  // Calculate next maintenance date
-  const nextMaintenanceDate = machine.calculateNextMaintenanceDate(
-    maintenanceBody.lastMaintenanceDate,
-    machine.maintenanceRequirement
-  );
-
-  Object.assign(machine, {
-    ...maintenanceBody,
-    nextMaintenanceDate,
-  });
+  // Calculate next maintenance date only if both lastMaintenanceDate and maintenanceRequirement are available
+  if (maintenanceBody.lastMaintenanceDate && machine.maintenanceRequirement) {
+    const nextMaintenanceDate = machine.calculateNextMaintenanceDate(
+      maintenanceBody.lastMaintenanceDate,
+      machine.maintenanceRequirement
+    );
+    Object.assign(machine, {
+      ...maintenanceBody,
+      nextMaintenanceDate,
+    });
+  } else {
+    Object.assign(machine, maintenanceBody);
+  }
   await machine.save();
   return machine;
 };
