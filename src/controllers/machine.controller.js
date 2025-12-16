@@ -15,6 +15,8 @@ const getMachines = catchAsync(async (req, res) => {
     'machineNumber',
     'model',
     'floor',
+    'company',
+    'machineType',
     'status',
     'assignedSupervisor',
     'needleSize',

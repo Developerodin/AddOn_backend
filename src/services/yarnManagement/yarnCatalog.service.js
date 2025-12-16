@@ -207,7 +207,14 @@ export const createYarnCatalog = async (yarnCatalogBody) => {
  * @returns {Promise<QueryResult>}
  */
 export const queryYarnCatalogs = async (filter, options) => {
-  const yarnCatalogs = await YarnCatalog.paginate(filter, options);
+  const mongooseFilter = { ...filter };
+  
+  // Convert yarnName to regex for partial/fuzzy search (case-insensitive)
+  if (mongooseFilter.yarnName) {
+    mongooseFilter.yarnName = { $regex: mongooseFilter.yarnName, $options: 'i' };
+  }
+  
+  const yarnCatalogs = await YarnCatalog.paginate(mongooseFilter, options);
   return yarnCatalogs;
 };
 

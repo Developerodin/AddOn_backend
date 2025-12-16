@@ -30,6 +30,16 @@ const machineSchema = mongoose.Schema(
       required: true,
       trim: true,
     },
+    company: {
+      type: String,
+      required: false,
+      trim: true,
+    },
+    machineType: {
+      type: String,
+      required: false,
+      trim: true,
+    },
     // Operational details
     status: {
       type: String,
