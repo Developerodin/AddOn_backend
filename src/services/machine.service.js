@@ -41,7 +41,9 @@ const createMachine = async (machineBody) => {
  * @returns {Promise<QueryResult>}
  */
 const queryMachines = async (filter, options) => {
-  const machines = await Machine.paginate(filter, options);
+  // Only return active machines by default
+  const activeFilter = { ...filter, isActive: true };
+  const machines = await Machine.paginate(activeFilter, options);
   return machines;
 };
 
@@ -51,7 +53,7 @@ const queryMachines = async (filter, options) => {
  * @returns {Promise<Machine>}
  */
 const getMachineById = async (id) => {
-  return Machine.findById(id).populate('assignedSupervisor', 'name email role');
+  return Machine.findOne({ _id: id, isActive: true }).populate('assignedSupervisor', 'name email role');
 };
 
 /**
@@ -60,7 +62,7 @@ const getMachineById = async (id) => {
  * @returns {Promise<Machine>}
  */
 const getMachineByCode = async (machineCode) => {
-  return Machine.findOne({ machineCode }).populate('assignedSupervisor', 'name email role');
+  return Machine.findOne({ machineCode, isActive: true }).populate('assignedSupervisor', 'name email role');
 };
 
 /**
@@ -69,7 +71,7 @@ const getMachineByCode = async (machineCode) => {
  * @returns {Promise<Machine>}
  */
 const getMachineByNumber = async (machineNumber) => {
-  return Machine.findOne({ machineNumber }).populate('assignedSupervisor', 'name email role');
+  return Machine.findOne({ machineNumber, isActive: true }).populate('assignedSupervisor', 'name email role');
 };
 
 /**
