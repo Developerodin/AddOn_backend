@@ -449,6 +449,145 @@ const detectIntentWithAI = async (question) => {
           - Always look for the category keyword (colors, blends, types, suppliers, count sizes) AND the context (yarn) to determine the correct action
           - If the query mentions yarn AND a category (color/colour/blend/type/supplier/count size), use the corresponding yarn category action
           
+          **COMPREHENSIVE NATURAL LANGUAGE EXAMPLES FOR ALL CATEGORIES:**
+          
+          **YARN CATEGORIES - Natural Language Variations:**
+          - "what kinds of yarn do you have" → getYarnTypes
+          - "tell me about yarn varieties" → getYarnTypes
+          - "what types of yarn are available" → getYarnTypes
+          - "show me yarn type options" → getYarnTypes
+          - "what colors can I choose from for yarn" → getYarnColors
+          - "show me yarn color options" → getYarnColors
+          - "what colors do we have in yarn" → getYarnColors
+          - "tell me about yarn color choices" → getYarnColors
+          - "what yarn suppliers work with us" → getYarnSuppliers
+          - "who supplies yarn" → getYarnSuppliers
+          - "show me yarn brands" → getYarnSuppliers
+          - "what suppliers do we have for yarn" → getYarnSuppliers
+          - "what blends are available in yarn" → getYarnBlends
+          - "tell me about yarn blend options" → getYarnBlends
+          - "what yarn blends do you have" → getYarnBlends
+          - "show me available yarn blends" → getYarnBlends
+          - "what count sizes do you have for yarn" → getYarnCountSizes
+          - "show me yarn sizing options" → getYarnCountSizes
+          - "what yarn counts are available" → getYarnCountSizes
+          - "tell me about yarn count sizes" → getYarnCountSizes
+          
+          **YARN MANAGEMENT - Natural Language Variations:**
+          - "how much yarn stock do we have" → getYarnInventory
+          - "what yarn do we have in stock" → getYarnInventory
+          - "show me our yarn inventory" → getYarnInventory
+          - "tell me about yarn inventory" → getYarnInventory
+          - "what's our yarn stock level" → getYarnInventory
+          - "what yarn transactions happened" → getYarnTransactions
+          - "show me yarn history" → getYarnTransactions
+          - "tell me about yarn transactions" → getYarnTransactions
+          - "what yarn activity do we have" → getYarnTransactions
+          - "do we have any yarn orders pending" → getYarnPurchaseOrders
+          - "what's the status of yarn we ordered" → getYarnPurchaseOrders
+          - "show me yarn purchase orders" → getYarnPurchaseOrders
+          - "tell me about yarn orders" → getYarnPurchaseOrders
+          - "show me the yarn catalog" → getYarnCatalog
+          - "what types of yarn are in the catalog" → getYarnCatalog
+          - "list yarn catalog" → getYarnCatalog
+          - "show me yarn list" → getYarnCatalog
+          
+          **STORES - Natural Language Variations:**
+          - "where are our stores" → getStoresList
+          - "show me store locations" → getStoresList
+          - "what stores do we have" → getStoresList
+          - "tell me about our stores" → getStoresList
+          - "list all stores" → getStoresList
+          - "show me store list" → getStoresList
+          - "which stores are in Mumbai" → getStoresList with city="mumbai"
+          - "show me stores in Delhi" → getStoresList with city="delhi"
+          - "what stores are in Bangalore" → getStoresList with city="bangalore"
+          - "where are our stores in Mumbai" → getStoresList with city="mumbai"
+          - "what stores are currently open" → getStoresList with status="active"
+          - "which stores are active" → getStoresList with status="active"
+          - "show me active stores" → getStoresList with status="active"
+          - "what stores are closed" → getStoresList with status="inactive"
+          - "show me inactive stores" → getStoresList with status="inactive"
+          
+          **TOP PRODUCTS - Natural Language Variations:**
+          - "what products sell the most" → getTopProducts
+          - "show me best selling products" → getTopProducts
+          - "what are our top sellers" → getTopProducts
+          - "tell me about top products" → getTopProducts
+          - "which products are selling best" → getTopProducts
+          - "show me popular products" → getTopProducts
+          - "best products in Mumbai" → getTopProducts with city="mumbai"
+          - "top 10 products in Delhi" → getTopProducts with city="delhi", limit=10
+          - "what sells best in Mumbai" → getTopProducts with city="mumbai"
+          - "top selling products in Delhi" → getTopProducts with city="delhi"
+          
+          **MASTER CONSOLE CATEGORIES - Natural Language Variations:**
+          
+          **Processes:**
+          - "what processes do we have" → getProcesses
+          - "show me all processes" → getProcesses
+          - "list the processes" → getProcesses
+          - "tell me about processes" → getProcesses
+          - "what processes are available" → getProcesses
+          
+          **Machines:**
+          - "how many machines are there" → getMachineStatistics
+          - "tell me about our machines" → getMachineStatistics
+          - "what machines do we have" → getMachineStatistics
+          - "show me machine information" → getMachineStatistics
+          - "give me machine stats" → getMachineStatistics
+          - "which machines are working" → getMachinesByStatus with machineStatus="Active"
+          - "what machines are active" → getMachinesByStatus with machineStatus="Active"
+          - "show me active machines" → getMachinesByStatus with machineStatus="Active"
+          - "which machines are idle" → getMachinesByStatus with machineStatus="Idle"
+          - "show me idle machines" → getMachinesByStatus with machineStatus="Idle"
+          - "what machines are on floor 1" → getMachinesByFloor with floor="Floor 1"
+          - "show me machines on knitting floor" → getMachinesByFloor with floor="Knitting"
+          - "which machines are on floor 2" → getMachinesByFloor with floor="Floor 2"
+          
+          **Items/Products (Master Catalog):**
+          - "show me items" → getProductsList
+          - "what items do we have" → getProductsList
+          - "list all items" → getProductsList
+          - "show me the product catalog" → getProductsList
+          - "tell me about items" → getProductsList
+          - "what products are in the catalog" → getProductsList
+          - "show me master catalog" → getProductsList
+          
+          **Raw Materials:**
+          - "what raw materials are available" → getRawMaterials
+          - "show me raw materials" → getRawMaterials
+          - "tell me about raw materials" → getRawMaterials
+          - "list raw materials" → getRawMaterials
+          - "what raw materials do we have" → getRawMaterials
+          - "what raw materials do we have in white" → getRawMaterials with color="white"
+          - "show me white raw materials" → getRawMaterials with color="white"
+          - "raw materials in black" → getRawMaterials with color="black"
+          - "show me raw materials by Packing Material" → getRawMaterials with groupName="Packing Material"
+          - "what raw materials are in Packing Material group" → getRawMaterials with groupName="Packing Material"
+          
+          **Attributes:**
+          - "what attributes can products have" → getProductAttributes
+          - "show me product attributes" → getProductAttributes
+          - "list attributes" → getProductAttributes
+          - "tell me about attributes" → getProductAttributes
+          - "what attributes are available" → getProductAttributes
+          
+          **Categories:**
+          - "what product categories exist" → getCategories
+          - "show me categories" → getCategories
+          - "list categories" → getCategories
+          - "tell me about categories" → getCategories
+          - "what categories do we have" → getCategories
+          
+          **Storage Slots:**
+          - "what storage slots are available" → getStorageSlots
+          - "show me storage" → getStorageSlots
+          - "where can we store items" → getStorageSlots
+          - "list storage slots" → getStorageSlots
+          - "tell me about storage" → getStorageSlots
+          - "what storage do we have" → getStorageSlots
+          
           IMPORTANT: 
           - "mumbai", "delhi", "bangalore" etc. are CITIES, not store names
           - Store names are specific business names like "ABC Store", "Central Mall", "Reliance Mart"
@@ -541,15 +680,19 @@ const detectIntentWithAI = async (question) => {
           CRITICAL: Do NOT use getProductAnalysis for yarn, machine, raw material, process, attribute, or blend queries. Use the specific actions above instead.
           
           **CONTEXT-AWARE FOLLOW-UP QUERIES:**
-          - If user asks "which are white", "show me the red ones", "what about black", etc., check if they were previously viewing raw materials, products, or stores
+          - If user asks "which are white", "show me the red ones", "what about black", "any inactive", etc., check if they were previously viewing raw materials, products, stores, or machines
           - If previous context was raw materials → use getRawMaterials with color filter
           - If previous context was products → use getProductsList or getProductAnalysis (depending on query)
           - If previous context was stores → use getStoresList with appropriate filters
+          - If previous context was machines (getMachinesByStatus, getMachineStatistics, getMachinesByFloor) → use getMachinesByStatus with status filter
           - When in doubt, prefer the most recent context from conversation history
           - Examples:
             - Previous: "show me raw materials" → User: "which are white" → getRawMaterials with color="white"
             - Previous: "raw materials" → User: "show me the black ones" → getRawMaterials with color="black"
-            - Previous: "raw materials" → User: "what about Packing Material" → getRawMaterials with groupName="Packing Material"`
+            - Previous: "raw materials" → User: "what about Packing Material" → getRawMaterials with groupName="Packing Material"
+            - Previous: "machines which are active" → User: "any inactive" → getMachinesByStatus with machineStatus="Idle"
+            - Previous: "active machines" → User: "show me idle" → getMachinesByStatus with machineStatus="Idle"
+            - Previous: "machines which are active" → User: "no inactive machines" → getMachinesByStatus with machineStatus="Idle" (will show "No inactive machines found" if none exist)`
         },
         {
           role: 'user',
@@ -986,20 +1129,19 @@ export const detectIntent = async (question) => {
         };
       }
     }
-    // If critical keyword found but no pattern matched, log and continue to full regex patterns below
-    console.log(`[detectIntent] ⚠️ Critical keyword "${normalizedQuestion}" found but NO pattern matched! Checking full regex patterns...`);
+    // If critical keyword found but no pattern matched, log and continue to GPT detection
+    console.log(`[detectIntent] ⚠️ Critical keyword found but NO regex pattern matched! Will try GPT detection for natural language understanding...`);
   }
   
-  // Then try AI-powered detection for other queries (only if no critical keyword)
-  if (!hasCriticalKeyword) {
-    const aiIntent = await detectIntentWithAI(question);
-    if (aiIntent) {
-      console.log(`[detectIntent] AI detected intent: ${aiIntent.action} for "${normalizedQuestion}"`);
-      return aiIntent;
-    }
-  } else {
-    console.log(`[detectIntent] Skipping AI detection for critical keyword query: "${normalizedQuestion}"`);
+  // ALWAYS try GPT-powered detection for natural language understanding
+  // This allows GPT to handle natural language variations even for critical keywords
+  console.log(`[detectIntent] Attempting GPT detection for natural language understanding: "${normalizedQuestion}"`);
+  const aiIntent = await detectIntentWithAI(question);
+  if (aiIntent) {
+    console.log(`[detectIntent] ✅ GPT detected intent: ${aiIntent.action} for "${normalizedQuestion}"`);
+    return aiIntent;
   }
+  console.log(`[detectIntent] ⚠️ GPT detection returned null or failed, will check fallback regex patterns below`);
   
   // Fallback to regex patterns if AI fails or was rejected
   
@@ -4603,7 +4745,19 @@ export const getMachinesByStatus = async (params = {}) => {
     const machines = await machineService.queryMachines({ status: machineStatus }, { limit: 100 });
     
     if (!machines.results || machines.results.length === 0) {
-      return generateHTMLResponse('No Machines Found', `No machines found with status: ${machineStatus}`);
+      // More natural message based on status
+      const statusLower = machineStatus.toLowerCase();
+      let message = '';
+      if (statusLower === 'idle' || statusLower === 'inactive') {
+        message = 'No inactive machines found.';
+      } else if (statusLower === 'active') {
+        message = 'No active machines found.';
+      } else if (statusLower === 'under maintenance') {
+        message = 'No machines are currently under maintenance.';
+      } else {
+        message = `No machines found with status: ${machineStatus}`;
+      }
+      return generateHTMLResponse('No Machines Found', message);
     }
     
     const html = AI_TOOL_STYLES + `

@@ -348,48 +348,72 @@ When you need to fetch data, respond with a JSON object in this format:
   → Multiple filters: product + city + date range
 
 **PRODUCT CATEGORY Examples:**
-- "Show me product catalog" or "List all products"
+- "Show me product catalog" or "List all products" or "what items do we have" or "show me items"
   → Category: PRODUCT | Action: getProductsList | Filters: {}
   → Key Distinction: "catalog" or "list" = master catalog, NOT sales data
   
-- "How many products do we have"
+- "How many products do we have" or "what's our product count"
   → Category: PRODUCT | Action: getProductCount | Filters: {}
   
-- "Product forecast for X in Mumbai"
+- "Product forecast for X in Mumbai" or "forecast for product X in Mumbai"
   → Category: PRODUCT | Action: getProductForecast | Filters: { "productName": "X", "city": "mumbai" }
+  
+- "top products" or "what products sell the most" or "best selling products"
+  → Category: SALES | Action: getTopProducts | Filters: {}
+  
+- "top products in Delhi" or "best sellers in Delhi"
+  → Category: SALES | Action: getTopProducts | Filters: { "city": "delhi" }
 
 **STORE CATEGORY Examples:**
-- "Active stores in Mumbai"
+- "Active stores in Mumbai" or "which stores are active in Mumbai" or "show me active stores in Mumbai"
   → Category: STORE | Action: getStoresList | Filters: { "city": "mumbai", "status": "active" }
   → Multiple filters: city + status
   
-- "Show me stores"
+- "Show me stores" or "where are our stores" or "what stores do we have" or "tell me about stores"
   → Category: STORE | Action: getStoresList | Filters: {}
+  
+- "stores in Delhi" or "which stores are in Delhi" or "show me stores in Delhi"
+  → Category: STORE | Action: getStoresList | Filters: { "city": "delhi" }
+  
+- "active stores" or "which stores are active" or "what stores are open"
+  → Category: STORE | Action: getStoresList | Filters: { "status": "active" }
 
 **YARN CATEGORY Examples:**
-- "How much yarn do we have in inventory"
+- "How much yarn do we have in inventory" or "what yarn stock do we have"
   → Category: YARN | Action: getYarnInventory | Filters: {}
   → Key Distinction: "inventory" = current stock with PO status
   
-- "Do you order yarn" or "What's the status of yarn purchased"
+- "Do you order yarn" or "What's the status of yarn purchased" or "show me yarn orders"
   → Category: YARN | Action: getYarnPurchaseOrders | Filters: {}
   → Key Distinction: "purchased" or "order" = purchase orders, NOT inventory
   
 - "Yarn purchase status" or "Show me yarn purchase orders"
   → Category: YARN | Action: getYarnPurchaseOrders | Filters: {}
   
-- "Show me yarn colors"
+- "Show me yarn colors" or "what colors do we have in yarn" or "tell me about yarn colors"
   → Category: YARN | Action: getYarnColors | Filters: {}
   → Key Distinction: Specific yarn attribute request
+  
+- "what types of yarn" or "what kinds of yarn do we have" or "show me yarn types"
+  → Category: YARN | Action: getYarnTypes | Filters: {}
+  
+- "what yarn suppliers" or "who supplies yarn" or "show me yarn brands"
+  → Category: YARN | Action: getYarnSuppliers | Filters: {}
+  
+- "what yarn blends" or "show me yarn blends" or "tell me about yarn blend options"
+  → Category: YARN | Action: getYarnBlends | Filters: {}
 
 **MACHINE CATEGORY Examples:**
-- "Active machines"
+- "Active machines" or "which machines are working" or "what machines are active"
   → Category: MACHINE | Action: getMachinesByStatus | Filters: { "machineStatus": "Active" }
   → Key Distinction: Status filter, NOT floor filter
   
-- "Machines on floor 2" or "Machines on knitting floor"
+- "Machines on floor 2" or "Machines on knitting floor" or "what machines are on floor 1"
   → Category: MACHINE | Action: getMachinesByFloor | Filters: { "floor": "Floor 2" } or { "floor": "Knitting Floor" }
   → Key Distinction: Floor filter, NOT status filter
+  
+- "how many machines" or "tell me about machines" or "what machines do we have"
+  → Category: MACHINE | Action: getMachineStatistics | Filters: {}
 
 **ANALYTICS CATEGORY Examples:**
 - "Show me analytics for Mumbai"
@@ -694,6 +718,56 @@ export const processNaturalConversation = async (userMessage, sessionId = 'defau
       }
     }
     
+    // CONTEXT-AWARE FOLLOW-UP DETECTION FOR MACHINES
+    // If the last action was getMachinesByStatus or getMachineStatistics and the current query mentions status, apply filter
+    if (lastIntent && (lastIntent.action === 'getMachinesByStatus' || lastIntent.action === 'getMachineStatistics' || lastIntent.action === 'getMachinesByFloor')) {
+      const messageLower = normalizedMessage.toLowerCase();
+      
+      // Patterns for follow-up queries like "any inactive", "show me inactive", "what about idle", etc.
+      const statusPatterns = [
+        /^(any|show|tell|what|which|get|list)\s+(inactive|active|idle|under\s+maintenance)/i,
+        /^(inactive|active|idle|under\s+maintenance)(\s+machines?)?$/i,
+        /^(the|those|these)\s+(inactive|active|idle|under\s+maintenance)(\s+ones?|\s+machines?)?$/i,
+        /(inactive|active|idle|under\s+maintenance)(\s+machines?)?$/i
+      ];
+      
+      const statusMatch = normalizedMessage.match(/(inactive|active|idle|under\s+maintenance)/i);
+      const isStatusFollowUp = statusPatterns.some(pattern => pattern.test(normalizedMessage));
+      
+      if (statusMatch || isStatusFollowUp) {
+        const status = statusMatch ? statusMatch[1] : null;
+        if (status) {
+          let machineStatus = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+          if (machineStatus.toLowerCase() === 'under maintenance') {
+            machineStatus = 'Under Maintenance';
+          } else if (machineStatus.toLowerCase() === 'inactive') {
+            machineStatus = 'Idle'; // Map inactive to Idle for machines
+          }
+          
+          console.log(`[conversation] Detected follow-up machine status query: "${normalizedMessage}" → filtering by "${machineStatus}"`);
+          const intent = {
+            action: 'getMachinesByStatus',
+            params: { machineStatus: machineStatus },
+            description: `Fetching machines with status: ${machineStatus}`
+          };
+          
+          try {
+            const dataHtml = await aiToolService.executeAITool(intent);
+            context.lastIntent = intent; // Update last intent
+            return {
+              type: 'data_response',
+              conversationalMessage: `Here are the ${machineStatus.toLowerCase()} machines:`,
+              dataHtml: dataHtml,
+              intent: intent,
+              suggestions: ["Show me active machines", "Show me machine statistics", "Show me machines on Floor 1"]
+            };
+          } catch (error) {
+            console.error(`[conversation] Error fetching machines by status:`, error);
+          }
+        }
+      }
+    }
+    
     // CONTEXT-AWARE FOLLOW-UP DETECTION FOR YARN TYPES
     // If the last action was getYarnTypes and the current query mentions a yarn type name or subtype, apply filter
     if (lastIntent && lastIntent.action === 'getYarnTypes') {
@@ -837,12 +911,14 @@ export const processNaturalConversation = async (userMessage, sessionId = 'defau
 The user's last action was: ${context.lastIntent.action} with params: ${JSON.stringify(context.lastIntent.params || {})}
 This means they were viewing: ${context.lastIntent.action === 'getRawMaterials' ? 'RAW MATERIALS' : context.lastIntent.action === 'getProductsList' ? 'PRODUCTS' : context.lastIntent.action === 'getStoresList' ? 'STORES' : 'OTHER DATA'}
 
-**CRITICAL**: If the user asks a follow-up question like "which are white", "show me the red ones", "what about [filter]", they are likely asking about the SAME category they were just viewing.
+**CRITICAL**: If the user asks a follow-up question like "which are white", "show me the red ones", "what about [filter]", "any inactive", they are likely asking about the SAME category they were just viewing.
 - If last action was getRawMaterials → follow-up queries about colors/types/brands refer to RAW MATERIALS
 - If last action was getProductsList → follow-up queries refer to PRODUCTS  
 - If last action was getStoresList → follow-up queries refer to STORES
+- If last action was getMachinesByStatus or getMachineStatistics → follow-up queries about status (active/inactive/idle) refer to MACHINES, NOT stores
 
-Example: User previously asked "show me raw materials" (getRawMaterials), then asks "which are white" → This means getRawMaterials with color="white", NOT getProductAnalysis.`;
+Example: User previously asked "show me raw materials" (getRawMaterials), then asks "which are white" → This means getRawMaterials with color="white", NOT getProductAnalysis.
+Example: User previously asked "machines which are active" (getMachinesByStatus), then asks "any inactive" → This means getMachinesByStatus with machineStatus="Idle", NOT getStoresList.`;
     }
 
     // Call GPT for natural conversation understanding
@@ -1002,6 +1078,36 @@ Example: User previously asked "show me raw materials" (getRawMaterials), then a
         }
       }
 
+      // CONTEXT-AWARE OVERRIDE FOR MACHINES
+      // If user was viewing machines and asks about status, ensure it's machines not stores
+      if (context.lastIntent && (context.lastIntent.action === 'getMachinesByStatus' || context.lastIntent.action === 'getMachineStatistics' || context.lastIntent.action === 'getMachinesByFloor')) {
+        const messageLower = userMessage.toLowerCase();
+        const statusPatterns = [
+          /^(any|show|tell|what|which|get|list|no)\s+(inactive|active|idle|under\s+maintenance)/i,
+          /^(inactive|active|idle|under\s+maintenance)(\s+machines?)?$/i,
+          /^(the|those|these)\s+(inactive|active|idle|under\s+maintenance)(\s+ones?|\s+machines?)?$/i,
+          /(inactive|active|idle|under\s+maintenance)(\s+machines?)?$/i
+        ];
+        
+        const statusMatch = userMessage.match(/(inactive|active|idle|under\s+maintenance)/i);
+        const isStatusFollowUp = statusPatterns.some(pattern => pattern.test(userMessage));
+        
+        if (statusMatch && (isStatusFollowUp || intent.action === 'getStoresList')) {
+          const status = statusMatch[1];
+          let machineStatus = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+          if (machineStatus.toLowerCase() === 'under maintenance') {
+            machineStatus = 'Under Maintenance';
+          } else if (machineStatus.toLowerCase() === 'inactive') {
+            machineStatus = 'Idle'; // Map inactive to Idle for machines
+          }
+          
+          console.log(`[conversation] Overriding GPT response: User was viewing machines, treating "${userMessage}" as machine status filter`);
+          intent.action = 'getMachinesByStatus';
+          intent.params = { machineStatus: machineStatus };
+          intent.description = `Fetching machines with status: ${machineStatus}`;
+        }
+      }
+      
       // CRITICAL SAFEGUARD: If user was viewing raw materials and GPT returns getProductAnalysis for a color query, override it
       if (context.lastIntent && context.lastIntent.action === 'getRawMaterials') {
         const colorWords = ['white', 'black', 'red', 'blue', 'green', 'yellow', 'orange', 'purple', 'pink', 'brown', 'grey', 'gray', 'beige', 'navy', 'cream', 'golden', 'gold', 'silver', 'transparent', 'maroon', 'olive', 'khaki'];
