@@ -563,7 +563,7 @@ yarnCatalogSchema.pre('save', async function (next) {
   
   // Generate yarnName if needed
   if (!this.yarnName || this.isModified('countSize') || this.isModified('colorFamily') || 
-      this.isModified('yarnType') || this.isModified('yarnSubtype')) {
+      this.isModified('pantonName') || this.isModified('yarnType') || this.isModified('yarnSubtype')) {
     
     try {
       const parts = [];
@@ -578,6 +578,11 @@ yarnCatalogSchema.pre('save', async function (next) {
         parts.push(this.colorFamily.name);
       }
       
+      // Get pantonName (optional)
+      if (this.pantonName && this.pantonName.trim()) {
+        parts.push(this.pantonName.trim());
+      }
+      
       // Get yarnType name (now embedded object)
       if (this.yarnType && this.yarnType.name) {
         let typePart = this.yarnType.name;
@@ -590,7 +595,7 @@ yarnCatalogSchema.pre('save', async function (next) {
         parts.push(typePart);
       }
       
-      // Generate yarnName: count/size-colour-type/sub-type
+      // Generate yarnName: count/size-colour-pantonName-type/sub-type
       if (parts.length > 0) {
         this.yarnName = parts.join('-');
       }
