@@ -35,6 +35,7 @@ const getMachines = {
     assignedSupervisor: Joi.string().custom(objectId),
     needleSize: Joi.string(),
     isActive: Joi.boolean(),
+    search: Joi.string(),
     sortBy: Joi.string(),
     sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
     limit: Joi.number().integer(),
@@ -116,6 +117,12 @@ const deleteMachine = {
   }),
 };
 
+const bulkDeleteMachines = {
+  body: Joi.object().keys({
+    machineIds: Joi.array().items(Joi.string().custom(objectId)).min(1).required(),
+  }),
+};
+
 const getMachinesByStatus = {
   query: Joi.object().keys({
     status: Joi.string().valid('Active', 'Under Maintenance', 'Idle').required(),
@@ -157,6 +164,7 @@ export {
   updateMachineMaintenance,
   assignSupervisor,
   deleteMachine,
+  bulkDeleteMachines,
   getMachinesByStatus,
   getMachinesByFloor,
   getMachinesNeedingMaintenance,

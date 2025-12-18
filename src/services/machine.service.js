@@ -38,11 +38,34 @@ const createMachine = async (machineBody) => {
  * @param {string} [options.sortBy] - Sort option in the format: sortField:(desc|asc)
  * @param {number} [options.limit] - Maximum number of results per page (default = 10)
  * @param {number} [options.page] - Current page (default = 1)
+ * @param {string} [options.search] - Search term to search across machineCode, machineNumber, and model
  * @returns {Promise<QueryResult>}
  */
 const queryMachines = async (filter, options) => {
-  // Only return active machines by default
-  const activeFilter = { ...filter, isActive: true };
+  // Only return active machines by default, unless isActive is explicitly set in filter
+  const activeFilter = filter.hasOwnProperty('isActive') 
+    ? filter 
+    : { ...filter, isActive: true };
+  
+  // Handle search parameter - search across machineCode, machineNumber, and model
+  if (options.search) {
+    const searchRegex = { $regex: options.search, $options: 'i' };
+    // Remove machineCode, machineNumber, and model from filter if search is provided to avoid conflicts
+    const { machineCode, machineNumber, model, ...restFilter } = activeFilter;
+    const finalFilter = {
+      ...restFilter,
+      $or: [
+        { machineCode: searchRegex },
+        { machineNumber: searchRegex },
+        { model: searchRegex },
+      ],
+    };
+    // Remove search from options as it's not a pagination option
+    const { search, ...restOptions } = options;
+    const machines = await Machine.paginate(finalFilter, restOptions);
+    return machines;
+  }
+  
   const machines = await Machine.paginate(activeFilter, options);
   return machines;
 };
@@ -250,20 +273,97 @@ const getMachineStatistics = async () => {
 };
 
 /**
- * Delete machine by id
+ * Delete machine by id (permanent deletion)
  * @param {ObjectId} machineId
  * @returns {Promise<Machine>}
  */
 const deleteMachineById = async (machineId) => {
-  const machine = await getMachineById(machineId);
+  // Check if machine exists (without isActive filter for hard delete)
+  const machine = await Machine.findById(machineId).populate('assignedSupervisor', 'name email role');
   if (!machine) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Machine not found');
   }
   
-  // Soft delete by setting isActive to false
-  machine.isActive = false;
-  await machine.save();
-  return machine;
+  // Check if machine is being used by any articles
+  const articlesUsingMachine = await Article.countDocuments({ machineId });
+  if (articlesUsingMachine > 0) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Cannot delete machine. It is currently assigned to ${articlesUsingMachine} article(s). Please remove machine assignment from articles first.`
+    );
+  }
+  
+  // Permanently delete the machine from database
+  const deletedMachine = await Machine.findByIdAndDelete(machineId);
+  
+  if (!deletedMachine) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Machine not found');
+  }
+  
+  return deletedMachine;
+};
+
+/**
+ * Bulk delete machines by ids (permanent deletion)
+ * @param {Array<ObjectId>} machineIds - Array of machine IDs to delete
+ * @returns {Promise<Object>} - Results of the bulk delete operation
+ */
+const bulkDeleteMachines = async (machineIds) => {
+  if (!Array.isArray(machineIds) || machineIds.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Machine IDs array is required and cannot be empty');
+  }
+
+  // Validate all IDs are valid ObjectIds
+  const validIds = machineIds.filter(id => mongoose.Types.ObjectId.isValid(id));
+  if (validIds.length !== machineIds.length) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid machine ID(s) provided');
+  }
+
+  // Check if all machines exist (without isActive filter for hard delete)
+  const existingMachines = await Machine.find({
+    _id: { $in: validIds }
+  });
+
+  if (existingMachines.length === 0) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'No machines found with the provided IDs');
+  }
+
+  if (existingMachines.length !== validIds.length) {
+    const foundIds = existingMachines.map(m => m._id.toString());
+    const notFoundIds = validIds.filter(id => !foundIds.includes(id.toString()));
+    throw new ApiError(
+      httpStatus.NOT_FOUND,
+      `Some machines not found: ${notFoundIds.join(', ')}`
+    );
+  }
+
+  // Check if any machines are being used by articles
+  const machinesInUse = await Article.distinct('machineId', {
+    machineId: { $in: validIds }
+  });
+
+  if (machinesInUse.length > 0) {
+    const machineCodes = existingMachines
+      .filter(m => machinesInUse.some(id => id.toString() === m._id.toString()))
+      .map(m => m.machineCode || m.machineNumber || m._id.toString());
+    
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Cannot delete machine(s): ${machineCodes.join(', ')}. They are currently assigned to articles. Please remove machine assignment from articles first.`
+    );
+  }
+
+  // Perform permanent bulk delete
+  const result = await Machine.deleteMany({
+    _id: { $in: validIds }
+  });
+
+  return {
+    success: true,
+    deletedCount: result.deletedCount,
+    totalRequested: validIds.length,
+    message: `Successfully deleted ${result.deletedCount} machine(s)`
+  };
 };
 
 /**
@@ -728,4 +828,5 @@ export {
   getMachinePerformanceMetrics,
   getAllMachinesUsageOverview,
   deleteMachineById,
+  bulkDeleteMachines,
 };

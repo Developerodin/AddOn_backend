@@ -22,7 +22,7 @@ const getMachines = catchAsync(async (req, res) => {
     'needleSize',
     'isActive',
   ]);
-  const options = pick(req.query, ['sortBy', 'sortOrder', 'limit', 'page']);
+  const options = pick(req.query, ['sortBy', 'sortOrder', 'limit', 'page', 'search']);
   const result = await machineService.queryMachines(filter, options);
   res.send(result);
 });
@@ -128,6 +128,19 @@ const deleteMachine = catchAsync(async (req, res) => {
   res.status(httpStatus.NO_CONTENT).send();
 });
 
+const bulkDeleteMachines = catchAsync(async (req, res) => {
+  const { machineIds } = req.body;
+  if (!Array.isArray(machineIds) || machineIds.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'machineIds array is required and cannot be empty');
+  }
+  const results = await machineService.bulkDeleteMachines(machineIds);
+  res.status(httpStatus.OK).json({
+    success: true,
+    message: results.message,
+    data: results
+  });
+});
+
 export {
   createMachine,
   getMachines,
@@ -147,4 +160,5 @@ export {
   getMachinePerformanceMetrics,
   getAllMachinesUsageOverview,
   deleteMachine,
+  bulkDeleteMachines,
 };

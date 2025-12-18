@@ -15,6 +15,10 @@ router
   .get(machineController.getMachineStatistics);
 
 router
+  .route('/bulk-delete')
+  .post(validate(machineValidation.bulkDeleteMachines), machineController.bulkDeleteMachines);
+
+router
   .route('/status')
   .get(validate(machineValidation.getMachinesByStatus), machineController.getMachinesByStatus);
 
