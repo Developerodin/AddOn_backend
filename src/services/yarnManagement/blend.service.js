@@ -24,6 +24,11 @@ export const createBlend = async (blendBody) => {
  * @returns {Promise<QueryResult>}
  */
 export const queryBlends = async (filter, options) => {
+  // Convert name to case-insensitive regex for partial matching
+  if (filter.name) {
+    filter.name = { $regex: filter.name, $options: 'i' };
+  }
+  
   const blends = await Blend.paginate(filter, options);
   return blends;
 };

@@ -17,6 +17,7 @@ export const getCategories = {
     name: Joi.string(),
     parent: Joi.string().custom(objectId),
     status: Joi.string(),
+    search: Joi.string(),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
