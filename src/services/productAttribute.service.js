@@ -18,9 +18,36 @@ export const createProductAttribute = async (attributeBody) => {
  * @param {string} [options.sortBy] - Sort option in the format: sortField:(desc|asc)
  * @param {number} [options.limit] - Maximum number of results per page (default = 10)
  * @param {number} [options.page] - Current page (default = 1)
+ * @param {string} [search] - Search term to filter across multiple fields
  * @returns {Promise<QueryResult>}
  */
-export const queryProductAttributes = async (filter, options) => {
+export const queryProductAttributes = async (filter, options, search) => {
+  // Handle search parameter - search across multiple fields
+  if (search && typeof search === 'string' && search.trim()) {
+    const searchTerm = search.trim();
+    // Escape special regex characters
+    const escapedSearch = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const searchRegex = new RegExp(escapedSearch, 'i');
+    
+    // Build $or query to search across multiple fields
+    const searchFilter = {
+      $or: [
+        { name: searchRegex },
+        { type: searchRegex },
+        { 'optionValues.name': searchRegex },
+      ],
+    };
+    
+    // Combine search filter with existing filter using $and
+    if (Object.keys(filter).length > 0) {
+      filter = {
+        $and: [filter, searchFilter],
+      };
+    } else {
+      filter = searchFilter;
+    }
+  }
+  
   const attributes = await ProductAttribute.paginate(filter, options);
   return attributes;
 };

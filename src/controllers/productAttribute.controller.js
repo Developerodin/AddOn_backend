@@ -12,7 +12,8 @@ const createProductAttribute = catchAsync(async (req, res) => {
 const getProductAttributes = catchAsync(async (req, res) => {
   const filter = pick(req.query, ['name', 'type']);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await productAttributeService.queryProductAttributes(filter, options);
+  const search = req.query.search;
+  const result = await productAttributeService.queryProductAttributes(filter, options, search);
   res.send(result);
 });
 

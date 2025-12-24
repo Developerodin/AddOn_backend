@@ -16,7 +16,8 @@ const getRawMaterials = catchAsync(async (req, res) => {
   const options = pick(req.query, [
     'sortBy', 'limit', 'page'
   ]);
-  const result = await rawMaterialService.queryRawMaterials(filter, options);
+  const search = req.query.search;
+  const result = await rawMaterialService.queryRawMaterials(filter, options, search);
   res.send(result);
 });
 

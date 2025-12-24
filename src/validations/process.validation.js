@@ -25,6 +25,7 @@ export const getProcesses = {
     name: Joi.string(),
     type: Joi.string(),
     status: Joi.string(),
+    search: Joi.string(),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),

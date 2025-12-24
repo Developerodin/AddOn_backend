@@ -230,6 +230,11 @@ export const createSupplier = async (supplierBody) => {
  * @returns {Promise<QueryResult>}
  */
 export const querySuppliers = async (filter, options) => {
+  // Convert brandName to case-insensitive regex for partial matching
+  if (filter.brandName) {
+    filter.brandName = { $regex: filter.brandName, $options: 'i' };
+  }
+  
   // No need to populate - yarnDetails are now embedded objects
   const suppliers = await Supplier.paginate(filter, options);
   return suppliers;

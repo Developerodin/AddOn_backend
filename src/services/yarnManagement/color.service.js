@@ -21,6 +21,15 @@ export const createColor = async (colorBody) => {
  * @returns {Promise<QueryResult>}
  */
 export const queryColors = async (filter, options) => {
+  // Convert name to case-insensitive regex for partial matching
+  if (filter.name) {
+    filter.name = { $regex: filter.name, $options: 'i' };
+  }
+  // Convert pantoneName to case-insensitive regex for partial matching
+  if (filter.pantoneName) {
+    filter.pantoneName = { $regex: filter.pantoneName, $options: 'i' };
+  }
+  
   const colors = await Color.paginate(filter, options);
   return colors;
 };

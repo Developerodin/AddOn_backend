@@ -97,6 +97,11 @@ export const createYarnType = async (yarnTypeBody) => {
  * @returns {Promise<QueryResult>}
  */
 export const queryYarnTypes = async (filter, options) => {
+  // Convert name to case-insensitive regex for partial matching
+  if (filter.name) {
+    filter.name = { $regex: filter.name, $options: 'i' };
+  }
+  
   const yarnTypes = await YarnType.paginate(filter, options);
   
   // Convert ObjectIds to embedded objects for backward compatibility

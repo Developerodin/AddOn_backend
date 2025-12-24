@@ -20,6 +20,7 @@ const getProductAttributes = {
   query: Joi.object().keys({
     name: Joi.string(),
     type: Joi.string(),
+    search: Joi.string(),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),

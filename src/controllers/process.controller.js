@@ -12,7 +12,8 @@ export const createProcess = catchAsync(async (req, res) => {
 export const getProcesses = catchAsync(async (req, res) => {
   const filter = pick(req.query, ['name', 'type', 'status']);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
-  const result = await processService.queryProcesses(filter, options);
+  const search = req.query.search;
+  const result = await processService.queryProcesses(filter, options, search);
   res.send(result);
 });
 

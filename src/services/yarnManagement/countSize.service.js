@@ -24,6 +24,11 @@ export const createCountSize = async (countSizeBody) => {
  * @returns {Promise<QueryResult>}
  */
 export const queryCountSizes = async (filter, options) => {
+  // Convert name to case-insensitive regex for partial matching
+  if (filter.name) {
+    filter.name = { $regex: filter.name, $options: 'i' };
+  }
+  
   const countSizes = await CountSize.paginate(filter, options);
   return countSizes;
 };
