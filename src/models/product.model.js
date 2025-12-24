@@ -27,6 +27,24 @@ const processItemSchema = mongoose.Schema({
   },
 });
 
+const styleCodeItemSchema = mongoose.Schema({
+  styleCode: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  eanCode: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  mrp: {
+    type: Number,
+    required: true,
+    min: 0,
+  },
+});
+
 const productSchema = mongoose.Schema(
   {
     name: {
@@ -55,16 +73,7 @@ const productSchema = mongoose.Schema(
       required: true,
       trim: true,
     },
-    styleCode: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    eanCode: {
-      type: String,
-      required: true,
-      trim: true,
-    },
+    styleCodes: [styleCodeItemSchema],
     description: {
       type: String,
       required: true,

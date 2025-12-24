@@ -43,6 +43,36 @@ export const queryProducts = async (filter, options, search) => {
       delete filter._id;
     }
     
+    // Handle styleCode and eanCode filters - convert to array queries
+    const styleCodeFilter = filter.styleCode;
+    const eanCodeFilter = filter.eanCode;
+    if (styleCodeFilter || eanCodeFilter) {
+      const arrayFilters = [];
+      if (styleCodeFilter) {
+        const styleCodeRegex = new RegExp(styleCodeFilter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        arrayFilters.push({ 'styleCodes.styleCode': styleCodeRegex });
+      }
+      if (eanCodeFilter) {
+        const eanCodeRegex = new RegExp(eanCodeFilter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        arrayFilters.push({ 'styleCodes.eanCode': eanCodeRegex });
+      }
+      
+      // Remove old styleCode/eanCode from filter and add array filters
+      delete filter.styleCode;
+      delete filter.eanCode;
+      
+      // Combine array filters with existing filter
+      if (arrayFilters.length > 0) {
+        if (Object.keys(filter).length > 0) {
+          filter = {
+            $and: [filter, ...arrayFilters],
+          };
+        } else {
+          filter = arrayFilters.length === 1 ? arrayFilters[0] : { $and: arrayFilters };
+        }
+      }
+    }
+    
     // Handle search parameter - search across multiple fields
     if (search && typeof search === 'string' && search.trim()) {
       const searchTerm = search.trim();
@@ -58,8 +88,8 @@ export const queryProducts = async (filter, options, search) => {
           { internalCode: searchRegex },
           { vendorCode: searchRegex },
           { factoryCode: searchRegex },
-          { styleCode: searchRegex },
-          { eanCode: searchRegex },
+          { 'styleCodes.styleCode': searchRegex },
+          { 'styleCodes.eanCode': searchRegex },
           { description: searchRegex },
         ],
       };
@@ -238,11 +268,16 @@ export const bulkImportProducts = async (products, batchSize = 50) => {
             // Prepare product data with minimal memory footprint
             const processedData = {
               name: productData.name?.trim(),
-              styleCode: productData.styleCode?.trim(),
+              styleCodes: Array.isArray(productData.styleCodes) 
+                ? productData.styleCodes.map(item => ({
+                    styleCode: item.styleCode?.trim(),
+                    eanCode: item.eanCode?.trim(),
+                    mrp: typeof item.mrp === 'number' ? item.mrp : parseFloat(item.mrp) || 0,
+                  }))
+                : [],
               internalCode: productData.internalCode?.trim() || '',
               vendorCode: productData.vendorCode?.trim() || '',
               factoryCode: productData.factoryCode?.trim() || '',
-              eanCode: productData.eanCode?.trim() || '',
               description: productData.description?.trim() || '',
               category: productData.category || null,
               attributes: {},

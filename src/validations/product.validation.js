@@ -8,8 +8,13 @@ const createProduct = {
     internalCode: Joi.string().required(),
     vendorCode: Joi.string().required(),
     factoryCode: Joi.string().required(),
-    styleCode: Joi.string().required(),
-    eanCode: Joi.string().required(),
+    styleCodes: Joi.array().items(
+      Joi.object().keys({
+        styleCode: Joi.string().required().trim(),
+        eanCode: Joi.string().required().trim(),
+        mrp: Joi.number().required().min(0),
+      })
+    ).min(1).required(),
     description: Joi.string().required(),
     category: Joi.string().custom(objectId).required(),
     image: Joi.string(),
@@ -65,8 +70,13 @@ const updateProduct = {
       internalCode: Joi.string(),
       vendorCode: Joi.string(),
       factoryCode: Joi.string(),
-      styleCode: Joi.string(),
-      eanCode: Joi.string(),
+      styleCodes: Joi.array().items(
+        Joi.object().keys({
+          styleCode: Joi.string().required().trim(),
+          eanCode: Joi.string().required().trim(),
+          mrp: Joi.number().required().min(0),
+        })
+      ),
       description: Joi.string(),
       category: Joi.string().custom(objectId),
       image: Joi.string(),
@@ -100,11 +110,16 @@ const bulkImportProducts = {
       Joi.object().keys({
         id: Joi.string().custom(objectId).optional(), // For updates
         name: Joi.string().required(),
-        styleCode: Joi.string().required(),
+        styleCodes: Joi.array().items(
+          Joi.object().keys({
+            styleCode: Joi.string().required().trim(),
+            eanCode: Joi.string().required().trim(),
+            mrp: Joi.number().required().min(0),
+          })
+        ).min(1).required(),
         internalCode: Joi.string().optional().default(''),
         vendorCode: Joi.string().optional().default(''),
         factoryCode: Joi.string().optional().default(''),
-        eanCode: Joi.string().optional().default(''),
         description: Joi.string().optional().default(''),
         category: Joi.string().custom(objectId).optional(),
         softwareCode: Joi.string().optional(), // Auto-generated if not provided
