@@ -73,6 +73,11 @@ const productSchema = mongoose.Schema(
       required: true,
       trim: true,
     },
+    knittingCode: {
+      type: String,
+      required: true,
+      trim: true,
+    },
     styleCodes: [styleCodeItemSchema],
     description: {
       type: String,

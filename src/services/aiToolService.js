@@ -2295,6 +2295,7 @@ export const getProductsList = async (params = {}) => {
       internalCode, 
       vendorCode, 
       factoryCode, 
+      knittingCode,
       styleCode, 
       eanCode, 
       status 
@@ -2330,6 +2331,9 @@ export const getProductsList = async (params = {}) => {
     }
     if (factoryCode) {
       filter.factoryCode = { $regex: factoryCode, $options: 'i' };
+    }
+    if (knittingCode) {
+      filter.knittingCode = { $regex: knittingCode, $options: 'i' };
     }
     if (styleCode) {
       filter.styleCode = { $regex: styleCode, $options: 'i' };

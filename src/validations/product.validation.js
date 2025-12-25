@@ -8,6 +8,7 @@ const createProduct = {
     internalCode: Joi.string().required(),
     vendorCode: Joi.string().required(),
     factoryCode: Joi.string().required(),
+    knittingCode: Joi.string().required(),
     styleCodes: Joi.array().items(
       Joi.object().keys({
         styleCode: Joi.string().required().trim(),
@@ -42,6 +43,7 @@ const getProducts = {
     internalCode: Joi.string(),
     vendorCode: Joi.string(),
     factoryCode: Joi.string(),
+    knittingCode: Joi.string(),
     styleCode: Joi.string(),
     eanCode: Joi.string(),
     category: Joi.string().custom(objectId),
@@ -70,6 +72,7 @@ const updateProduct = {
       internalCode: Joi.string(),
       vendorCode: Joi.string(),
       factoryCode: Joi.string(),
+      knittingCode: Joi.string(),
       styleCodes: Joi.array().items(
         Joi.object().keys({
           styleCode: Joi.string().required().trim(),
@@ -120,6 +123,7 @@ const bulkImportProducts = {
         internalCode: Joi.string().optional().default(''),
         vendorCode: Joi.string().optional().default(''),
         factoryCode: Joi.string().optional().default(''),
+        knittingCode: Joi.string().optional().default(''),
         description: Joi.string().optional().default(''),
         category: Joi.string().custom(objectId).optional(),
         softwareCode: Joi.string().optional(), // Auto-generated if not provided
