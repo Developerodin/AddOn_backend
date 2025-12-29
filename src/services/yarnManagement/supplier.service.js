@@ -171,6 +171,287 @@ const convertYarnDetailsToEmbedded = async (yarnDetails) => {
 };
 
 /**
+ * Convert yarnDetails IDs to embedded objects with skipping invalid yarn names
+ * This version is used for bulk import to skip yarn names not found in catalog
+ * @param {Array} yarnDetails - Supplier yarnDetails array
+ * @returns {Promise<Object>} - Object with processedYarnDetails and skippedYarnNames
+ */
+const convertYarnDetailsToEmbeddedWithSkip = async (yarnDetails) => {
+  if (!yarnDetails || !Array.isArray(yarnDetails)) {
+    return { processedYarnDetails: [], skippedYarnNames: [] };
+  }
+  
+  const processedYarnDetails = [];
+  const skippedYarnNames = [];
+  
+  for (const detail of yarnDetails) {
+    // Validate that either yarnName or yarnType is provided
+    if (!detail.yarnName && !detail.yarnType) {
+      // Skip this detail if neither is provided
+      continue;
+    }
+    
+    // If yarnName is provided, fetch yarnType and yarnSubtype from catalog
+    if (detail.yarnName && (!detail.yarnType || !detail.yarnsubtype)) {
+      try {
+        const catalog = await YarnCatalog.findOne({ 
+          yarnName: detail.yarnName.trim(),
+          status: { $ne: 'deleted' }
+        });
+        
+        if (catalog) {
+          // Create a copy of detail to avoid mutating original
+          const processedDetail = { ...detail };
+          
+          // Populate yarnType from catalog if not already provided
+          if (!processedDetail.yarnType && catalog.yarnType) {
+            processedDetail.yarnType = {
+              _id: catalog.yarnType._id,
+              name: catalog.yarnType.name,
+              status: catalog.yarnType.status,
+            };
+          }
+          
+          // Populate yarnSubtype from catalog if not already provided
+          if (!processedDetail.yarnsubtype && catalog.yarnSubtype) {
+            processedDetail.yarnsubtype = {
+              _id: catalog.yarnSubtype._id,
+              subtype: catalog.yarnSubtype.subtype,
+              countSize: catalog.yarnSubtype.countSize || [],
+            };
+          }
+          
+          // Convert yarnType ID to embedded object if needed
+          if (processedDetail.yarnType) {
+            const isObjectId = mongoose.Types.ObjectId.isValid(processedDetail.yarnType) || 
+                              (typeof processedDetail.yarnType === 'string' && mongoose.Types.ObjectId.isValid(processedDetail.yarnType)) ||
+                              (processedDetail.yarnType && typeof processedDetail.yarnType === 'object' && !processedDetail.yarnType.name);
+            
+            if (isObjectId) {
+              try {
+                const yarnTypeId = mongoose.Types.ObjectId.isValid(processedDetail.yarnType) 
+                  ? processedDetail.yarnType 
+                  : new mongoose.Types.ObjectId(processedDetail.yarnType);
+                const yarnType = await YarnType.findById(yarnTypeId);
+                
+                if (yarnType) {
+                  processedDetail.yarnType = {
+                    _id: yarnType._id,
+                    name: yarnType.name,
+                    status: yarnType.status,
+                  };
+                } else {
+                  processedDetail.yarnType = {
+                    _id: yarnTypeId,
+                    name: 'Unknown',
+                    status: 'deleted',
+                  };
+                }
+              } catch (error) {
+                console.error('Error converting yarnType to embedded object:', error);
+              }
+            }
+          }
+          
+          // Convert color ID to embedded object if needed
+          if (processedDetail.color) {
+            const isObjectId = mongoose.Types.ObjectId.isValid(processedDetail.color) || 
+                              (typeof processedDetail.color === 'string' && mongoose.Types.ObjectId.isValid(processedDetail.color)) ||
+                              (processedDetail.color && typeof processedDetail.color === 'object' && !processedDetail.color.name);
+            
+            if (isObjectId) {
+              try {
+                const colorId = mongoose.Types.ObjectId.isValid(processedDetail.color) 
+                  ? processedDetail.color 
+                  : new mongoose.Types.ObjectId(processedDetail.color);
+                const color = await Color.findById(colorId);
+                
+                if (color) {
+                  processedDetail.color = {
+                    _id: color._id,
+                    name: color.name,
+                    colorCode: color.colorCode,
+                    status: color.status,
+                  };
+                } else {
+                  processedDetail.color = {
+                    _id: colorId,
+                    name: 'Unknown',
+                    colorCode: '#000000',
+                    status: 'deleted',
+                  };
+                }
+              } catch (error) {
+                console.error('Error converting color to embedded object:', error);
+              }
+            }
+          }
+          
+          // Convert yarnsubtype ID to embedded object if needed
+          if (processedDetail.yarnsubtype && processedDetail.yarnType) {
+            const isObjectId = mongoose.Types.ObjectId.isValid(processedDetail.yarnsubtype) || 
+                              (typeof processedDetail.yarnsubtype === 'string' && mongoose.Types.ObjectId.isValid(processedDetail.yarnsubtype)) ||
+                              (processedDetail.yarnsubtype && typeof processedDetail.yarnsubtype === 'object' && !processedDetail.yarnsubtype.subtype);
+            
+            if (isObjectId) {
+              try {
+                const yarnTypeId = processedDetail.yarnType._id || processedDetail.yarnType;
+                const yarnType = await YarnType.findById(yarnTypeId);
+                
+                if (yarnType && yarnType.details) {
+                  const subtypeId = mongoose.Types.ObjectId.isValid(processedDetail.yarnsubtype) 
+                    ? processedDetail.yarnsubtype 
+                    : new mongoose.Types.ObjectId(processedDetail.yarnsubtype);
+                  
+                  const subtypeDetail = yarnType.details.find(d => d._id.toString() === subtypeId.toString());
+                  
+                  if (subtypeDetail) {
+                    processedDetail.yarnsubtype = {
+                      _id: subtypeDetail._id,
+                      subtype: subtypeDetail.subtype,
+                      countSize: subtypeDetail.countSize || [],
+                    };
+                  } else {
+                    processedDetail.yarnsubtype = {
+                      _id: subtypeId,
+                      subtype: 'Unknown',
+                      countSize: [],
+                    };
+                  }
+                }
+              } catch (error) {
+                console.error('Error converting yarnsubtype to embedded object:', error);
+              }
+            }
+          }
+          
+          // Add to processed details if catalog found
+          processedYarnDetails.push(processedDetail);
+        } else {
+          // Skip this yarn name and add to skipped list
+          skippedYarnNames.push(detail.yarnName.trim());
+        }
+      } catch (error) {
+        console.error('Error fetching yarn catalog by yarnName:', error);
+        // Skip this yarn name on error
+        skippedYarnNames.push(detail.yarnName.trim());
+      }
+    } else {
+      // If yarnType is provided directly, process it normally
+      const processedDetail = { ...detail };
+      
+      // Convert yarnType ID to embedded object if needed
+      if (processedDetail.yarnType) {
+        const isObjectId = mongoose.Types.ObjectId.isValid(processedDetail.yarnType) || 
+                          (typeof processedDetail.yarnType === 'string' && mongoose.Types.ObjectId.isValid(processedDetail.yarnType)) ||
+                          (processedDetail.yarnType && typeof processedDetail.yarnType === 'object' && !processedDetail.yarnType.name);
+        
+        if (isObjectId) {
+          try {
+            const yarnTypeId = mongoose.Types.ObjectId.isValid(processedDetail.yarnType) 
+              ? processedDetail.yarnType 
+              : new mongoose.Types.ObjectId(processedDetail.yarnType);
+            const yarnType = await YarnType.findById(yarnTypeId);
+            
+            if (yarnType) {
+              processedDetail.yarnType = {
+                _id: yarnType._id,
+                name: yarnType.name,
+                status: yarnType.status,
+              };
+            } else {
+              processedDetail.yarnType = {
+                _id: yarnTypeId,
+                name: 'Unknown',
+                status: 'deleted',
+              };
+            }
+          } catch (error) {
+            console.error('Error converting yarnType to embedded object:', error);
+          }
+        }
+      }
+      
+      // Convert color ID to embedded object if needed
+      if (processedDetail.color) {
+        const isObjectId = mongoose.Types.ObjectId.isValid(processedDetail.color) || 
+                          (typeof processedDetail.color === 'string' && mongoose.Types.ObjectId.isValid(processedDetail.color)) ||
+                          (processedDetail.color && typeof processedDetail.color === 'object' && !processedDetail.color.name);
+        
+        if (isObjectId) {
+          try {
+            const colorId = mongoose.Types.ObjectId.isValid(processedDetail.color) 
+              ? processedDetail.color 
+              : new mongoose.Types.ObjectId(processedDetail.color);
+            const color = await Color.findById(colorId);
+            
+            if (color) {
+              processedDetail.color = {
+                _id: color._id,
+                name: color.name,
+                colorCode: color.colorCode,
+                status: color.status,
+              };
+            } else {
+              processedDetail.color = {
+                _id: colorId,
+                name: 'Unknown',
+                colorCode: '#000000',
+                status: 'deleted',
+              };
+            }
+          } catch (error) {
+            console.error('Error converting color to embedded object:', error);
+          }
+        }
+      }
+      
+      // Convert yarnsubtype ID to embedded object if needed
+      if (processedDetail.yarnsubtype && processedDetail.yarnType) {
+        const isObjectId = mongoose.Types.ObjectId.isValid(processedDetail.yarnsubtype) || 
+                          (typeof processedDetail.yarnsubtype === 'string' && mongoose.Types.ObjectId.isValid(processedDetail.yarnsubtype)) ||
+                          (processedDetail.yarnsubtype && typeof processedDetail.yarnsubtype === 'object' && !processedDetail.yarnsubtype.subtype);
+        
+        if (isObjectId) {
+          try {
+            const yarnTypeId = processedDetail.yarnType._id || processedDetail.yarnType;
+            const yarnType = await YarnType.findById(yarnTypeId);
+            
+            if (yarnType && yarnType.details) {
+              const subtypeId = mongoose.Types.ObjectId.isValid(processedDetail.yarnsubtype) 
+                ? processedDetail.yarnsubtype 
+                : new mongoose.Types.ObjectId(processedDetail.yarnsubtype);
+              
+              const subtypeDetail = yarnType.details.find(d => d._id.toString() === subtypeId.toString());
+              
+              if (subtypeDetail) {
+                processedDetail.yarnsubtype = {
+                  _id: subtypeDetail._id,
+                  subtype: subtypeDetail.subtype,
+                  countSize: subtypeDetail.countSize || [],
+                };
+              } else {
+                processedDetail.yarnsubtype = {
+                  _id: subtypeId,
+                  subtype: 'Unknown',
+                  countSize: [],
+                };
+              }
+            }
+          } catch (error) {
+            console.error('Error converting yarnsubtype to embedded object:', error);
+          }
+        }
+      }
+      
+      processedYarnDetails.push(processedDetail);
+    }
+  }
+  
+  return { processedYarnDetails, skippedYarnNames };
+};
+
+/**
  * Validate yarnsubtype exists in the YarnType's details array
  * @param {ObjectId} yarnTypeId - The YarnType ID
  * @param {ObjectId} yarnsubtypeId - The detail item ID
@@ -318,6 +599,7 @@ export const bulkImportSuppliers = async (suppliers, batchSize = 50) => {
     updated: 0,
     failed: 0,
     errors: [],
+    skippedYarnNames: [], // Array of objects with supplier info and skipped yarn names
     processingTime: 0,
   };
 
@@ -378,9 +660,22 @@ export const bulkImportSuppliers = async (suppliers, batchSize = 50) => {
               status: supplierData.status || 'active',
             };
 
-            // Convert yarnDetails IDs to embedded objects if provided
+            // Convert yarnDetails IDs to embedded objects if provided (with skipping invalid yarn names)
             if (processedData.yarnDetails && Array.isArray(processedData.yarnDetails)) {
-              await convertYarnDetailsToEmbedded(processedData.yarnDetails);
+              const { processedYarnDetails, skippedYarnNames } = await convertYarnDetailsToEmbeddedWithSkip(processedData.yarnDetails);
+              
+              // Track skipped yarn names for this supplier
+              if (skippedYarnNames.length > 0) {
+                results.skippedYarnNames.push({
+                  index: globalIndex,
+                  brandName: processedData.brandName,
+                  email: processedData.email,
+                  skippedYarnNames: skippedYarnNames,
+                });
+              }
+              
+              // Update processedData with filtered yarnDetails
+              processedData.yarnDetails = processedYarnDetails;
               
               // Validate yarnsubtype if provided
               for (const detail of processedData.yarnDetails) {

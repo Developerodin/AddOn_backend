@@ -55,7 +55,8 @@ export const bulkImportSuppliers = catchAsync(async (req, res) => {
     },
     details: {
       successful: results.created + results.updated,
-      errors: results.errors
+      errors: results.errors,
+      skippedYarnNames: results.skippedYarnNames || []
     }
   };
 
