@@ -128,7 +128,7 @@ const bulkImportProducts = {
         category: Joi.string().custom(objectId).optional(),
         softwareCode: Joi.string().optional(), // Auto-generated if not provided
       })
-    ).min(1).max(1000), // Limit batch size to 1000 products
+    ).min(1).max(10000), // Limit batch size to 10000 products
     batchSize: Joi.number().integer().min(1).max(100).default(50), // Default batch size
   }),
 };

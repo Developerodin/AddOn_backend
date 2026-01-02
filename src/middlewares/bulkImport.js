@@ -42,10 +42,10 @@ export const validateBulkImportSize = (req, res, next) => {
   }
   
   // Check if payload is reasonable
-  if (arrayField.length > 1000) {
+  if (arrayField.length > 10000) {
     return res.status(400).json({
       status: 'error',
-      message: 'Maximum 1000 items allowed per request'
+      message: 'Maximum 10000 items allowed per request'
     });
   }
   

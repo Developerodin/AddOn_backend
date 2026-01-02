@@ -243,8 +243,8 @@ export const bulkImportProducts = async (products, batchSize = 50) => {
 
   try {
     // Validate input size
-    if (products.length > 1000) {
-      throw new Error('Maximum 1000 products allowed per request');
+    if (products.length > 10000) {
+      throw new Error('Maximum 10000 products allowed per request');
     }
 
     // Estimate memory usage (rough calculation)
