@@ -169,4 +169,15 @@ export const updatePurchaseOrderStatus = {
     .required(),
 };
 
+export const updateLotStatus = {
+  params: Joi.object().keys({}),
+  body: Joi.object()
+    .keys({
+      poNumber: Joi.string().trim().required(),
+      lotNumber: Joi.string().trim().required(),
+      lotStatus: lotStatusField.required(),
+    })
+    .required(),
+};
+
 

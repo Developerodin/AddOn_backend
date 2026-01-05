@@ -1,7 +1,7 @@
 import httpStatus from 'http-status';
 import { YarnPurchaseOrder } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
-import { yarnPurchaseOrderStatuses } from '../../models/yarnReq/yarnPurchaseOrder.model.js';
+import { yarnPurchaseOrderStatuses, lotStatuses } from '../../models/yarnReq/yarnPurchaseOrder.model.js';
 
 export const getPurchaseOrders = async ({ startDate, endDate, statusCode }) => {
   const start = new Date(startDate);
@@ -124,6 +124,37 @@ export const updatePurchaseOrderStatus = async (purchaseOrderId, statusCode, upd
       purchaseOrder.goodsReceivedDate = new Date();
     }
   }
+
+  await purchaseOrder.save();
+  return purchaseOrder;
+};
+
+export const updateLotStatus = async (poNumber, lotNumber, lotStatus) => {
+  const purchaseOrder = await YarnPurchaseOrder.findOne({ poNumber });
+
+  if (!purchaseOrder) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Purchase order not found');
+  }
+
+  if (!lotStatuses.includes(lotStatus)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid lot status');
+  }
+
+  if (!purchaseOrder.receivedLotDetails || purchaseOrder.receivedLotDetails.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'No received lot details found for this purchase order');
+  }
+
+  // Find the lot in receivedLotDetails
+  const lotIndex = purchaseOrder.receivedLotDetails.findIndex(
+    (lot) => lot.lotNumber === lotNumber
+  );
+
+  if (lotIndex === -1) {
+    throw new ApiError(httpStatus.NOT_FOUND, `Lot ${lotNumber} not found in received lot details`);
+  }
+
+  // Update the lot status
+  purchaseOrder.receivedLotDetails[lotIndex].status = lotStatus;
 
   await purchaseOrder.save();
   return purchaseOrder;

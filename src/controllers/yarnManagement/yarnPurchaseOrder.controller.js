@@ -57,4 +57,16 @@ export const updatePurchaseOrderStatus = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(purchaseOrder);
 });
 
+export const updateLotStatus = catchAsync(async (req, res) => {
+  const { poNumber, lotNumber, lotStatus } = req.body;
+
+  const purchaseOrder = await yarnPurchaseOrderService.updateLotStatus(
+    poNumber,
+    lotNumber,
+    lotStatus
+  );
+
+  res.status(httpStatus.OK).send(purchaseOrder);
+});
+
 

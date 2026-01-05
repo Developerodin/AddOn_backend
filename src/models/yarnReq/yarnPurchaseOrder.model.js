@@ -9,12 +9,12 @@ export const yarnPurchaseOrderStatuses = [
   'in_transit',
   'goods_partially_received',
   'goods_received',
-  'qc_pending',
   'po_rejected',
   'po_accepted',
 ];
 
 export const lotStatuses = [
+  'lot_pending',
   'lot_qc_pending',
   'lot_rejected',
   'lot_accepted',
@@ -131,7 +131,7 @@ const receivedLotDetailsSchema = mongoose.Schema(
     status: {
       type: String,
       enum: lotStatuses,
-      default: 'lot_qc_pending',
+      default: 'lot_pending',
     },
   },
   { _id: false }

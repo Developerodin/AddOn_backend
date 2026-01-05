@@ -17,6 +17,13 @@ router
   );
 
 router
+  .route('/lot-status')
+  .patch(
+    validate(yarnPurchaseOrderValidation.updateLotStatus),
+    yarnPurchaseOrderController.updateLotStatus
+  );
+
+router
   .route('/:purchaseOrderId')
   .get(
     validate(yarnPurchaseOrderValidation.getPurchaseOrderById),
