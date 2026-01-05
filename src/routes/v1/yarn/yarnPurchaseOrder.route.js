@@ -24,6 +24,13 @@ router
   );
 
 router
+  .route('/lot-status-qc-approve')
+  .patch(
+    validate(yarnPurchaseOrderValidation.updateLotStatusAndQcApprove),
+    yarnPurchaseOrderController.updateLotStatusAndQcApprove
+  );
+
+router
   .route('/:purchaseOrderId')
   .get(
     validate(yarnPurchaseOrderValidation.getPurchaseOrderById),

@@ -1,5 +1,5 @@
 import httpStatus from 'http-status';
-import { YarnPurchaseOrder } from '../../models/index.js';
+import { YarnPurchaseOrder, YarnBox } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import { yarnPurchaseOrderStatuses, lotStatuses } from '../../models/yarnReq/yarnPurchaseOrder.model.js';
 
@@ -158,6 +158,102 @@ export const updateLotStatus = async (poNumber, lotNumber, lotStatus) => {
 
   await purchaseOrder.save();
   return purchaseOrder;
+};
+
+export const updateLotStatusAndQcApprove = async (poNumber, lotNumber, lotStatus, updatedBy, notes, qcData) => {
+  const purchaseOrder = await YarnPurchaseOrder.findOne({ poNumber });
+
+  if (!purchaseOrder) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Purchase order not found');
+  }
+
+  if (!lotStatuses.includes(lotStatus)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid lot status');
+  }
+
+  if (!purchaseOrder.receivedLotDetails || purchaseOrder.receivedLotDetails.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'No received lot details found for this purchase order');
+  }
+
+  // Find the lot in receivedLotDetails
+  const lotIndex = purchaseOrder.receivedLotDetails.findIndex(
+    (lot) => lot.lotNumber === lotNumber
+  );
+
+  if (lotIndex === -1) {
+    throw new ApiError(httpStatus.NOT_FOUND, `Lot ${lotNumber} not found in received lot details`);
+  }
+
+  // Update the lot status
+  purchaseOrder.receivedLotDetails[lotIndex].status = lotStatus;
+
+  // Update receivedBy if provided
+  if (updatedBy) {
+    purchaseOrder.receivedBy = {
+      username: updatedBy.username,
+      user: updatedBy.user_id,
+      receivedAt: new Date(),
+    };
+  }
+
+  await purchaseOrder.save();
+
+  // Update all boxes for this PO and lot with QC data
+  // Only update QC status if lot is accepted or rejected
+  let qcStatus = null;
+  let actionMessage = '';
+
+  if (lotStatus === 'lot_accepted') {
+    qcStatus = 'qc_approved';
+    actionMessage = 'QC approved';
+  } else if (lotStatus === 'lot_rejected') {
+    qcStatus = 'qc_rejected';
+    actionMessage = 'QC rejected';
+  }
+
+  const boxes = await YarnBox.find({ poNumber, lotNumber });
+
+  if (boxes.length > 0 && qcStatus) {
+    // Prepare QC update fields
+    const qcUpdateFields = {
+      'qcData.status': qcStatus,
+      'qcData.date': new Date(),
+    };
+
+    if (updatedBy) {
+      qcUpdateFields['qcData.user'] = updatedBy.user_id;
+      qcUpdateFields['qcData.username'] = updatedBy.username;
+    }
+
+    if (qcData.remarks !== undefined) {
+      qcUpdateFields['qcData.remarks'] = qcData.remarks;
+    }
+
+    if (qcData.mediaUrl && typeof qcData.mediaUrl === 'object') {
+      qcUpdateFields['qcData.mediaUrl'] = qcData.mediaUrl;
+    }
+
+    // Update all boxes for this lot
+    await YarnBox.updateMany(
+      { poNumber, lotNumber },
+      { $set: qcUpdateFields }
+    );
+  }
+
+  // Fetch updated boxes
+  const updatedBoxes = await YarnBox.find({ poNumber, lotNumber });
+
+  const message = qcStatus
+    ? `Successfully updated lot status to ${lotStatus} and ${actionMessage} ${updatedBoxes.length} boxes for lot ${lotNumber}`
+    : `Successfully updated lot status to ${lotStatus} for lot ${lotNumber}`;
+
+  return {
+    purchaseOrder,
+    boxes: updatedBoxes,
+    updatedBoxesCount: updatedBoxes.length,
+    qcStatus: qcStatus || null,
+    message,
+  };
 };
 
 

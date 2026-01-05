@@ -180,4 +180,24 @@ export const updateLotStatus = {
     .required(),
 };
 
+export const updateLotStatusAndQcApprove = {
+  params: Joi.object().keys({}),
+  body: Joi.object()
+    .keys({
+      poNumber: Joi.string().trim().required(),
+      lotNumber: Joi.string().trim().required(),
+      lotStatus: lotStatusField.required(),
+      updated_by: Joi.object()
+        .keys({
+          username: Joi.string().trim().required(),
+          user_id: Joi.string().custom(objectId).required(),
+        })
+        .required(),
+      notes: Joi.string().trim().allow('', null).optional(),
+      remarks: Joi.string().trim().allow('', null).optional(),
+      mediaUrl: Joi.object().pattern(Joi.string(), Joi.string()).allow(null).optional(),
+    })
+    .required(),
+};
+
 

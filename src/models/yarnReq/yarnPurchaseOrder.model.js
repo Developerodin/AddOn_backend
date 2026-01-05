@@ -9,8 +9,10 @@ export const yarnPurchaseOrderStatuses = [
   'in_transit',
   'goods_partially_received',
   'goods_received',
+  'qc_pending',
   'po_rejected',
   'po_accepted',
+  'po_accepted_partially',
 ];
 
 export const lotStatuses = [
