@@ -7,10 +7,17 @@ import YarnCatalog from '../yarnManagement/yarnCatalog.model.js';
 export const yarnPurchaseOrderStatuses = [
   'submitted_to_supplier',
   'in_transit',
+  'goods_partially_received',
   'goods_received',
   'qc_pending',
   'po_rejected',
   'po_accepted',
+];
+
+export const lotStatuses = [
+  'lot_qc_pending',
+  'lot_rejected',
+  'lot_accepted',
 ];
 
 const statusLogSchema = mongoose.Schema(
@@ -83,6 +90,50 @@ const poItemSchema = mongoose.Schema(
       min: 0,
     },
   },
+  { _id: true }
+);
+
+const receivedLotDetailsSchema = mongoose.Schema(
+  {
+    lotNumber: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    numberOfCones: {
+      type: Number,
+      min: 0,
+    },
+    totalWeight: {
+      type: Number,
+      min: 0,
+    },
+    numberOfBoxes: {
+      type: Number,
+      min: 0,
+    },
+    poItems: {
+      type: [
+        {
+          poItem: {
+            type: mongoose.Schema.Types.ObjectId,
+            required: true,
+          },
+          receivedQuantity: {
+            type: Number,
+            required: true,
+            min: 0,
+          },
+        },
+      ],
+      default: [],
+    },
+    status: {
+      type: String,
+      enum: lotStatuses,
+      default: 'lot_qc_pending',
+    },
+  },
   { _id: false }
 );
 
@@ -93,6 +144,18 @@ const packListDetailsSchema = mongoose.Schema(
       trim: true,
     },
     courierName: {
+      type: String,
+      trim: true,
+    },
+    courierNumber: {
+      type: String,
+      trim: true,
+    },
+    vehicleNumber: {
+      type: String,
+      trim: true,
+    },
+    challanNumber: {
       type: String,
       trim: true,
     },
@@ -193,6 +256,10 @@ const yarnPurchaseOrderSchema = mongoose.Schema(
     },
     statusLogs: {
       type: [statusLogSchema],
+      default: [],
+    },
+    receivedLotDetails: {
+      type: [receivedLotDetailsSchema],
       default: [],
     },
     packListDetails: packListDetailsSchema,

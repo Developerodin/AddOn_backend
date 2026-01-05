@@ -119,8 +119,10 @@ export const updatePurchaseOrderStatus = async (purchaseOrderId, statusCode, upd
     notes: notes || undefined,
   });
 
-  if (statusCode === 'goods_received') {
-    purchaseOrder.goodsReceivedDate = new Date();
+  if (statusCode === 'goods_received' || statusCode === 'goods_partially_received') {
+    if (!purchaseOrder.goodsReceivedDate) {
+      purchaseOrder.goodsReceivedDate = new Date();
+    }
   }
 
   await purchaseOrder.save();

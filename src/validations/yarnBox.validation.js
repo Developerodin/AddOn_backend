@@ -91,18 +91,15 @@ export const bulkCreateYarnBoxes = {
   body: Joi.object()
     .keys({
       poNumber: Joi.string().trim().required(),
-      numberOfBoxes: Joi.number().min(1).required(),
-      orderDate: Joi.date().iso().optional(),
-      orderQty: Joi.number().min(0).optional(),
-      yarnName: Joi.string().trim().optional(),
-      shadeCode: Joi.string().trim().optional(),
-      lotNumber: Joi.string().trim().optional(),
-      receivedDate: Joi.date().iso().optional(),
-      boxWeight: Joi.number().min(0).optional(),
-      numberOfCones: Joi.number().min(0).optional(),
-      tearweight: Joi.number().min(0).optional(),
-      storageLocation: Joi.string().trim().optional(),
-      storedStatus: Joi.boolean().optional(),
+      lotDetails: Joi.array()
+        .items(
+          Joi.object().keys({
+            lotNumber: Joi.string().trim().required(),
+            numberOfBoxes: Joi.number().min(1).required(),
+          })
+        )
+        .min(1)
+        .required(),
     })
     .required(),
 };

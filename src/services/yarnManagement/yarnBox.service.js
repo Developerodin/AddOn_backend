@@ -95,53 +95,101 @@ export const queryYarnBoxes = async (filters = {}) => {
 };
 
 export const bulkCreateYarnBoxes = async (bulkData) => {
-  const { numberOfBoxes, poNumber, ...commonFields } = bulkData;
+  const { lotDetails, poNumber } = bulkData;
 
-  if (numberOfBoxes < 1) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Number of boxes must be at least 1');
+  if (!lotDetails || !Array.isArray(lotDetails) || lotDetails.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'lotDetails array is required with at least one lot');
   }
 
-  // Check how many boxes already exist for this PO number
-  const existingBoxesCount = await YarnBox.countDocuments({ poNumber });
+  // Check each lot individually and create boxes only for lots that don't exist
+  const existingBoxesByLot = {};
+  const skippedLots = [];
+  const boxesToCreate = [];
+  const baseTimestamp = Date.now();
+  let boxCounter = 1;
 
-  // If boxes already exist, return existing boxes without creating new ones
-  if (existingBoxesCount > 0) {
-    const existingBoxes = await YarnBox.find({ poNumber }).sort({ createdAt: -1 });
+  for (const lotDetail of lotDetails) {
+    const { lotNumber, numberOfBoxes } = lotDetail;
+
+    if (numberOfBoxes < 1) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Number of boxes must be at least 1 for lot ${lotNumber}`
+      );
+    }
+
+    // Check if boxes already exist for this specific lot
+    const existingCount = await YarnBox.countDocuments({ poNumber, lotNumber });
+    
+    if (existingCount > 0) {
+      // Skip this lot - boxes already exist
+      existingBoxesByLot[lotNumber] = existingCount;
+      skippedLots.push({
+        lotNumber,
+        numberOfBoxes: existingCount,
+        reason: 'Boxes already exist for this lot',
+      });
+      continue;
+    }
+
+    // Create boxes for this lot
+    for (let i = 0; i < numberOfBoxes; i++) {
+      const boxId = `BOX-${poNumber}-${lotNumber}-${baseTimestamp}-${boxCounter}`;
+      // Generate unique barcode using ObjectId (insertMany doesn't trigger pre-save hooks)
+      const uniqueBarcode = new mongoose.Types.ObjectId().toString();
+
+      boxesToCreate.push({
+        boxId,
+        poNumber,
+        lotNumber,
+        barcode: uniqueBarcode,
+        // Set only required fields with defaults
+        yarnName: `Yarn-${poNumber}`, // Default, will be updated later
+        receivedDate: new Date(), // Default to current date
+      });
+      boxCounter++;
+    }
+  }
+
+  // If no boxes to create (all lots already exist), return early
+  if (boxesToCreate.length === 0) {
+    const existingBoxes = await YarnBox.find({ 
+      poNumber, 
+      lotNumber: { $in: Object.keys(existingBoxesByLot) } 
+    }).sort({ createdAt: -1 });
+    
     return {
-      message: `Boxes already exist for PO ${poNumber}`,
-      existingCount: existingBoxesCount,
+      message: `All lots already have boxes for PO ${poNumber}`,
+      existingBoxesByLot,
+      skippedLots,
       boxes: existingBoxes,
       created: false,
     };
   }
 
-  // Create new boxes only if none exist
-  const boxesToCreate = [];
-  const baseTimestamp = Date.now();
-
-  for (let i = 0; i < numberOfBoxes; i++) {
-    const boxId = `BOX-${poNumber}-${baseTimestamp}-${i + 1}`;
-    // Generate unique barcode using ObjectId (insertMany doesn't trigger pre-save hooks)
-    const uniqueBarcode = new mongoose.Types.ObjectId().toString();
-
-    boxesToCreate.push({
-      boxId,
-      poNumber,
-      barcode: uniqueBarcode,
-      // Set required fields with defaults if not provided
-      yarnName: commonFields.yarnName || `Yarn-${poNumber}`,
-      orderDate: commonFields.orderDate || new Date(),
-      orderQty: commonFields.orderQty || 0,
-      ...commonFields,
-      // receivedDate defaults to current date if not provided
-      receivedDate: commonFields.receivedDate || new Date(),
-    });
-  }
-
+  // Create boxes for lots that don't exist
   const createdBoxes = await YarnBox.insertMany(boxesToCreate);
+  const totalBoxes = createdBoxes.length;
+  
+  // Build response with created and skipped lots info
+  const createdLots = lotDetails
+    .filter((lot) => !existingBoxesByLot[lot.lotNumber])
+    .map((lot) => ({
+      lotNumber: lot.lotNumber,
+      numberOfBoxes: lot.numberOfBoxes,
+    }));
+
+  const hasSkippedLots = skippedLots.length > 0;
+  const message = hasSkippedLots
+    ? `Created ${totalBoxes} boxes for ${createdLots.length} lot(s), skipped ${skippedLots.length} lot(s) that already have boxes`
+    : `Successfully created ${totalBoxes} boxes for PO ${poNumber}`;
+  
   return {
-    message: `Successfully created ${numberOfBoxes} boxes for PO ${poNumber}`,
-    createdCount: createdBoxes.length,
+    message,
+    createdCount: totalBoxes,
+    boxesByLot: createdLots,
+    skippedLots: hasSkippedLots ? skippedLots : undefined,
+    existingBoxesByLot: hasSkippedLots ? existingBoxesByLot : undefined,
     boxes: createdBoxes,
     created: true,
   };

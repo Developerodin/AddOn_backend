@@ -1,8 +1,9 @@
 import Joi from 'joi';
 import { objectId } from './custom.validation.js';
-import { yarnPurchaseOrderStatuses } from '../models/yarnReq/yarnPurchaseOrder.model.js';
+import { yarnPurchaseOrderStatuses, lotStatuses } from '../models/yarnReq/yarnPurchaseOrder.model.js';
 
 const statusCodeField = Joi.string().valid(...yarnPurchaseOrderStatuses);
+const lotStatusField = Joi.string().valid(...lotStatuses);
 
 const poItemSchema = Joi.object().keys({
   yarnName: Joi.string().trim(),
@@ -62,6 +63,7 @@ export const createPurchaseOrder = {
         .default([]),
       goodsReceivedDate: Joi.forbidden(),
       packListDetails: Joi.forbidden(),
+      receivedLotDetails: Joi.forbidden(),
       receivedBy: Joi.forbidden(),
     })
     .required(),
@@ -108,9 +110,31 @@ export const updatePurchaseOrder = {
         })
       ),
       goodsReceivedDate: Joi.date().iso().allow(null),
+      receivedLotDetails: Joi.array()
+        .items(
+          Joi.object().keys({
+            lotNumber: Joi.string().trim().required(),
+            numberOfCones: Joi.number().min(0).allow(null),
+            totalWeight: Joi.number().min(0).allow(null),
+            numberOfBoxes: Joi.number().min(0).allow(null),
+            poItems: Joi.array()
+              .items(
+                Joi.object().keys({
+                  poItem: Joi.string().custom(objectId).required(),
+                  receivedQuantity: Joi.number().min(0).required(),
+                })
+              )
+              .default([]),
+            status: lotStatusField.default('lot_qc_pending'),
+          })
+        )
+        .default([]),
       packListDetails: Joi.object().keys({
         packingNumber: Joi.string().trim().allow('', null),
         courierName: Joi.string().trim().allow('', null),
+        courierNumber: Joi.string().trim().allow('', null),
+        vehicleNumber: Joi.string().trim().allow('', null),
+        challanNumber: Joi.string().trim().allow('', null),
         dispatchDate: Joi.date().iso().allow(null),
         estimatedDeliveryDate: Joi.date().iso().allow(null),
         notes: Joi.string().trim().allow('', null),
