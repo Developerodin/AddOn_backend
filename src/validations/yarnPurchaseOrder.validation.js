@@ -129,19 +129,26 @@ export const updatePurchaseOrder = {
           })
         )
         .default([]),
-      packListDetails: Joi.object().keys({
-        packingNumber: Joi.string().trim().allow('', null),
-        courierName: Joi.string().trim().allow('', null),
-        courierNumber: Joi.string().trim().allow('', null),
-        vehicleNumber: Joi.string().trim().allow('', null),
-        challanNumber: Joi.string().trim().allow('', null),
-        dispatchDate: Joi.date().iso().allow(null),
-        estimatedDeliveryDate: Joi.date().iso().allow(null),
-        notes: Joi.string().trim().allow('', null),
-        numberOfCones: Joi.number().min(0).allow(null),
-        totalWeight: Joi.number().min(0).allow(null),
-        numberOfBoxes: Joi.number().min(0).allow(null),
-      }),
+      packListDetails: Joi.array()
+        .items(
+          Joi.object().keys({
+            poItems: Joi.array()
+              .items(Joi.string().custom(objectId))
+              .default([]),
+            packingNumber: Joi.string().trim().allow('', null),
+            courierName: Joi.string().trim().allow('', null),
+            courierNumber: Joi.string().trim().allow('', null),
+            vehicleNumber: Joi.string().trim().allow('', null),
+            challanNumber: Joi.string().trim().allow('', null),
+            dispatchDate: Joi.date().iso().allow(null),
+            estimatedDeliveryDate: Joi.date().iso().allow(null),
+            notes: Joi.string().trim().allow('', null),
+            numberOfCones: Joi.number().min(0).allow(null),
+            totalWeight: Joi.number().min(0).allow(null),
+            numberOfBoxes: Joi.number().min(0).allow(null),
+          })
+        )
+        .default([]),
       receivedBy: Joi.object().keys({
         username: Joi.string().trim().allow('', null),
         user: Joi.string().custom(objectId).allow(null),

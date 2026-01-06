@@ -141,6 +141,10 @@ const receivedLotDetailsSchema = mongoose.Schema(
 
 const packListDetailsSchema = mongoose.Schema(
   {
+    poItems: {
+      type: [mongoose.Schema.Types.ObjectId],
+      default: [],
+    },
     packingNumber: {
       type: String,
       trim: true,
@@ -264,7 +268,10 @@ const yarnPurchaseOrderSchema = mongoose.Schema(
       type: [receivedLotDetailsSchema],
       default: [],
     },
-    packListDetails: packListDetailsSchema,
+    packListDetails: {
+      type: [packListDetailsSchema],
+      default: [],
+    },
     receivedBy: receivedBySchema,
   },
   {
