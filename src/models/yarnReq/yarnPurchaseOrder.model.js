@@ -304,6 +304,76 @@ yarnPurchaseOrderSchema.pre('save', async function (next) {
   next();
 });
 
+// Auto-update order status based on received quantities
+yarnPurchaseOrderSchema.pre('save', async function (next) {
+  // Only check status if current status is one of these three
+  const statusesToCheck = ['in_transit', 'goods_partially_received', 'goods_received'];
+  
+  if (!statusesToCheck.includes(this.currentStatus)) {
+    return next();
+  }
+
+  // Only check if receivedLotDetails or poItems are modified
+  if (!this.isModified('receivedLotDetails') && !this.isModified('poItems')) {
+    return next();
+  }
+
+  // Calculate total received quantity for each PO item
+  const poItemReceivedMap = new Map();
+
+  // Initialize map with all PO items
+  this.poItems.forEach((item) => {
+    poItemReceivedMap.set(item._id.toString(), 0);
+  });
+
+  // Sum up received quantities from all receivedLotDetails
+  this.receivedLotDetails.forEach((lot) => {
+    if (lot.poItems && Array.isArray(lot.poItems)) {
+      lot.poItems.forEach((receivedItem) => {
+        const poItemId = receivedItem.poItem.toString();
+        const currentTotal = poItemReceivedMap.get(poItemId) || 0;
+        poItemReceivedMap.set(poItemId, currentTotal + (receivedItem.receivedQuantity || 0));
+      });
+    }
+  });
+
+  // Check each PO item to see if received quantity >= ordered quantity
+  let fullyReceivedCount = 0;
+  let partiallyReceivedCount = 0;
+
+  this.poItems.forEach((item) => {
+    const itemId = item._id.toString();
+    const totalReceived = poItemReceivedMap.get(itemId) || 0;
+    const orderedQuantity = item.quantity || 0;
+
+    if (totalReceived >= orderedQuantity) {
+      fullyReceivedCount++;
+    } else if (totalReceived > 0) {
+      partiallyReceivedCount++;
+    }
+  });
+
+  // Update status based on received quantities
+  const totalItems = this.poItems.length;
+  let newStatus = this.currentStatus;
+
+  if (fullyReceivedCount === totalItems) {
+    // All items fully received
+    newStatus = 'goods_received';
+  } else if (fullyReceivedCount > 0 || partiallyReceivedCount > 0) {
+    // Some items received but not all
+    newStatus = 'goods_partially_received';
+  }
+  // If nothing received, keep current status
+
+  // Only update if status changed
+  if (newStatus !== this.currentStatus) {
+    this.currentStatus = newStatus;
+  }
+
+  next();
+});
+
 const YarnPurchaseOrder = mongoose.model('YarnPurchaseOrder', yarnPurchaseOrderSchema);
 
 export default YarnPurchaseOrder;
