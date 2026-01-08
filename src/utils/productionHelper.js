@@ -13,8 +13,10 @@ export const getFloorOrderByLinkingType = (linkingType) => {
       ProductionFloor.CHECKING,
       ProductionFloor.WASHING,
       ProductionFloor.BOARDING,
-      ProductionFloor.FINAL_CHECKING,
+      ProductionFloor.SILICON,
+      ProductionFloor.SECONDARY_CHECKING,
       ProductionFloor.BRANDING,
+      ProductionFloor.FINAL_CHECKING,
       ProductionFloor.WAREHOUSE,
       ProductionFloor.DISPATCH
     ];
@@ -26,8 +28,10 @@ export const getFloorOrderByLinkingType = (linkingType) => {
       ProductionFloor.CHECKING,
       ProductionFloor.WASHING,
       ProductionFloor.BOARDING,
-      ProductionFloor.FINAL_CHECKING,
+      ProductionFloor.SILICON,
+      ProductionFloor.SECONDARY_CHECKING,
       ProductionFloor.BRANDING,
+      ProductionFloor.FINAL_CHECKING,
       ProductionFloor.WAREHOUSE,
       ProductionFloor.DISPATCH
     ];
@@ -45,8 +49,10 @@ export const getAllFloorsOrder = () => {
     ProductionFloor.CHECKING,
     ProductionFloor.WASHING,
     ProductionFloor.BOARDING,
-    ProductionFloor.FINAL_CHECKING,
+    ProductionFloor.SILICON,
+    ProductionFloor.SECONDARY_CHECKING,
     ProductionFloor.BRANDING,
+    ProductionFloor.FINAL_CHECKING,
     ProductionFloor.WAREHOUSE,
     ProductionFloor.DISPATCH
   ];
@@ -64,8 +70,10 @@ export const getFloorKey = (floor) => {
     [ProductionFloor.CHECKING]: 'checking',
     [ProductionFloor.WASHING]: 'washing',
     [ProductionFloor.BOARDING]: 'boarding',
-    [ProductionFloor.FINAL_CHECKING]: 'finalChecking',
+    [ProductionFloor.SILICON]: 'silicon',
+    [ProductionFloor.SECONDARY_CHECKING]: 'secondaryChecking',
     [ProductionFloor.BRANDING]: 'branding',
+    [ProductionFloor.FINAL_CHECKING]: 'finalChecking',
     [ProductionFloor.WAREHOUSE]: 'warehouse',
     [ProductionFloor.DISPATCH]: 'dispatch'
   };

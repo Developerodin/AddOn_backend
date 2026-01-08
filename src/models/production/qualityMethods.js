@@ -10,8 +10,8 @@ import { RepairStatus, ProductionFloor } from './enums.js';
  * Update quality categories for checking floors
  */
 export const updateQualityCategories = async function(qualityData, userId, floorSupervisorId) {
-  if (this.currentFloor !== ProductionFloor.CHECKING && this.currentFloor !== ProductionFloor.FINAL_CHECKING) {
-    throw new Error('Quality categories can only be updated in Checking or Final Checking floor');
+  if (this.currentFloor !== ProductionFloor.CHECKING && this.currentFloor !== ProductionFloor.SECONDARY_CHECKING && this.currentFloor !== ProductionFloor.FINAL_CHECKING) {
+    throw new Error('Quality categories can only be updated in Checking, Secondary Checking, or Final Checking floor');
   }
   
   const { m1Quantity, m2Quantity, m3Quantity, m4Quantity, repairStatus, repairRemarks } = qualityData;
@@ -122,8 +122,8 @@ export const updateQualityCategories = async function(qualityData, userId, floor
  * Shift M2 items to other categories
  */
 export const shiftM2Items = async function(shiftData, userId, floorSupervisorId) {
-  if (this.currentFloor !== ProductionFloor.CHECKING && this.currentFloor !== ProductionFloor.FINAL_CHECKING) {
-    throw new Error('M2 shifting can only be done in Checking or Final Checking floor');
+  if (this.currentFloor !== ProductionFloor.CHECKING && this.currentFloor !== ProductionFloor.SECONDARY_CHECKING && this.currentFloor !== ProductionFloor.FINAL_CHECKING) {
+    throw new Error('M2 shifting can only be done in Checking, Secondary Checking, or Final Checking floor');
   }
   
   const { fromM2, toM1, toM3, toM4 } = shiftData;
@@ -216,8 +216,8 @@ export const shiftM2Items = async function(shiftData, userId, floorSupervisorId)
  * Confirm final quality
  */
 export const confirmFinalQuality = async function(confirmed, userId, floorSupervisorId, remarks) {
-  if (this.currentFloor !== ProductionFloor.CHECKING && this.currentFloor !== ProductionFloor.FINAL_CHECKING) {
-    throw new Error('Final quality confirmation can only be done in Checking or Final Checking floor');
+  if (this.currentFloor !== ProductionFloor.CHECKING && this.currentFloor !== ProductionFloor.SECONDARY_CHECKING && this.currentFloor !== ProductionFloor.FINAL_CHECKING) {
+    throw new Error('Final quality confirmation can only be done in Checking, Secondary Checking, or Final Checking floor');
   }
   
   const currentFloorKey = this.getFloorKey(this.currentFloor);
@@ -319,8 +319,8 @@ export const updateKnittingM4Quantity = async function(m4Quantity, userId, floor
 export const updateCompletedQuantityWithQuality = async function(updateData, userId, floorSupervisorId, remarks, machineId, shiftId) {
   const { completedQuantity, m1Quantity, m2Quantity, m3Quantity, m4Quantity, repairStatus, repairRemarks } = updateData;
   
-  if (this.currentFloor !== ProductionFloor.CHECKING && this.currentFloor !== ProductionFloor.FINAL_CHECKING) {
-    throw new Error('Quality tracking can only be updated in Checking or Final Checking floor');
+  if (this.currentFloor !== ProductionFloor.CHECKING && this.currentFloor !== ProductionFloor.SECONDARY_CHECKING && this.currentFloor !== ProductionFloor.FINAL_CHECKING) {
+    throw new Error('Quality tracking can only be updated in Checking, Secondary Checking, or Final Checking floor');
   }
   
   const currentFloorKey = this.getFloorKey(this.currentFloor);
@@ -483,8 +483,8 @@ export const updateCompletedQuantityWithQuality = async function(updateData, use
  * Update quality inspection (bulk quality update)
  */
 export const updateQualityInspection = async function(qualityData, userId, floorSupervisorId, remarks, machineId, shiftId) {
-  if (this.currentFloor !== ProductionFloor.CHECKING && this.currentFloor !== ProductionFloor.FINAL_CHECKING) {
-    throw new Error('Quality inspection can only be updated in Checking or Final Checking floor');
+  if (this.currentFloor !== ProductionFloor.CHECKING && this.currentFloor !== ProductionFloor.SECONDARY_CHECKING && this.currentFloor !== ProductionFloor.FINAL_CHECKING) {
+    throw new Error('Quality inspection can only be updated in Checking, Secondary Checking, or Final Checking floor');
   }
   
   const { inspectedQuantity, m1Quantity, m2Quantity, m3Quantity, m4Quantity } = qualityData;

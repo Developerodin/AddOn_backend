@@ -99,8 +99,10 @@ const userSchema = mongoose.Schema(
           'Checking Floor': false,
           'Washing Floor': false,
           'Boarding Floor': false,
-          'Final Checking Floor': false,
+          'Silicon Floor': false,
+          'Secondary Checking Floor': false,
           'Branding Floor': false,
+          'Final Checking Floor': false,
           'Machine Floor': false,
           'Warehouse Floor': false
         },

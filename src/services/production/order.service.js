@@ -390,7 +390,13 @@ export const getOrdersByFloor = async (floor, filter, options) => {
     'FinalChecking': 'Final Checking',
     'finalchecking': 'Final Checking',
     'final-checking': 'Final Checking',
-    'final_checking': 'Final Checking'
+    'final_checking': 'Final Checking',
+    'SecondaryChecking': 'Secondary Checking',
+    'secondarychecking': 'Secondary Checking',
+    'secondary-checking': 'Secondary Checking',
+    'secondary_checking': 'Secondary Checking',
+    'Silicon': 'Silicon',
+    'silicon': 'Silicon'
   };
 
   // Convert floor name if needed

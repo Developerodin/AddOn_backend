@@ -14,8 +14,8 @@ export const updateQualityCategories = async (articleId, qualityData) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Article not found');
   }
 
-  if (article.currentFloor !== 'Checking' && article.currentFloor !== 'Final Checking') {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Article must be on Checking or Final Checking floor');
+  if (article.currentFloor !== 'Checking' && article.currentFloor !== 'Secondary Checking' && article.currentFloor !== 'Final Checking') {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Article must be on Checking, Secondary Checking, or Final Checking floor');
   }
 
   const {

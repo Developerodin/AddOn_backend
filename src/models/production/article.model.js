@@ -129,6 +129,32 @@ const articleSchema = new mongoose.Schema({
       remaining: { type: Number, default: 0 },
       transferred: { type: Number, default: 0 }
     },
+    silicon: {
+      received: { type: Number, default: 0 },
+      completed: { type: Number, default: 0 },
+      remaining: { type: Number, default: 0 },
+      transferred: { type: Number, default: 0 }
+    },
+    secondaryChecking: {
+      received: { type: Number, default: 0 },
+      completed: { type: Number, default: 0 },
+      remaining: { type: Number, default: 0 },
+      transferred: { type: Number, default: 0 },
+      // Quality tracking fields for secondary checking floor
+      m1Quantity: { type: Number, default: 0, min: 0 },
+      m2Quantity: { type: Number, default: 0, min: 0 },
+      m3Quantity: { type: Number, default: 0, min: 0 },
+      m4Quantity: { type: Number, default: 0, min: 0 },
+      // Additive transfer tracking for M1 (like other floors)
+      m1Transferred: { type: Number, default: 0, min: 0 },
+      m1Remaining: { type: Number, default: 0, min: 0 },
+      repairStatus: { 
+        type: String, 
+        enum: Object.values(RepairStatus), 
+        default: RepairStatus.NOT_REQUIRED 
+      },
+      repairRemarks: { type: String, default: '' }
+    },
     finalChecking: {
       received: { type: Number, default: 0 },
       completed: { type: Number, default: 0 },
@@ -207,7 +233,7 @@ articleSchema.virtual('calculatedProgress').get(function() {
   // Calculate total completed across all floors
   const floorOrder = [
     'knitting', 'linking', 'checking', 'washing', 
-    'boarding', 'finalChecking', 'branding', 'warehouse', 'dispatch'
+    'boarding', 'silicon', 'secondaryChecking', 'branding', 'finalChecking', 'warehouse', 'dispatch'
   ];
   
   let totalCompleted = 0;
@@ -236,7 +262,7 @@ articleSchema.virtual('calculatedProgress').get(function() {
     const floorData = this.floorQuantities[floorKey];
     
     if (floorData) {
-      if (floorKey === 'checking' || floorKey === 'finalChecking') {
+      if (floorKey === 'checking' || floorKey === 'secondaryChecking' || floorKey === 'finalChecking') {
         // For checking floors, use M1 quantity (good quality items)
         totalCompleted += floorData.m1Quantity || 0;
       } else {
@@ -272,7 +298,7 @@ articleSchema.pre('save', function(next) {
   this.fixFloorDataCorruption();
   
   // Flow-based validation: Check each floor independently
-  const floors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'finalChecking', 'branding', 'warehouse', 'dispatch'];
+  const floors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'silicon', 'secondaryChecking', 'branding', 'finalChecking', 'warehouse', 'dispatch'];
   
   floors.forEach(floorKey => {
     const floorData = this.floorQuantities[floorKey];
@@ -310,7 +336,7 @@ articleSchema.pre('save', function(next) {
     }
     
     // Quality validation for checking floors
-    if ((floorKey === 'checking' || floorKey === 'finalChecking') && received > 0) {
+    if ((floorKey === 'checking' || floorKey === 'secondaryChecking' || floorKey === 'finalChecking') && received > 0) {
       const m1Quantity = floorData.m1Quantity || 0;
       const m2Quantity = floorData.m2Quantity || 0;
       const m3Quantity = floorData.m3Quantity || 0;
@@ -372,8 +398,10 @@ articleSchema.methods.getFloorKey = function(floor) {
     [ProductionFloor.CHECKING]: 'checking',
     [ProductionFloor.WASHING]: 'washing',
     [ProductionFloor.BOARDING]: 'boarding',
-    [ProductionFloor.FINAL_CHECKING]: 'finalChecking',
+    [ProductionFloor.SILICON]: 'silicon',
+    [ProductionFloor.SECONDARY_CHECKING]: 'secondaryChecking',
     [ProductionFloor.BRANDING]: 'branding',
+    [ProductionFloor.FINAL_CHECKING]: 'finalChecking',
     [ProductionFloor.WAREHOUSE]: 'warehouse',
     [ProductionFloor.DISPATCH]: 'dispatch'
   };
@@ -389,8 +417,10 @@ articleSchema.methods.getFloorOrderByLinkingType = function() {
       ProductionFloor.CHECKING,
       ProductionFloor.WASHING,
       ProductionFloor.BOARDING,
-      ProductionFloor.FINAL_CHECKING,
+      ProductionFloor.SILICON,
+      ProductionFloor.SECONDARY_CHECKING,
       ProductionFloor.BRANDING,
+      ProductionFloor.FINAL_CHECKING,
       ProductionFloor.WAREHOUSE,
       ProductionFloor.DISPATCH
     ];
@@ -402,8 +432,10 @@ articleSchema.methods.getFloorOrderByLinkingType = function() {
       ProductionFloor.CHECKING,
       ProductionFloor.WASHING,
       ProductionFloor.BOARDING,
-      ProductionFloor.FINAL_CHECKING,
+      ProductionFloor.SILICON,
+      ProductionFloor.SECONDARY_CHECKING,
       ProductionFloor.BRANDING,
+      ProductionFloor.FINAL_CHECKING,
       ProductionFloor.WAREHOUSE,
       ProductionFloor.DISPATCH
     ];
@@ -430,7 +462,7 @@ articleSchema.methods.updateCompletedQuantity = async function(floor, newQuantit
       const overproduction = newQuantity - floorData.received;
       console.log(`🎯 KNITTING OVERPRODUCTION: Received ${floorData.received}, Completed ${newQuantity}, Overproduction: ${overproduction}`);
     }
-  } else if (floor === ProductionFloor.CHECKING || floor === ProductionFloor.FINAL_CHECKING) {
+  } else if (floor === ProductionFloor.CHECKING || floor === ProductionFloor.SECONDARY_CHECKING || floor === ProductionFloor.FINAL_CHECKING) {
     // For checking floors, validate against received quantity
     if (newQuantity < 0 || newQuantity > floorData.received) {
       throw new Error(`Invalid quantity: must be between 0 and received quantity (${floorData.received})`);
@@ -545,7 +577,7 @@ articleSchema.methods.transferFromFloor = async function(fromFloor, quantity, us
     }
     // Note: Transfer quantity can exceed received quantity due to overproduction - this is normal
     console.log(`🎯 KNITTING TRANSFER: Transferring ${quantity} units (completed: ${fromFloorData.completed}, received: ${fromFloorData.received})`);
-  } else if (fromFloor === ProductionFloor.CHECKING || fromFloor === ProductionFloor.FINAL_CHECKING) {
+  } else if (fromFloor === ProductionFloor.CHECKING || fromFloor === ProductionFloor.SECONDARY_CHECKING || fromFloor === ProductionFloor.FINAL_CHECKING) {
     // For checking floors, validate against M1 quantity (good quality items)
     const m1Quantity = fromFloorData.m1Quantity || 0;
     const m1Transferred = fromFloorData.m1Transferred || 0;
@@ -593,7 +625,7 @@ articleSchema.methods.transferFromFloor = async function(fromFloor, quantity, us
   const nextFloorData = this.floorQuantities[nextFloorKey];
   
   // Update from floor: mark as transferred (additive for checking floors)
-  if (fromFloor === ProductionFloor.CHECKING || fromFloor === ProductionFloor.FINAL_CHECKING) {
+  if (fromFloor === ProductionFloor.CHECKING || fromFloor === ProductionFloor.SECONDARY_CHECKING || fromFloor === ProductionFloor.FINAL_CHECKING) {
     // For checking floors, update M1 transferred additively
     fromFloorData.m1Transferred = (fromFloorData.m1Transferred || 0) + quantity;
     fromFloorData.m1Remaining = Math.max(0, (fromFloorData.m1Quantity || 0) - fromFloorData.m1Transferred);
@@ -611,7 +643,7 @@ articleSchema.methods.transferFromFloor = async function(fromFloor, quantity, us
     // If completed > received (overproduction), remaining should be 0
     fromFloorData.remaining = Math.max(0, fromFloorData.received - fromFloorData.transferred);
     console.log(`🎯 KNITTING REMAINING: Received ${fromFloorData.received}, Transferred ${fromFloorData.transferred}, Remaining ${fromFloorData.remaining}`);
-  } else if (fromFloor === ProductionFloor.CHECKING || fromFloor === ProductionFloor.FINAL_CHECKING) {
+  } else if (fromFloor === ProductionFloor.CHECKING || fromFloor === ProductionFloor.SECONDARY_CHECKING || fromFloor === ProductionFloor.FINAL_CHECKING) {
     // For checking floors, remaining is based on M1 remaining
     fromFloorData.remaining = fromFloorData.m1Remaining;
   } else {
@@ -621,7 +653,7 @@ articleSchema.methods.transferFromFloor = async function(fromFloor, quantity, us
   
   // For checking and finalChecking floors, ensure completed equals transferred
   // This fixes the issue where items are transferred without being marked as completed
-  if (fromFloor === ProductionFloor.CHECKING || fromFloor === ProductionFloor.FINAL_CHECKING) {
+  if (fromFloor === ProductionFloor.CHECKING || fromFloor === ProductionFloor.SECONDARY_CHECKING || fromFloor === ProductionFloor.FINAL_CHECKING) {
     if (fromFloorData.completed < fromFloorData.transferred) {
       fromFloorData.completed = fromFloorData.transferred;
     }
@@ -653,7 +685,7 @@ articleSchema.methods.transferFromFloor = async function(fromFloor, quantity, us
     let transferRemarks = remarks || `Article ${this.articleNumber}: ${quantity} units transferred from ${fromFloor} to ${nextFloor} (${fromFloorData.remaining} remaining on ${fromFloor})`;
     
     // Add quality information for checking floor transfers
-    if (fromFloor === ProductionFloor.CHECKING || fromFloor === ProductionFloor.FINAL_CHECKING) {
+    if (fromFloor === ProductionFloor.CHECKING || fromFloor === ProductionFloor.SECONDARY_CHECKING || fromFloor === ProductionFloor.FINAL_CHECKING) {
       const m1Quantity = fromFloorData.m1Quantity || 0;
       const m1Transferred = fromFloorData.m1Transferred || 0;
       const m1Remaining = fromFloorData.m1Remaining || 0;
@@ -696,8 +728,8 @@ articleSchema.methods.transferFromFloor = async function(fromFloor, quantity, us
 
 // Method to transfer M1 quantity from checking floors - additive transfers
 articleSchema.methods.transferM1FromFloor = async function(fromFloor, quantity, userId, floorSupervisorId, remarks, batchNumber) {
-  if (fromFloor !== ProductionFloor.CHECKING && fromFloor !== ProductionFloor.FINAL_CHECKING) {
-    throw new Error('M1 transfer is only available for Checking and Final Checking floors');
+  if (fromFloor !== ProductionFloor.CHECKING && fromFloor !== ProductionFloor.SECONDARY_CHECKING && fromFloor !== ProductionFloor.FINAL_CHECKING) {
+    throw new Error('M1 transfer is only available for Checking, Secondary Checking, and Final Checking floors');
   }
   
   const fromFloorKey = this.getFloorKey(fromFloor);
@@ -799,7 +831,7 @@ articleSchema.methods.updateQualityInspection = updateQualityInspection;
 
 // Method to fix completion status for checking floors
 articleSchema.methods.fixCompletionStatus = function() {
-  const floorsToFix = ['checking', 'finalChecking'];
+  const floorsToFix = ['checking', 'secondaryChecking', 'finalChecking'];
   let fixed = false;
   
   floorsToFix.forEach(floorKey => {
@@ -887,7 +919,7 @@ articleSchema.methods.fixCheckingFloorDataConsistency = function() {
 
 // Method to fix floor data corruption automatically
 articleSchema.methods.fixFloorDataCorruption = function() {
-  const floors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'finalChecking', 'branding', 'warehouse', 'dispatch'];
+  const floors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'silicon', 'secondaryChecking', 'branding', 'finalChecking', 'warehouse', 'dispatch'];
   let fixes = [];
   
   // Fix each floor's data consistency
@@ -945,7 +977,7 @@ articleSchema.methods.fixFloorDataCorruption = function() {
     }
     
     // Fix 4: For checking floors, ensure quality quantities don't exceed received
-    if ((floorKey === 'checking' || floorKey === 'finalChecking') && received > 0) {
+    if ((floorKey === 'checking' || floorKey === 'secondaryChecking' || floorKey === 'finalChecking') && received > 0) {
       const m1Quantity = floorData.m1Quantity || 0;
       const m2Quantity = floorData.m2Quantity || 0;
       const m3Quantity = floorData.m3Quantity || 0;
@@ -975,7 +1007,7 @@ articleSchema.methods.fixFloorDataCorruption = function() {
 
 // Method to fix all floor data inconsistencies
 articleSchema.methods.fixAllFloorDataConsistency = function() {
-  const floors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'finalChecking', 'branding', 'warehouse', 'dispatch'];
+  const floors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'silicon', 'secondaryChecking', 'branding', 'finalChecking', 'warehouse', 'dispatch'];
   let allFixes = [];
   let totalFixed = 0;
   

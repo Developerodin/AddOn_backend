@@ -33,8 +33,10 @@ export const DEFAULT_NAVIGATION = {
     'Checking Floor': false,
     'Washing Floor': false,
     'Boarding Floor': false,
-    'Final Checking Floor': false,
+    'Silicon Floor': false,
+    'Secondary Checking Floor': false,
     'Branding Floor': false,
+    'Final Checking Floor': false,
     'Machine Floor': false,
     'Warehouse Floor': false
   },
@@ -98,8 +100,10 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Checking Floor': true,
       'Washing Floor': true,
       'Boarding Floor': true,
-      'Final Checking Floor': true,
+      'Silicon Floor': true,
+      'Secondary Checking Floor': true,
       'Branding Floor': true,
+      'Final Checking Floor': true,
       'Machine Floor': true,
       'Warehouse Floor': true
     },
@@ -158,8 +162,10 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Checking Floor': false,
       'Washing Floor': false,
       'Boarding Floor': false,
-      'Final Checking Floor': false,
+      'Silicon Floor': false,
+      'Secondary Checking Floor': false,
       'Branding Floor': false,
+      'Final Checking Floor': false,
       'Machine Floor': false,
       'Warehouse Floor': false
     },
@@ -281,8 +287,10 @@ export const validateNavigationStructure = (navigation) => {
     'Checking Floor',
     'Washing Floor',
     'Boarding Floor',
-    'Final Checking Floor',
+    'Silicon Floor',
+    'Secondary Checking Floor',
     'Branding Floor',
+    'Final Checking Floor',
     'Machine Floor',
     'Warehouse Floor'
   ];

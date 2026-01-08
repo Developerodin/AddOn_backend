@@ -67,7 +67,7 @@ export const getProductionDashboard = async (filter) => {
   // Get floor statistics
   const floors = [
     'Knitting', 'Linking', 'Checking', 'Washing',
-    'Boarding', 'Branding', 'Final Checking', 'Warehouse'
+    'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse'
   ];
 
   const floorStatistics = await Promise.all(
@@ -145,7 +145,7 @@ export const getEfficiencyReport = async (filter) => {
 
   const floors = floor ? [floor] : [
     'Knitting', 'Linking', 'Checking', 'Washing',
-    'Boarding', 'Branding', 'Final Checking', 'Warehouse'
+    'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse'
   ];
 
   const efficiencyData = await Promise.all(

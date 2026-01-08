@@ -34,8 +34,10 @@ const ProductionFloor = {
   CHECKING: 'Checking',
   WASHING: 'Washing',
   BOARDING: 'Boarding',
-  FINAL_CHECKING: 'Final Checking',
+  SILICON: 'Silicon',
+  SECONDARY_CHECKING: 'Secondary Checking',
   BRANDING: 'Branding',
+  FINAL_CHECKING: 'Final Checking',
   WAREHOUSE: 'Warehouse',
   DISPATCH: 'Dispatch'
 };
@@ -89,6 +91,8 @@ const LogAction = {
   TRANSFERRED_TO_CHECKING: 'Transferred to Checking',
   TRANSFERRED_TO_WASHING: 'Transferred to Washing',
   TRANSFERRED_TO_BOARDING: 'Transferred to Boarding',
+  TRANSFERRED_TO_SILICON: 'Transferred to Silicon',
+  TRANSFERRED_TO_SECONDARY_CHECKING: 'Transferred to Secondary Checking',
   TRANSFERRED_TO_BRANDING: 'Transferred to Branding',
   TRANSFERRED_TO_FINAL_CHECKING: 'Transferred to Final Checking',
   TRANSFERRED_TO_WAREHOUSE: 'Transferred to Warehouse',

@@ -33,7 +33,13 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
     'FinalChecking': 'Final Checking',
     'finalchecking': 'Final Checking',
     'final-checking': 'Final Checking',
-    'final_checking': 'Final Checking'
+    'final_checking': 'Final Checking',
+    'SecondaryChecking': 'Secondary Checking',
+    'secondarychecking': 'Secondary Checking',
+    'secondary-checking': 'Secondary Checking',
+    'secondary_checking': 'Secondary Checking',
+    'Silicon': 'Silicon',
+    'silicon': 'Silicon'
   };
 
   // Convert floor name if needed
@@ -125,7 +131,7 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
   }
 
   // Update floor-specific fields for quality inspection floors
-  if (normalizedFloor === 'Checking' || normalizedFloor === 'Final Checking') {
+  if (normalizedFloor === 'Checking' || normalizedFloor === 'Secondary Checking' || normalizedFloor === 'Final Checking') {
     // Update floor-level quality fields (additive)
     const floorData = article.floorQuantities[floorKey];
     if (floorData) {
@@ -167,7 +173,7 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
   
   // For Checking and Final Checking floors, completion is based on M1 quantity
   let isFloorComplete = false;
-  if (article.currentFloor === 'Checking' || article.currentFloor === 'Final Checking') {
+  if (article.currentFloor === 'Checking' || article.currentFloor === 'Secondary Checking' || article.currentFloor === 'Final Checking') {
     // Floor is complete when all M1 quantity has been transferred
     const totalM1Quantity = currentFloorData.m1Quantity || 0;
     const transferredM1Quantity = currentFloorData.m1Transferred || 0;
@@ -254,7 +260,7 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
   }
   
   // Also check for M1 transfer if on Checking or Final Checking floor
-  if ((normalizedFloor === 'Checking' || normalizedFloor === 'Final Checking') && floorData?.m1Quantity > 0) {
+  if ((normalizedFloor === 'Checking' || normalizedFloor === 'Secondary Checking' || normalizedFloor === 'Final Checking') && floorData?.m1Quantity > 0) {
     const totalM1Quantity = floorData.m1Quantity || 0;
     const transferredM1Quantity = floorData.m1Transferred || 0;
     const remainingM1Quantity = totalM1Quantity - transferredM1Quantity;
@@ -297,8 +303,10 @@ const checkAndTransferPreviousFloorWork = async (article, updateData, user = nul
     'Checking',
     'Washing',
     'Boarding',
-    'Final Checking',
+    'Silicon',
+    'Secondary Checking',
     'Branding',
+    'Final Checking',
     'Warehouse'
   ];
 
@@ -422,7 +430,13 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
     'FinalChecking': 'Final Checking',
     'finalchecking': 'Final Checking',
     'final-checking': 'Final Checking',
-    'final_checking': 'Final Checking'
+    'final_checking': 'Final Checking',
+    'SecondaryChecking': 'Secondary Checking',
+    'secondarychecking': 'Secondary Checking',
+    'secondary-checking': 'Secondary Checking',
+    'secondary_checking': 'Secondary Checking',
+    'Silicon': 'Silicon',
+    'silicon': 'Silicon'
   };
 
   // Convert floor name if needed
@@ -570,7 +584,7 @@ const transferCompletedWorkToNextFloor = async (article, updateData, user = null
   sourceFloorData.transferred = totalCompleted; // Set transferred to total completed
   
   // For checking and finalChecking floors, ensure completed equals transferred
-  if (sourceFloor === 'Checking' || sourceFloor === 'Final Checking') {
+    if (sourceFloor === 'Checking' || sourceFloor === 'Secondary Checking' || sourceFloor === 'Final Checking') {
     if (sourceFloorData.completed < sourceFloorData.transferred) {
       sourceFloorData.completed = sourceFloorData.transferred;
     }
@@ -807,6 +821,7 @@ const getTransferAction = (floor) => {
     'Knitting': 'Transferred to Knitting',
     'Linking': 'Transferred to Linking',
     'Checking': 'Transferred to Checking',
+    'Secondary Checking': 'Transferred to Secondary Checking',
     'Washing': 'Transferred to Washing',
     'Boarding': 'Transferred to Boarding',
     'Branding': 'Transferred to Branding',
@@ -955,7 +970,7 @@ export const qualityInspection = async (articleId, inspectionData, user = null) 
   }
   
   // Validate the target floor
-  if (targetFloor !== 'Checking' && targetFloor !== 'Final Checking') {
+  if (targetFloor !== 'Checking' && targetFloor !== 'Secondary Checking' && targetFloor !== 'Final Checking') {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Target floor must be either "Checking" or "Final Checking"');
   }
 
@@ -1125,7 +1140,7 @@ export const qualityInspection = async (articleId, inspectionData, user = null) 
 
   // Auto-transfer M1 quantity to next floor (when doing quality inspection on Checking or Final Checking floor)
   // FIXED: Calculate the NEW M1 quantity to transfer (current M1 - previously transferred M1)
-  if ((targetFloor === 'Checking' || targetFloor === 'Final Checking') && inspectionData.m1Quantity > 0) {
+  if ((targetFloor === 'Checking' || targetFloor === 'Secondary Checking' || targetFloor === 'Final Checking') && inspectionData.m1Quantity > 0) {
     const currentM1Quantity = targetFloorData.m1Quantity || 0;
     const previouslyTransferredM1 = targetFloorData.m1Transferred || 0;
     const newM1ToTransfer = currentM1Quantity - previouslyTransferredM1;
