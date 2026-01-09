@@ -233,10 +233,10 @@ const transferData = async () => {
     
     // Get database names
     const localDbName = localDb.db.databaseName;
-    const atlasDbName = atlasDb.db.databaseName;
+    const actualAtlasDbName = atlasDb.db.databaseName;
     
     console.log(`\n📊 Local Database: ${localDbName}`);
-    console.log(`📊 Atlas Database: ${atlasDbName}\n`);
+    console.log(`📊 Atlas Database: ${actualAtlasDbName}\n`);
     
     // Get all collections
     const allCollections = await getCollections(localDb.db);
