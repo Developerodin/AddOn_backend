@@ -929,49 +929,73 @@ export const qualityInspection = async (articleId, inspectionData, user = null) 
   let targetFloor = null;
   const finalCheckingData = article.floorQuantities.finalChecking;
   const checkingData = article.floorQuantities.checking;
+  const secondaryCheckingData = article.floorQuantities.secondaryChecking;
   
   // If floor is specified in request, use that floor
   if (inspectionData.floor) {
-    targetFloor = inspectionData.floor;
-    console.log(`🎯 User specified floor: ${targetFloor}`);
+    // Normalize floor name using the same mapping as other endpoints
+    const floorMapping = {
+      'FinalChecking': 'Final Checking',
+      'finalchecking': 'Final Checking',
+      'final-checking': 'Final Checking',
+      'final_checking': 'Final Checking',
+      'SecondaryChecking': 'Secondary Checking',
+      'secondarychecking': 'Secondary Checking',
+      'secondary-checking': 'Secondary Checking',
+      'secondary_checking': 'Secondary Checking',
+      'Silicon': 'Silicon',
+      'silicon': 'Silicon'
+    };
+    targetFloor = floorMapping[inspectionData.floor] || inspectionData.floor;
+    console.log(`🎯 User specified floor: ${targetFloor} (normalized from: ${inspectionData.floor})`);
   }
   // Otherwise, choose the floor with MORE remaining work to inspect
   else {
-    // Choose the floor with more remaining work
-    if (checkingData && checkingData.remaining > 0 && finalCheckingData && finalCheckingData.remaining > 0) {
-      // Both floors have remaining work - choose the one with more remaining
-      if (checkingData.remaining >= finalCheckingData.remaining) {
-        targetFloor = 'Checking';
-      } else {
-        targetFloor = 'Final Checking';
+    // Find all checking floors with remaining work
+    const floorsWithWork = [];
+    if (checkingData && checkingData.remaining > 0) {
+      floorsWithWork.push({ floor: 'Checking', remaining: checkingData.remaining });
+    }
+    if (secondaryCheckingData && secondaryCheckingData.remaining > 0) {
+      floorsWithWork.push({ floor: 'Secondary Checking', remaining: secondaryCheckingData.remaining });
+    }
+    if (finalCheckingData && finalCheckingData.remaining > 0) {
+      floorsWithWork.push({ floor: 'Final Checking', remaining: finalCheckingData.remaining });
+    }
+    
+    if (floorsWithWork.length > 0) {
+      // Choose the floor with the most remaining work
+      floorsWithWork.sort((a, b) => b.remaining - a.remaining);
+      targetFloor = floorsWithWork[0].floor;
+    }
+    // If no remaining work, but there's received work, choose the floor with more received
+    else if ((checkingData && checkingData.received > 0) || 
+             (secondaryCheckingData && secondaryCheckingData.received > 0) ||
+             (finalCheckingData && finalCheckingData.received > 0)) {
+      const floorsWithReceived = [];
+      if (checkingData && checkingData.received > 0) {
+        floorsWithReceived.push({ floor: 'Checking', received: checkingData.received });
       }
-    }
-    // If only Checking has remaining work
-    else if (checkingData && checkingData.remaining > 0) {
-      targetFloor = 'Checking';
-    }
-    // If only Final Checking has remaining work
-    else if (finalCheckingData && finalCheckingData.remaining > 0) {
-      targetFloor = 'Final Checking';
-    }
-    // If no remaining work, but there's received work, choose the floor with more remaining
-    else if (finalCheckingData && checkingData && 
-             (finalCheckingData.received > 0 || checkingData.received > 0)) {
-      // Choose the floor with more remaining work
-      if (checkingData.remaining >= finalCheckingData.remaining) {
-        targetFloor = 'Checking';
-      } else {
-        targetFloor = 'Final Checking';
+      if (secondaryCheckingData && secondaryCheckingData.received > 0) {
+        floorsWithReceived.push({ floor: 'Secondary Checking', received: secondaryCheckingData.received });
+      }
+      if (finalCheckingData && finalCheckingData.received > 0) {
+        floorsWithReceived.push({ floor: 'Final Checking', received: finalCheckingData.received });
+      }
+      
+      if (floorsWithReceived.length > 0) {
+        floorsWithReceived.sort((a, b) => b.received - a.received);
+        targetFloor = floorsWithReceived[0].floor;
       }
     }
     else {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'No quality inspection work available on Checking or Final Checking floors');
+      throw new ApiError(httpStatus.BAD_REQUEST, 'No quality inspection work available on Checking, Secondary Checking, or Final Checking floors');
     }
   }
   
   // Validate the target floor
   if (targetFloor !== 'Checking' && targetFloor !== 'Secondary Checking' && targetFloor !== 'Final Checking') {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Target floor must be either "Checking" or "Final Checking"');
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Target floor must be either "Checking", "Secondary Checking", or "Final Checking"');
   }
 
   const previousProgress = article.progress;
@@ -979,6 +1003,7 @@ export const qualityInspection = async (articleId, inspectionData, user = null) 
   // Debug: Log which floor was selected and why
   console.log(`🔍 Quality Inspection: Selected ${targetFloor} floor`);
   console.log(`   Checking: received=${checkingData?.received || 0}, completed=${checkingData?.completed || 0}, remaining=${checkingData?.remaining || 0}`);
+  console.log(`   Secondary Checking: received=${secondaryCheckingData?.received || 0}, completed=${secondaryCheckingData?.completed || 0}, remaining=${secondaryCheckingData?.remaining || 0}`);
   console.log(`   Final Checking: received=${finalCheckingData?.received || 0}, completed=${finalCheckingData?.completed || 0}, remaining=${finalCheckingData?.remaining || 0}`);
   
   // Get previous quantities from the target floor
