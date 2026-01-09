@@ -9,7 +9,7 @@
  * Usage:
  * 1. Set LOCAL_MONGODB_URL in .env or pass as environment variable
  * 2. Set ATLAS_MONGODB_URL in .env or pass as environment variable
- * 3. Run: node transfer-local-to-atlas.js
+ * 3. Run from project root: node src/scripts/transfer-local-to-atlas.js
  * 
  * Options:
  * - --dry-run: Preview what would be transferred without actually transferring
@@ -21,6 +21,13 @@
  * - LOCAL_MONGODB_URL: Local MongoDB connection string
  * - ATLAS_MONGODB_URL: Atlas MongoDB connection string (will use Addonbackupdatabase as database name)
  * - ATLAS_DB_NAME: Atlas database name (default: Addonbackupdatabase)
+ * # Local → Atlas
+node src/scripts/transfer-local-to-atlas.js --dry-run
+node src/scripts/transfer-local-to-atlas.js
+
+# Atlas → Local
+node src/scripts/transfer-atlas-to-local.js --dry-run
+node src/scripts/transfer-atlas-to-local.js
  */
 
 import mongoose from 'mongoose';
