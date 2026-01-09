@@ -1,20 +1,20 @@
 /**
- * Data Transfer Script: Local MongoDB to MongoDB Atlas
+ * Data Transfer Script: MongoDB Atlas to Local MongoDB
  * 
- * This script transfers all data from your local MongoDB database to MongoDB Atlas.
+ * This script transfers all data from MongoDB Atlas to your local MongoDB database.
  * 
  * IMPORTANT: This script PRESERVES _id fields, so documents will have the SAME IDs
- * in both local and Atlas databases. This ensures relationships and references are maintained.
+ * in both Atlas and local databases. This ensures relationships and references are maintained.
  * 
  * Usage:
- * 1. Set LOCAL_MONGODB_URL in .env or pass as environment variable
- * 2. Set ATLAS_MONGODB_URL in .env or pass as environment variable
- * 3. Run: node transfer-local-to-atlas.js
+ * 1. Set ATLAS_MONGODB_URL in .env or pass as environment variable
+ * 2. Set LOCAL_MONGODB_URL in .env or pass as environment variable
+ * 3. Run: node transfer-atlas-to-local.js
  * 
  * Options:
  * - --dry-run: Preview what would be transferred without actually transferring
  * - --collections: Comma-separated list of collections to transfer (default: all)
- * - --drop: Drop existing collections in Atlas before transferring (USE WITH CAUTION)
+ * - --drop: Drop existing collections in local before transferring (USE WITH CAUTION)
  * - --atlas-db: Atlas database name (default: Addonbackupdatabase)
  * 
  * Environment Variables:
@@ -30,8 +30,8 @@ import path from 'path';
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 // Get database URLs from environment or use defaults
-const LOCAL_MONGODB_URL = process.env.LOCAL_MONGODB_URL || 'mongodb://127.0.0.1:27017/addon';
 let ATLAS_MONGODB_URL = process.env.ATLAS_MONGODB_URL || process.env.MONGODB_URL;
+const LOCAL_MONGODB_URL = process.env.LOCAL_MONGODB_URL || 'mongodb://127.0.0.1:27017/addon';
 
 // Parse command line arguments for database name override
 const args = process.argv.slice(2);
@@ -44,7 +44,7 @@ if (ATLAS_MONGODB_URL) {
   ATLAS_MONGODB_URL = ATLAS_MONGODB_URL.replace(/\/[^/?]+(\?|$)/, `/${atlasDbName}$1`);
 }
 
-// Parse command line arguments (dbNameArg already parsed above)
+// Parse other command line arguments
 const isDryRun = args.includes('--dry-run');
 const dropCollections = args.includes('--drop');
 const collectionsArg = args.find(arg => arg.startsWith('--collections='));
@@ -62,22 +62,8 @@ const mongooseOptions = {
   useUnifiedTopology: true,
 };
 
-let localConnection = null;
 let atlasConnection = null;
-
-/**
- * Connect to local MongoDB
- */
-const connectLocal = async () => {
-  try {
-    localConnection = await mongoose.createConnection(LOCAL_MONGODB_URL, mongooseOptions);
-    console.log('✅ Connected to Local MongoDB');
-    return localConnection;
-  } catch (error) {
-    console.error('❌ Failed to connect to Local MongoDB:', error.message);
-    throw error;
-  }
-};
+let localConnection = null;
 
 /**
  * Connect to Atlas MongoDB
@@ -89,6 +75,20 @@ const connectAtlas = async () => {
     return atlasConnection;
   } catch (error) {
     console.error('❌ Failed to connect to MongoDB Atlas:', error.message);
+    throw error;
+  }
+};
+
+/**
+ * Connect to local MongoDB
+ */
+const connectLocal = async () => {
+  try {
+    localConnection = await mongoose.createConnection(LOCAL_MONGODB_URL, mongooseOptions);
+    console.log('✅ Connected to Local MongoDB');
+    return localConnection;
+  } catch (error) {
+    console.error('❌ Failed to connect to Local MongoDB:', error.message);
     throw error;
   }
 };
@@ -116,15 +116,15 @@ const getCollectionCount = async (db, collectionName) => {
 /**
  * Transfer a single collection
  */
-const transferCollection = async (localDb, atlasDb, collectionName, options = {}) => {
+const transferCollection = async (atlasDb, localDb, collectionName, options = {}) => {
   const { dryRun = false, drop = false } = options;
   
   try {
-    const localCollection = localDb.collection(collectionName);
     const atlasCollection = atlasDb.collection(collectionName);
+    const localCollection = localDb.collection(collectionName);
     
     // Get document count
-    const count = await getCollectionCount(localDb, collectionName);
+    const count = await getCollectionCount(atlasDb, collectionName);
     
     if (count === 0) {
       console.log(`   ⏭️  ${collectionName}: Empty collection, skipping`);
@@ -138,11 +138,11 @@ const transferCollection = async (localDb, atlasDb, collectionName, options = {}
       return { transferred: count, skipped: false };
     }
     
-    // Drop collection in Atlas if requested
+    // Drop collection in local if requested
     if (drop) {
       try {
-        await atlasCollection.drop();
-        console.log(`      🗑️  Dropped existing collection in Atlas`);
+        await localCollection.drop();
+        console.log(`      🗑️  Dropped existing collection in local database`);
       } catch (error) {
         // Collection might not exist, that's okay
         if (error.codeName !== 'NamespaceNotFound') {
@@ -151,14 +151,14 @@ const transferCollection = async (localDb, atlasDb, collectionName, options = {}
       }
     }
     
-    // Get all documents from local
-    const documents = await localCollection.find({}).toArray();
+    // Get all documents from Atlas
+    const documents = await atlasCollection.find({}).toArray();
     
     if (documents.length === 0) {
       return { transferred: 0, skipped: true };
     }
     
-    // Insert documents into Atlas in batches
+    // Insert documents into local in batches
     // IMPORTANT: Preserving _id fields so documents have same IDs in both databases
     const batchSize = 1000;
     let transferred = 0;
@@ -170,7 +170,7 @@ const transferCollection = async (localDb, atlasDb, collectionName, options = {}
       // This ensures relationships and references are maintained
       
       try {
-        await atlasCollection.insertMany(batch, { 
+        await localCollection.insertMany(batch, { 
           ordered: false,  // Continue on duplicate key errors
           writeConcern: { w: 1 }  // Don't wait for all replicas
         });
@@ -183,7 +183,7 @@ const transferCollection = async (localDb, atlasDb, collectionName, options = {}
           // Try inserting one by one to skip duplicates
           for (const doc of batch) {
             try {
-              await atlasCollection.insertOne(doc);
+              await localCollection.insertOne(doc);
               transferred++;
               process.stdout.write(`      📤 Transferred ${transferred}/${documents.length} documents...\r`);
             } catch (e) {
@@ -214,32 +214,32 @@ const transferCollection = async (localDb, atlasDb, collectionName, options = {}
  */
 const transferData = async () => {
   try {
-    console.log('🚀 Starting data transfer from Local MongoDB to Atlas...\n');
-    console.log(`📡 Local: ${LOCAL_MONGODB_URL}`);
+    console.log('🚀 Starting data transfer from MongoDB Atlas to Local...\n');
     console.log(`☁️  Atlas: ${ATLAS_MONGODB_URL.replace(/\/\/([^:]+):([^@]+)@/, '//***:***@')}`);
-    console.log(`📊 Target Database: ${atlasDbName}\n`);
+    console.log(`📊 Source Database: ${atlasDbName}`);
+    console.log(`📡 Local: ${LOCAL_MONGODB_URL}\n`);
     
     if (isDryRun) {
       console.log('⚠️  DRY RUN MODE: No data will be transferred\n');
     }
     
     if (dropCollections) {
-      console.log('⚠️  WARNING: Existing collections in Atlas will be DROPPED before transfer!\n');
+      console.log('⚠️  WARNING: Existing collections in local database will be DROPPED before transfer!\n');
     }
     
     // Connect to both databases
-    const localDb = await connectLocal();
     const atlasDb = await connectAtlas();
+    const localDb = await connectLocal();
     
     // Get database names
-    const localDbName = localDb.db.databaseName;
     const atlasDbName = atlasDb.db.databaseName;
+    const localDbName = localDb.db.databaseName;
     
-    console.log(`\n📊 Local Database: ${localDbName}`);
-    console.log(`📊 Atlas Database: ${atlasDbName}\n`);
+    console.log(`\n📊 Atlas Database: ${atlasDbName}`);
+    console.log(`📊 Local Database: ${localDbName}\n`);
     
     // Get all collections
-    const allCollections = await getCollections(localDb.db);
+    const allCollections = await getCollections(atlasDb.db);
     const collections = collectionsToTransfer 
       ? allCollections.filter(col => collectionsToTransfer.includes(col))
       : allCollections;
@@ -253,7 +253,7 @@ const transferData = async () => {
     
     // Show collection info
     for (const collectionName of collections) {
-      const count = await getCollectionCount(localDb.db, collectionName);
+      const count = await getCollectionCount(atlasDb.db, collectionName);
       console.log(`   • ${collectionName}: ${count} documents`);
     }
     
@@ -273,8 +273,8 @@ const transferData = async () => {
       try {
         console.log(`\n📦 Transferring: ${collectionName}`);
         const result = await transferCollection(
-          localDb.db,
           atlasDb.db,
+          localDb.db,
           collectionName,
           { dryRun: isDryRun, drop: dropCollections }
         );
@@ -312,13 +312,13 @@ const transferData = async () => {
     throw error;
   } finally {
     // Close connections
-    if (localConnection) {
-      await localConnection.close();
-      console.log('\n👋 Disconnected from Local MongoDB');
-    }
     if (atlasConnection) {
       await atlasConnection.close();
-      console.log('👋 Disconnected from MongoDB Atlas');
+      console.log('\n👋 Disconnected from MongoDB Atlas');
+    }
+    if (localConnection) {
+      await localConnection.close();
+      console.log('👋 Disconnected from Local MongoDB');
     }
   }
 };
