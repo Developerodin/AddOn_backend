@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  addon-backend:
+    image: ${DOCKER_USERNAME:-your-username}/addon-backend:${VERSION:-latest}
+    container_name: addon-backend
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=3000
+    networks:
+      - addon-network
+    volumes:
+      # Optional: Mount logs directory if you want persistent logs
+      - ./logs:/app/logs
+    # Allow container to access host machine services (for MongoDB on host)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  addon-network:
+    driver: bridge

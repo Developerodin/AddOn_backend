@@ -21,6 +21,11 @@ mongoose.connect(config.mongoose.url, config.mongoose.options).then(async () => 
   server = app.listen(config.port, () => {
     logger.info(`Listening to port ${config.port}`);
   });
+}).catch((error) => {
+  logger.error('MongoDB connection error:', error);
+  logger.error('MongoDB URL:', config.mongoose.url);
+  logger.error('Please check your MONGODB_URL environment variable');
+  process.exit(1);
 });
 
 const exitHandler = () => {

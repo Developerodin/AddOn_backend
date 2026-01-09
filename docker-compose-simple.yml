@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  addon-backend:
+    image: ${DOCKER_USERNAME:-your-username}/addon-backend:${VERSION:-latest}
+    container_name: addon-backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    # If .env file is in a different location, use absolute path:
+    # env_file:
+    #   - C:/docker-projects/addon-backend/.env
