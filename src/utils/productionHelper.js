@@ -129,3 +129,164 @@ export const compareFloors = (floor1, floor2) => {
   const index2 = getFloorIndex(floor2);
   return index1 - index2;
 };
+
+/**
+ * Map process name/type to ProductionFloor enum value
+ * Case-insensitive matching with various name formats
+ * @param {string} processName - Process name or type from Process model
+ * @returns {string|null} ProductionFloor enum value or null if no match
+ */
+export const mapProcessToFloor = (processName) => {
+  if (!processName || typeof processName !== 'string') {
+    return null;
+  }
+
+  const normalizedName = processName.trim().toLowerCase();
+  
+  // Map process names to ProductionFloor enum values
+  const processToFloorMap = {
+    // Direct matches
+    'knitting': ProductionFloor.KNITTING,
+    'linking': ProductionFloor.LINKING,
+    'checking': ProductionFloor.CHECKING,
+    'washing': ProductionFloor.WASHING,
+    'boarding': ProductionFloor.BOARDING,
+    'silicon': ProductionFloor.SILICON,
+    'secondary checking': ProductionFloor.SECONDARY_CHECKING,
+    'secondarychecking': ProductionFloor.SECONDARY_CHECKING,
+    'branding': ProductionFloor.BRANDING,
+    'final checking': ProductionFloor.FINAL_CHECKING,
+    'finalchecking': ProductionFloor.FINAL_CHECKING,
+    'warehouse': ProductionFloor.WAREHOUSE,
+    'dispatch': ProductionFloor.DISPATCH,
+    
+    // Alternative names/variations
+    'knit': ProductionFloor.KNITTING,
+    'link': ProductionFloor.LINKING,
+    'check': ProductionFloor.CHECKING,
+    'wash': ProductionFloor.WASHING,
+    'board': ProductionFloor.BOARDING,
+    'silicone': ProductionFloor.SILICON,
+    'secondary check': ProductionFloor.SECONDARY_CHECKING,
+    'brand': ProductionFloor.BRANDING,
+    'final check': ProductionFloor.FINAL_CHECKING,
+    'warehouse': ProductionFloor.WAREHOUSE,
+    'dispatch': ProductionFloor.DISPATCH
+  };
+
+  // Direct match
+  if (processToFloorMap[normalizedName]) {
+    return processToFloorMap[normalizedName];
+  }
+
+  // Partial match (contains floor name)
+  for (const [key, floor] of Object.entries(processToFloorMap)) {
+    if (normalizedName.includes(key) || key.includes(normalizedName)) {
+      return floor;
+    }
+  }
+
+  // Try matching against ProductionFloor enum values directly
+  const allFloors = Object.values(ProductionFloor);
+  for (const floor of allFloors) {
+    if (normalizedName === floor.toLowerCase() || 
+        normalizedName.includes(floor.toLowerCase()) ||
+        floor.toLowerCase().includes(normalizedName)) {
+      return floor;
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Get available floor keys from article model
+ * @returns {Array<string>} Array of floor keys available in article floorQuantities
+ */
+export const getAvailableArticleFloors = () => {
+  return [
+    'knitting',
+    'linking',
+    'checking',
+    'washing',
+    'boarding',
+    'silicon',
+    'secondaryChecking',
+    'finalChecking',
+    'branding',
+    'warehouse',
+    'dispatch'
+  ];
+};
+
+/**
+ * Get available ProductionFloor enum values
+ * @returns {Array<string>} Array of ProductionFloor enum values
+ */
+export const getAvailableProductionFloors = () => {
+  return Object.values(ProductionFloor);
+};
+
+/**
+ * Validate product processes against available article floors
+ * @param {Array} processes - Array of Process documents or process objects
+ * @param {string} articleNumber - Article number (for error messages)
+ * @returns {Object} { valid: boolean, errors: Array<string>, mappedFloors: Array<string> }
+ */
+export const validateProductProcesses = (processes, articleNumber) => {
+  const errors = [];
+  const mappedFloors = [];
+  const availableFloors = getAvailableProductionFloors();
+
+  if (!processes || !Array.isArray(processes) || processes.length === 0) {
+    return {
+      valid: false,
+      errors: [`Article ${articleNumber}: Product has no processes defined`],
+      mappedFloors: []
+    };
+  }
+
+  for (const processItem of processes) {
+    // Handle both populated and unpopulated process references
+    const process = processItem.processId || processItem;
+    
+    // Get process name (try name first, then type)
+    const processName = process.name || process.type || process.stepTitle || '';
+    
+    if (!processName) {
+      errors.push(`Article ${articleNumber}: Process has no name or type defined`);
+      continue;
+    }
+
+    // Map process to floor
+    const floor = mapProcessToFloor(processName);
+    
+    if (!floor) {
+      errors.push(
+        `Article ${articleNumber}: Process "${processName}" does not match any available floor. ` +
+        `Available floors: ${availableFloors.join(', ')}`
+      );
+      continue;
+    }
+
+    // Check if floor is available in article floorQuantities
+    const floorKey = getFloorKey(floor);
+    const availableFloorKeys = getAvailableArticleFloors();
+    
+    if (!availableFloorKeys.includes(floorKey)) {
+      errors.push(
+        `Article ${articleNumber}: Floor "${floor}" (from process "${processName}") is not available in article floor data. ` +
+        `Available floors: ${availableFloors.join(', ')}`
+      );
+      continue;
+    }
+
+    mappedFloors.push(floor);
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    mappedFloors
+  };
+};

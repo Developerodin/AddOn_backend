@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import { OrderStatus, Priority, LinkingType, ProductionFloor, RepairStatus } from './enums.js';
 import ArticleLog from './articleLog.model.js';
+import Product from '../product.model.js';
+import { validateProductProcesses, mapProcessToFloor, getFloorKey } from '../../utils/productionHelper.js';
 import { 
   updateQualityCategories, 
   shiftM2Items, 
@@ -9,6 +11,24 @@ import {
   updateKnittingM4Quantity,
   updateQualityInspection
 } from './qualityMethods.js';
+
+// Helper function to get floor from key (for pre-save validation)
+function getFloorFromKey(floorKey) {
+  const keyToFloorMap = {
+    'knitting': ProductionFloor.KNITTING,
+    'linking': ProductionFloor.LINKING,
+    'checking': ProductionFloor.CHECKING,
+    'washing': ProductionFloor.WASHING,
+    'boarding': ProductionFloor.BOARDING,
+    'silicon': ProductionFloor.SILICON,
+    'secondaryChecking': ProductionFloor.SECONDARY_CHECKING,
+    'branding': ProductionFloor.BRANDING,
+    'finalChecking': ProductionFloor.FINAL_CHECKING,
+    'warehouse': ProductionFloor.WAREHOUSE,
+    'dispatch': ProductionFloor.DISPATCH
+  };
+  return keyToFloorMap[floorKey] || floorKey;
+}
 
 /**
  * Article Model
@@ -284,6 +304,42 @@ articleSchema.virtual('qualityTotal').get(function() {
   return 0;
 });
 
+// Pre-save middleware to validate product processes against available article floors
+articleSchema.pre('save', async function(next) {
+  // Only validate for new articles or when articleNumber changes
+  if (this.isNew || this.isModified('articleNumber')) {
+    if (!this.articleNumber) {
+      return next(new Error('Article number (factoryCode) is required'));
+    }
+
+    try {
+      // Find product by factoryCode (articleNumber = factoryCode)
+      const product = await Product.findOne({ factoryCode: this.articleNumber })
+        .populate('processes.processId');
+
+      if (!product) {
+        return next(new Error(
+          `Product not found with factoryCode "${this.articleNumber}". ` +
+          `Please ensure the product exists with matching factoryCode.`
+        ));
+      }
+
+      // Validate product processes against available article floors
+      const validation = validateProductProcesses(product.processes, this.articleNumber);
+      
+      if (!validation.valid) {
+        return next(new Error(
+          `Process validation failed for article ${this.articleNumber}:\n${validation.errors.join('\n')}`
+        ));
+      }
+    } catch (error) {
+      return next(error);
+    }
+  }
+  
+  next();
+});
+
 // Pre-save middleware to update progress
 articleSchema.pre('save', function(next) {
   if (this.isModified('floorQuantities') || this.isModified('plannedQuantity')) {
@@ -293,9 +349,70 @@ articleSchema.pre('save', function(next) {
 });
 
 // Pre-save middleware to validate and fix floor data corruption - flow-based system
-articleSchema.pre('save', function(next) {
+articleSchema.pre('save', async function(next) {
   // Auto-fix corrupted floor data
   this.fixFloorDataCorruption();
+  
+  // Validate that floors with work are in the product's process flow
+  if (this.articleNumber && this.isModified('floorQuantities')) {
+    try {
+      const Product = mongoose.model('Product');
+      const product = await Product.findOne({ factoryCode: this.articleNumber })
+        .populate('processes.processId');
+
+      if (product && product.processes && product.processes.length > 0) {
+        // Get expected floors from product
+        let expectedFloors;
+        try {
+          expectedFloors = await this.getFloorOrder();
+        } catch (error) {
+          // If can't get floor order, skip validation (will use fallback)
+          return next();
+        }
+
+        // Check each floor and clear invalid ones
+        const allFloors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'silicon', 'secondaryChecking', 'branding', 'finalChecking', 'warehouse', 'dispatch'];
+        const floorQuantities = this.floorQuantities || {};
+        let clearedAny = false;
+
+        for (const floorKey of allFloors) {
+          const floorData = floorQuantities[floorKey];
+          if (floorData && (floorData.received > 0 || floorData.completed > 0 || floorData.transferred > 0)) {
+            const floorEnum = getFloorFromKey(floorKey);
+            
+            if (!expectedFloors.includes(floorEnum)) {
+              // Clear invalid floor data
+              console.warn(`🚨 Article ${this.articleNumber}: Clearing invalid floor "${floorEnum}" (not in product process flow)`);
+              floorData.received = 0;
+              floorData.completed = 0;
+              floorData.transferred = 0;
+              floorData.remaining = 0;
+              
+              if (floorKey === 'checking' || floorKey === 'secondaryChecking' || floorKey === 'finalChecking') {
+                floorData.m1Quantity = 0;
+                floorData.m2Quantity = 0;
+                floorData.m3Quantity = 0;
+                floorData.m4Quantity = 0;
+                floorData.m1Transferred = 0;
+                floorData.m1Remaining = 0;
+              }
+              
+              clearedAny = true;
+            }
+          }
+        }
+
+        if (clearedAny) {
+          this.floorQuantities = floorQuantities;
+          // Recalculate progress
+          this.progress = this.calculatedProgress;
+        }
+      }
+    } catch (error) {
+      // If validation fails, log but don't block save (fallback to linking type)
+      console.warn(`Warning: Could not validate floors for article ${this.articleNumber}: ${error.message}`);
+    }
+  }
   
   // Flow-based validation: Check each floor independently
   const floors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'silicon', 'secondaryChecking', 'branding', 'finalChecking', 'warehouse', 'dispatch'];
@@ -408,7 +525,60 @@ articleSchema.methods.getFloorKey = function(floor) {
   return floorMap[floor];
 };
 
-// Helper method to get floor order based on linking type
+// Helper method to get floor order from product processes
+articleSchema.methods.getFloorOrderFromProduct = async function() {
+  if (!this.articleNumber) {
+    throw new Error('Article number (factoryCode) is required to get product process flow');
+  }
+
+  // Find product by factoryCode (articleNumber = factoryCode)
+  const Product = mongoose.model('Product');
+  const product = await Product.findOne({ factoryCode: this.articleNumber })
+    .populate('processes.processId');
+
+  if (!product) {
+    throw new Error(`Product not found with factoryCode "${this.articleNumber}"`);
+  }
+
+  if (!product.processes || product.processes.length === 0) {
+    throw new Error(`Product "${this.articleNumber}" has no processes defined`);
+  }
+
+  // Map processes to floors using the validation utility
+  const floorOrder = [];
+
+  for (const processItem of product.processes) {
+    const process = processItem.processId || processItem;
+    const processName = process.name || process.type || '';
+    
+    if (processName) {
+      const floor = mapProcessToFloor(processName);
+      if (floor && !floorOrder.includes(floor)) {
+        floorOrder.push(floor);
+      }
+    }
+  }
+
+  if (floorOrder.length === 0) {
+    throw new Error(`No valid floors found in product processes for "${this.articleNumber}"`);
+  }
+
+  return floorOrder;
+};
+
+// Helper method to get floor order - uses product processes if available, falls back to linking type
+articleSchema.methods.getFloorOrder = async function() {
+  try {
+    // Try to get floor order from product processes
+    return await this.getFloorOrderFromProduct();
+  } catch (error) {
+    // Fallback to linking type if product not found or processes not available
+    console.warn(`Using fallback floor order for article ${this.articleNumber}: ${error.message}`);
+    return this.getFloorOrderByLinkingType();
+  }
+};
+
+// Helper method to get floor order based on linking type (fallback method)
 articleSchema.methods.getFloorOrderByLinkingType = function() {
   if (this.linkingType === LinkingType.AUTO_LINKING) {
     // Auto Linking: Skip linking floor
@@ -444,6 +614,15 @@ articleSchema.methods.getFloorOrderByLinkingType = function() {
 
 // Method to update completed quantity for any floor with overproduction support
 articleSchema.methods.updateCompletedQuantity = async function(floor, newQuantity, userId, floorSupervisorId, remarks, machineId, shiftId) {
+  // Validate that the floor is in the product's process flow
+  const floorOrder = await this.getFloorOrder();
+  if (!floorOrder.includes(floor)) {
+    throw new Error(
+      `Floor "${floor}" is not in the product's process flow for article ${this.articleNumber}. ` +
+      `Expected flow: ${floorOrder.join(' → ')}`
+    );
+  }
+  
   const floorKey = this.getFloorKey(floor);
   const floorData = this.floorQuantities[floorKey];
   
@@ -554,8 +733,8 @@ articleSchema.methods.initializeWithPlannedQuantity = function() {
 
 // Method to transfer from any floor to next floor - flow-based system
 articleSchema.methods.transferFromFloor = async function(fromFloor, quantity, userId, floorSupervisorId, remarks, batchNumber) {
-  // Get floor order based on linking type
-  const floorOrder = this.getFloorOrderByLinkingType();
+  // Get floor order from product processes (or fallback to linking type)
+  const floorOrder = await this.getFloorOrder();
   
   const fromFloorIndex = floorOrder.indexOf(fromFloor);
   if (fromFloorIndex === -1 || fromFloorIndex === floorOrder.length - 1) {
@@ -753,8 +932,8 @@ articleSchema.methods.transferM1FromFloor = async function(fromFloor, quantity, 
     quantity = m1Remaining;
   }
   
-  // Get floor order based on linking type
-  const floorOrder = this.getFloorOrderByLinkingType();
+  // Get floor order from product processes (or fallback to linking type)
+  const floorOrder = await this.getFloorOrder();
   const fromFloorIndex = floorOrder.indexOf(fromFloor);
   
   if (fromFloorIndex === -1 || fromFloorIndex === floorOrder.length - 1) {
@@ -1096,8 +1275,8 @@ articleSchema.methods.fixAllFloorDataConsistency = function() {
 };
 
 // Method to get the current active floor based on work progress - flow-based system
-articleSchema.methods.getCurrentActiveFloor = function() {
-  const floorOrder = this.getFloorOrderByLinkingType();
+articleSchema.methods.getCurrentActiveFloor = async function() {
+  const floorOrder = await this.getFloorOrder();
   
   // Find the last floor that has work in progress (completed > 0)
   for (let i = floorOrder.length - 1; i >= 0; i--) {
@@ -1110,8 +1289,8 @@ articleSchema.methods.getCurrentActiveFloor = function() {
     }
   }
   
-  // If no work completed, return knitting floor
-  return ProductionFloor.KNITTING;
+  // If no work completed, return first floor in process flow
+  return floorOrder[0] || ProductionFloor.KNITTING;
 };
 
 // Emergency method to fix transferred quantity corruption

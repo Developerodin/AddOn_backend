@@ -45,16 +45,35 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
   // Convert floor name if needed
   const normalizedFloor = floorMapping[floor] || floor;
 
-  // Validate floor-specific operations - allow updates on current floor or previous floors
-  // Use linking-type-aware floor order for validation
-  const floorOrder = getFloorOrderByLinkingType(article.linkingType);
+  // Validate floor-specific operations - use article's product process flow
+  let floorOrder;
+  try {
+    floorOrder = await article.getFloorOrder();
+  } catch (error) {
+    // Fallback to linking type if product not found
+    console.warn(`Using fallback floor order for article ${article.articleNumber}: ${error.message}`);
+    floorOrder = getFloorOrderByLinkingType(article.linkingType);
+  }
   
-  const currentFloorIndex = floorOrder.indexOf(article.currentFloor);
   const requestedFloorIndex = floorOrder.indexOf(normalizedFloor);
   
   if (requestedFloorIndex === -1) {
-    throw new ApiError(httpStatus.BAD_REQUEST, `Invalid floor: ${floor} for linking type: ${article.linkingType}`);
+    throw new ApiError(
+      httpStatus.BAD_REQUEST, 
+      `Invalid floor: "${normalizedFloor}" is not in the product's process flow for article ${article.articleNumber}. ` +
+      `Expected flow: ${floorOrder.join(' → ')}`
+    );
   }
+  
+  // Get current active floor from article
+  let currentFloor;
+  try {
+    currentFloor = await article.getCurrentActiveFloor();
+  } catch (error) {
+    currentFloor = article.currentFloor || floorOrder[0];
+  }
+  
+  const currentFloorIndex = floorOrder.indexOf(currentFloor);
   
   // Allow updates to any floor that has work to do in continuous flow
   // Only prevent updates to floors that are too far ahead of the current floor
@@ -376,7 +395,7 @@ const transferFromPreviousFloor = async (article, fromFloor, quantity, updateDat
   }
   
   // Update next floor: mark as received (FIXED: transfer to the next floor, not current floor)
-  const nextFloor = getNextFloor(fromFloor, article.linkingType);
+  const nextFloor = await getNextFloor(article, fromFloor);
   if (!nextFloor) {
     console.log(`No next floor available after ${fromFloor}`);
     return;
@@ -451,7 +470,19 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
     throw new ApiError(httpStatus.BAD_REQUEST, `No completed work on ${normalizedFloor} floor to transfer`);
   }
 
-  const nextFloor = getNextFloor(normalizedFloor, article.linkingType);
+  // Validate that the floor is in the article's product process flow
+  const floorOrder = await article.getFloorOrder();
+  const floorIndex = floorOrder.indexOf(normalizedFloor);
+  
+  if (floorIndex === -1) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST, 
+      `Floor "${normalizedFloor}" is not in the product's process flow for article ${article.articleNumber}. ` +
+      `Expected flow: ${floorOrder.join(' → ')}`
+    );
+  }
+  
+  const nextFloor = floorOrder[floorIndex + 1];
   if (!nextFloor) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'No next floor available');
   }
@@ -557,7 +588,7 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
  */
 const transferCompletedWorkToNextFloor = async (article, updateData, user = null, fromFloor = null) => {
   const sourceFloor = fromFloor || article.currentFloor;
-  const nextFloor = getNextFloor(sourceFloor, article.linkingType);
+  const nextFloor = await getNextFloor(article, sourceFloor);
   if (!nextFloor) return;
 
   // Get source and next floor keys
@@ -659,7 +690,7 @@ const transferCompletedWorkToNextFloor = async (article, updateData, user = null
  * @param {Object} updateData
  */
 const autoTransferToNextFloor = async (article, updateData, user = null) => {
-  const nextFloor = getNextFloor(article.currentFloor, article.linkingType);
+  const nextFloor = await getNextFloor(article, article.currentFloor);
   if (!nextFloor) return;
 
   // Get current and next floor keys
@@ -736,15 +767,24 @@ const autoTransferToNextFloor = async (article, updateData, user = null) => {
 };
 
 /**
- * Get next floor in production flow based on linking type
+ * Get next floor in production flow based on article's product process flow
+ * @param {Article} article
  * @param {string} currentFloor
- * @param {string} linkingType
- * @returns {string|null}
+ * @returns {Promise<string|null>}
  */
-const getNextFloor = (currentFloor, linkingType) => {
-  const floorSequence = getFloorOrderByLinkingType(linkingType);
-  const currentIndex = floorSequence.indexOf(currentFloor);
-  return currentIndex < floorSequence.length - 1 ? floorSequence[currentIndex + 1] : null;
+const getNextFloor = async (article, currentFloor) => {
+  try {
+    // Use article's product process flow
+    const floorOrder = await article.getFloorOrder();
+    const currentIndex = floorOrder.indexOf(currentFloor);
+    return currentIndex < floorOrder.length - 1 ? floorOrder[currentIndex + 1] : null;
+  } catch (error) {
+    console.warn(`Error getting floor order for article ${article.articleNumber}, using fallback: ${error.message}`);
+    // Fallback to linking type if product not found
+    const floorSequence = getFloorOrderByLinkingType(article.linkingType);
+    const currentIndex = floorSequence.indexOf(currentFloor);
+    return currentIndex < floorSequence.length - 1 ? floorSequence[currentIndex + 1] : null;
+  }
 };
 
 /**
@@ -1189,7 +1229,7 @@ export const qualityInspection = async (articleId, inspectionData, user = null) 
  * @param {Object} user
  */
 const autoTransferCompletedWorkToNextFloor = async (article, updateData, user = null) => {
-  const nextFloor = getNextFloor(article.currentFloor, article.linkingType);
+  const nextFloor = await getNextFloor(article, article.currentFloor);
   if (!nextFloor) {
     console.log(`No next floor available for ${article.currentFloor}`);
     return;
@@ -1281,7 +1321,7 @@ const transferM1ToNextFloor = async (article, m1Quantity, user = null, inspectio
   const sourceFloor = fromFloor || article.currentFloor;
   
   // Get next floor based on source floor
-  const nextFloor = getNextFloor(sourceFloor, article.linkingType);
+  const nextFloor = await getNextFloor(article, sourceFloor);
   if (!nextFloor) {
     console.log('No next floor available for M1 transfer');
     return;
