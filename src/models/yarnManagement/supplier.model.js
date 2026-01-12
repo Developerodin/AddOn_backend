@@ -361,6 +361,40 @@ supplierSchema.pre('save', async function (next) {
         }
       }
     }
+
+    // Validate uniqueness: yarnName + color + tearweight + shadeNumber
+    // Allow same yarnName, color, and tearweight only if shadeNumber is different
+    if (this.yarnDetails && this.yarnDetails.length > 0) {
+      const seen = new Map();
+      for (let i = 0; i < this.yarnDetails.length; i++) {
+        const detail = this.yarnDetails[i];
+        
+        // Get yarnName (use yarnType.name as fallback if yarnName is not provided)
+        const yarnName = detail.yarnName || (detail.yarnType?.name || '');
+        
+        // Get color ID
+        const colorId = detail.color?._id?.toString() || 
+                       (typeof detail.color === 'string' ? detail.color : 
+                       (detail.color && typeof detail.color === 'object' && detail.color._id ? detail.color._id.toString() : ''));
+        
+        // Get tearweight
+        const tearweight = detail.tearweight;
+        
+        // Get shadeNumber (can be empty/null)
+        const shadeNumber = detail.shadeNumber || '';
+        
+        // Create unique key: yarnName + colorId + tearweight + shadeNumber
+        const uniqueKey = `${yarnName}|${colorId}|${tearweight}|${shadeNumber}`;
+        
+        if (seen.has(uniqueKey)) {
+          return next(new Error(
+            `Duplicate yarn detail found. A yarn with the same name (${yarnName}), color, tear weight (${tearweight}), and shade number (${shadeNumber || 'empty'}) already exists. Only shade number can differ for entries with the same name, color, and tear weight.`
+          ));
+        }
+        
+        seen.set(uniqueKey, i);
+      }
+    }
   }
   next();
 });
