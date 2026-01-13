@@ -198,9 +198,13 @@ const supplierSchema = mongoose.Schema(
 // Pre-save hook: Automatically converts IDs to embedded objects
 // Frontend can send just IDs, and this hook will fetch and store full object data
 // Also handles yarnName lookup from catalog to populate yarnType and yarnSubtype
+// IMPORTANT: Preserves original yarnName and color name as provided - no modifications
 supplierSchema.pre('save', async function (next) {
   if (this.isModified('yarnDetails')) {
     for (const detail of this.yarnDetails || []) {
+      // Preserve original yarnName if provided (don't overwrite it)
+      const originalYarnName = detail.yarnName ? String(detail.yarnName).trim() : null;
+      
       // Validate that either yarnName or yarnType is provided
       if (!detail.yarnName && !detail.yarnType) {
         return next(new Error('Either yarnName or yarnType must be provided in yarnDetails'));
@@ -241,6 +245,11 @@ supplierSchema.pre('save', async function (next) {
         }
       }
       
+      // Restore original yarnName to preserve it exactly as provided (no modifications)
+      if (originalYarnName) {
+        detail.yarnName = originalYarnName;
+      }
+      
       // Convert yarnType ID to embedded object
       if (detail.yarnType) {
         const isObjectId = mongoose.Types.ObjectId.isValid(detail.yarnType) || 
@@ -279,7 +288,12 @@ supplierSchema.pre('save', async function (next) {
       }
       
       // Convert color ID to embedded object
+      // IMPORTANT: Preserve original color name if provided as object (don't overwrite with DB value)
       if (detail.color) {
+        const originalColorName = (detail.color && typeof detail.color === 'object' && detail.color.name) 
+          ? String(detail.color.name).trim() 
+          : null;
+        
         const isObjectId = mongoose.Types.ObjectId.isValid(detail.color) || 
                           (typeof detail.color === 'string' && mongoose.Types.ObjectId.isValid(detail.color)) ||
                           (detail.color && typeof detail.color === 'object' && !detail.color.name);
@@ -292,16 +306,18 @@ supplierSchema.pre('save', async function (next) {
             const color = await Color.findById(colorId);
             
             if (color) {
+              // Use original color name if provided, otherwise use DB value
+              const colorNameToUse = originalColorName || color.name;
               detail.color = {
                 _id: color._id,
-                name: color.name,
+                name: colorNameToUse, // Preserve original name if provided
                 colorCode: color.colorCode,
                 status: color.status,
               };
             } else {
               detail.color = {
                 _id: colorId,
-                name: 'Unknown',
+                name: originalColorName || 'Unknown',
                 colorCode: '#000000',
                 status: 'deleted',
               };
@@ -310,11 +326,14 @@ supplierSchema.pre('save', async function (next) {
             console.error('Error converting color to embedded object:', error);
             detail.color = {
               _id: mongoose.Types.ObjectId.isValid(detail.color) ? detail.color : new mongoose.Types.ObjectId(detail.color),
-              name: 'Unknown',
+              name: originalColorName || 'Unknown',
               colorCode: '#000000',
               status: 'deleted',
             };
           }
+        } else if (originalColorName && detail.color && typeof detail.color === 'object') {
+          // If color is already an object with a name, preserve it exactly
+          detail.color.name = originalColorName;
         }
       }
       

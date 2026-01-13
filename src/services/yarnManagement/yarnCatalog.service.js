@@ -99,7 +99,12 @@ const convertIdsToEmbedded = async (yarnCatalogBody) => {
   }
   
   // Convert colorFamily ID to embedded object
+  // IMPORTANT: Preserve original colorFamily name if provided as object (don't overwrite with DB value)
   if (processedBody.colorFamily) {
+    const originalColorFamilyName = (processedBody.colorFamily && typeof processedBody.colorFamily === 'object' && processedBody.colorFamily.name) 
+      ? String(processedBody.colorFamily.name).trim() 
+      : null;
+    
     const isObjectId = mongoose.Types.ObjectId.isValid(processedBody.colorFamily) || 
                       (typeof processedBody.colorFamily === 'string' && mongoose.Types.ObjectId.isValid(processedBody.colorFamily)) ||
                       (processedBody.colorFamily && typeof processedBody.colorFamily === 'object' && !processedBody.colorFamily.name);
@@ -112,9 +117,11 @@ const convertIdsToEmbedded = async (yarnCatalogBody) => {
         const color = await Color.findById(colorId);
         
         if (color) {
+          // Use original colorFamily name if provided, otherwise use DB value
+          const colorNameToUse = originalColorFamilyName || color.name;
           processedBody.colorFamily = {
             _id: color._id,
-            name: color.name,
+            name: colorNameToUse, // Preserve original name if provided
             colorCode: color.colorCode,
             status: color.status,
           };
@@ -125,6 +132,9 @@ const convertIdsToEmbedded = async (yarnCatalogBody) => {
         if (error instanceof ApiError) throw error;
         throw new ApiError(httpStatus.BAD_REQUEST, `Invalid color ID: ${processedBody.colorFamily}`);
       }
+    } else if (originalColorFamilyName && processedBody.colorFamily && typeof processedBody.colorFamily === 'object') {
+      // If colorFamily is already an object with a name, preserve it exactly
+      processedBody.colorFamily.name = originalColorFamilyName;
     }
   }
   
@@ -210,8 +220,13 @@ export const queryYarnCatalogs = async (filter, options) => {
   const mongooseFilter = { ...filter };
   
   // Convert yarnName to regex for partial/fuzzy search (case-insensitive)
+  // Escape special regex characters to allow matching of special characters like ( ) / - etc.
   if (mongooseFilter.yarnName) {
-    mongooseFilter.yarnName = { $regex: mongooseFilter.yarnName, $options: 'i' };
+    const yarnNameValue = String(mongooseFilter.yarnName).trim();
+    // Escape special regex characters: . * + ? ^ $ { } [ ] \ | ( )
+    // This allows searching for yarn names with special characters like "70/2-Black (New)-Black (New)-Nylon/Nylon"
+    const escapedYarnName = yarnNameValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    mongooseFilter.yarnName = { $regex: escapedYarnName, $options: 'i' };
   }
   
   const yarnCatalogs = await YarnCatalog.paginate(mongooseFilter, options);
