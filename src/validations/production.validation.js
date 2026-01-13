@@ -174,6 +174,21 @@ const updateQualityCategories = {
   }),
 };
 
+const transferM2ForRepair = {
+  params: Joi.object().keys({
+    floor: Joi.string().valid('Checking', 'Secondary Checking', 'Final Checking').required(),
+    orderId: Joi.string().custom(objectId).required(),
+    articleId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object().keys({
+    quantity: Joi.number().integer().min(1).optional(),
+    targetFloor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking').optional(),
+    remarks: Joi.string().optional(),
+    userId: Joi.string().custom(objectId).optional(),
+    floorSupervisorId: Joi.string().custom(objectId).optional()
+  }),
+};
+
 const shiftM2Items = {
   params: Joi.object().keys({
     floor: Joi.string().valid('Checking', 'Secondary Checking', 'Final Checking').required(),
@@ -437,6 +452,7 @@ export default {
   
   // Quality control validations
   updateQualityCategories,
+  transferM2ForRepair,
   shiftM2Items,
   confirmFinalQuality,
   forwardToWarehouse,

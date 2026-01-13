@@ -580,6 +580,127 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
 };
 
 /**
+ * Transfer M2 (repairable) quantity from checking floor back to previous floor for repair
+ * @param {string} floor - Checking floor (Checking, Secondary Checking, or Final Checking)
+ * @param {ObjectId} orderId
+ * @param {ObjectId} articleId
+ * @param {Object} repairData
+ * @param {Object} user - Current user from request
+ * @returns {Promise<Object>}
+ */
+export const transferM2ForRepair = async (floor, orderId, articleId, repairData, user = null) => {
+  const article = await Article.findOne({ _id: articleId, orderId })
+    .populate('machineId', 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor');
+  if (!article) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Article not found in this order');
+  }
+
+  // Map URL-friendly floor names to proper enum values
+  const floorMapping = {
+    'FinalChecking': 'Final Checking',
+    'finalchecking': 'Final Checking',
+    'final-checking': 'Final Checking',
+    'final_checking': 'Final Checking',
+    'SecondaryChecking': 'Secondary Checking',
+    'secondarychecking': 'Secondary Checking',
+    'secondary-checking': 'Secondary Checking',
+    'secondary_checking': 'Secondary Checking',
+    'Checking': 'Checking',
+    'checking': 'Checking'
+  };
+
+  // Convert floor name if needed
+  const normalizedFloor = floorMapping[floor] || floor;
+
+  // Validate that the floor is a checking floor
+  const checkingFloors = ['Checking', 'Secondary Checking', 'Final Checking'];
+  if (!checkingFloors.includes(normalizedFloor)) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `M2 repair transfer can only be done from checking floors. ${normalizedFloor} is not a checking floor.`
+    );
+  }
+
+  // Get floor data
+  const floorKey = article.getFloorKey(normalizedFloor);
+  const floorData = article.floorQuantities[floorKey];
+
+  if (!floorData) {
+    throw new ApiError(httpStatus.BAD_REQUEST, `No data found for ${normalizedFloor} floor`);
+  }
+
+  // Get M2 quantity (this is the current remaining M2, not including items already sent for repair)
+  const m2Quantity = floorData.m2Quantity || 0;
+  const m2Transferred = floorData.m2Transferred || 0;
+  const m2Remaining = m2Quantity; // m2Quantity is already reduced when items are sent for repair
+
+  if (m2Quantity <= 0) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `No M2 quantity available for repair transfer on ${normalizedFloor} floor. M2 Quantity: ${m2Quantity}, M2 Transferred (total sent): ${m2Transferred}`
+    );
+  }
+
+  // Get quantity from request (default to all remaining if not specified)
+  const quantity = repairData.quantity || m2Quantity;
+
+  if (quantity <= 0 || quantity > m2Quantity) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Repair transfer quantity (${quantity}) must be between 1 and ${m2Quantity}`
+    );
+  }
+
+  // Get target floor from request (optional - defaults to immediate previous floor)
+  let targetFloor = null;
+  if (repairData.targetFloor) {
+    // Map target floor name if needed
+    const targetFloorNormalized = floorMapping[repairData.targetFloor] || repairData.targetFloor;
+    targetFloor = targetFloorNormalized;
+  }
+
+  // Transfer M2 for repair using article model method
+  const result = await article.transferM2ForRepair(
+    normalizedFloor,
+    quantity,
+    user?.id || repairData.userId || 'system',
+    user?.id || repairData.floorSupervisorId || 'system',
+    repairData.remarks || '',
+    targetFloor
+  );
+
+  await article.save();
+
+  // Create transfer log
+  await createTransferLog({
+    articleId: article._id.toString(),
+    orderId: article.orderId.toString(),
+    fromFloor: normalizedFloor,
+    toFloor: result.targetFloor,
+    quantity: quantity,
+    userId: user?.id || repairData.userId || 'system',
+    floorSupervisorId: user?.id || repairData.floorSupervisorId || 'system',
+    remarks: repairData.remarks || `M2 repair transfer: ${quantity} repairable items sent back to ${result.targetFloor} for repair`
+  });
+
+  return {
+    article,
+    repairTransferDetails: {
+      fromFloor: normalizedFloor,
+      toFloor: result.targetFloor,
+      quantity: quantity,
+      m2Quantity: result.m2Quantity,  // Updated M2 quantity (reduced)
+      m2Transferred: result.m2Transferred,  // Total sent for repair (audit trail)
+      m2Remaining: result.m2Remaining,
+      targetFloorReceived: result.targetFloorReceived,
+      targetFloorRepairReceived: result.targetFloorRepairReceived,
+      message: result.message,
+      timestamp: new Date().toISOString()
+    }
+  };
+};
+
+/**
  * Transfer completed work to next floor immediately (continuous flow)
  * @param {Article} article
  * @param {Object} updateData

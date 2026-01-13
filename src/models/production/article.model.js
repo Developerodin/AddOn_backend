@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { OrderStatus, Priority, LinkingType, ProductionFloor, RepairStatus } from './enums.js';
+import { OrderStatus, Priority, LinkingType, ProductionFloor, RepairStatus, LogAction } from './enums.js';
 import ArticleLog from './articleLog.model.js';
 import Product from '../product.model.js';
 import { validateProductProcesses, mapProcessToFloor, getFloorKey } from '../../utils/productionHelper.js';
@@ -115,7 +115,9 @@ const articleSchema = new mongoose.Schema({
       received: { type: Number, default: 0 },
       completed: { type: Number, default: 0 },
       remaining: { type: Number, default: 0 },
-      transferred: { type: Number, default: 0 }
+      transferred: { type: Number, default: 0 },
+      // Track repair items received from checking floors
+      repairReceived: { type: Number, default: 0, min: 0 }
     },
     checking: {
       received: { type: Number, default: 0 },
@@ -130,6 +132,9 @@ const articleSchema = new mongoose.Schema({
       // Additive transfer tracking for M1 (like other floors)
       m1Transferred: { type: Number, default: 0, min: 0 },
       m1Remaining: { type: Number, default: 0, min: 0 },
+      // M2 repair transfer tracking
+      m2Transferred: { type: Number, default: 0, min: 0 },
+      m2Remaining: { type: Number, default: 0, min: 0 },
       repairStatus: { 
         type: String, 
         enum: Object.values(RepairStatus), 
@@ -141,19 +146,25 @@ const articleSchema = new mongoose.Schema({
       received: { type: Number, default: 0 },
       completed: { type: Number, default: 0 },
       remaining: { type: Number, default: 0 },
-      transferred: { type: Number, default: 0 }
+      transferred: { type: Number, default: 0 },
+      // Track repair items received from checking floors
+      repairReceived: { type: Number, default: 0, min: 0 }
     },
     boarding: {
       received: { type: Number, default: 0 },
       completed: { type: Number, default: 0 },
       remaining: { type: Number, default: 0 },
-      transferred: { type: Number, default: 0 }
+      transferred: { type: Number, default: 0 },
+      // Track repair items received from checking floors
+      repairReceived: { type: Number, default: 0, min: 0 }
     },
     silicon: {
       received: { type: Number, default: 0 },
       completed: { type: Number, default: 0 },
       remaining: { type: Number, default: 0 },
-      transferred: { type: Number, default: 0 }
+      transferred: { type: Number, default: 0 },
+      // Track repair items received from checking floors
+      repairReceived: { type: Number, default: 0, min: 0 }
     },
     secondaryChecking: {
       received: { type: Number, default: 0 },
@@ -168,6 +179,9 @@ const articleSchema = new mongoose.Schema({
       // Additive transfer tracking for M1 (like other floors)
       m1Transferred: { type: Number, default: 0, min: 0 },
       m1Remaining: { type: Number, default: 0, min: 0 },
+      // M2 repair transfer tracking
+      m2Transferred: { type: Number, default: 0, min: 0 },
+      m2Remaining: { type: Number, default: 0, min: 0 },
       repairStatus: { 
         type: String, 
         enum: Object.values(RepairStatus), 
@@ -188,6 +202,9 @@ const articleSchema = new mongoose.Schema({
       // Additive transfer tracking for M1 (like other floors)
       m1Transferred: { type: Number, default: 0, min: 0 },
       m1Remaining: { type: Number, default: 0, min: 0 },
+      // M2 repair transfer tracking
+      m2Transferred: { type: Number, default: 0, min: 0 },
+      m2Remaining: { type: Number, default: 0, min: 0 },
       repairStatus: { 
         type: String, 
         enum: Object.values(RepairStatus), 
@@ -199,19 +216,25 @@ const articleSchema = new mongoose.Schema({
       received: { type: Number, default: 0 },
       completed: { type: Number, default: 0 },
       remaining: { type: Number, default: 0 },
-      transferred: { type: Number, default: 0 }
+      transferred: { type: Number, default: 0 },
+      // Track repair items received from checking floors
+      repairReceived: { type: Number, default: 0, min: 0 }
     },
     warehouse: {
       received: { type: Number, default: 0 },
       completed: { type: Number, default: 0 },
       remaining: { type: Number, default: 0 },
-      transferred: { type: Number, default: 0 }
+      transferred: { type: Number, default: 0 },
+      // Track repair items received from checking floors
+      repairReceived: { type: Number, default: 0, min: 0 }
     },
     dispatch: {
       received: { type: Number, default: 0 },
       completed: { type: Number, default: 0 },
       remaining: { type: Number, default: 0 },
-      transferred: { type: Number, default: 0 }
+      transferred: { type: Number, default: 0 },
+      // Track repair items received from checking floors
+      repairReceived: { type: Number, default: 0, min: 0 }
     }
   },
   
@@ -481,6 +504,20 @@ articleSchema.pre('save', async function(next) {
       
       // Update M1 remaining
       floorData.m1Remaining = Math.max(0, m1Quantity - m1Transferred);
+      
+      // Update M2 remaining
+      const m2Transferred = floorData.m2Transferred || 0;
+      // m2Remaining = m2Quantity (since m2Quantity is reduced when items are sent for repair)
+      // But we also track m2Transferred for audit purposes
+      floorData.m2Remaining = Math.max(0, m2Quantity - m2Transferred);
+      
+      // Validate M2 transferred doesn't exceed original M2 quantity
+      // Note: m2Quantity may be less than m2Transferred if items were sent for repair
+      // This is expected - m2Transferred is cumulative, m2Quantity is current remaining
+      if (m2Transferred > m2Quantity + m2Transferred && m2Quantity > 0) {
+        // This shouldn't happen, but if it does, it means m2Quantity was incorrectly reduced
+        console.warn(`🚨 ${floorKey}: M2 Transferred (${m2Transferred}) seems incorrect. M2 Quantity: ${m2Quantity}`);
+      }
     }
     
     // Knitting floor validation
@@ -993,6 +1030,140 @@ articleSchema.methods.transferM1FromFloor = async function(fromFloor, quantity, 
     m1Transferred: fromFloorData.m1Transferred,
     m1Remaining: fromFloorData.m1Remaining,
     nextFloorReceived: nextFloorData.received
+  };
+};
+
+// Method to transfer M2 (repairable) quantity back to previous floor for repair
+articleSchema.methods.transferM2ForRepair = async function(checkingFloor, quantity, userId, floorSupervisorId, remarks, targetFloor = null) {
+  // Validate that the floor is a checking floor
+  const checkingFloors = [ProductionFloor.CHECKING, ProductionFloor.SECONDARY_CHECKING, ProductionFloor.FINAL_CHECKING];
+  if (!checkingFloors.includes(checkingFloor)) {
+    throw new Error(`M2 repair transfer can only be done from checking floors. ${checkingFloor} is not a checking floor.`);
+  }
+  
+  const checkingFloorKey = this.getFloorKey(checkingFloor);
+  const checkingFloorData = this.floorQuantities[checkingFloorKey];
+  
+  if (!checkingFloorData) {
+    throw new Error(`No data found for ${checkingFloor} floor`);
+  }
+  
+  // Get M2 quantity (current remaining, items already sent for repair are removed from m2Quantity)
+  const m2Quantity = checkingFloorData.m2Quantity || 0;
+  const m2Transferred = checkingFloorData.m2Transferred || 0;
+  
+  // Validate quantity
+  if (quantity <= 0) {
+    throw new Error('Repair transfer quantity must be greater than 0');
+  }
+  
+  if (quantity > m2Quantity) {
+    throw new Error(`Repair transfer quantity (${quantity}) cannot exceed M2 quantity (${m2Quantity}) on ${checkingFloor} floor`);
+  }
+  
+  // If no quantity specified, transfer all remaining M2
+  if (!quantity) {
+    quantity = m2Quantity;
+  }
+  
+  // Get floor order to find target floor
+  const floorOrder = await this.getFloorOrder();
+  const checkingFloorIndex = floorOrder.indexOf(checkingFloor);
+  
+  if (checkingFloorIndex === -1) {
+    throw new Error(`Floor ${checkingFloor} is not in the article's process flow`);
+  }
+  
+  if (checkingFloorIndex === 0) {
+    throw new Error(`Cannot transfer M2 for repair from ${checkingFloor} - it is the first floor in the process flow`);
+  }
+  
+  // Determine target floor: use provided targetFloor or default to immediate previous floor
+  let targetFloorEnum = targetFloor;
+  let targetFloorIndex;
+  
+  if (targetFloor) {
+    // Validate that target floor is in the process flow
+    targetFloorIndex = floorOrder.indexOf(targetFloor);
+    if (targetFloorIndex === -1) {
+      throw new Error(`Target floor ${targetFloor} is not in the article's process flow`);
+    }
+    
+    // Validate that target floor is before checking floor
+    if (targetFloorIndex >= checkingFloorIndex) {
+      throw new Error(`Target floor ${targetFloor} must come before ${checkingFloor} in the process flow. Current flow: ${floorOrder.join(' → ')}`);
+    }
+  } else {
+    // Default to immediate previous floor
+    targetFloorIndex = checkingFloorIndex - 1;
+    targetFloorEnum = floorOrder[targetFloorIndex];
+  }
+  
+  const targetFloorKey = this.getFloorKey(targetFloorEnum);
+  const targetFloorData = this.floorQuantities[targetFloorKey];
+  
+  if (!targetFloorData) {
+    throw new Error(`No data found for target floor: ${targetFloorEnum}`);
+  }
+  
+  // Update checking floor: reduce M2 quantity (items sent for repair are removed from m2Quantity)
+  // Also track how many have been transferred for audit purposes
+  checkingFloorData.m2Quantity = Math.max(0, m2Quantity - quantity);
+  checkingFloorData.m2Transferred = (checkingFloorData.m2Transferred || 0) + quantity;
+  checkingFloorData.m2Remaining = Math.max(0, checkingFloorData.m2Quantity - checkingFloorData.m2Transferred);
+  
+  // Note: m2Remaining should now equal m2Quantity since we reduce m2Quantity when transferring
+  // But we keep m2Transferred for audit trail (how many total have been sent for repair)
+  
+  // Update target floor: add received quantity (repair items)
+  // These items will go through the process flow again from this floor
+  targetFloorData.received = (targetFloorData.received || 0) + quantity;
+  // Track repair items separately
+  targetFloorData.repairReceived = (targetFloorData.repairReceived || 0) + quantity;
+  targetFloorData.remaining = targetFloorData.received - (targetFloorData.completed || 0);
+  
+  // Update repair status based on remaining M2 quantity
+  if (checkingFloorData.m2Quantity > 0) {
+    checkingFloorData.repairStatus = RepairStatus.IN_REVIEW;
+  } else {
+    checkingFloorData.repairStatus = RepairStatus.NOT_REQUIRED;
+  }
+  
+  if (remarks) {
+    checkingFloorData.repairRemarks = remarks;
+  }
+  
+  // Create log entry for repair transfer
+  try {
+    await ArticleLog.createLogEntry({
+      articleId: this._id.toString(),
+      orderId: this.orderId.toString(),
+      action: LogAction.REPAIR_STARTED,
+      quantity,
+      fromFloor: checkingFloor,
+      toFloor: targetFloorEnum,
+      remarks: remarks || `M2 Repair Transfer: Transferred ${quantity} repairable items (M2) from ${checkingFloor} back to ${targetFloorEnum} for repair. Items will follow the process flow again from ${targetFloorEnum}.`,
+      previousValue: m2Quantity,
+      newValue: checkingFloorData.m2Quantity,
+      changeReason: 'M2 repair transfer - items sent back for repair',
+      userId: userId || 'system',
+      floorSupervisorId: floorSupervisorId || 'system'
+    });
+  } catch (logError) {
+    console.error('Error creating repair transfer log:', logError);
+    // Don't throw error for logging failure
+  }
+  
+  return {
+    checkingFloor: checkingFloor,
+    targetFloor: targetFloorEnum,
+    quantity: quantity,
+    m2Quantity: checkingFloorData.m2Quantity,  // Updated: reduced by quantity
+    m2Transferred: checkingFloorData.m2Transferred,  // Total sent for repair (audit trail)
+    m2Remaining: checkingFloorData.m2Remaining,
+    targetFloorReceived: targetFloorData.received,
+    targetFloorRepairReceived: targetFloorData.repairReceived,
+    message: `${quantity} repairable items transferred from ${checkingFloor} to ${targetFloorEnum} for repair. M2 quantity reduced from ${m2Quantity} to ${checkingFloorData.m2Quantity}`
   };
 };
 

@@ -96,6 +96,12 @@ export const updateQualityCategories = catchAsync(async (req, res) => {
   res.send(article);
 });
 
+export const transferM2ForRepair = catchAsync(async (req, res) => {
+  const { floor, orderId, articleId } = req.params;
+  const result = await productionService.transferM2ForRepair(floor, orderId, articleId, req.body, req.user);
+  res.send(result);
+});
+
 export const shiftM2Items = catchAsync(async (req, res) => {
   const { floor, articleId } = req.params;
   const result = await productionService.shiftM2Items(articleId, req.body, req.user);

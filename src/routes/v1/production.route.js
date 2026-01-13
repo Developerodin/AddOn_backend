@@ -63,6 +63,11 @@ router
   .route('/floors/:floor/quality/:articleId')
   .patch(validate(productionValidation.updateQualityCategories), productionController.updateQualityCategories);
 
+// M2 repair transfer (transfer M2 back to previous floor for repair)
+router
+  .route('/floors/:floor/repair/:orderId/articles/:articleId')
+  .post(validate(productionValidation.transferM2ForRepair), productionController.transferM2ForRepair);
+
 // M2 shifting (primarily for Final Checking, but can work for Checking too)
 router
   .route('/floors/:floor/shift-m2')
