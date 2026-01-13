@@ -12,6 +12,9 @@ const convertYarnDetailsToEmbedded = async (yarnDetails) => {
   if (!yarnDetails || !Array.isArray(yarnDetails)) return;
   
   for (const detail of yarnDetails) {
+    // Preserve original yarnName if provided (don't overwrite it)
+    const originalYarnName = detail.yarnName ? String(detail.yarnName).trim() : null;
+    
     // Validate that either yarnName or yarnType is provided
     if (!detail.yarnName && !detail.yarnType) {
       throw new ApiError(
@@ -64,6 +67,11 @@ const convertYarnDetailsToEmbedded = async (yarnDetails) => {
       }
     }
     
+    // Restore original yarnName to preserve it exactly as provided (no modifications)
+    if (originalYarnName) {
+      detail.yarnName = originalYarnName;
+    }
+    
     // Convert yarnType ID to embedded object
     if (detail.yarnType) {
       const isObjectId = mongoose.Types.ObjectId.isValid(detail.yarnType) || 
@@ -97,7 +105,12 @@ const convertYarnDetailsToEmbedded = async (yarnDetails) => {
     }
     
     // Convert color ID to embedded object
+    // IMPORTANT: Preserve original color name if provided as object (don't overwrite with DB value)
     if (detail.color) {
+      const originalColorName = (detail.color && typeof detail.color === 'object' && detail.color.name) 
+        ? String(detail.color.name).trim() 
+        : null;
+      
       const isObjectId = mongoose.Types.ObjectId.isValid(detail.color) || 
                         (typeof detail.color === 'string' && mongoose.Types.ObjectId.isValid(detail.color)) ||
                         (detail.color && typeof detail.color === 'object' && !detail.color.name);
@@ -110,23 +123,34 @@ const convertYarnDetailsToEmbedded = async (yarnDetails) => {
           const color = await Color.findById(colorId);
           
           if (color) {
+            // Use original color name if provided, otherwise use DB value
+            const colorNameToUse = originalColorName || color.name;
             detail.color = {
               _id: color._id,
-              name: color.name,
+              name: colorNameToUse, // Preserve original name if provided
               colorCode: color.colorCode,
               status: color.status,
             };
           } else {
             detail.color = {
               _id: colorId,
-              name: 'Unknown',
+              name: originalColorName || 'Unknown',
               colorCode: '#000000',
               status: 'deleted',
             };
           }
         } catch (error) {
           console.error('Error converting color to embedded object:', error);
+          detail.color = {
+            _id: mongoose.Types.ObjectId.isValid(detail.color) ? detail.color : new mongoose.Types.ObjectId(detail.color),
+            name: originalColorName || 'Unknown',
+            colorCode: '#000000',
+            status: 'deleted',
+          };
         }
+      } else if (originalColorName && detail.color && typeof detail.color === 'object') {
+        // If color is already an object with a name, preserve it exactly
+        detail.color.name = originalColorName;
       }
     }
     
@@ -185,6 +209,9 @@ const convertYarnDetailsToEmbeddedWithSkip = async (yarnDetails) => {
   const skippedYarnNames = [];
   
   for (const detail of yarnDetails) {
+    // Preserve original yarnName if provided (don't overwrite it)
+    const originalYarnName = detail.yarnName ? String(detail.yarnName).trim() : null;
+    
     // Validate that either yarnName or yarnType is provided
     if (!detail.yarnName && !detail.yarnType) {
       // Skip this detail if neither is provided
@@ -221,6 +248,11 @@ const convertYarnDetailsToEmbeddedWithSkip = async (yarnDetails) => {
             };
           }
           
+          // Restore original yarnName to preserve it exactly as provided (no modifications)
+          if (originalYarnName) {
+            processedDetail.yarnName = originalYarnName;
+          }
+          
           // Convert yarnType ID to embedded object if needed
           if (processedDetail.yarnType) {
             const isObjectId = mongoose.Types.ObjectId.isValid(processedDetail.yarnType) || 
@@ -254,7 +286,12 @@ const convertYarnDetailsToEmbeddedWithSkip = async (yarnDetails) => {
           }
           
           // Convert color ID to embedded object if needed
+          // IMPORTANT: Preserve original color name if provided as object (don't overwrite with DB value)
           if (processedDetail.color) {
+            const originalColorName = (processedDetail.color && typeof processedDetail.color === 'object' && processedDetail.color.name) 
+              ? String(processedDetail.color.name).trim() 
+              : null;
+            
             const isObjectId = mongoose.Types.ObjectId.isValid(processedDetail.color) || 
                               (typeof processedDetail.color === 'string' && mongoose.Types.ObjectId.isValid(processedDetail.color)) ||
                               (processedDetail.color && typeof processedDetail.color === 'object' && !processedDetail.color.name);
@@ -267,23 +304,34 @@ const convertYarnDetailsToEmbeddedWithSkip = async (yarnDetails) => {
                 const color = await Color.findById(colorId);
                 
                 if (color) {
+                  // Use original color name if provided, otherwise use DB value
+                  const colorNameToUse = originalColorName || color.name;
                   processedDetail.color = {
                     _id: color._id,
-                    name: color.name,
+                    name: colorNameToUse, // Preserve original name if provided
                     colorCode: color.colorCode,
                     status: color.status,
                   };
                 } else {
                   processedDetail.color = {
                     _id: colorId,
-                    name: 'Unknown',
+                    name: originalColorName || 'Unknown',
                     colorCode: '#000000',
                     status: 'deleted',
                   };
                 }
               } catch (error) {
                 console.error('Error converting color to embedded object:', error);
+                processedDetail.color = {
+                  _id: mongoose.Types.ObjectId.isValid(processedDetail.color) ? processedDetail.color : new mongoose.Types.ObjectId(processedDetail.color),
+                  name: originalColorName || 'Unknown',
+                  colorCode: '#000000',
+                  status: 'deleted',
+                };
               }
+            } else if (originalColorName && processedDetail.color && typeof processedDetail.color === 'object') {
+              // If color is already an object with a name, preserve it exactly
+              processedDetail.color.name = originalColorName;
             }
           }
           
@@ -373,7 +421,12 @@ const convertYarnDetailsToEmbeddedWithSkip = async (yarnDetails) => {
       }
       
       // Convert color ID to embedded object if needed
+      // IMPORTANT: Preserve original color name if provided as object (don't overwrite with DB value)
       if (processedDetail.color) {
+        const originalColorName = (processedDetail.color && typeof processedDetail.color === 'object' && processedDetail.color.name) 
+          ? String(processedDetail.color.name).trim() 
+          : null;
+        
         const isObjectId = mongoose.Types.ObjectId.isValid(processedDetail.color) || 
                           (typeof processedDetail.color === 'string' && mongoose.Types.ObjectId.isValid(processedDetail.color)) ||
                           (processedDetail.color && typeof processedDetail.color === 'object' && !processedDetail.color.name);
@@ -386,23 +439,34 @@ const convertYarnDetailsToEmbeddedWithSkip = async (yarnDetails) => {
             const color = await Color.findById(colorId);
             
             if (color) {
+              // Use original color name if provided, otherwise use DB value
+              const colorNameToUse = originalColorName || color.name;
               processedDetail.color = {
                 _id: color._id,
-                name: color.name,
+                name: colorNameToUse, // Preserve original name if provided
                 colorCode: color.colorCode,
                 status: color.status,
               };
             } else {
               processedDetail.color = {
                 _id: colorId,
-                name: 'Unknown',
+                name: originalColorName || 'Unknown',
                 colorCode: '#000000',
                 status: 'deleted',
               };
             }
           } catch (error) {
             console.error('Error converting color to embedded object:', error);
+            processedDetail.color = {
+              _id: mongoose.Types.ObjectId.isValid(processedDetail.color) ? processedDetail.color : new mongoose.Types.ObjectId(processedDetail.color),
+              name: originalColorName || 'Unknown',
+              colorCode: '#000000',
+              status: 'deleted',
+            };
           }
+        } else if (originalColorName && processedDetail.color && typeof processedDetail.color === 'object') {
+          // If color is already an object with a name, preserve it exactly
+          processedDetail.color.name = originalColorName;
         }
       }
       

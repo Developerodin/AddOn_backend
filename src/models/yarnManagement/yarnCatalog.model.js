@@ -479,7 +479,12 @@ yarnCatalogSchema.pre('save', async function (next) {
   }
   
   // Convert colorFamily ID to embedded object
+  // IMPORTANT: Preserve original colorFamily name if provided as object (don't overwrite with DB value)
   if (this.colorFamily) {
+    const originalColorFamilyName = (this.colorFamily && typeof this.colorFamily === 'object' && this.colorFamily.name) 
+      ? String(this.colorFamily.name).trim() 
+      : null;
+    
     const isObjectId = mongoose.Types.ObjectId.isValid(this.colorFamily) || 
                       (typeof this.colorFamily === 'string' && mongoose.Types.ObjectId.isValid(this.colorFamily)) ||
                       (this.colorFamily && typeof this.colorFamily === 'object' && !this.colorFamily.name);
@@ -492,16 +497,18 @@ yarnCatalogSchema.pre('save', async function (next) {
         const color = await Color.findById(colorId);
         
         if (color) {
+          // Use original colorFamily name if provided, otherwise use DB value
+          const colorNameToUse = originalColorFamilyName || color.name;
           this.colorFamily = {
             _id: color._id,
-            name: color.name,
+            name: colorNameToUse, // Preserve original name if provided
             colorCode: color.colorCode,
             status: color.status,
           };
         } else {
           this.colorFamily = {
             _id: colorId,
-            name: 'Unknown',
+            name: originalColorFamilyName || 'Unknown',
             colorCode: '#000000',
             status: 'deleted',
           };
@@ -510,11 +517,14 @@ yarnCatalogSchema.pre('save', async function (next) {
         console.error('Error converting colorFamily to embedded object:', error);
         this.colorFamily = {
           _id: mongoose.Types.ObjectId.isValid(this.colorFamily) ? this.colorFamily : new mongoose.Types.ObjectId(this.colorFamily),
-          name: 'Unknown',
+          name: originalColorFamilyName || 'Unknown',
           colorCode: '#000000',
           status: 'deleted',
         };
       }
+    } else if (originalColorFamilyName && this.colorFamily && typeof this.colorFamily === 'object') {
+      // If colorFamily is already an object with a name, preserve it exactly
+      this.colorFamily.name = originalColorFamilyName;
     }
   }
   
@@ -562,9 +572,13 @@ yarnCatalogSchema.pre('save', async function (next) {
   }
   
   // Generate yarnName if needed
-  if (!this.yarnName || this.isModified('countSize') || this.isModified('colorFamily') || 
-      this.isModified('pantonName') || this.isModified('yarnType') || this.isModified('yarnSubtype')) {
-    
+  // IMPORTANT: Preserve original yarnName if explicitly provided - don't auto-generate if yarnName is already set
+  // Only auto-generate if yarnName is missing
+  const originalYarnName = this.yarnName ? String(this.yarnName).trim() : null;
+  
+  // Only generate yarnName if it's not provided
+  // If yarnName is explicitly provided, preserve it exactly as is (no modifications)
+  if (!this.yarnName) {
     try {
       const parts = [];
       
@@ -573,7 +587,7 @@ yarnCatalogSchema.pre('save', async function (next) {
         parts.push(this.countSize.name);
       }
       
-      // Get colorFamily name (optional, now embedded object)
+      // Get colorFamily name (optional, now embedded object) - use preserved original name
       if (this.colorFamily && this.colorFamily.name) {
         parts.push(this.colorFamily.name);
       }
@@ -602,6 +616,9 @@ yarnCatalogSchema.pre('save', async function (next) {
     } catch (error) {
       return next(error);
     }
+  } else {
+    // If yarnName was explicitly provided, preserve it exactly as provided (no modifications)
+    this.yarnName = originalYarnName;
   }
   
   next();
