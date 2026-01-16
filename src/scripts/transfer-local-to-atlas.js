@@ -33,15 +33,8 @@ node src/scripts/transfer-atlas-to-local.js
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
-// Get the directory of the current script
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Resolve .env from project root (go up 2 levels from src/scripts/)
-const projectRoot = path.resolve(__dirname, '../../');
-dotenv.config({ path: path.resolve(projectRoot, '.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 // Get database URLs from environment or use defaults
 const LOCAL_MONGODB_URL = process.env.LOCAL_MONGODB_URL || 'mongodb://127.0.0.1:27017/addon';

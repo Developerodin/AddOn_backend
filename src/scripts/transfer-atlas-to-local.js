@@ -33,18 +33,31 @@ node src/scripts/transfer-atlas-to-local.js
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
-// Get the directory of the current script
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Resolve .env from project root (go up 2 levels from src/scripts/)
-const projectRoot = path.resolve(__dirname, '../../');
-dotenv.config({ path: path.resolve(projectRoot, '.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 // Get database URLs from environment or use defaults
+// Get database URLs from environment or use defaults
+// Use standard connection string to bypass SRV lookup issues
+const ATLAS_HOSTS = [
+  'ac-26xn7fg-shard-00-00.0qimubb.mongodb.net:27017',
+  'ac-26xn7fg-shard-00-01.0qimubb.mongodb.net:27017',
+  'ac-26xn7fg-shard-00-02.0qimubb.mongodb.net:27017'
+].join(',');
+const FALLBACK_ATLAS_URL = `mongodb://${ATLAS_HOSTS}/Addonbackupdatabase?ssl=true&replicaSet=atlas-26xn7fg-shard-0&authSource=admin&retryWrites=true&w=majority`;
+
 let ATLAS_MONGODB_URL = process.env.ATLAS_MONGODB_URL || process.env.MONGODB_URL;
+
+// If we detect a specific SRV URL that we know fails, use the fallback
+if (ATLAS_MONGODB_URL && ATLAS_MONGODB_URL.includes('cluster0.0qimubb.mongodb.net') && ATLAS_MONGODB_URL.startsWith('mongodb+srv://')) {
+  // Extract credentials
+  const match = ATLAS_MONGODB_URL.match(/\/\/([^:]+):([^@]+)@/);
+  if (match) {
+    const [_, user, pass] = match;
+    ATLAS_MONGODB_URL = `mongodb://${user}:${pass}@${ATLAS_HOSTS}/Addonbackupdatabase?ssl=true&replicaSet=atlas-26xn7fg-shard-0&authSource=admin&retryWrites=true&w=majority`;
+    console.log('ℹ️  Using direct connection string to bypass DNS/SRV issues');
+  }
+}
 const LOCAL_MONGODB_URL = process.env.LOCAL_MONGODB_URL || 'mongodb://127.0.0.1:27017/addon';
 
 // Parse command line arguments for database name override
@@ -132,26 +145,26 @@ const getCollectionCount = async (db, collectionName) => {
  */
 const transferCollection = async (atlasDb, localDb, collectionName, options = {}) => {
   const { dryRun = false, drop = false } = options;
-  
+
   try {
     const atlasCollection = atlasDb.collection(collectionName);
     const localCollection = localDb.collection(collectionName);
-    
+
     // Get document count
     const count = await getCollectionCount(atlasDb, collectionName);
-    
+
     if (count === 0) {
       console.log(`   ⏭️  ${collectionName}: Empty collection, skipping`);
       return { transferred: 0, skipped: true };
     }
-    
+
     console.log(`   📦 ${collectionName}: ${count} documents`);
-    
+
     if (dryRun) {
       console.log(`      [DRY RUN] Would transfer ${count} documents`);
       return { transferred: count, skipped: false };
     }
-    
+
     // Drop collection in local if requested
     if (drop) {
       try {
@@ -164,27 +177,27 @@ const transferCollection = async (atlasDb, localDb, collectionName, options = {}
         }
       }
     }
-    
+
     // Get all documents from Atlas
     const documents = await atlasCollection.find({}).toArray();
-    
+
     if (documents.length === 0) {
       return { transferred: 0, skipped: true };
     }
-    
+
     // Insert documents into local in batches
     // IMPORTANT: Preserving _id fields so documents have same IDs in both databases
     const batchSize = 1000;
     let transferred = 0;
-    
+
     for (let i = 0; i < documents.length; i += batchSize) {
       const batch = documents.slice(i, i + batchSize);
-      
+
       // Preserve _id fields - documents will have same IDs in both databases
       // This ensures relationships and references are maintained
-      
+
       try {
-        await localCollection.insertMany(batch, { 
+        await localCollection.insertMany(batch, {
           ordered: false,  // Continue on duplicate key errors
           writeConcern: { w: 1 }  // Don't wait for all replicas
         });
@@ -212,11 +225,11 @@ const transferCollection = async (atlasDb, localDb, collectionName, options = {}
         }
       }
     }
-    
+
     console.log(`      ✅ Transferred ${transferred} documents`);
-    
+
     return { transferred, skipped: false };
-    
+
   } catch (error) {
     console.error(`      ❌ Error transferring ${collectionName}:`, error.message);
     throw error;
@@ -232,48 +245,48 @@ const transferData = async () => {
     console.log(`☁️  Atlas: ${ATLAS_MONGODB_URL.replace(/\/\/([^:]+):([^@]+)@/, '//***:***@')}`);
     console.log(`📊 Source Database: ${atlasDbName}`);
     console.log(`📡 Local: ${LOCAL_MONGODB_URL}\n`);
-    
+
     if (isDryRun) {
       console.log('⚠️  DRY RUN MODE: No data will be transferred\n');
     }
-    
+
     if (dropCollections) {
       console.log('⚠️  WARNING: Existing collections in local database will be DROPPED before transfer!\n');
     }
-    
+
     // Connect to both databases
     const atlasDb = await connectAtlas();
     const localDb = await connectLocal();
-    
+
     // Get database names
     const actualAtlasDbName = atlasDb.db.databaseName;
     const localDbName = localDb.db.databaseName;
-    
+
     console.log(`\n📊 Atlas Database: ${actualAtlasDbName}`);
     console.log(`📊 Local Database: ${localDbName}\n`);
-    
+
     // Get all collections
     const allCollections = await getCollections(atlasDb.db);
-    const collections = collectionsToTransfer 
+    const collections = collectionsToTransfer
       ? allCollections.filter(col => collectionsToTransfer.includes(col))
       : allCollections;
-    
+
     if (collections.length === 0) {
       console.log('ℹ️  No collections found to transfer');
       return;
     }
-    
+
     console.log(`📋 Found ${collections.length} collection(s) to transfer:\n`);
-    
+
     // Show collection info
     for (const collectionName of collections) {
       const count = await getCollectionCount(atlasDb.db, collectionName);
       console.log(`   • ${collectionName}: ${count} documents`);
     }
-    
+
     console.log('\n' + '='.repeat(80));
     console.log('🔄 Starting Transfer...\n');
-    
+
     const results = {
       total: collections.length,
       transferred: 0,
@@ -281,7 +294,7 @@ const transferData = async () => {
       skipped: 0,
       totalDocuments: 0
     };
-    
+
     // Transfer each collection
     for (const collectionName of collections) {
       try {
@@ -292,7 +305,7 @@ const transferData = async () => {
           collectionName,
           { dryRun: isDryRun, drop: dropCollections }
         );
-        
+
         if (result.skipped) {
           results.skipped++;
         } else {
@@ -304,7 +317,7 @@ const transferData = async () => {
         results.failed++;
       }
     }
-    
+
     // Summary
     console.log('\n' + '='.repeat(80));
     console.log('📈 Transfer Summary:');
@@ -313,14 +326,14 @@ const transferData = async () => {
     console.log(`⏭️  Skipped (empty): ${results.skipped} collections`);
     console.log(`❌ Failed: ${results.failed} collections`);
     console.log(`📊 Total documents transferred: ${results.totalDocuments.toLocaleString()}`);
-    
+
     if (isDryRun) {
       console.log('\n⚠️  This was a DRY RUN. No data was actually transferred.');
       console.log('   Run without --dry-run to perform the actual transfer.');
     } else {
       console.log('\n🎉 Data transfer completed successfully!');
     }
-    
+
   } catch (error) {
     console.error('\n❌ Transfer failed:', error);
     throw error;
