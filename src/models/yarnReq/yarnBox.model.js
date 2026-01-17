@@ -1,6 +1,9 @@
 import mongoose from 'mongoose';
 import toJSON from '../plugins/toJSON.plugin.js';
 import paginate from '../plugins/paginate.plugin.js';
+import YarnCatalog from '../yarnManagement/yarnCatalog.model.js';
+import YarnTransaction from './yarnTransaction.model.js';
+import YarnInventory from './yarnInventory.model.js';
 
 const qcDataSchema = mongoose.Schema(
   {
@@ -140,6 +143,165 @@ yarnBoxSchema.pre('save', function (next) {
     this.barcode = this._id.toString();
   }
   next();
+});
+
+/**
+ * Post-save hook: Automatically create yarn_stocked transaction when box is stored in long-term storage
+ * This ensures inventory is updated automatically when boxes are stored
+ */
+yarnBoxSchema.post('save', async function (doc) {
+  // Only process if box is stored in long-term storage with QC approval
+  const isLongTermStorage = doc.storageLocation && /^LT-/i.test(doc.storageLocation);
+  const isStored = doc.storedStatus === true;
+  const isQcApproved = doc.qcData?.status === 'qc_approved';
+  const hasWeight = doc.boxWeight && doc.boxWeight > 0;
+
+  // Check if conditions are met
+  if (!isLongTermStorage || !isStored || !isQcApproved || !hasWeight) {
+    return; // Skip if conditions not met
+  }
+
+  // Check if this is a new document or if storedStatus/storageLocation was just set
+  // We'll check for existing transaction to avoid duplicates
+
+  try {
+    // Check if transaction already exists for this box
+    const existingTransaction = await YarnTransaction.findOne({
+      transactionType: 'yarn_stocked',
+      orderno: doc.boxId,
+    });
+
+    if (existingTransaction) {
+      // Transaction already exists, skip
+      return;
+    }
+
+    // Find matching yarn catalog
+    let yarnCatalog = null;
+    if (doc.yarnName) {
+      // Try exact match first
+      yarnCatalog = await YarnCatalog.findOne({
+        yarnName: doc.yarnName.trim(),
+        status: { $ne: 'deleted' },
+      });
+
+      // Try case-insensitive match if exact match failed
+      if (!yarnCatalog) {
+        yarnCatalog = await YarnCatalog.findOne({
+          yarnName: { $regex: new RegExp(`^${doc.yarnName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+          status: { $ne: 'deleted' },
+        });
+      }
+    }
+
+    if (!yarnCatalog) {
+      // No matching catalog found - skip silently (will be handled by sync script)
+      return;
+    }
+
+    // Calculate net weight
+    const netWeight = (doc.boxWeight || 0) - (doc.tearweight || 0);
+    if (netWeight <= 0) {
+      return;
+    }
+
+    // Try to use transaction service first (works with replica sets)
+    try {
+      const { createYarnTransaction } = await import('../../services/yarnManagement/yarnTransaction.service.js');
+      await createYarnTransaction({
+        yarn: yarnCatalog._id.toString(),
+        yarnName: yarnCatalog.yarnName,
+        transactionType: 'yarn_stocked',
+        transactionDate: doc.receivedDate || doc.createdAt || new Date(),
+        totalWeight: doc.boxWeight || 0,
+        totalNetWeight: netWeight,
+        totalTearWeight: doc.tearweight || 0,
+        numberOfCones: doc.numberOfCones || 0,
+        orderno: doc.boxId,
+      });
+    } catch (txnError) {
+      // If transaction service fails (e.g., no replica set), update inventory directly
+      if (txnError.message && txnError.message.includes('replica set')) {
+        // Fallback: Update inventory directly without MongoDB transaction
+        const toNumber = (value) => Number(value ?? 0);
+        
+        let inventory = await YarnInventory.findOne({ yarn: yarnCatalog._id });
+        
+        if (!inventory) {
+          inventory = new YarnInventory({
+            yarn: yarnCatalog._id,
+            yarnName: yarnCatalog.yarnName,
+            totalInventory: { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, numberOfCones: 0 },
+            longTermInventory: { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, numberOfCones: 0 },
+            shortTermInventory: { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, numberOfCones: 0 },
+            blockedNetWeight: 0,
+            inventoryStatus: 'in_stock',
+            overbooked: false,
+          });
+        }
+
+        // Ensure buckets exist
+        if (!inventory.longTermInventory) {
+          inventory.longTermInventory = { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, numberOfCones: 0 };
+        }
+        if (!inventory.shortTermInventory) {
+          inventory.shortTermInventory = { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, numberOfCones: 0 };
+        }
+        if (!inventory.totalInventory) {
+          inventory.totalInventory = { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, numberOfCones: 0 };
+        }
+
+        // Update long-term inventory
+        const lt = inventory.longTermInventory;
+        lt.totalWeight = toNumber(lt.totalWeight) + toNumber(doc.boxWeight);
+        lt.totalTearWeight = toNumber(lt.totalTearWeight) + toNumber(doc.tearweight);
+        lt.totalNetWeight = toNumber(lt.totalNetWeight) + netWeight;
+        lt.numberOfCones = toNumber(lt.numberOfCones) + toNumber(doc.numberOfCones);
+
+        // Recalculate total inventory
+        const st = inventory.shortTermInventory;
+        const total = inventory.totalInventory;
+        total.totalWeight = toNumber(lt.totalWeight) + toNumber(st.totalWeight);
+        total.totalTearWeight = toNumber(lt.totalTearWeight) + toNumber(st.totalTearWeight);
+        total.totalNetWeight = toNumber(lt.totalNetWeight) + toNumber(st.totalNetWeight);
+        total.numberOfCones = toNumber(lt.numberOfCones) + toNumber(st.numberOfCones);
+
+        // Update status
+        const totalNet = toNumber(total.totalNetWeight);
+        const minQty = toNumber(yarnCatalog?.minQuantity);
+        if (minQty > 0) {
+          if (totalNet <= minQty) {
+            inventory.inventoryStatus = 'low_stock';
+          } else if (totalNet <= minQty * 1.2) {
+            inventory.inventoryStatus = 'soon_to_be_low';
+          } else {
+            inventory.inventoryStatus = 'in_stock';
+          }
+        }
+
+        await inventory.save();
+
+        // Create transaction record
+        await YarnTransaction.create({
+          yarn: yarnCatalog._id,
+          yarnName: yarnCatalog.yarnName,
+          transactionType: 'yarn_stocked',
+          transactionDate: doc.receivedDate || doc.createdAt || new Date(),
+          transactionTotalWeight: doc.boxWeight || 0,
+          transactionNetWeight: netWeight,
+          transactionTearWeight: doc.tearweight || 0,
+          transactionConeCount: doc.numberOfCones || 0,
+          orderno: doc.boxId,
+        });
+      } else {
+        // Re-throw if it's a different error
+        throw txnError;
+      }
+    }
+  } catch (error) {
+    // Log error but don't throw - don't break box save operation
+    console.error(`[YarnBox] Error auto-syncing box ${doc.boxId} to inventory:`, error.message);
+  }
 });
 
 yarnBoxSchema.plugin(toJSON);

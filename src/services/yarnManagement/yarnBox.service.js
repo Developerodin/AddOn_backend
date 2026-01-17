@@ -238,6 +238,24 @@ export const updateQcStatusByPoNumber = async (poNumber, qcStatus, qcData = {}) 
   // Fetch updated boxes
   const updatedBoxes = await YarnBox.find({ poNumber });
 
+  // If QC was approved, trigger inventory sync for boxes stored in long-term storage
+  // Note: updateMany doesn't trigger post-save hooks, so we need to handle this manually
+  if (qcStatus === 'qc_approved') {
+    // Save each box individually to trigger post-save hooks for inventory sync
+    // This ensures boxes stored in LT storage get synced to inventory
+    for (const box of updatedBoxes) {
+      if (box.storedStatus && box.storageLocation && /^LT-/i.test(box.storageLocation) && box.boxWeight > 0) {
+        // Trigger save to activate post-save hook
+        try {
+          await box.save();
+        } catch (error) {
+          // Log but don't fail the entire operation
+          console.error(`[updateQcStatusByPoNumber] Error syncing box ${box.boxId} to inventory:`, error.message);
+        }
+      }
+    }
+  }
+
   return {
     message: `Successfully updated QC status to ${qcStatus} for ${updateResult.modifiedCount} boxes`,
     poNumber,
