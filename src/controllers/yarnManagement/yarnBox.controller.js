@@ -1,6 +1,7 @@
 import httpStatus from 'http-status';
 import catchAsync from '../../utils/catchAsync.js';
 import * as yarnBoxService from '../../services/yarnManagement/yarnBox.service.js';
+import * as yarnBoxTransferService from '../../services/yarnManagement/yarnBoxTransfer.service.js';
 import pick from '../../utils/pick.js';
 
 export const createYarnBox = catchAsync(async (req, res) => {
@@ -41,6 +42,16 @@ export const updateQcStatusByPoNumber = catchAsync(async (req, res) => {
   const { poNumber } = req.body;
   const { status, ...qcData } = req.body;
   const result = await yarnBoxService.updateQcStatusByPoNumber(poNumber, status, qcData);
+  res.status(httpStatus.OK).send(result);
+});
+
+export const transferBoxes = catchAsync(async (req, res) => {
+  const result = await yarnBoxTransferService.transferBoxes(req.body);
+  res.status(httpStatus.OK).send(result);
+});
+
+export const transferBoxesToShortTerm = catchAsync(async (req, res) => {
+  const result = await yarnBoxTransferService.transferBoxesToShortTerm(req.body);
   res.status(httpStatus.OK).send(result);
 });
 

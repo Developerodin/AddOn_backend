@@ -260,11 +260,12 @@ const resyncFromStorage = async () => {
       }
 
       // Update long-term inventory
+      // Long-term storage: Only weight (boxes), NO cones (cones are created when boxes are opened/transferred to ST)
       const delta = {
         totalWeight: box.boxWeight || 0,
         totalNetWeight: netWeight,
         totalTearWeight: box.tearweight || 0,
-        numberOfCones: box.numberOfCones || 0,
+        numberOfCones: 0, // Boxes in LT storage don't have individual cones
       };
 
       const ltBucket = ensureBucket(inventory, 'longTermInventory');

@@ -38,6 +38,18 @@ router
   );
 
 router
+  .route('/transfer')
+  .post(
+    yarnBoxController.transferBoxes
+  );
+
+router
+  .route('/transfer-to-short-term')
+  .post(
+    yarnBoxController.transferBoxesToShortTerm
+  );
+
+router
   .route('/:yarnBoxId')
   .get(
     validate(yarnBoxValidation.getYarnBoxById),

@@ -13,19 +13,23 @@ const transformInventoryForResponse = (inventory) => {
   const st = inventory.shortTermInventory || {};
   const blocked = inventory.blockedNetWeight || 0;
 
+  // Long-term storage: Only weight (boxes), NO cones
+  // Short-term storage: Weight and cones
+  // Blocked weight applies to short-term (where yarn is issued from)
+  
   return {
     yarn: inventory.yarn,
     yarnId: inventory.yarn?._id || inventory.yarn,
     yarnName: inventory.yarnName,
     longTermStorage: {
-      totalWeight: lt.totalWeight || 0,
-      netWeight: (lt.totalNetWeight || 0) + blocked,
-      numberOfCones: lt.numberOfCones || 0,
+      totalWeight: Math.max(0, lt.totalWeight || 0), // Ensure non-negative
+      netWeight: Math.max(0, lt.totalNetWeight || 0), // Long-term: weight only, no blocked weight
+      numberOfCones: 0, // Long-term storage has boxes, not individual cones
     },
     shortTermStorage: {
-      totalWeight: st.totalWeight || 0,
-      netWeight: (st.totalNetWeight || 0) + blocked,
-      numberOfCones: st.numberOfCones || 0,
+      totalWeight: Math.max(0, st.totalWeight || 0), // Ensure non-negative
+      netWeight: Math.max(0, (st.totalNetWeight || 0) - blocked), // Short-term: net weight minus blocked
+      numberOfCones: Math.max(0, st.numberOfCones || 0), // Ensure non-negative
     },
     inventoryStatus: inventory.inventoryStatus,
     overbooked: inventory.overbooked,

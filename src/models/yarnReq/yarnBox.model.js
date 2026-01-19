@@ -252,11 +252,12 @@ yarnBoxSchema.post('save', async function (doc) {
         }
 
         // Update long-term inventory
+        // Long-term storage: Only weight (boxes), NO cones (cones are created when boxes are opened/transferred to ST)
         const lt = inventory.longTermInventory;
         lt.totalWeight = toNumber(lt.totalWeight) + toNumber(doc.boxWeight);
         lt.totalTearWeight = toNumber(lt.totalTearWeight) + toNumber(doc.tearweight);
         lt.totalNetWeight = toNumber(lt.totalNetWeight) + netWeight;
-        lt.numberOfCones = toNumber(lt.numberOfCones) + toNumber(doc.numberOfCones);
+        lt.numberOfCones = 0; // Boxes in LT storage don't have individual cones
 
         // Recalculate total inventory
         const st = inventory.shortTermInventory;

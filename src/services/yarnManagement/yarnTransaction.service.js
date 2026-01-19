@@ -30,13 +30,19 @@ const ensureBucket = (inventory, key) => {
 };
 
 /**
- * Adds the provided delta to the bucket. Negative values are allowed.
+ * Adds the provided delta to the bucket. Ensures values don't go negative.
  */
 const applyDelta = (bucket, delta, bucketName) => {
   bucket.totalWeight += toNumber(delta.totalWeight);
   bucket.totalTearWeight += toNumber(delta.totalTearWeight);
   bucket.netWeight += toNumber(delta.totalNetWeight);
   bucket.numberOfCones += toNumber(delta.numberOfCones);
+  
+  // Ensure values don't go negative
+  bucket.totalWeight = Math.max(0, bucket.totalWeight);
+  bucket.totalTearWeight = Math.max(0, bucket.totalTearWeight);
+  bucket.netWeight = Math.max(0, bucket.netWeight);
+  bucket.numberOfCones = Math.max(0, bucket.numberOfCones);
 };
 
 /**
@@ -80,6 +86,10 @@ const normaliseTransactionPayload = (inputBody) => {
     transactionTearWeight: 0,
     transactionConeCount: 0,
     orderno: body.orderno,
+    // Transfer tracking fields
+    boxIds: body.boxIds || [],
+    fromStorageLocation: body.fromStorageLocation,
+    toStorageLocation: body.toStorageLocation,
   };
 
   if (isBlocked) {
@@ -161,7 +171,17 @@ const updateInventoryBuckets = (inventory, transaction) => {
     }
     case 'yarn_stocked': {
       // Newly stocked yarn is assumed to land in long-term storage.
-      applyDelta(inventory.longTermInventory, delta, 'long-term inventory');
+      // Long-term storage: Only weight (boxes), NO cones (cones are created when boxes are opened/transferred to ST)
+      applyDelta(
+        inventory.longTermInventory,
+        {
+          totalWeight: delta.totalWeight,
+          totalTearWeight: delta.totalTearWeight,
+          totalNetWeight: delta.totalNetWeight,
+          numberOfCones: 0, // Boxes in LT storage don't have individual cones
+        },
+        'long-term inventory'
+      );
       break;
     }
     case 'internal_transfer': {

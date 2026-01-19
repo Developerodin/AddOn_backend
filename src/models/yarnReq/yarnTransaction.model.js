@@ -45,6 +45,20 @@ const yarnTransactionSchema = mongoose.Schema(
       type: String,
       trim: true,
     },
+    // For internal_transfer: Track which boxes were transferred
+    boxIds: {
+      type: [String],
+      default: [],
+    },
+    // Track storage locations for transfer history
+    fromStorageLocation: {
+      type: String,
+      trim: true,
+    },
+    toStorageLocation: {
+      type: String,
+      trim: true,
+    },
   },
   {
     timestamps: true,
