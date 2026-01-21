@@ -161,7 +161,8 @@ const updateInventoryBuckets = (inventory, transaction) => {
         },
         'short-term inventory'
       );
-      inventory.blockedNetWeight = toNumber(inventory.blockedNetWeight) - toNumber(delta.totalNetWeight);
+      // Ensure blockedNetWeight never goes negative
+      inventory.blockedNetWeight = Math.max(0, toNumber(inventory.blockedNetWeight) - toNumber(delta.totalNetWeight));
       break;
     }
     case 'yarn_blocked': {
@@ -221,10 +222,10 @@ const updateInventoryStatusAndMaybeRaiseRequisition = async (
   yarnDoc,
   trigger
 ) => {
-  const totalNet = toNumber(inventory.totalInventory.netWeight);
-  const blockedNet = toNumber(inventory.blockedNetWeight);
+  const totalNet = toNumber(inventory.totalInventory?.totalNetWeight || 0);
+  const blockedNet = Math.max(0, toNumber(inventory.blockedNetWeight || 0)); // Ensure non-negative
   const availableNet = Math.max(totalNet - blockedNet, 0);
-  const minQty = toNumber(yarnDoc?.minQuantity);
+  const minQty = toNumber(yarnDoc?.minQuantity || 0);
 
   let newStatus = 'in_stock';
   if (minQty > 0) {
@@ -276,7 +277,7 @@ const validateBlockedDoesNotExceedInventory = (inventory, transaction) => {
   if (transaction.transactionType !== 'yarn_blocked') {
     return;
   }
-  const totalNet = toNumber(inventory.totalInventory.netWeight);
+  const totalNet = toNumber(inventory.totalInventory?.totalNetWeight || 0);
   const blockedWeight = transaction.transactionNetWeight;
 
   if (blockedWeight > totalNet) {

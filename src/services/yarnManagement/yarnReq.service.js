@@ -1,5 +1,5 @@
 import httpStatus from 'http-status';
-import { YarnRequisition } from '../../models/index.js';
+import { YarnRequisition, YarnInventory, YarnCatalog } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 
 const computeAlertStatus = (minQty, availableQty, blockedQty) => {
@@ -10,6 +10,55 @@ const computeAlertStatus = (minQty, availableQty, blockedQty) => {
     return 'overbooked';
   }
   return null;
+};
+
+/**
+ * Recalculate requisition values from actual inventory
+ * This ensures requisitions always show accurate data
+ */
+const recalculateRequisitionFromInventory = async (requisition) => {
+  const toNumber = (value) => Math.max(0, Number(value ?? 0));
+
+  // Get current inventory for this yarn
+  const inventory = await YarnInventory.findOne({ yarn: requisition.yarn }).lean();
+  if (!inventory) {
+    // No inventory exists, set to zero
+    return {
+      ...requisition,
+      availableQty: 0,
+      blockedQty: 0,
+      alertStatus: 'below_minimum',
+    };
+  }
+
+  // Get yarn catalog for minQty
+  const yarnCatalog = await YarnCatalog.findById(requisition.yarn).lean();
+  const minQty = toNumber(yarnCatalog?.minQuantity || requisition.minQty || 0);
+
+  // Calculate from actual inventory
+  const totalNet = toNumber(inventory.totalInventory?.totalNetWeight || 0);
+  const blockedNet = Math.max(0, toNumber(inventory.blockedNetWeight || 0));
+  const availableNet = Math.max(totalNet - blockedNet, 0);
+
+  // Calculate alert status
+  const alertStatus = computeAlertStatus(minQty, availableNet, blockedNet);
+
+  // Update requisition in database
+  await YarnRequisition.findByIdAndUpdate(requisition._id, {
+    minQty,
+    availableQty: availableNet,
+    blockedQty: blockedNet,
+    alertStatus,
+  });
+
+  // Return updated requisition data
+  return {
+    ...requisition,
+    minQty,
+    availableQty: availableNet,
+    blockedQty: blockedNet,
+    alertStatus,
+  };
 };
 
 export const getYarnRequisitionList = async ({ startDate, endDate, poSent }) => {
@@ -37,7 +86,20 @@ export const getYarnRequisitionList = async ({ startDate, endDate, poSent }) => 
     .sort({ created: -1 })
     .lean();
 
-  return yarnRequisitions;
+  // Recalculate each requisition from actual inventory to ensure accuracy
+  const recalculatedRequisitions = await Promise.all(
+    yarnRequisitions.map(async (req) => {
+      try {
+        const recalculated = await recalculateRequisitionFromInventory(req);
+        return recalculated;
+      } catch (error) {
+        console.error(`Error recalculating requisition for ${req.yarnName}:`, error.message);
+        return req; // Return original if recalculation fails
+      }
+    })
+  );
+
+  return recalculatedRequisitions;
 };
 
 export const createYarnRequisition = async (yarnRequisitionBody) => {

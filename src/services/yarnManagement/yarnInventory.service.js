@@ -1,6 +1,6 @@
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
-import { YarnInventory, YarnCatalog } from '../../models/index.js';
+import { YarnInventory, YarnCatalog, YarnBox, YarnCone } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import pick from '../../utils/pick.js';
 
@@ -37,6 +37,124 @@ const transformInventoryForResponse = (inventory) => {
 };
 
 /**
+ * Recalculate inventory from actual storage data
+ * This ensures inventory always matches actual storage
+ */
+const recalculateInventoryFromStorage = async (inventory) => {
+  const toNumber = (value) => Math.max(0, Number(value ?? 0));
+
+  // Recalculate long-term inventory from boxes
+  // Use yarn ID if available, otherwise fall back to yarnName
+  const ltBoxQuery = {
+    storageLocation: { $regex: /^LT-/i },
+    storedStatus: true,
+    'qcData.status': 'qc_approved',
+  };
+  
+  if (inventory.yarn) {
+    // Try to match by yarn reference if boxes have yarn field
+    ltBoxQuery.$or = [
+      { yarn: inventory.yarn },
+      { yarnName: inventory.yarnName },
+    ];
+  } else {
+    ltBoxQuery.yarnName = inventory.yarnName;
+  }
+
+  const ltBoxes = await YarnBox.find(ltBoxQuery).lean();
+
+  let ltTotalWeight = 0;
+  let ltTotalTearWeight = 0;
+  let ltTotalNetWeight = 0;
+
+  for (const box of ltBoxes) {
+    const netWeight = (box.boxWeight || 0) - (box.tearweight || 0);
+    ltTotalWeight += box.boxWeight || 0;
+    ltTotalTearWeight += box.tearweight || 0;
+    ltTotalNetWeight += netWeight;
+  }
+
+  // Recalculate short-term inventory from available cones
+  const stConeQuery = {
+    coneStorageId: { $regex: /^ST-/i },
+    issueStatus: { $ne: 'issued' },
+  };
+  
+  if (inventory.yarn) {
+    stConeQuery.$or = [
+      { yarn: inventory.yarn },
+      { yarnName: inventory.yarnName },
+    ];
+  } else {
+    stConeQuery.yarnName = inventory.yarnName;
+  }
+
+  const stCones = await YarnCone.find(stConeQuery).lean();
+
+  let stTotalWeight = 0;
+  let stTotalTearWeight = 0;
+  let stTotalNetWeight = 0;
+  let stConeCount = 0;
+
+  for (const cone of stCones) {
+    const netWeight = (cone.coneWeight || 0) - (cone.tearWeight || 0);
+    stTotalWeight += cone.coneWeight || 0;
+    stTotalTearWeight += cone.tearWeight || 0;
+    stTotalNetWeight += netWeight;
+    stConeCount += 1;
+  }
+
+  // Update inventory buckets
+  if (!inventory.longTermInventory) {
+    inventory.longTermInventory = { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, numberOfCones: 0 };
+  }
+  if (!inventory.shortTermInventory) {
+    inventory.shortTermInventory = { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, numberOfCones: 0 };
+  }
+  if (!inventory.totalInventory) {
+    inventory.totalInventory = { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, numberOfCones: 0 };
+  }
+
+  const lt = inventory.longTermInventory;
+  lt.totalWeight = toNumber(ltTotalWeight);
+  lt.totalTearWeight = toNumber(ltTotalTearWeight);
+  lt.totalNetWeight = toNumber(ltTotalNetWeight);
+  lt.numberOfCones = 0; // Always 0 for LT
+
+  const st = inventory.shortTermInventory;
+  st.totalWeight = toNumber(stTotalWeight);
+  st.totalTearWeight = toNumber(stTotalTearWeight);
+  st.totalNetWeight = toNumber(stTotalNetWeight);
+  st.numberOfCones = toNumber(stConeCount);
+
+  // Recalculate total
+  const total = inventory.totalInventory;
+  total.totalWeight = toNumber(lt.totalWeight) + toNumber(st.totalWeight);
+  total.totalTearWeight = toNumber(lt.totalTearWeight) + toNumber(st.totalTearWeight);
+  total.totalNetWeight = toNumber(lt.totalNetWeight) + toNumber(st.totalNetWeight);
+  total.numberOfCones = toNumber(lt.numberOfCones) + toNumber(st.numberOfCones);
+
+  // Update status if yarn catalog exists
+  const yarnCatalog = await YarnCatalog.findById(inventory.yarn);
+  if (yarnCatalog) {
+    const totalNet = toNumber(total.totalNetWeight);
+    const minQty = toNumber(yarnCatalog?.minQuantity);
+    if (minQty > 0) {
+      if (totalNet <= minQty) {
+        inventory.inventoryStatus = 'low_stock';
+      } else if (totalNet <= minQty * 1.2) {
+        inventory.inventoryStatus = 'soon_to_be_low';
+      } else {
+        inventory.inventoryStatus = 'in_stock';
+      }
+    }
+  }
+
+  await inventory.save();
+  return inventory;
+};
+
+/**
  * Query yarn inventories with optional filters
  * @param {Object} filters - Filter criteria
  * @param {Object} options - Query options (pagination, sorting)
@@ -63,10 +181,23 @@ export const queryYarnInventories = async (filters = {}, options = {}) => {
 
   const result = await YarnInventory.paginate(mongooseFilter, options);
 
+  // Recalculate each inventory from actual storage to ensure accuracy
+  const recalculatedResults = await Promise.all(
+    result.results.map(async (inv) => {
+      try {
+        const recalculated = await recalculateInventoryFromStorage(inv);
+        return recalculated;
+      } catch (error) {
+        console.error(`Error recalculating inventory for ${inv.yarnName}:`, error.message);
+        return inv; // Return original if recalculation fails
+      }
+    })
+  );
+
   // Transform each inventory item for frontend
   const transformedResults = {
     ...result,
-    results: result.results.map((inv) => transformInventoryForResponse(inv)),
+    results: recalculatedResults.map((inv) => transformInventoryForResponse(inv)),
   };
 
   return transformedResults;
@@ -126,7 +257,9 @@ export const getYarnInventoryById = async (inventoryId) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Yarn inventory not found');
   }
 
-  return transformInventoryForResponse(inventory);
+  // Recalculate from actual storage before returning
+  const recalculated = await recalculateInventoryFromStorage(inventory);
+  return transformInventoryForResponse(recalculated);
 };
 
 /**
@@ -144,6 +277,8 @@ export const getYarnInventoryByYarnId = async (yarnId) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Yarn inventory not found for this yarn');
   }
 
-  return transformInventoryForResponse(inventory);
+  // Recalculate from actual storage before returning
+  const recalculated = await recalculateInventoryFromStorage(inventory);
+  return transformInventoryForResponse(recalculated);
 };
 
