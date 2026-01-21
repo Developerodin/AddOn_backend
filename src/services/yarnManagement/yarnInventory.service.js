@@ -74,7 +74,29 @@ const recalculateInventoryFromStorage = async (inventory) => {
     ltTotalNetWeight += netWeight;
   }
 
-  // Recalculate short-term inventory from available cones
+  // Recalculate short-term inventory from:
+  // 1. Boxes in ST storage (transferred from LT but not yet opened)
+  // 2. Available cones in ST storage (not issued)
+  
+  // Count boxes in ST storage
+  const stBoxQuery = {
+    storageLocation: { $regex: /^ST-/i },
+    storedStatus: true,
+    'qcData.status': 'qc_approved',
+  };
+  
+  if (inventory.yarn) {
+    stBoxQuery.$or = [
+      { yarn: inventory.yarn },
+      { yarnName: inventory.yarnName },
+    ];
+  } else {
+    stBoxQuery.yarnName = inventory.yarnName;
+  }
+
+  const stBoxes = await YarnBox.find(stBoxQuery).lean();
+
+  // Count cones in ST storage
   const stConeQuery = {
     coneStorageId: { $regex: /^ST-/i },
     issueStatus: { $ne: 'issued' },
@@ -96,6 +118,16 @@ const recalculateInventoryFromStorage = async (inventory) => {
   let stTotalNetWeight = 0;
   let stConeCount = 0;
 
+  // Add weight from boxes in ST storage
+  for (const box of stBoxes) {
+    const netWeight = (box.boxWeight || 0) - (box.tearweight || 0);
+    stTotalWeight += box.boxWeight || 0;
+    stTotalTearWeight += box.tearweight || 0;
+    stTotalNetWeight += netWeight;
+    // Boxes in ST don't count as individual cones until opened
+  }
+
+  // Add weight from cones in ST storage
   for (const cone of stCones) {
     const netWeight = (cone.coneWeight || 0) - (cone.tearWeight || 0);
     stTotalWeight += cone.coneWeight || 0;

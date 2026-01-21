@@ -1,6 +1,6 @@
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
-import { YarnBox, YarnCatalog, YarnTransaction, YarnInventory } from '../../models/index.js';
+import { YarnBox, YarnCatalog, YarnTransaction, YarnInventory, YarnCone } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import * as yarnTransactionService from './yarnTransaction.service.js';
 
@@ -120,16 +120,23 @@ export const transferBoxes = async (transferData) => {
       fromLocations.add(box.storageLocation);
     }
 
-    // Update box storage locations
     const boxIdsForYarn = yarnBoxes.map(b => b.boxId);
-    for (const box of yarnBoxes) {
-      box.storageLocation = toStorageLocation;
-      await box.save();
-    }
-
     let transaction;
 
     if (transferType === 'LT_TO_ST') {
+      // LT→ST: Boxes are transferred, cones are extracted and stored in ST
+      // 1. Create transaction to update inventory (moves from LT to ST)
+      // 2. Check if cones exist in ST for these boxes (cones are created separately)
+      // 3. If cones exist in ST, remove boxes from LT storage (box is empty, no longer in LT)
+      
+      // Count actual cones in ST for these boxes
+      const conesInST = await YarnCone.find({
+        boxId: { $in: boxIdsForYarn },
+        coneStorageId: { $regex: /^ST-/i },
+      }).lean();
+      
+      const actualConeCount = conesInST.length;
+      
       // LT→ST: Update inventory (moves from longTermInventory to shortTermInventory)
       transaction = await yarnTransactionService.createYarnTransaction({
         yarn: yarnCatalog._id.toString(),
@@ -139,12 +146,39 @@ export const transferBoxes = async (transferData) => {
         totalWeight,
         totalNetWeight,
         totalTearWeight,
-        numberOfCones: totalCones,
+        numberOfCones: actualConeCount, // Actual number of cones in ST for these boxes
         orderno: boxIdsForYarn.join(','),
         boxIds: boxIdsForYarn,
         fromStorageLocation: Array.from(fromLocations).join(','),
         toStorageLocation,
       });
+
+      // After transaction: If cones exist in ST for these boxes, remove boxes from LT storage
+      // Box is now empty (cones extracted), so it should not be counted in LT inventory
+      for (const box of yarnBoxes) {
+        const conesForThisBox = await YarnCone.countDocuments({
+          boxId: box.boxId,
+          coneStorageId: { $regex: /^ST-/i },
+        });
+
+        if (conesForThisBox > 0) {
+          // Cones exist in ST for this box - box is empty, remove from LT storage
+          box.storageLocation = null; // Box is no longer in storage
+          box.storedStatus = false; // Box is not stored anymore (empty)
+          box.coneData = {
+            ...box.coneData,
+            conesIssued: true,
+            numberOfCones: conesForThisBox,
+            coneIssueDate: transferDate || new Date(),
+          };
+          await box.save();
+        } else {
+          // No cones in ST yet - box is still in LT (waiting for cones to be created)
+          // Keep box in LT until cones are created
+          box.storageLocation = box.storageLocation; // Keep original LT location
+          await box.save();
+        }
+      }
     } else {
       // LT→LT or ST→ST: Location change only, no inventory update
       // Create transaction record directly without updating inventory

@@ -92,9 +92,38 @@ export const getStorageContentsByBarcode = async (barcode) => {
 
   if (zoneCode === STORAGE_ZONES.LONG_TERM) {
     // For long-term storage, return yarn boxes
-    const yarnBoxes = await YarnBox.find({ storageLocation: barcode, storedStatus: true })
+    // Exclude boxes that have cones in ST storage (boxes are empty, removed from LT)
+    const allBoxes = await YarnBox.find({ storageLocation: barcode, storedStatus: true })
       .sort({ createdAt: -1 })
       .lean();
+
+    // Filter out boxes that have cones in ST storage (these boxes should not be in LT)
+    const { YarnCone } = await import('../../models/index.js');
+    const yarnBoxes = [];
+    
+    for (const box of allBoxes) {
+      const conesInST = await YarnCone.countDocuments({
+        boxId: box.boxId,
+        coneStorageId: { $regex: /^ST-/i },
+      });
+      
+      // Only include box if it has no cones in ST (box still has yarn in it)
+      if (conesInST === 0) {
+        yarnBoxes.push(box);
+      } else {
+        // Box has cones in ST - it should be removed from LT
+        // Auto-remove it now
+        await YarnBox.findByIdAndUpdate(box._id, {
+          storageLocation: null,
+          storedStatus: false,
+          $set: {
+            'coneData.conesIssued': true,
+            'coneData.numberOfCones': conesInST,
+            'coneData.coneIssueDate': new Date(),
+          },
+        });
+      }
+    }
 
     // Calculate remaining weight on this rack
     let totalWeight = 0;

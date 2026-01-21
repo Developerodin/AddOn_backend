@@ -21,6 +21,6 @@ router
   .route('/slots/:storageLocation/history')
   .get(storageSlotController.getStorageLocationHistory);
 
-export default router;
+  export default router;
 
 

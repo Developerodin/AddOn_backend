@@ -3,6 +3,7 @@ import toJSON from '../plugins/toJSON.plugin.js';
 import paginate from '../plugins/paginate.plugin.js';
 import YarnCatalog from '../yarnManagement/yarnCatalog.model.js';
 import YarnInventory from './yarnInventory.model.js';
+import YarnBox from './yarnBox.model.js';
 
 export const yarnConeIssueStatuses = ['issued', 'not_issued'];
 export const yarnConeReturnStatuses = ['returned', 'not_returned'];
@@ -240,6 +241,43 @@ yarnConeSchema.post('save', async function (doc) {
     }
 
     await inventory.save();
+
+    // If cone is in ST storage and has a boxId, check if box should be removed from LT
+    // When cones are extracted from a box and stored in ST, the box is empty and should be removed from LT
+    if (doc.boxId && isShortTermStorage) {
+      try {
+        const box = await YarnBox.findOne({ boxId: doc.boxId });
+        if (box) {
+          // Check if cones exist in ST for this box
+          const totalConesInST = await mongoose.model('YarnCone').countDocuments({
+            boxId: doc.boxId,
+            coneStorageId: { $regex: /^ST-/i },
+          });
+          
+          // If cones exist in ST for this box, remove box from LT storage
+          // Box is now empty (cones extracted), so it should not be counted in LT inventory
+          if (totalConesInST > 0) {
+            // Remove box from LT storage
+            box.storageLocation = null; // Box is no longer in storage
+            box.storedStatus = false; // Box is not stored anymore (empty)
+            
+            // Update cone data
+            if (!box.coneData) {
+              box.coneData = {};
+            }
+            box.coneData.conesIssued = true;
+            box.coneData.numberOfCones = totalConesInST;
+            box.coneData.coneIssueDate = doc.createdAt || new Date();
+            
+            await box.save();
+            console.log(`[YarnCone] Removed box ${doc.boxId} from LT storage - ${totalConesInST} cones now in ST`);
+          }
+        }
+      } catch (boxError) {
+        // Log error but don't throw - don't break cone save operation
+        console.error(`[YarnCone] Error removing box ${doc.boxId} from LT storage:`, boxError.message);
+      }
+    }
   } catch (error) {
     // Log error but don't throw - don't break cone save operation
     console.error(`[YarnCone] Error auto-syncing cone ${doc.barcode} to inventory:`, error.message);
