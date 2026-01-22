@@ -43,4 +43,17 @@ export const generateConesByBox = catchAsync(async (req, res) => {
   res.status(statusCode).send(result);
 });
 
+export const returnYarnCone = catchAsync(async (req, res) => {
+  const { barcode } = req.params;
+  const returnData = pick(req.body, [
+    'returnWeight',
+    'returnBy',
+    'returnDate',
+    'coneStorageId'
+  ]);
+  
+  const result = await yarnConeService.returnYarnCone(barcode, returnData);
+  res.status(httpStatus.OK).send(result);
+});
+
 

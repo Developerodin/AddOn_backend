@@ -28,6 +28,10 @@ router
   .get(
     validate(yarnConeValidation.getYarnConeByBarcode),
     yarnConeController.getYarnConeByBarcode
+  )
+  .post(
+    validate(yarnConeValidation.returnYarnCone),
+    yarnConeController.returnYarnCone
   );
 
 router

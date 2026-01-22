@@ -165,7 +165,14 @@ export const getStorageContentsByBarcode = async (barcode) => {
 
   if (zoneCode === STORAGE_ZONES.SHORT_TERM) {
     // For short-term storage, return yarn cones
-    const yarnCones = await YarnCone.find({ coneStorageId: barcode })
+    // Show cones that are: (1) not issued, OR (2) issued but returned
+    const yarnCones = await YarnCone.find({ 
+      coneStorageId: barcode,
+      $or: [
+        { issueStatus: 'not_issued' },           // Never issued - in storage
+        { returnStatus: 'returned' }             // Was issued but returned - back in storage
+      ]
+    })
       .sort({ createdAt: -1 })
       .lean();
 

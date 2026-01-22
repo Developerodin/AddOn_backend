@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import httpStatus from 'http-status';
 import { YarnTransaction, YarnInventory, YarnCatalog, YarnRequisition } from '../../models/index.js';
+import { ProductionOrder, Article } from '../../models/production/index.js';
+import Product from '../../models/product.model.js';
 import ApiError from '../../utils/ApiError.js';
 
 /**
@@ -86,6 +88,7 @@ const normaliseTransactionPayload = (inputBody) => {
     transactionTearWeight: 0,
     transactionConeCount: 0,
     orderno: body.orderno,
+    articleNumber: body.articleNumber,
     // Transfer tracking fields
     boxIds: body.boxIds || [],
     fromStorageLocation: body.fromStorageLocation,
@@ -370,10 +373,200 @@ export const queryYarnTransactions = async (filters = {}) => {
 };
 
 /**
- * Gets all yarn_issued transactions for a specific order number.
- * Returns all transactions with different yarnName values for the given order.
+ * Enriches yarn transactions with article information by matching yarns to articles via BOM
+ * @param {Array} transactions - Array of yarn transactions
+ * @param {String} orderno - Order number to fetch articles for
+ * @returns {Array} Transactions grouped by article with article details
  */
-export const getYarnIssuedByOrder = async (orderno) => {
+export const groupTransactionsByArticle = async (transactions, orderno) => {
+  if (!transactions || transactions.length === 0) {
+    return [];
+  }
+
+  // Find production order by orderNumber
+  const productionOrder = await ProductionOrder.findOne({ 
+    orderNumber: orderno 
+  }).lean();
+
+  if (!productionOrder) {
+    // If order not found, group by articleNumber from transactions (if available)
+    return groupTransactionsByArticleNumber(transactions);
+  }
+
+  // Get all articles for this order
+  const articles = await Article.find({ 
+    orderId: productionOrder._id 
+  })
+    .select('articleNumber plannedQuantity status progress')
+    .lean();
+
+  if (!articles || articles.length === 0) {
+    // If no articles found, group by articleNumber from transactions (if available)
+    return groupTransactionsByArticleNumber(transactions);
+  }
+
+  // Build a map of articleNumber -> yarnNames from BOM
+  const articleYarnMap = new Map(); // articleNumber -> Set of yarnNames
+  
+  for (const article of articles) {
+    try {
+      // Find product by factoryCode (articleNumber = factoryCode)
+      const product = await Product.findOne({ 
+        factoryCode: article.articleNumber 
+      })
+        .populate({
+          path: 'bom.yarnCatalogId',
+          select: 'yarnName'
+        })
+        .select('bom')
+        .lean();
+
+      if (product && product.bom && product.bom.length > 0) {
+        const yarnNames = new Set();
+        product.bom.forEach(bomItem => {
+          const yarnName = bomItem.yarnName || (bomItem.yarnCatalogId?.yarnName);
+          if (yarnName) {
+            yarnNames.add(yarnName);
+          }
+        });
+        if (yarnNames.size > 0) {
+          articleYarnMap.set(article.articleNumber, {
+            yarnNames,
+            articleInfo: article
+          });
+        }
+      }
+    } catch (error) {
+      console.error(`Error fetching BOM for article ${article.articleNumber}:`, error.message);
+    }
+  }
+
+  // Group transactions by article
+  const groupedByArticle = {};
+  const unmatchedTransactions = [];
+
+  transactions.forEach(transaction => {
+    const transactionYarnName = transaction.yarnName;
+    let matched = false;
+
+    // Try to match transaction to article via BOM
+    for (const [articleNumber, { yarnNames, articleInfo }] of articleYarnMap.entries()) {
+      if (yarnNames.has(transactionYarnName)) {
+        if (!groupedByArticle[articleNumber]) {
+          groupedByArticle[articleNumber] = {
+            articleNumber: articleNumber,
+            articleInfo: {
+              plannedQuantity: articleInfo.plannedQuantity,
+              status: articleInfo.status,
+              progress: articleInfo.progress,
+            },
+            transactions: [],
+            totals: {
+              transactionNetWeight: 0,
+              transactionTotalWeight: 0,
+              transactionTearWeight: 0,
+              transactionConeCount: 0,
+            }
+          };
+        }
+        
+        groupedByArticle[articleNumber].transactions.push(transaction);
+        groupedByArticle[articleNumber].totals.transactionNetWeight += transaction.transactionNetWeight || 0;
+        groupedByArticle[articleNumber].totals.transactionTotalWeight += transaction.transactionTotalWeight || 0;
+        groupedByArticle[articleNumber].totals.transactionTearWeight += transaction.transactionTearWeight || 0;
+        groupedByArticle[articleNumber].totals.transactionConeCount += transaction.transactionConeCount || 0;
+        matched = true;
+        break;
+      }
+    }
+
+    // If transaction has articleNumber but wasn't matched via BOM, use the articleNumber from transaction
+    if (!matched && transaction.articleNumber) {
+      if (!groupedByArticle[transaction.articleNumber]) {
+        groupedByArticle[transaction.articleNumber] = {
+          articleNumber: transaction.articleNumber,
+          articleInfo: null,
+          transactions: [],
+          totals: {
+            transactionNetWeight: 0,
+            transactionTotalWeight: 0,
+            transactionTearWeight: 0,
+            transactionConeCount: 0,
+          }
+        };
+      }
+      groupedByArticle[transaction.articleNumber].transactions.push(transaction);
+      groupedByArticle[transaction.articleNumber].totals.transactionNetWeight += transaction.transactionNetWeight || 0;
+      groupedByArticle[transaction.articleNumber].totals.transactionTotalWeight += transaction.transactionTotalWeight || 0;
+      groupedByArticle[transaction.articleNumber].totals.transactionTearWeight += transaction.transactionTearWeight || 0;
+      groupedByArticle[transaction.articleNumber].totals.transactionConeCount += transaction.transactionConeCount || 0;
+      matched = true;
+    }
+
+    if (!matched) {
+      unmatchedTransactions.push(transaction);
+    }
+  });
+
+  // Add unmatched transactions to a "NO_ARTICLE" group
+  if (unmatchedTransactions.length > 0) {
+    groupedByArticle['NO_ARTICLE'] = {
+      articleNumber: null,
+      articleInfo: null,
+      transactions: unmatchedTransactions,
+      totals: {
+        transactionNetWeight: unmatchedTransactions.reduce((sum, t) => sum + (t.transactionNetWeight || 0), 0),
+        transactionTotalWeight: unmatchedTransactions.reduce((sum, t) => sum + (t.transactionTotalWeight || 0), 0),
+        transactionTearWeight: unmatchedTransactions.reduce((sum, t) => sum + (t.transactionTearWeight || 0), 0),
+        transactionConeCount: unmatchedTransactions.reduce((sum, t) => sum + (t.transactionConeCount || 0), 0),
+      }
+    };
+  }
+
+  return Object.values(groupedByArticle);
+};
+
+/**
+ * Groups transactions by articleNumber field if available
+ * @param {Array} transactions - Array of yarn transactions
+ * @returns {Array} Transactions grouped by articleNumber
+ */
+const groupTransactionsByArticleNumber = (transactions) => {
+  const grouped = {};
+  
+  transactions.forEach(transaction => {
+    const articleKey = transaction.articleNumber || 'NO_ARTICLE';
+    
+    if (!grouped[articleKey]) {
+      grouped[articleKey] = {
+        articleNumber: transaction.articleNumber || null,
+        articleInfo: null,
+        transactions: [],
+        totals: {
+          transactionNetWeight: 0,
+          transactionTotalWeight: 0,
+          transactionTearWeight: 0,
+          transactionConeCount: 0,
+        }
+      };
+    }
+    
+    grouped[articleKey].transactions.push(transaction);
+    grouped[articleKey].totals.transactionNetWeight += transaction.transactionNetWeight || 0;
+    grouped[articleKey].totals.transactionTotalWeight += transaction.transactionTotalWeight || 0;
+    grouped[articleKey].totals.transactionTearWeight += transaction.transactionTearWeight || 0;
+    grouped[articleKey].totals.transactionConeCount += transaction.transactionConeCount || 0;
+  });
+  
+  return Object.values(grouped);
+};
+
+/**
+ * Gets all yarn_issued transactions for a specific order number.
+ * Returns transactions grouped by articleNumber if available, otherwise by yarnName.
+ * If groupByArticle is true, returns data grouped by article; otherwise returns flat array.
+ */
+export const getYarnIssuedByOrder = async (orderno, groupByArticle = false) => {
   const transactions = await YarnTransaction.find({
     orderno: orderno,
     transactionType: 'yarn_issued',
@@ -385,7 +578,65 @@ export const getYarnIssuedByOrder = async (orderno) => {
     .sort({ transactionDate: -1 })
     .lean();
 
-  return transactions;
+  // If groupByArticle is true, group transactions by articleNumber
+  if (groupByArticle) {
+    const groupedByArticle = {};
+    
+    transactions.forEach(transaction => {
+      const articleKey = transaction.articleNumber || 'NO_ARTICLE';
+      
+      if (!groupedByArticle[articleKey]) {
+        groupedByArticle[articleKey] = {
+          articleNumber: transaction.articleNumber || null,
+          transactions: [],
+          totals: {
+            transactionNetWeight: 0,
+            transactionTotalWeight: 0,
+            transactionTearWeight: 0,
+            transactionConeCount: 0,
+          }
+        };
+      }
+      
+      groupedByArticle[articleKey].transactions.push(transaction);
+      groupedByArticle[articleKey].totals.transactionNetWeight += transaction.transactionNetWeight || 0;
+      groupedByArticle[articleKey].totals.transactionTotalWeight += transaction.transactionTotalWeight || 0;
+      groupedByArticle[articleKey].totals.transactionTearWeight += transaction.transactionTearWeight || 0;
+      groupedByArticle[articleKey].totals.transactionConeCount += transaction.transactionConeCount || 0;
+    });
+    
+    // Convert to array format
+    return Object.values(groupedByArticle);
+  }
+
+  // Default: return flat array grouped by yarnName
+  const groupedByYarn = {};
+  
+  transactions.forEach(transaction => {
+    const yarnKey = transaction.yarnName || 'UNKNOWN_YARN';
+    
+    if (!groupedByYarn[yarnKey]) {
+      groupedByYarn[yarnKey] = {
+        yarnName: transaction.yarnName,
+        yarn: transaction.yarn,
+        transactions: [],
+        totals: {
+          transactionNetWeight: 0,
+          transactionTotalWeight: 0,
+          transactionTearWeight: 0,
+          transactionConeCount: 0,
+        }
+      };
+    }
+    
+    groupedByYarn[yarnKey].transactions.push(transaction);
+    groupedByYarn[yarnKey].totals.transactionNetWeight += transaction.transactionNetWeight || 0;
+    groupedByYarn[yarnKey].totals.transactionTotalWeight += transaction.transactionTotalWeight || 0;
+    groupedByYarn[yarnKey].totals.transactionTearWeight += transaction.transactionTearWeight || 0;
+    groupedByYarn[yarnKey].totals.transactionConeCount += transaction.transactionConeCount || 0;
+  });
+  
+  return Object.values(groupedByYarn);
 };
 
 /**

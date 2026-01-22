@@ -45,6 +45,10 @@ const yarnTransactionSchema = mongoose.Schema(
       type: String,
       trim: true,
     },
+    articleNumber: {
+      type: String,
+      trim: true,
+    },
     // For internal_transfer: Track which boxes were transferred
     boxIds: {
       type: [String],

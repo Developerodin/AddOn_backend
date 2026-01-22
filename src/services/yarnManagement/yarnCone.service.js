@@ -244,4 +244,112 @@ export const generateConesByBox = async (boxId, options = {}) => {
   };
 };
 
+/**
+ * Return a yarn cone - handles two cases:
+ * 1. Empty cone (no yarn left): updates weight to 0
+ * 2. Cone with remaining yarn: updates weight and storage location
+ * @param {String} barcode - Cone barcode
+ * @param {Object} returnData - Return data (returnWeight, returnBy, returnDate, coneStorageId)
+ * @returns {Promise<Object>} Updated cone
+ */
+export const returnYarnCone = async (barcode, returnData = {}) => {
+  // Find cone by barcode
+  const yarnCone = await YarnCone.findOne({ barcode });
+  
+  if (!yarnCone) {
+    throw new ApiError(httpStatus.NOT_FOUND, `Yarn cone with barcode ${barcode} not found`);
+  }
+
+  // Validate that cone is issued
+  if (yarnCone.issueStatus !== 'issued') {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Cone ${barcode} is not issued. Current status: ${yarnCone.issueStatus}`
+    );
+  }
+
+  // Validate that cone is not already returned
+  if (yarnCone.returnStatus === 'returned') {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Cone ${barcode} is already returned`
+    );
+  }
+
+  // Get return weight (remaining weight after use)
+  // If returnWeight is provided, use it; otherwise calculate from coneWeight and tearWeight
+  const returnWeight = returnData.returnWeight !== undefined 
+    ? returnData.returnWeight 
+    : (yarnCone.coneWeight || 0) - (yarnCone.tearWeight || 0);
+
+  if (returnWeight < 0) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Return weight cannot be negative. Calculated: ${returnWeight}`
+    );
+  }
+
+  // Determine if cone is empty (no yarn left)
+  const isEmpty = returnWeight === 0 || returnWeight < 0.01; // Consider < 0.01kg as empty
+
+  // Update cone return information
+  yarnCone.returnStatus = 'returned';
+  yarnCone.returnDate = returnData.returnDate ? new Date(returnData.returnDate) : new Date();
+  yarnCone.returnWeight = returnWeight;
+  
+  if (returnData.returnBy) {
+    yarnCone.returnBy = returnData.returnBy;
+  }
+
+  // Handle two cases:
+  if (isEmpty) {
+    // Case 1: Empty cone - update weight to 0, don't update storage location
+    yarnCone.coneWeight = 0;
+    yarnCone.tearWeight = 0;
+    // Keep existing storage location or set to null if not in ST storage
+    if (!yarnCone.coneStorageId || !/^ST-/i.test(yarnCone.coneStorageId)) {
+      yarnCone.coneStorageId = null; // Empty cone doesn't need storage location
+    }
+  } else {
+    // Case 2: Cone has remaining yarn - update weight and storage location
+    // Update cone weight to reflect remaining yarn
+    yarnCone.coneWeight = returnWeight;
+    yarnCone.tearWeight = 0; // Reset tear weight for returned cone
+    
+    // Validate and update storage location to short-term storage
+    const coneStorageId = returnData.coneStorageId;
+    if (coneStorageId) {
+      if (!/^ST-/i.test(coneStorageId)) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Storage ID must start with 'ST-' for short-term storage. Provided: ${coneStorageId}`
+        );
+      }
+      yarnCone.coneStorageId = coneStorageId;
+    } else if (!yarnCone.coneStorageId || !/^ST-/i.test(yarnCone.coneStorageId)) {
+      // If no storage ID provided and current storage is not ST, set a default ST location
+      yarnCone.coneStorageId = `ST-RETURNED-${yarnCone.barcode}`;
+    }
+  }
+
+  // Save cone (post-save hook will automatically sync to inventory)
+  await yarnCone.save();
+
+  // Populate yarn info before returning
+  await yarnCone.populate({
+    path: 'yarn',
+    select: '_id yarnName yarnType status',
+  });
+
+  const message = isEmpty 
+    ? `Cone ${barcode} returned empty (weight set to 0)`
+    : `Cone ${barcode} returned with ${returnWeight}kg remaining yarn and stored in short-term storage`;
+
+  return {
+    cone: yarnCone.toObject(),
+    isEmpty,
+    message
+  };
+};
+
 

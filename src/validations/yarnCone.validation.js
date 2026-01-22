@@ -111,4 +111,18 @@ export const generateConesByBox = {
     .optional(),
 };
 
+export const returnYarnCone = {
+  params: Joi.object().keys({
+    barcode: Joi.string().trim().required(),
+  }),
+  body: Joi.object()
+    .keys({
+      returnWeight: Joi.number().min(0).optional(),
+      returnBy: userRefSchema.optional(),
+      returnDate: Joi.date().iso().optional(),
+      coneStorageId: Joi.string().trim().pattern(/^ST-/i).optional(),
+    })
+    .optional(),
+};
+
 
