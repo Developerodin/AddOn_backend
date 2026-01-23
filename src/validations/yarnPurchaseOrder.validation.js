@@ -146,6 +146,17 @@ export const updatePurchaseOrder = {
             numberOfCones: Joi.number().min(0).allow(null),
             totalWeight: Joi.number().min(0).allow(null),
             numberOfBoxes: Joi.number().min(0).allow(null),
+            files: Joi.array()
+              .items(
+                Joi.object().keys({
+                  url: Joi.string().uri().required(),
+                  key: Joi.string().trim().required(),
+                  originalName: Joi.string().trim().required(),
+                  mimeType: Joi.string().trim().required(),
+                  size: Joi.number().min(0).required(),
+                })
+              )
+              .default([]),
           })
         )
         .default([]),

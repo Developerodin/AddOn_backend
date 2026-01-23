@@ -187,6 +187,38 @@ const packListDetailsSchema = mongoose.Schema(
       type: Number,
       min: 0,
     },
+    files: {
+      type: [
+        {
+          url: {
+            type: String,
+            required: true,
+            trim: true,
+          },
+          key: {
+            type: String,
+            required: true,
+            trim: true,
+          },
+          originalName: {
+            type: String,
+            required: true,
+            trim: true,
+          },
+          mimeType: {
+            type: String,
+            required: true,
+            trim: true,
+          },
+          size: {
+            type: Number,
+            required: true,
+            min: 0,
+          },
+        },
+      ],
+      default: [],
+    },
   },
   { _id: false }
 );
