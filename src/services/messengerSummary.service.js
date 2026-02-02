@@ -33,17 +33,32 @@ function stripHtml(html, maxLen = SUMMARY_MAX_LENGTH) {
 }
 
 /**
- * Extract summary paragraph and KPIs from AI-tool HTML for a short text summary
+ * Remove style/script and other non-content so summary never includes CSS/code
+ * @param {string} html
+ * @returns {string}
+ */
+function removeNonContent(html) {
+  if (!html || typeof html !== 'string') return '';
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+\s+class="[^"]*response[^"]*"[^>]*>/gi, ' '); // avoid inline style attrs leaking
+}
+
+/**
+ * Extract summary paragraph and KPIs from AI-tool HTML for a short text summary.
+ * Strips <style> and <script> so Telegram never sees CSS/code.
  * @param {string} html - AI tool response HTML
  * @returns {string}
  */
 function summarizeAiToolHtml(html) {
   if (!html || typeof html !== 'string') return stripHtml(html, 800);
 
+  const cleanHtml = removeNonContent(html);
   const parts = [];
 
   // Extract <p class="summary">...</p> (human-readable summary)
-  const summaryMatch = html.match(/<p\s+class="summary"[^>]*>([\s\S]*?)<\/p>/i);
+  const summaryMatch = cleanHtml.match(/<p\s+class="summary"[^>]*>([\s\S]*?)<\/p>/i);
   if (summaryMatch) {
     parts.push(stripHtml(summaryMatch[1], 600).trim());
   }
@@ -51,22 +66,23 @@ function summarizeAiToolHtml(html) {
   // Extract kpi-item: kpi-label + kpi-value as "Label: Value" (first 8)
   const kpiLabelRegex = /<div\s+class="kpi-label"[^>]*>([\s\S]*?)<\/div>/gi;
   const kpiValueRegex = /<div\s+class="kpi-value"[^>]*>([\s\S]*?)<\/div>/gi;
-  const labels = [...html.matchAll(kpiLabelRegex)].map((m) => stripHtml(m[1], 50).trim()).filter(Boolean);
-  const values = [...html.matchAll(kpiValueRegex)].map((m) => stripHtml(m[1], 80).trim()).filter(Boolean);
+  const labels = [...cleanHtml.matchAll(kpiLabelRegex)].map((m) => stripHtml(m[1], 50).trim()).filter(Boolean);
+  const values = [...cleanHtml.matchAll(kpiValueRegex)].map((m) => stripHtml(m[1], 80).trim()).filter(Boolean);
   if (labels.length > 0 && values.length > 0) {
     const kpiLines = labels.slice(0, 8).map((l, i) => (values[i] != null ? `${l}: ${values[i]}` : l));
     if (kpiLines.length) parts.push(kpiLines.join(' | '));
   }
 
   // If we have an h3 title (e.g. "Brand Performance"), use it as header
-  const h3Match = html.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i);
+  const h3Match = cleanHtml.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i);
   if (h3Match && parts.length > 0) {
     const title = stripHtml(h3Match[1], 80).trim();
     if (title) parts.unshift(title);
   }
 
   const out = parts.filter(Boolean).join('\n\n');
-  return out || stripHtml(html, 800);
+  // Fallback: strip tags from content-only HTML (no style/script left)
+  return out || stripHtml(cleanHtml, 800);
 }
 
 /**
