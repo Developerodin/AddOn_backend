@@ -45,9 +45,57 @@ function removeNonContent(html) {
     .replace(/<[^>]+\s+class="[^"]*response[^"]*"[^>]*>/gi, ' '); // avoid inline style attrs leaking
 }
 
+const MAX_TABLE_ROWS = 10;
+const MAX_CELL_CHARS = 40;
+
+/**
+ * Extract data table rows (e.g. top products, stores) as text lines for summary
+ * @param {string} html - HTML containing table.data-table
+ * @param {number} maxRows
+ * @returns {string[]} Lines like "1. Product Name — ₹1,234 (Qty: 56)"
+ */
+function extractDataTableRows(html, maxRows = MAX_TABLE_ROWS) {
+  const tbodyMatch = html.match(/<table[^>]*class="[^"]*data-table[^"]*"[^>]*>[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/i);
+  if (!tbodyMatch) return [];
+
+  const tbody = tbodyMatch[1];
+  const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  const rows = [];
+  let m;
+  while ((m = rowRegex.exec(tbody)) !== null && rows.length < maxRows) {
+    const rowHtml = m[1];
+    const cellRegex = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
+    const cells = [];
+    let cellM;
+    while ((cellM = cellRegex.exec(rowHtml)) !== null) {
+      cells.push(stripHtml(cellM[1], MAX_CELL_CHARS).trim());
+    }
+    if (cells.length === 0) continue;
+    // Format: "1. Product Name — ₹NSV (Qty: N)" when we have rank + name + qty + nsv
+    const rank = cells[0];
+    const name = (cells[1] || '').slice(0, 35);
+    const nsv = cells[5];   // Total NSV (₹)
+    const qty = cells[4];    // Quantity Sold
+    const hasNum = (c) => c && /₹|[\d,]+/.test(c);
+    let detail = '';
+    if (cells.length >= 6 && (hasNum(nsv) || hasNum(qty))) {
+      if (nsv && qty) detail = ` — ${nsv} (Qty: ${qty})`;
+      else if (nsv) detail = ` — ${nsv}`;
+      else if (qty) detail = ` — Qty: ${qty}`;
+    } else {
+      const firstMetric = cells.slice(2).find(hasNum);
+      if (firstMetric) detail = ` — ${firstMetric}`;
+    }
+    const line = `${rank}. ${name}${detail}`.trim();
+    if (line.length > 2) rows.push(line);
+  }
+  return rows;
+}
+
 /**
  * Extract summary paragraph and KPIs from AI-tool HTML for a short text summary.
  * Strips <style> and <script> so Telegram never sees CSS/code.
+ * Includes data table rows (product names, etc.) when present.
  * @param {string} html - AI tool response HTML
  * @returns {string}
  */
@@ -56,6 +104,13 @@ function summarizeAiToolHtml(html) {
 
   const cleanHtml = removeNonContent(html);
   const parts = [];
+
+  // If we have an h3 title (e.g. "Brand Performance"), use it as header
+  const h3Match = cleanHtml.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i);
+  if (h3Match) {
+    const title = stripHtml(h3Match[1], 80).trim();
+    if (title) parts.push(title);
+  }
 
   // Extract <p class="summary">...</p> (human-readable summary)
   const summaryMatch = cleanHtml.match(/<p\s+class="summary"[^>]*>([\s\S]*?)<\/p>/i);
@@ -73,11 +128,10 @@ function summarizeAiToolHtml(html) {
     if (kpiLines.length) parts.push(kpiLines.join(' | '));
   }
 
-  // If we have an h3 title (e.g. "Brand Performance"), use it as header
-  const h3Match = cleanHtml.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i);
-  if (h3Match && parts.length > 0) {
-    const title = stripHtml(h3Match[1], 80).trim();
-    if (title) parts.unshift(title);
+  // Extract data table rows (top products, stores, etc.) so names/details appear in summary
+  const tableRows = extractDataTableRows(cleanHtml);
+  if (tableRows.length > 0) {
+    parts.push('Top items:\n' + tableRows.map((r) => `• ${r}`).join('\n'));
   }
 
   const out = parts.filter(Boolean).join('\n\n');
