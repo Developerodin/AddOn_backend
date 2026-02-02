@@ -66,6 +66,19 @@ export const getSupplier = {
   }),
 };
 
+/** GET supplier yarn tearweight: query yarnName (string or array) */
+export const getSupplierYarnTearweight = {
+  params: Joi.object().keys({
+    supplierId: Joi.string().custom(objectId).required(),
+  }),
+  query: Joi.object().keys({
+    yarnName: Joi.alternatives()
+      .try(Joi.string().trim().min(1), Joi.array().items(Joi.string().trim().min(1)).min(1))
+      .required()
+      .messages({ 'any.required': 'At least one yarnName is required' }),
+  }),
+};
+
 export const updateSupplier = {
   params: Joi.object().keys({
     supplierId: Joi.string().custom(objectId).required(),

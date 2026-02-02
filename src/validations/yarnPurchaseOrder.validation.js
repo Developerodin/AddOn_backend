@@ -34,6 +34,14 @@ export const getPurchaseOrders = {
     }, 'start and end date validation'),
 };
 
+/** GET supplier tearweight by PO number and yarn name */
+export const getSupplierTearweightByPoAndYarnName = {
+  query: Joi.object().keys({
+    poNumber: Joi.string().trim().required(),
+    yarnName: Joi.string().trim().required(),
+  }),
+};
+
 export const createPurchaseOrder = {
   body: Joi.object()
     .keys({

@@ -31,6 +31,13 @@ export const getPurchaseOrder = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(purchaseOrder);
 });
 
+/** GET supplier tearweight by poNumber and yarnName (query params) */
+export const getSupplierTearweightByPoAndYarnName = catchAsync(async (req, res) => {
+  const { poNumber, yarnName } = req.query;
+  const result = await yarnPurchaseOrderService.getSupplierTearweightByPoAndYarnName(poNumber, yarnName);
+  res.status(httpStatus.OK).send(result);
+});
+
 export const deletePurchaseOrder = catchAsync(async (req, res) => {
   const { purchaseOrderId } = req.params;
   await yarnPurchaseOrderService.deletePurchaseOrderById(purchaseOrderId);

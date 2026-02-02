@@ -596,6 +596,35 @@ export const getSupplierById = async (id) => {
 };
 
 /**
+ * Get tearweight info for given yarn name(s) for a supplier.
+ * @param {ObjectId} supplierId - Supplier ID
+ * @param {string[]} yarnNames - Array of yarn names to look up
+ * @returns {Promise<{ supplierId: string, yarnTearweights: Array<{ yarnName: string, tearweight: number }>, notFound: string[] }>}
+ */
+export const getSupplierYarnTearweight = async (supplierId, yarnNames) => {
+  const supplier = await Supplier.findById(supplierId).lean();
+  if (!supplier) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Supplier not found');
+  }
+  const namesSet = new Set((yarnNames || []).map((n) => String(n).trim()).filter(Boolean));
+  const yarnTearweights = [];
+  const foundNames = new Set();
+  for (const detail of supplier.yarnDetails || []) {
+    const name = detail.yarnName ? String(detail.yarnName).trim() : '';
+    if (name && namesSet.has(name)) {
+      yarnTearweights.push({ yarnName: name, tearweight: detail.tearweight });
+      foundNames.add(name);
+    }
+  }
+  const notFound = [...namesSet].filter((n) => !foundNames.has(n));
+  return {
+    supplierId: supplier._id.toString(),
+    yarnTearweights,
+    notFound,
+  };
+};
+
+/**
  * Update supplier by id
  * @param {ObjectId} supplierId
  * @param {Object} updateBody

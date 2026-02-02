@@ -24,6 +24,17 @@ export const getSupplier = catchAsync(async (req, res) => {
   res.send(supplier);
 });
 
+/**
+ * GET tearweight for given yarn name(s) for a supplier.
+ * Query: yarnName (single string or repeated: yarnName=a&yarnName=b)
+ */
+export const getSupplierYarnTearweight = catchAsync(async (req, res) => {
+  const yarnNameParam = req.query.yarnName;
+  const yarnNames = Array.isArray(yarnNameParam) ? yarnNameParam : yarnNameParam ? [yarnNameParam] : [];
+  const result = await supplierService.getSupplierYarnTearweight(req.params.supplierId, yarnNames);
+  res.send(result);
+});
+
 export const updateSupplier = catchAsync(async (req, res) => {
   const supplier = await supplierService.updateSupplierById(req.params.supplierId, req.body);
   res.send(supplier);

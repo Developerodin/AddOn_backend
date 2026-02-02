@@ -17,6 +17,13 @@ router
   );
 
 router
+  .route('/tearweight')
+  .get(
+    validate(yarnPurchaseOrderValidation.getSupplierTearweightByPoAndYarnName),
+    yarnPurchaseOrderController.getSupplierTearweightByPoAndYarnName
+  );
+
+router
   .route('/lot-status')
   .patch(
     validate(yarnPurchaseOrderValidation.updateLotStatus),

@@ -2,6 +2,7 @@ import httpStatus from 'http-status';
 import { YarnPurchaseOrder, YarnBox } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import { yarnPurchaseOrderStatuses, lotStatuses } from '../../models/yarnReq/yarnPurchaseOrder.model.js';
+import * as supplierService from './supplier.service.js';
 
 export const getPurchaseOrders = async ({ startDate, endDate, statusCode }) => {
   const start = new Date(startDate);
@@ -47,6 +48,34 @@ export const getPurchaseOrderById = async (purchaseOrderId) => {
     });
 
   return purchaseOrder;
+};
+
+/**
+ * Get supplier tearweight for a yarn by PO number and yarn name.
+ * Finds the PO by poNumber, gets its supplier, then returns that supplier's tearweight for the yarn.
+ * @param {string} poNumber - PO number (e.g. PO-2026-415)
+ * @param {string} yarnName - Yarn name (e.g. 110/70-Bottle Green-Bottle Green-Rubber/Rubber)
+ * @returns {Promise<{ poNumber: string, supplierId: string, yarnName: string, tearweight: number | null, notFound: boolean }>}
+ */
+export const getSupplierTearweightByPoAndYarnName = async (poNumber, yarnName) => {
+  const purchaseOrder = await YarnPurchaseOrder.findOne({ poNumber }).select('supplier poNumber').lean();
+  if (!purchaseOrder) {
+    throw new ApiError(httpStatus.NOT_FOUND, `Purchase order not found for poNumber: ${poNumber}`);
+  }
+  const supplierId = purchaseOrder.supplier?.toString?.() || purchaseOrder.supplier;
+  if (!supplierId) {
+    throw new ApiError(httpStatus.NOT_FOUND, `Supplier not found for PO: ${poNumber}`);
+  }
+  const result = await supplierService.getSupplierYarnTearweight(supplierId, [yarnName]);
+  const match = result.yarnTearweights.find((y) => y.yarnName === yarnName.trim());
+  const notFound = result.notFound.includes(yarnName.trim());
+  return {
+    poNumber,
+    supplierId: result.supplierId,
+    yarnName: yarnName.trim(),
+    tearweight: match ? match.tearweight : null,
+    notFound,
+  };
 };
 
 export const createPurchaseOrder = async (purchaseOrderBody) => {

@@ -21,6 +21,10 @@ router
   );
 
 router
+  .route('/:supplierId/yarn-tearweight')
+  .get(validate(supplierValidation.getSupplierYarnTearweight), supplierController.getSupplierYarnTearweight);
+
+router
   .route('/:supplierId')
   .get(validate(supplierValidation.getSupplier), supplierController.getSupplier)
   .patch(validate(supplierValidation.updateSupplier), supplierController.updateSupplier)
