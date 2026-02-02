@@ -28,6 +28,17 @@ router.post(
 );
 
 /**
+ * @route POST /v1/faq/ask-summary
+ * @desc Same as /ask but returns text-only summary for Telegram/WhatsApp (no HTML)
+ * @access Public
+ */
+router.post(
+  '/ask-summary',
+  validate(faqValidation.askQuestion),
+  faqController.askSummary
+);
+
+/**
  * @route GET /v1/faq
  * @desc Get all FAQ vectors with pagination
  * @access Public (for now, can add auth middleware later)

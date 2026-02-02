@@ -1,6 +1,7 @@
 import httpStatus from 'http-status';
 import catchAsync from '../utils/catchAsync.js';
 import faqService from '../services/faq.service.js';
+import * as messengerSummaryService from '../services/messengerSummary.service.js';
 
 /**
  * Train FAQ with embeddings
@@ -49,6 +50,31 @@ const askQuestion = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).json({
     status: 'success',
     data: result
+  });
+});
+
+/**
+ * Ask and get text-only summary for messengers (Telegram, WhatsApp).
+ * Same FAQ/ask flow as /v1/faq/ask; response is plain text, no HTML.
+ * @route POST /v1/faq/ask-summary
+ * @param {Object} req.body - {question: string}
+ * @returns {Object} 200 - { status, summary: string }
+ */
+const askSummary = catchAsync(async (req, res) => {
+  const { question } = req.body;
+
+  if (!question || typeof question !== 'string' || question.trim().length === 0) {
+    return res.status(httpStatus.BAD_REQUEST).json({
+      status: 'error',
+      message: 'Question is required and must be a non-empty string',
+    });
+  }
+
+  const { summary } = await messengerSummaryService.getSummary(question.trim());
+
+  res.status(httpStatus.OK).json({
+    status: 'success',
+    summary,
   });
 });
 
@@ -116,6 +142,7 @@ const clearAllFaqs = catchAsync(async (req, res) => {
 export default {
   trainFaq,
   askQuestion,
+  askSummary,
   getFaqVectors,
   deleteFaqVector,
   clearAllFaqs,
