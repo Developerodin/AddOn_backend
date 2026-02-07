@@ -8,7 +8,7 @@ const createProduct = {
     internalCode: Joi.string().required(),
     vendorCode: Joi.string().required(),
     factoryCode: Joi.string().required(),
-    knittingCode: Joi.string().required(),
+    knittingCode: Joi.string().optional().allow('').default(''),
     styleCodes: Joi.array().items(
       Joi.object().keys({
         styleCode: Joi.string().required().trim(),

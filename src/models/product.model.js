@@ -75,8 +75,9 @@ const productSchema = mongoose.Schema(
     },
     knittingCode: {
       type: String,
-      required: true,
+      required: false,
       trim: true,
+      default: '',
     },
     styleCodes: [styleCodeItemSchema],
     description: {
