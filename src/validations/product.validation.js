@@ -14,6 +14,8 @@ const createProduct = {
         styleCode: Joi.string().required().trim(),
         eanCode: Joi.string().required().trim(),
         mrp: Joi.number().required().min(0),
+        brand: Joi.string().trim().allow(''),
+        pack: Joi.string().trim().allow(''),
       })
     ).min(1).required(),
     description: Joi.string().required(),
@@ -46,6 +48,8 @@ const getProducts = {
     knittingCode: Joi.string(),
     styleCode: Joi.string(),
     eanCode: Joi.string(),
+    brand: Joi.string(),
+    pack: Joi.string(),
     category: Joi.string().custom(objectId),
     status: Joi.string().valid('active', 'inactive'),
     sortBy: Joi.string(),
@@ -78,6 +82,8 @@ const updateProduct = {
           styleCode: Joi.string().required().trim(),
           eanCode: Joi.string().required().trim(),
           mrp: Joi.number().required().min(0),
+          brand: Joi.string().trim().allow(''),
+          pack: Joi.string().trim().allow(''),
         })
       ),
       description: Joi.string(),
@@ -118,6 +124,8 @@ const bulkImportProducts = {
             styleCode: Joi.string().required().trim(),
             eanCode: Joi.string().required().trim(),
             mrp: Joi.number().required().min(0),
+            brand: Joi.string().trim().allow(''),
+            pack: Joi.string().trim().allow(''),
           })
         ).min(1).required(),
         internalCode: Joi.string().optional().default(''),

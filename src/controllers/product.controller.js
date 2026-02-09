@@ -12,7 +12,7 @@ export const createProduct = catchAsync(async (req, res) => {
 
 export const getProducts = catchAsync(async (req, res) => {
   // Define allowed filter fields
-  const allowedFilterFields = ['name', 'softwareCode', 'internalCode', 'vendorCode', 'factoryCode', 'styleCode', 'eanCode', 'category', 'status'];
+  const allowedFilterFields = ['name', 'softwareCode', 'internalCode', 'vendorCode', 'factoryCode', 'styleCode', 'eanCode', 'brand', 'pack', 'category', 'status'];
   
   // Pick only valid filter fields
   const filter = pick(req.query, allowedFilterFields);

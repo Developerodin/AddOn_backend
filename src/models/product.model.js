@@ -43,6 +43,14 @@ const styleCodeItemSchema = mongoose.Schema({
     required: true,
     min: 0,
   },
+  brand: {
+    type: String,
+    trim: true,
+  },
+  pack: {
+    type: String,
+    trim: true,
+  },
 });
 
 const productSchema = mongoose.Schema(

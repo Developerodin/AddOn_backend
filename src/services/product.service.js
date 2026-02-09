@@ -43,10 +43,12 @@ export const queryProducts = async (filter, options, search) => {
       delete filter._id;
     }
     
-    // Handle styleCode and eanCode filters - convert to array queries
+    // Handle styleCode, eanCode, brand, pack filters - convert to array queries
     const styleCodeFilter = filter.styleCode;
     const eanCodeFilter = filter.eanCode;
-    if (styleCodeFilter || eanCodeFilter) {
+    const brandFilter = filter.brand;
+    const packFilter = filter.pack;
+    if (styleCodeFilter || eanCodeFilter || brandFilter || packFilter) {
       const arrayFilters = [];
       if (styleCodeFilter) {
         const styleCodeRegex = new RegExp(styleCodeFilter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
@@ -56,10 +58,19 @@ export const queryProducts = async (filter, options, search) => {
         const eanCodeRegex = new RegExp(eanCodeFilter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
         arrayFilters.push({ 'styleCodes.eanCode': eanCodeRegex });
       }
+      if (brandFilter) {
+        const brandRegex = new RegExp(brandFilter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        arrayFilters.push({ 'styleCodes.brand': brandRegex });
+      }
+      if (packFilter) {
+        const packRegex = new RegExp(packFilter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        arrayFilters.push({ 'styleCodes.pack': packRegex });
+      }
       
-      // Remove old styleCode/eanCode from filter and add array filters
       delete filter.styleCode;
       delete filter.eanCode;
+      delete filter.brand;
+      delete filter.pack;
       
       // Combine array filters with existing filter
       if (arrayFilters.length > 0) {
@@ -274,6 +285,8 @@ export const bulkImportProducts = async (products, batchSize = 50) => {
                     styleCode: item.styleCode?.trim(),
                     eanCode: item.eanCode?.trim(),
                     mrp: typeof item.mrp === 'number' ? item.mrp : parseFloat(item.mrp) || 0,
+                    brand: item.brand?.trim() || undefined,
+                    pack: item.pack?.trim() || undefined,
                   }))
                 : [],
               internalCode: productData.internalCode?.trim() || '',
