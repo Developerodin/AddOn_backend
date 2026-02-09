@@ -1,6 +1,6 @@
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
-import { YarnBox } from '../../models/index.js';
+import { YarnBox, YarnPurchaseOrder } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 
 export const createYarnBox = async (yarnBoxBody) => {
@@ -35,10 +35,37 @@ export const getYarnBoxById = async (yarnBoxId) => {
 };
 
 export const getYarnBoxByBarcode = async (barcode) => {
-  const yarnBox = await YarnBox.findOne({ barcode });
+  const yarnBox = await YarnBox.findOne({ barcode }).lean();
   if (!yarnBox) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Yarn box not found with this barcode');
   }
+
+  // Fetch purchase order and supplier by poNumber
+  if (yarnBox.poNumber) {
+    const purchaseOrder = await YarnPurchaseOrder.findOne({ poNumber: yarnBox.poNumber })
+      .populate({
+        path: 'supplier',
+        select: '_id brandName contactPersonName contactNumber email address city state pincode country gstNo status',
+      })
+      .select('poNumber supplier supplierName currentStatus')
+      .lean();
+
+    if (purchaseOrder) {
+      yarnBox.purchaseOrder = {
+        poNumber: purchaseOrder.poNumber,
+        supplierName: purchaseOrder.supplierName,
+        currentStatus: purchaseOrder.currentStatus,
+      };
+      yarnBox.supplier = purchaseOrder.supplier || null;
+    } else {
+      yarnBox.purchaseOrder = null;
+      yarnBox.supplier = null;
+    }
+  } else {
+    yarnBox.purchaseOrder = null;
+    yarnBox.supplier = null;
+  }
+
   return yarnBox;
 };
 
