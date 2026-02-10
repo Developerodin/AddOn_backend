@@ -13,6 +13,8 @@ export const createColor = {
 export const getColors = {
   query: Joi.object().keys({
     name: Joi.string(),
+    search: Joi.string(),
+    colorCode: Joi.string(),
     pantoneName: Joi.string(),
     status: Joi.string(),
     sortBy: Joi.string(),

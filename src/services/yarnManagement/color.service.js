@@ -21,16 +21,37 @@ export const createColor = async (colorBody) => {
  * @returns {Promise<QueryResult>}
  */
 export const queryColors = async (filter, options) => {
-  // Convert name to case-insensitive regex for partial matching
-  if (filter.name) {
-    filter.name = { $regex: filter.name, $options: 'i' };
+  const query = {};
+
+  // Universal search: use `search` if provided, otherwise fall back to `name`
+  // This will search across name, colorCode, and pantoneName (case-insensitive, partial match)
+  const searchValue = filter.search || filter.name;
+  if (searchValue) {
+    const regex = { $regex: searchValue, $options: 'i' };
+    query.$or = [
+      { name: regex },
+      { colorCode: regex },
+      { pantoneName: regex },
+    ];
+  } else {
+    // Legacy field-specific filters when no universal search is used
+    if (filter.name) {
+      query.name = { $regex: filter.name, $options: 'i' };
+    }
+    if (filter.colorCode) {
+      query.colorCode = { $regex: filter.colorCode, $options: 'i' };
+    }
+    if (filter.pantoneName) {
+      query.pantoneName = { $regex: filter.pantoneName, $options: 'i' };
+    }
   }
-  // Convert pantoneName to case-insensitive regex for partial matching
-  if (filter.pantoneName) {
-    filter.pantoneName = { $regex: filter.pantoneName, $options: 'i' };
+
+  // Status filter still applies alongside any search
+  if (filter.status) {
+    query.status = filter.status;
   }
-  
-  const colors = await Color.paginate(filter, options);
+
+  const colors = await Color.paginate(query, options);
   return colors;
 };
 
