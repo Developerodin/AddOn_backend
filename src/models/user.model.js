@@ -81,6 +81,7 @@ const userSchema = mongoose.Schema(
           'Raw Material': false,
           Processes: false,
           Attributes: false,
+          'Style Codes': false,
           Machines: false
         },
         Sales: {

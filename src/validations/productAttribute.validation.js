@@ -4,6 +4,7 @@ import { objectId } from './custom.validation.js';
 const createProductAttribute = {
   body: Joi.object().keys({
     name: Joi.string().required(),
+    attributeType: Joi.string().valid('Manufacturing', 'Warehouse'),
     type: Joi.string().required().valid('select', 'radio', 'checkbox', 'text', 'textarea'),
     sortOrder: Joi.number().default(0),
     optionValues: Joi.array().items(
@@ -20,6 +21,7 @@ const getProductAttributes = {
   query: Joi.object().keys({
     name: Joi.string(),
     type: Joi.string(),
+    attributeType: Joi.string().valid('Manufacturing', 'Warehouse'),
     search: Joi.string(),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
@@ -40,6 +42,7 @@ const updateProductAttribute = {
   body: Joi.object()
     .keys({
       name: Joi.string(),
+      attributeType: Joi.string().valid('Manufacturing', 'Warehouse'),
       type: Joi.string().valid('select', 'radio', 'checkbox', 'text', 'textarea'),
       sortOrder: Joi.number(),
       optionValues: Joi.array().items(

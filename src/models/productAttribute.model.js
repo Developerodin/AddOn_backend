@@ -24,6 +24,11 @@ const productAttributeSchema = mongoose.Schema(
       required: true,
       trim: true,
     },
+    attributeType: {
+      type: String,
+      enum: ['Manufacturing', 'Warehouse'],
+      default: 'Manufacturing',
+    },
     type: {
       type: String,
       required: true,

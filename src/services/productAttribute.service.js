@@ -33,6 +33,7 @@ export const queryProductAttributes = async (filter, options, search) => {
     const searchFilter = {
       $or: [
         { name: searchRegex },
+        { attributeType: searchRegex },
         { type: searchRegex },
         { 'optionValues.name': searchRegex },
       ],
@@ -46,6 +47,10 @@ export const queryProductAttributes = async (filter, options, search) => {
     } else {
       filter = searchFilter;
     }
+  }
+  // attributeType exact filter if provided
+  if (filter.attributeType) {
+    filter.attributeType = filter.attributeType;
   }
   
   const attributes = await ProductAttribute.paginate(filter, options);

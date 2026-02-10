@@ -27,29 +27,15 @@ const processItemSchema = mongoose.Schema({
   },
 });
 
-const styleCodeItemSchema = mongoose.Schema({
-  styleCode: {
-    type: String,
-    required: true,
-    trim: true,
+const rawMaterialItemSchema = mongoose.Schema({
+  rawMaterialId: {
+    type: mongoose.SchemaTypes.ObjectId,
+    ref: 'RawMaterial',
   },
-  eanCode: {
-    type: String,
-    required: true,
-    trim: true,
-  },
-  mrp: {
+  quantity: {
     type: Number,
-    required: true,
     min: 0,
-  },
-  brand: {
-    type: String,
-    trim: true,
-  },
-  pack: {
-    type: String,
-    trim: true,
+    default: 0,
   },
 });
 
@@ -62,23 +48,23 @@ const productSchema = mongoose.Schema(
     },
     softwareCode: {
       type: String,
-      required: true,
+      required: false,
       trim: true,
       unique: true,
     },
     internalCode: {
       type: String,
-      required: true,
+      required: false,
       trim: true,
     },
     vendorCode: {
       type: String,
-      required: true,
+      required: false,
       trim: true,
     },
     factoryCode: {
       type: String,
-      required: true,
+      required: false,
       trim: true,
     },
     knittingCode: {
@@ -87,7 +73,19 @@ const productSchema = mongoose.Schema(
       trim: true,
       default: '',
     },
-    styleCodes: [styleCodeItemSchema],
+    styleCodes: [
+      {
+        type: mongoose.SchemaTypes.ObjectId,
+        ref: 'StyleCode',
+        required: false,
+      },
+    ],
+    productionType: {
+      type: String,
+      enum: ['internal', 'outsourced'],
+      default: 'internal',
+      required: true,
+    },
     description: {
       type: String,
       required: true,
@@ -109,6 +107,7 @@ const productSchema = mongoose.Schema(
     },
     bom: [bomItemSchema],
     processes: [processItemSchema],
+    rawMaterials: [rawMaterialItemSchema],
     status: {
       type: String,
       enum: ['active', 'inactive'],

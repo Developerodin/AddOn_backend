@@ -3,23 +3,16 @@ import { objectId } from './custom.validation.js';
 
 const createProduct = {
   body: Joi.object().keys({
-    name: Joi.string().required(),
-    softwareCode: Joi.string().required(),
-    internalCode: Joi.string().required(),
-    vendorCode: Joi.string().required(),
-    factoryCode: Joi.string().required(),
+    name: Joi.string(),
+    softwareCode: Joi.string(),
+    internalCode: Joi.string(),
+    vendorCode: Joi.string(),
+    factoryCode: Joi.string(),
     knittingCode: Joi.string().optional().allow('').default(''),
-    styleCodes: Joi.array().items(
-      Joi.object().keys({
-        styleCode: Joi.string().required().trim(),
-        eanCode: Joi.string().required().trim(),
-        mrp: Joi.number().required().min(0),
-        brand: Joi.string().trim().allow(''),
-        pack: Joi.string().trim().allow(''),
-      })
-    ).min(1).required(),
-    description: Joi.string().required(),
-    category: Joi.string().custom(objectId).required(),
+    styleCodes: Joi.array().items(Joi.string().custom(objectId)),
+    productionType: Joi.string().valid('internal', 'outsourced').default('internal'),
+    description: Joi.string(),
+    category: Joi.string().custom(objectId),
     image: Joi.string(),
     attributes: Joi.object().pattern(Joi.string(), Joi.string()),
     bom: Joi.array().items(
@@ -32,6 +25,12 @@ const createProduct = {
     processes: Joi.array().items(
       Joi.object().keys({
         processId: Joi.string().custom(objectId),
+      })
+    ),
+    rawMaterials: Joi.array().items(
+      Joi.object().keys({
+        rawMaterialId: Joi.string().custom(objectId),
+        quantity: Joi.number().min(0),
       })
     ),
     status: Joi.string().valid('active', 'inactive'),
@@ -52,6 +51,7 @@ const getProducts = {
     pack: Joi.string(),
     category: Joi.string().custom(objectId),
     status: Joi.string().valid('active', 'inactive'),
+    productionType: Joi.string().valid('internal', 'outsourced'),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
@@ -77,15 +77,8 @@ const updateProduct = {
       vendorCode: Joi.string(),
       factoryCode: Joi.string(),
       knittingCode: Joi.string(),
-      styleCodes: Joi.array().items(
-        Joi.object().keys({
-          styleCode: Joi.string().required().trim(),
-          eanCode: Joi.string().required().trim(),
-          mrp: Joi.number().required().min(0),
-          brand: Joi.string().trim().allow(''),
-          pack: Joi.string().trim().allow(''),
-        })
-      ),
+      styleCodes: Joi.array().items(Joi.string().custom(objectId)),
+      productionType: Joi.string().valid('internal', 'outsourced'),
       description: Joi.string(),
       category: Joi.string().custom(objectId),
       image: Joi.string(),
@@ -100,6 +93,12 @@ const updateProduct = {
       processes: Joi.array().items(
         Joi.object().keys({
           processId: Joi.string().custom(objectId),
+        })
+      ),
+      rawMaterials: Joi.array().items(
+        Joi.object().keys({
+          rawMaterialId: Joi.string().custom(objectId),
+          quantity: Joi.number().min(0),
         })
       ),
       status: Joi.string().valid('active', 'inactive'),
@@ -119,22 +118,21 @@ const bulkImportProducts = {
       Joi.object().keys({
         id: Joi.string().custom(objectId).optional(), // For updates
         name: Joi.string().required(),
-        styleCodes: Joi.array().items(
-          Joi.object().keys({
-            styleCode: Joi.string().required().trim(),
-            eanCode: Joi.string().required().trim(),
-            mrp: Joi.number().required().min(0),
-            brand: Joi.string().trim().allow(''),
-            pack: Joi.string().trim().allow(''),
-          })
-        ).min(1).required(),
+    styleCodes: Joi.array().items(Joi.string().custom(objectId)),
         internalCode: Joi.string().optional().default(''),
         vendorCode: Joi.string().optional().default(''),
         factoryCode: Joi.string().optional().default(''),
         knittingCode: Joi.string().optional().default(''),
-        description: Joi.string().optional().default(''),
-        category: Joi.string().custom(objectId).optional(),
+    description: Joi.string().optional().default(''),
+    category: Joi.string().custom(objectId).optional(),
         softwareCode: Joi.string().optional(), // Auto-generated if not provided
+        productionType: Joi.string().valid('internal', 'outsourced').optional(),
+        rawMaterials: Joi.array().items(
+          Joi.object().keys({
+            rawMaterialId: Joi.string().custom(objectId),
+            quantity: Joi.number().min(0),
+          })
+        ),
       })
     ).min(1).max(10000), // Limit batch size to 10000 products
     batchSize: Joi.number().integer().min(1).max(100).default(50), // Default batch size

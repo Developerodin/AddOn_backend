@@ -7,6 +7,7 @@ import rawMaterialRoute from './rawMaterial.route.js';
 import categoryRoute from './category.route.js';
 import processRoute from './process.route.js';
 import productRoute from './product.route.js';
+import styleCodeRoute from './styleCode.route.js';
 import storeRoute from './store.route.js';
 import commonRoute from './common.route.js';
 import sealsExcelMasterRoute from './sealsExcelMaster.route.js';
@@ -66,6 +67,10 @@ const defaultRoutes = [
   {
     path: '/products',
     route: productRoute,
+  },
+  {
+    path: '/style-codes',
+    route: styleCodeRoute,
   },
   {
     path: '/stores',

@@ -1,6 +1,43 @@
 import httpStatus from 'http-status';
+import mongoose from 'mongoose';
 import Product from '../models/product.model.js';
+import StyleCode from '../models/styleCode.model.js';
 import ApiError from '../utils/ApiError.js';
+
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const normalizeStyleCodeIds = (styleCodeIds) => {
+  if (!Array.isArray(styleCodeIds)) {
+    return [];
+  }
+  const uniqueIds = new Set();
+  styleCodeIds.forEach((id) => {
+    const normalized = String(id || '').trim();
+    if (normalized) {
+      uniqueIds.add(normalized);
+    }
+  });
+  return Array.from(uniqueIds);
+};
+
+const ensureValidStyleCodes = async (styleCodeIds) => {
+  const normalizedIds = normalizeStyleCodeIds(styleCodeIds);
+  if (normalizedIds.length === 0) {
+    return [];
+  }
+
+  const invalidId = normalizedIds.find((id) => !mongoose.Types.ObjectId.isValid(id));
+  if (invalidId) {
+    throw new ApiError(httpStatus.BAD_REQUEST, `Invalid style code id: ${invalidId}`);
+  }
+
+  const count = await StyleCode.countDocuments({ _id: { $in: normalizedIds } });
+  if (count !== normalizedIds.length) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'One or more style codes do not exist');
+  }
+
+  return normalizedIds;
+};
 
 /**
  * Create a product
@@ -8,10 +45,11 @@ import ApiError from '../utils/ApiError.js';
  * @returns {Promise<Product>}
  */
 export const createProduct = async (productBody) => {
-  if (await Product.findOne({ softwareCode: productBody.softwareCode })) {
+  if (productBody.softwareCode && (await Product.findOne({ softwareCode: productBody.softwareCode }))) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Software code already taken');
   }
-  return Product.create(productBody);
+  const styleCodes = await ensureValidStyleCodes(productBody.styleCodes);
+  return Product.create({ ...productBody, styleCodes });
 };
 
 /**
@@ -32,100 +70,110 @@ export const queryProducts = async (filter, options, search) => {
     console.log('Service received options:', options);
     console.log('Service received search:', search);
     
+    const queryOptions = options || {};
+
     // Ensure filter is a valid object
-    if (!filter || typeof filter !== 'object') {
-      filter = {};
-    }
-    
-    // Remove any potential _id field that might cause issues
-    if (filter._id) {
+    const safeFilter = filter && typeof filter === 'object' ? { ...filter } : {};
+
+    if (safeFilter._id) {
       console.warn('Removing _id from filter to prevent ObjectId casting issues');
-      delete filter._id;
+      delete safeFilter._id;
     }
-    
-    // Handle styleCode, eanCode, brand, pack filters - convert to array queries
-    const styleCodeFilter = filter.styleCode;
-    const eanCodeFilter = filter.eanCode;
-    const brandFilter = filter.brand;
-    const packFilter = filter.pack;
-    if (styleCodeFilter || eanCodeFilter || brandFilter || packFilter) {
-      const arrayFilters = [];
-      if (styleCodeFilter) {
-        const styleCodeRegex = new RegExp(styleCodeFilter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-        arrayFilters.push({ 'styleCodes.styleCode': styleCodeRegex });
-      }
-      if (eanCodeFilter) {
-        const eanCodeRegex = new RegExp(eanCodeFilter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-        arrayFilters.push({ 'styleCodes.eanCode': eanCodeRegex });
-      }
-      if (brandFilter) {
-        const brandRegex = new RegExp(brandFilter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-        arrayFilters.push({ 'styleCodes.brand': brandRegex });
-      }
-      if (packFilter) {
-        const packRegex = new RegExp(packFilter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-        arrayFilters.push({ 'styleCodes.pack': packRegex });
-      }
-      
-      delete filter.styleCode;
-      delete filter.eanCode;
-      delete filter.brand;
-      delete filter.pack;
-      
-      // Combine array filters with existing filter
-      if (arrayFilters.length > 0) {
-        if (Object.keys(filter).length > 0) {
-          filter = {
-            $and: [filter, ...arrayFilters],
-          };
-        } else {
-          filter = arrayFilters.length === 1 ? arrayFilters[0] : { $and: arrayFilters };
-        }
-      }
+
+    // Extract style-code-related filters for lookup in StyleCode collection
+    const styleCodeFilter = safeFilter.styleCode;
+    const eanCodeFilter = safeFilter.eanCode;
+    const brandFilter = safeFilter.brand;
+    const packFilter = safeFilter.pack;
+    delete safeFilter.styleCode;
+    delete safeFilter.eanCode;
+    delete safeFilter.brand;
+    delete safeFilter.pack;
+
+    const andConditions = [];
+    if (Object.keys(safeFilter).length > 0) {
+      andConditions.push(safeFilter);
     }
-    
-    // Handle search parameter - search across multiple fields
+
+    // Apply direct style filters via StyleCode lookup
+    const styleCodeConditions = [];
+    if (styleCodeFilter) {
+      styleCodeConditions.push({ styleCode: new RegExp(escapeRegex(styleCodeFilter), 'i') });
+    }
+    if (eanCodeFilter) {
+      styleCodeConditions.push({ eanCode: new RegExp(escapeRegex(eanCodeFilter), 'i') });
+    }
+    if (brandFilter) {
+      styleCodeConditions.push({ brand: new RegExp(escapeRegex(brandFilter), 'i') });
+    }
+    if (packFilter) {
+      styleCodeConditions.push({ pack: new RegExp(escapeRegex(packFilter), 'i') });
+    }
+
+    if (styleCodeConditions.length > 0) {
+      const styleQuery = styleCodeConditions.length === 1 ? styleCodeConditions[0] : { $and: styleCodeConditions };
+      const matchingStyleCodes = await StyleCode.find(styleQuery).select('_id').lean();
+      const matchingStyleIds = matchingStyleCodes.map((doc) => doc._id);
+
+      if (matchingStyleIds.length === 0) {
+        return Product.paginate({ styleCodes: { $in: [] } }, queryOptions);
+      }
+      andConditions.push({ styleCodes: { $in: matchingStyleIds } });
+    }
+
+    // Handle search parameter - search across product fields + style code master
     if (search && typeof search === 'string' && search.trim()) {
-      const searchTerm = search.trim();
-      // Escape special regex characters
-      const escapedSearch = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const searchRegex = new RegExp(escapedSearch, 'i');
-      
-      // Build $or query to search across multiple fields
-      const searchFilter = {
+      const searchRegex = new RegExp(escapeRegex(search.trim()), 'i');
+      const productSearchFields = [
+        { name: searchRegex },
+        { softwareCode: searchRegex },
+        { internalCode: searchRegex },
+        { vendorCode: searchRegex },
+        { factoryCode: searchRegex },
+        { knittingCode: searchRegex },
+        { description: searchRegex },
+      ];
+
+      const matchingStyleCodes = await StyleCode.find({
         $or: [
-          { name: searchRegex },
-          { softwareCode: searchRegex },
-          { internalCode: searchRegex },
-          { vendorCode: searchRegex },
-          { factoryCode: searchRegex },
-          { knittingCode: searchRegex },
-          { 'styleCodes.styleCode': searchRegex },
-          { 'styleCodes.eanCode': searchRegex },
-          { description: searchRegex },
+          { styleCode: searchRegex },
+          { eanCode: searchRegex },
+          { brand: searchRegex },
+          { pack: searchRegex },
         ],
-      };
-      
-      // Combine search filter with existing filter using $and
-      if (Object.keys(filter).length > 0) {
-        filter = {
-          $and: [filter, searchFilter],
-        };
-      } else {
-        filter = searchFilter;
+      })
+        .select('_id')
+        .lean();
+
+      const searchStyleIds = matchingStyleCodes.map((doc) => doc._id);
+      const searchOr = [...productSearchFields];
+      if (searchStyleIds.length > 0) {
+        searchOr.push({ styleCodes: { $in: searchStyleIds } });
       }
-      
-      console.log('Applied search filter:', JSON.stringify(filter));
+
+      if (searchOr.length > 0) {
+        andConditions.push({ $or: searchOr });
+      }
+    }
+
+    let finalFilter = {};
+    if (andConditions.length === 1) {
+      finalFilter = andConditions[0];
+    } else if (andConditions.length > 1) {
+      finalFilter = { $and: andConditions };
+    }
+
+    // Add default population for category; avoid styleCodes populate to prevent casting errors on legacy docs
+    if (!queryOptions.populate) {
+      queryOptions.populate = 'category';
+    } else {
+      const segments = new Set(queryOptions.populate.split(',').map((entry) => entry.trim()).filter(Boolean));
+      segments.add('category');
+      // intentionally skip forcing styleCodes to avoid casting legacy embedded objects
+      queryOptions.populate = Array.from(segments).join(',');
     }
     
-    // Add default population for category if not specified
-    if (!options.populate) {
-      options.populate = 'category';
-    } else if (!options.populate.includes('category')) {
-      options.populate += ',category';
-    }
-    
-    const products = await Product.paginate(filter, options);
+    const products = await Product.paginate(finalFilter, queryOptions);
     return products;
   } catch (error) {
     // Handle ObjectId casting errors
@@ -215,7 +263,11 @@ export const updateProductById = async (productId, updateBody) => {
   if (updateBody.softwareCode && (await Product.findOne({ softwareCode: updateBody.softwareCode, _id: { $ne: productId } }))) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Software code already taken');
   }
-  Object.assign(product, updateBody);
+  let styleCodes;
+  if (updateBody.styleCodes) {
+    styleCodes = await ensureValidStyleCodes(updateBody.styleCodes);
+  }
+  Object.assign(product, { ...updateBody, ...(styleCodes ? { styleCodes } : {}) });
   await product.save();
   return product;
 };
@@ -258,6 +310,31 @@ export const bulkImportProducts = async (products, batchSize = 50) => {
       throw new Error('Maximum 10000 products allowed per request');
     }
 
+    const styleCodeIdSet = new Set();
+    products.forEach((product) => {
+      if (Array.isArray(product.styleCodes)) {
+        product.styleCodes.forEach((id) => {
+          const normalized = String(id || '').trim();
+          if (normalized) {
+            styleCodeIdSet.add(normalized);
+          }
+        });
+      }
+    });
+
+    const allStyleCodeIds = Array.from(styleCodeIdSet);
+
+    let existingStyleCodeIdSet = new Set();
+    if (allStyleCodeIds.length > 0) {
+      const invalidStyleCodeId = allStyleCodeIds.find((id) => !mongoose.Types.ObjectId.isValid(id));
+      if (invalidStyleCodeId) {
+        throw new Error(`Invalid style code id: ${invalidStyleCodeId}`);
+      }
+
+      const existingStyleCodes = await StyleCode.find({ _id: { $in: allStyleCodeIds } }).select('_id').lean();
+      existingStyleCodeIdSet = new Set(existingStyleCodes.map((doc) => String(doc._id)));
+    }
+
     // Estimate memory usage (rough calculation)
     const estimatedMemoryMB = (products.length * 1000) / (1024 * 1024); // ~1KB per product
     if (estimatedMemoryMB > 100) {
@@ -276,19 +353,19 @@ export const bulkImportProducts = async (products, batchSize = 50) => {
           
           try {
             const hasId = productData.id && productData.id.trim() !== '';
+
+            const normalizedStyleCodes = normalizeStyleCodeIds(productData.styleCodes);
+            if (normalizedStyleCodes.length > 0) {
+              const missingStyleCode = normalizedStyleCodes.find((id) => !existingStyleCodeIdSet.has(String(id)));
+              if (missingStyleCode) {
+                throw new Error(`Style code not found: ${missingStyleCode}`);
+              }
+            }
             
             // Prepare product data with minimal memory footprint
             const processedData = {
               name: productData.name?.trim(),
-              styleCodes: Array.isArray(productData.styleCodes) 
-                ? productData.styleCodes.map(item => ({
-                    styleCode: item.styleCode?.trim(),
-                    eanCode: item.eanCode?.trim(),
-                    mrp: typeof item.mrp === 'number' ? item.mrp : parseFloat(item.mrp) || 0,
-                    brand: item.brand?.trim() || undefined,
-                    pack: item.pack?.trim() || undefined,
-                  }))
-                : [],
+              styleCodes: normalizedStyleCodes,
               internalCode: productData.internalCode?.trim() || '',
               vendorCode: productData.vendorCode?.trim() || '',
               factoryCode: productData.factoryCode?.trim() || '',
@@ -298,6 +375,28 @@ export const bulkImportProducts = async (products, batchSize = 50) => {
               attributes: {},
               bom: [],
               processes: [],
+              rawMaterials: Array.isArray(productData.rawMaterials)
+                ? productData.rawMaterials
+                    .map((item) => {
+                      const rawMaterialId = item?.rawMaterialId || item?.rawMaterial || item?._id || item?.id;
+                      const quantity = item?.quantity;
+                      const normalizedId = rawMaterialId ? String(rawMaterialId).trim() : '';
+                      if (!normalizedId) return null;
+                      if (!mongoose.Types.ObjectId.isValid(normalizedId)) return null;
+                      const parsedQty =
+                        typeof quantity === 'number'
+                          ? quantity
+                          : quantity !== undefined
+                            ? parseFloat(quantity) || 0
+                            : 0;
+                      return {
+                        rawMaterialId: normalizedId,
+                        quantity: parsedQty < 0 ? 0 : parsedQty,
+                      };
+                    })
+                    .filter(Boolean)
+                : [],
+              productionType: productData.productionType === 'outsourced' ? 'outsourced' : 'internal',
               status: 'active',
             };
 
