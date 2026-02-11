@@ -13,6 +13,20 @@ const run = async () => {
     const deleted = await StorageSlot.deleteMany({});
     logger.info(`Removed ${deleted.deletedCount} existing slots.`);
 
+    // Drop legacy unique index (zoneCode + shelfNumber + floorNumber without sectionCode).
+    // LT has 4 sections so (LT,1,1) would duplicate without this; current schema uses 4-field unique.
+    const legacyIndexName = 'zoneCode_1_shelfNumber_1_floorNumber_1';
+    try {
+      await StorageSlot.collection.dropIndex(legacyIndexName);
+      logger.info(`Dropped legacy index: ${legacyIndexName}`);
+    } catch (err) {
+      if (err.code === 27 || err.codeName === 'IndexNotFound' || /index not found/i.test(err.message)) {
+        logger.info(`Legacy index ${legacyIndexName} not present (ok).`);
+      } else {
+        throw err;
+      }
+    }
+
     logger.info('Seeding storage slots (LT/ST)...');
     const result = await StorageSlot.seedDefaultSlots();
     logger.info(

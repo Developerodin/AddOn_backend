@@ -18,14 +18,18 @@ const run = async () => {
 
     logger.info('Clearing coneStorageId from YarnCone...');
     const coneResult = await YarnCone.updateMany({}, { $set: { coneStorageId: null } });
-    logger.info(`YarnCone: matched ${coneResult.matchedCount}, modified ${coneResult.modifiedCount}.`);
+    const coneMatched = coneResult.matchedCount ?? coneResult.n ?? 0;
+    const coneModified = coneResult.modifiedCount ?? coneResult.nModified ?? 0;
+    logger.info(`YarnCone: matched ${coneMatched}, modified ${coneModified}.`);
 
     logger.info('Clearing storageLocation and setting storedStatus to false on YarnBox...');
     const boxResult = await YarnBox.updateMany(
       {},
       { $set: { storageLocation: null, storedStatus: false } }
     );
-    logger.info(`YarnBox: matched ${boxResult.matchedCount}, modified ${boxResult.modifiedCount}.`);
+    const boxMatched = boxResult.matchedCount ?? boxResult.n ?? 0;
+    const boxModified = boxResult.modifiedCount ?? boxResult.nModified ?? 0;
+    logger.info(`YarnBox: matched ${boxMatched}, modified ${boxModified}.`);
 
     logger.info('Done. Storage fields cleared.');
   } catch (error) {
