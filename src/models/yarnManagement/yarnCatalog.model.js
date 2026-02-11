@@ -571,56 +571,34 @@ yarnCatalogSchema.pre('save', async function (next) {
     }
   }
   
-  // Generate yarnName if needed
-  // IMPORTANT: Preserve original yarnName if explicitly provided - don't auto-generate if yarnName is already set
-  // Only auto-generate if yarnName is missing
-  const originalYarnName = this.yarnName ? String(this.yarnName).trim() : null;
-  
-  // Only generate yarnName if it's not provided
-  // If yarnName is explicitly provided, preserve it exactly as is (no modifications)
-  if (!this.yarnName) {
+  // Build system-generated yarnName from embedded fields
+  const buildYarnNameFromParts = () => {
+    const parts = [];
+    if (this.countSize && this.countSize.name) parts.push(this.countSize.name);
+    if (this.colorFamily && this.colorFamily.name) parts.push(this.colorFamily.name);
+    if (this.pantonName && this.pantonName.trim()) parts.push(this.pantonName.trim());
+    if (this.yarnType && this.yarnType.name) {
+      let typePart = this.yarnType.name;
+      if (this.yarnSubtype && this.yarnSubtype.subtype) typePart += `/${this.yarnSubtype.subtype}`;
+      parts.push(typePart);
+    }
+    return parts.length > 0 ? parts.join('-') : null;
+  };
+
+  // Regenerate yarnName when: (1) not set (create), or (2) on update, any field that composes it was modified
+  const nameComponentFields = ['countSize', 'colorFamily', 'pantonName', 'yarnType', 'yarnSubtype'];
+  const nameComponentChanged = nameComponentFields.some((f) => this.isModified(f));
+  const shouldRegenerateYarnName = !this.yarnName || (nameComponentChanged && !this.isNew);
+
+  if (shouldRegenerateYarnName) {
     try {
-      const parts = [];
-      
-      // Get countSize name (now embedded object)
-      if (this.countSize && this.countSize.name) {
-        parts.push(this.countSize.name);
-      }
-      
-      // Get colorFamily name (optional, now embedded object) - use preserved original name
-      if (this.colorFamily && this.colorFamily.name) {
-        parts.push(this.colorFamily.name);
-      }
-      
-      // Get pantonName (optional)
-      if (this.pantonName && this.pantonName.trim()) {
-        parts.push(this.pantonName.trim());
-      }
-      
-      // Get yarnType name (now embedded object)
-      if (this.yarnType && this.yarnType.name) {
-        let typePart = this.yarnType.name;
-        
-        // Handle yarnSubtype (now embedded object)
-        if (this.yarnSubtype && this.yarnSubtype.subtype) {
-          typePart += `/${this.yarnSubtype.subtype}`;
-        }
-        
-        parts.push(typePart);
-      }
-      
-      // Generate yarnName: count/size-colour-pantonName-type/sub-type
-      if (parts.length > 0) {
-        this.yarnName = parts.join('-');
-      }
+      const generated = buildYarnNameFromParts();
+      if (generated) this.yarnName = generated;
     } catch (error) {
       return next(error);
     }
-  } else {
-    // If yarnName was explicitly provided, preserve it exactly as provided (no modifications)
-    this.yarnName = originalYarnName;
   }
-  
+
   next();
 });
 

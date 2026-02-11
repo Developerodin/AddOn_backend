@@ -2,7 +2,7 @@ import { StorageSlot, YarnBox, YarnCone } from '../../models/index.js';
 import pick from '../../utils/pick.js';
 import ApiError from '../../utils/ApiError.js';
 import httpStatus from 'http-status';
-import { STORAGE_ZONES } from '../../models/storageManagement/storageSlot.model.js';
+import { STORAGE_ZONES, LT_SECTION_CODES } from '../../models/storageManagement/storageSlot.model.js';
 
 const filterableFields = ['zoneCode', 'shelfNumber', 'floorNumber', 'isActive'];
 const paginationOptions = ['limit', 'page', 'sortBy'];
@@ -25,14 +25,32 @@ export const queryStorageSlots = async (query) => {
   const limit = Number(options.limit ?? 200);
   const skip = (page - 1) * limit;
 
-  const [results, total] = await Promise.all([
-    StorageSlot.find(filter)
-      .sort({ zoneCode: 1, shelfNumber: 1, floorNumber: 1 })
-      .skip(skip)
-      .limit(limit)
-      .lean(),
-    StorageSlot.countDocuments(filter),
-  ]);
+  // LT: return sections in order B7-G-02 → B7-G-03 → B7-2F-01 → B7-2F-02
+  const isLT = filter.zoneCode === STORAGE_ZONES.LONG_TERM;
+  const [results, total] = isLT
+    ? await Promise.all([
+        StorageSlot.aggregate([
+          { $match: filter },
+          {
+            $addFields: {
+              _sectionOrder: { $indexOfArray: [LT_SECTION_CODES, '$sectionCode'] },
+            },
+          },
+          { $sort: { _sectionOrder: 1, shelfNumber: 1, floorNumber: 1 } },
+          { $skip: skip },
+          { $limit: limit },
+          { $project: { _sectionOrder: 0 } },
+        ]),
+        StorageSlot.countDocuments(filter),
+      ])
+    : await Promise.all([
+        StorageSlot.find(filter)
+          .sort({ zoneCode: 1, shelfNumber: 1, floorNumber: 1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        StorageSlot.countDocuments(filter),
+      ]);
 
   return {
     results,
@@ -62,14 +80,32 @@ export const getStorageSlotsByZone = async (zoneCode, query = {}) => {
   const limit = Number(options.limit ?? 200);
   const skip = (page - 1) * limit;
 
-  const [results, total] = await Promise.all([
-    StorageSlot.find(filter)
-      .sort({ shelfNumber: 1, floorNumber: 1 })
-      .skip(skip)
-      .limit(limit)
-      .lean(),
-    StorageSlot.countDocuments(filter),
-  ]);
+  // LT: sections in order B7-G-02 → B7-G-03 → B7-2F-01 → B7-2F-02
+  const isLT = zoneCode === STORAGE_ZONES.LONG_TERM;
+  const [results, total] = isLT
+    ? await Promise.all([
+        StorageSlot.aggregate([
+          { $match: filter },
+          {
+            $addFields: {
+              _sectionOrder: { $indexOfArray: [LT_SECTION_CODES, '$sectionCode'] },
+            },
+          },
+          { $sort: { _sectionOrder: 1, shelfNumber: 1, floorNumber: 1 } },
+          { $skip: skip },
+          { $limit: limit },
+          { $project: { _sectionOrder: 0 } },
+        ]),
+        StorageSlot.countDocuments(filter),
+      ])
+    : await Promise.all([
+        StorageSlot.find(filter)
+          .sort({ shelfNumber: 1, floorNumber: 1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        StorageSlot.countDocuments(filter),
+      ]);
 
   return {
     results,

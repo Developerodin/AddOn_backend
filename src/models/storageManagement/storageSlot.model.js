@@ -7,8 +7,17 @@ export const STORAGE_ZONES = {
   SHORT_TERM: 'ST',
 };
 
-const MAX_SHELVES_PER_ZONE = 150;
-const FLOORS_PER_SHELF = 4;
+/** ST: one section B7-G-01, 3 floors (F1, F2, F3). */
+export const ST_SECTION_CODE = 'B7-G-01';
+/** LT: four sections, 4 floors each (F1..F4). */
+export const LT_SECTION_CODES = ['B7-G-02', 'B7-G-03', 'B7-2F-01', 'B7-2F-02'];
+
+const MAX_SHELVES_PER_ZONE = 50;
+/** LT: 12 shelves × 4 floors = 48 slots per section → 192 total. */
+const MAX_SHELVES_LT = 12;
+const FLOORS_PER_SHELF_ST = 3;
+const FLOORS_PER_SHELF_LT = 4;
+const FLOORS_PER_SHELF_MAX = 4;
 
 const storageSlotSchema = mongoose.Schema(
   {
@@ -26,8 +35,14 @@ const storageSlotSchema = mongoose.Schema(
     floorNumber: {
       type: Number,
       min: 1,
-      max: FLOORS_PER_SHELF,
+      max: FLOORS_PER_SHELF_MAX,
       required: true,
+    },
+    /** Section: ST = B7-G-01, LT = B7-G-02 | B7-G-03 | B7-2F-01 | B7-2F-02. */
+    sectionCode: {
+      type: String,
+      trim: true,
+      required: false,
     },
     label: {
       type: String,
@@ -54,11 +69,15 @@ const storageSlotSchema = mongoose.Schema(
 storageSlotSchema.plugin(toJSON);
 storageSlotSchema.plugin(paginate);
 
-storageSlotSchema.index({ zoneCode: 1, shelfNumber: 1, floorNumber: 1 }, { unique: true });
+storageSlotSchema.index(
+  { zoneCode: 1, sectionCode: 1, shelfNumber: 1, floorNumber: 1 },
+  { unique: true }
+);
 
 storageSlotSchema.pre('validate', function (next) {
   const shelf = String(this.shelfNumber).padStart(3, '0');
-  const label = `${this.zoneCode}-S${shelf}-F${this.floorNumber}`;
+  const prefix = this.sectionCode || this.zoneCode;
+  const label = `${prefix}-S${shelf}-F${this.floorNumber}`;
 
   if (!this.label) {
     this.label = label;
@@ -74,19 +93,46 @@ storageSlotSchema.pre('validate', function (next) {
 storageSlotSchema.statics.seedDefaultSlots = async function () {
   const bulkOps = [];
 
-  const zones = Object.values(STORAGE_ZONES);
-  zones.forEach((zoneCode) => {
-    for (let shelf = 1; shelf <= MAX_SHELVES_PER_ZONE; shelf += 1) {
-      for (let floor = 1; floor <= FLOORS_PER_SHELF; floor += 1) {
-        const shelfStr = String(shelf).padStart(3, '0');
-        const label = `${zoneCode}-S${shelfStr}-F${floor}`;
+  // ST: B7-G-01-S001-F1, B7-G-01-S001-F2, B7-G-01-S001-F3 (3 floors), shelves S001..S050
+  const stZone = STORAGE_ZONES.SHORT_TERM;
+  for (let shelf = 1; shelf <= MAX_SHELVES_PER_ZONE; shelf += 1) {
+    for (let floor = 1; floor <= FLOORS_PER_SHELF_ST; floor += 1) {
+      const shelfStr = String(shelf).padStart(3, '0');
+      const label = `${ST_SECTION_CODE}-S${shelfStr}-F${floor}`;
+      bulkOps.push({
+        updateOne: {
+          filter: { label },
+          update: {
+            $setOnInsert: {
+              zoneCode: stZone,
+              sectionCode: ST_SECTION_CODE,
+              shelfNumber: shelf,
+              floorNumber: floor,
+              label,
+              barcode: label,
+              isActive: true,
+            },
+          },
+          upsert: true,
+        },
+      });
+    }
+  }
 
+  // LT: 4 sections, 12 shelves × 4 floors (F1..F4) → 48 per section, 192 total
+  const ltZone = STORAGE_ZONES.LONG_TERM;
+  LT_SECTION_CODES.forEach((sectionCode) => {
+    for (let shelf = 1; shelf <= MAX_SHELVES_LT; shelf += 1) {
+      for (let floor = 1; floor <= FLOORS_PER_SHELF_LT; floor += 1) {
+        const shelfStr = String(shelf).padStart(3, '0');
+        const label = `${sectionCode}-S${shelfStr}-F${floor}`;
         bulkOps.push({
           updateOne: {
             filter: { label },
             update: {
               $setOnInsert: {
-                zoneCode,
+                zoneCode: ltZone,
+                sectionCode,
                 shelfNumber: shelf,
                 floorNumber: floor,
                 label,
@@ -115,5 +161,3 @@ storageSlotSchema.statics.seedDefaultSlots = async function () {
 const StorageSlot = mongoose.model('StorageSlot', storageSlotSchema);
 
 export default StorageSlot;
-
-

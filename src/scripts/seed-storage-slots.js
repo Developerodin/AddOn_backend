@@ -9,8 +9,11 @@ const run = async () => {
   try {
     logger.info('Connecting to MongoDB...');
     await mongoose.connect(config.mongoose.url, config.mongoose.options);
-    logger.info('Connected. Seeding storage slots (LT/ST)...');
+    logger.info('Removing existing storage slots...');
+    const deleted = await StorageSlot.deleteMany({});
+    logger.info(`Removed ${deleted.deletedCount} existing slots.`);
 
+    logger.info('Seeding storage slots (LT/ST)...');
     const result = await StorageSlot.seedDefaultSlots();
     logger.info(
       `Storage slot seeding finished. Inserted: ${result.inserted}, Already present: ${result.matched}`
