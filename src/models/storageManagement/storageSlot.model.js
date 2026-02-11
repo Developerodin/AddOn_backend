@@ -7,15 +7,15 @@ export const STORAGE_ZONES = {
   SHORT_TERM: 'ST',
 };
 
-/** ST: one section B7-G-01, 3 floors (F1, F2, F3). */
-export const ST_SECTION_CODE = 'B7-G-01';
-/** LT: four sections, 4 floors each (F1..F4). */
-export const LT_SECTION_CODES = ['B7-G-02', 'B7-G-03', 'B7-2F-01', 'B7-2F-02'];
+/** ST: one section B7-01 (no G), 4 floors (F1..F4). */
+export const ST_SECTION_CODE = 'B7-01';
+/** LT: four sections B7-02..B7-05, 4 floors each (F1..F4). */
+export const LT_SECTION_CODES = ['B7-02', 'B7-03', 'B7-04', 'B7-05'];
 
 const MAX_SHELVES_PER_ZONE = 50;
 /** LT: 12 shelves × 4 floors = 48 slots per section → 192 total. */
 const MAX_SHELVES_LT = 12;
-const FLOORS_PER_SHELF_ST = 3;
+const FLOORS_PER_SHELF_ST = 4;
 const FLOORS_PER_SHELF_LT = 4;
 const FLOORS_PER_SHELF_MAX = 4;
 
@@ -38,7 +38,7 @@ const storageSlotSchema = mongoose.Schema(
       max: FLOORS_PER_SHELF_MAX,
       required: true,
     },
-    /** Section: ST = B7-G-01, LT = B7-G-02 | B7-G-03 | B7-2F-01 | B7-2F-02. */
+    /** Section: ST = B7-01, LT = B7-02 | B7-03 | B7-04 | B7-05. */
     sectionCode: {
       type: String,
       trim: true,
@@ -93,7 +93,7 @@ storageSlotSchema.pre('validate', function (next) {
 storageSlotSchema.statics.seedDefaultSlots = async function () {
   const bulkOps = [];
 
-  // ST: B7-G-01-S001-F1, B7-G-01-S001-F2, B7-G-01-S001-F3 (3 floors), shelves S001..S050
+  // ST: B7-01-S001-F1..F4 (4 floors), shelves S001..S050
   const stZone = STORAGE_ZONES.SHORT_TERM;
   for (let shelf = 1; shelf <= MAX_SHELVES_PER_ZONE; shelf += 1) {
     for (let floor = 1; floor <= FLOORS_PER_SHELF_ST; floor += 1) {
