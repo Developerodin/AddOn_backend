@@ -75,9 +75,10 @@ storageSlotSchema.index(
 );
 
 storageSlotSchema.pre('validate', function (next) {
-  const shelf = String(this.shelfNumber).padStart(3, '0');
+  const shelf = String(this.shelfNumber).padStart(4, '0');
+  const floor = String(this.floorNumber).padStart(2, '0');
   const prefix = this.sectionCode || this.zoneCode;
-  const label = `${prefix}-S${shelf}-F${this.floorNumber}`;
+  const label = `${prefix}-S${shelf}-F${floor}`;
 
   if (!this.label) {
     this.label = label;
@@ -93,12 +94,13 @@ storageSlotSchema.pre('validate', function (next) {
 storageSlotSchema.statics.seedDefaultSlots = async function () {
   const bulkOps = [];
 
-  // ST: B7-01-S001-F1..F4 (4 floors), shelves S001..S050
+  // ST: B7-01-S0001-F01..F04 (4 floors), shelves S0001..S0050
   const stZone = STORAGE_ZONES.SHORT_TERM;
   for (let shelf = 1; shelf <= MAX_SHELVES_PER_ZONE; shelf += 1) {
     for (let floor = 1; floor <= FLOORS_PER_SHELF_ST; floor += 1) {
-      const shelfStr = String(shelf).padStart(3, '0');
-      const label = `${ST_SECTION_CODE}-S${shelfStr}-F${floor}`;
+      const shelfStr = String(shelf).padStart(4, '0');
+      const floorStr = String(floor).padStart(2, '0');
+      const label = `${ST_SECTION_CODE}-S${shelfStr}-F${floorStr}`;
       bulkOps.push({
         updateOne: {
           filter: { label },
@@ -119,13 +121,14 @@ storageSlotSchema.statics.seedDefaultSlots = async function () {
     }
   }
 
-  // LT: 4 sections, 12 shelves × 4 floors (F1..F4) → 48 per section, 192 total
+  // LT: 4 sections, 12 shelves × 4 floors (F01..F04) → 48 per section, 192 total
   const ltZone = STORAGE_ZONES.LONG_TERM;
   LT_SECTION_CODES.forEach((sectionCode) => {
     for (let shelf = 1; shelf <= MAX_SHELVES_LT; shelf += 1) {
       for (let floor = 1; floor <= FLOORS_PER_SHELF_LT; floor += 1) {
-        const shelfStr = String(shelf).padStart(3, '0');
-        const label = `${sectionCode}-S${shelfStr}-F${floor}`;
+        const shelfStr = String(shelf).padStart(4, '0');
+        const floorStr = String(floor).padStart(2, '0');
+        const label = `${sectionCode}-S${shelfStr}-F${floorStr}`;
         bulkOps.push({
           updateOne: {
             filter: { label },
