@@ -25,6 +25,7 @@
     "migrate:navigation": "cross-env NODE_ENV=development node update-user-navigation.js",
     "check:navigation": "cross-env NODE_ENV=development node check-user-navigation.js",
     "seed:storage-slots": "node src/scripts/seed-storage-slots.js",
+    "seed:machine-order-assignments": "node src/scripts/seed-machine-order-assignments.js",
     "prepare": "husky install"
   },
   "keywords": [

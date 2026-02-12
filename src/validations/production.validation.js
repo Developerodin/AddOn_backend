@@ -298,6 +298,18 @@ const getOrderTrackingReport = {
   }),
 };
 
+const getArticleWiseData = {
+  query: Joi.object().keys({
+    articleNumber: Joi.string().min(1).max(20),
+    search: Joi.string().min(1).max(50),
+    status: Joi.string().valid('Pending', 'In Progress', 'Completed', 'On Hold', 'Cancelled'),
+    orderNumber: Joi.string().min(1).max(50),
+    limit: Joi.number().integer().min(1).max(100),
+    page: Joi.number().integer().min(1),
+    logsPerArticle: Joi.number().integer().min(1).max(100),
+  }),
+};
+
 // ==================== LOGGING VALIDATIONS ====================
 
 const getArticleLogs = {
@@ -463,7 +475,8 @@ export default {
   getEfficiencyReport,
   getQualityReport,
   getOrderTrackingReport,
-  
+  getArticleWiseData,
+
   // Logging validations
   getArticleLogs,
   getOrderLogs,

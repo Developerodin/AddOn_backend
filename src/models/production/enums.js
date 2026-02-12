@@ -136,7 +136,16 @@ const LogAction = {
   USER_LOGOUT: 'User Logout',
   PERMISSION_CHANGED: 'Permission Changed',
   PASSWORD_CHANGED: 'Password Changed',
-  PROFILE_UPDATED: 'Profile Updated'
+  PROFILE_UPDATED: 'Profile Updated',
+
+  // Machine Order Assignment
+  ASSIGNMENT_CREATED: 'Assignment Created',
+  ASSIGNMENT_UPDATED: 'Assignment Updated',
+  ASSIGNMENT_ACTIVE_NEEDLE_CHANGED: 'Active Needle Changed',
+  ASSIGNMENT_ITEMS_UPDATED: 'Assignment Items Updated',
+  ASSIGNMENT_ITEM_STATUS_CHANGED: 'Assignment Item Status Changed',
+  ASSIGNMENT_ITEM_PRIORITY_CHANGED: 'Assignment Item Priority Changed',
+  ASSIGNMENT_DEACTIVATED: 'Assignment Deactivated'
 };
 
 export {

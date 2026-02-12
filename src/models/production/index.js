@@ -7,6 +7,8 @@ import ArticleLog from './articleLog.model.js';
 import Article from './article.model.js';
 import ProductionOrder from './productionOrder.model.js';
 import FloorStatistics from './floorStatistics.model.js';
+import MachineOrderAssignment from './machineOrderAssignment.model.js';
+import MachineOrderAssignmentLog from './machineOrderAssignmentLog.model.js';
 
 // Export enums
 import {
@@ -25,6 +27,8 @@ export {
   Article,
   ProductionOrder,
   FloorStatistics,
+  MachineOrderAssignment,
+  MachineOrderAssignmentLog,
   
   // Enums
   OrderStatus,

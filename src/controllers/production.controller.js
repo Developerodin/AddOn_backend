@@ -152,6 +152,16 @@ export const getOrderTrackingReport = catchAsync(async (req, res) => {
   res.send(report);
 });
 
+export const getArticleWiseData = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['articleNumber', 'search', 'status', 'orderNumber']);
+  const options = pick(req.query, ['limit', 'page', 'logsPerArticle']);
+  if (options.limit) options.limit = parseInt(options.limit, 10);
+  if (options.page) options.page = parseInt(options.page, 10);
+  if (options.logsPerArticle) options.logsPerArticle = parseInt(options.logsPerArticle, 10);
+  const result = await productionService.getArticleWiseData(filter, options);
+  res.send(result);
+});
+
 // ==================== LOGGING AND AUDIT ====================
 
 export const getArticleLogs = catchAsync(async (req, res) => {
@@ -253,6 +263,76 @@ export const getAuditTrail = catchAsync(async (req, res) => {
   res.send(auditTrail);
 });
 
+// ==================== MACHINE ORDER ASSIGNMENTS ====================
+
+export const createMachineOrderAssignment = catchAsync(async (req, res) => {
+  const assignment = await productionService.createMachineOrderAssignment(req.body, req.user?._id);
+  res.status(httpStatus.CREATED).send(assignment);
+});
+
+export const getMachineOrderAssignments = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['machine', 'activeNeedle', 'isActive']);
+  const options = pick(req.query, ['sortBy', 'sortOrder', 'limit', 'page']);
+  if (options.sortBy && options.sortOrder) {
+    options.sortBy = `${options.sortBy}:${options.sortOrder}`;
+  } else if (!options.sortBy) {
+    options.sortBy = 'createdAt:desc';
+  }
+  if (options.limit) options.limit = parseInt(options.limit, 10);
+  if (options.page) options.page = parseInt(options.page, 10);
+  const result = await productionService.queryMachineOrderAssignments(filter, options);
+  res.send(result);
+});
+
+export const getMachineOrderAssignment = catchAsync(async (req, res) => {
+  const assignment = await productionService.getMachineOrderAssignmentById(req.params.assignmentId);
+  if (!assignment) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Machine order assignment not found');
+  }
+  res.send(assignment);
+});
+
+export const updateMachineOrderAssignment = catchAsync(async (req, res) => {
+  const assignment = await productionService.updateMachineOrderAssignmentById(
+    req.params.assignmentId,
+    req.body,
+    req.user?._id
+  );
+  res.send(assignment);
+});
+
+export const resetMachineOrderAssignment = catchAsync(async (req, res) => {
+  const assignment = await productionService.resetMachineOrderAssignmentById(
+    req.params.assignmentId,
+    req.user?._id
+  );
+  res.send(assignment);
+});
+
+export const deleteMachineOrderAssignment = catchAsync(async (req, res) => {
+  await productionService.deleteMachineOrderAssignmentById(req.params.assignmentId, req.user?._id);
+  res.status(httpStatus.OK).json({ success: true, message: 'Machine order assignment deleted successfully' });
+});
+
+export const getAssignmentLogs = catchAsync(async (req, res) => {
+  const { assignmentId } = req.params;
+  const filter = pick(req.query, ['dateFrom', 'dateTo', 'action']);
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  if (options.limit) options.limit = parseInt(options.limit, 10);
+  if (options.page) options.page = parseInt(options.page, 10);
+  const result = await productionService.getAssignmentLogs(assignmentId, filter, options);
+  res.send(result);
+});
+
+export const getAssignmentLogsByUser = catchAsync(async (req, res) => {
+  const { userId } = req.params;
+  const filter = pick(req.query, ['dateFrom', 'dateTo', 'action', 'assignmentId']);
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  if (options.limit) options.limit = parseInt(options.limit, 10);
+  if (options.page) options.page = parseInt(options.page, 10);
+  const result = await productionService.getAssignmentLogsByUser(userId, filter, options);
+  res.send(result);
+});
 
 // ==================== BULK OPERATIONS ====================
 

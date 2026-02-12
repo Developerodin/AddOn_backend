@@ -2,9 +2,35 @@ import express from 'express';
 import validate from '../../middlewares/validate.js';
 import { bulkImportMiddleware, validateBulkImportSize } from '../../middlewares/bulkImport.js';
 import * as productionValidation from '../../validations/production.validation.js';
+import * as machineOrderAssignmentValidation from '../../validations/machineOrderAssignment.validation.js';
 import * as productionController from '../../controllers/production.controller.js';
 
 const router = express.Router();
+
+// ==================== MACHINE ORDER ASSIGNMENTS ====================
+
+router
+  .route('/machine-order-assignments')
+  .post(validate(machineOrderAssignmentValidation.createMachineOrderAssignment), productionController.createMachineOrderAssignment)
+  .get(validate(machineOrderAssignmentValidation.getMachineOrderAssignments), productionController.getMachineOrderAssignments);
+
+router
+  .route('/machine-order-assignments/logs/user/:userId')
+  .get(validate(machineOrderAssignmentValidation.getAssignmentLogsByUser), productionController.getAssignmentLogsByUser);
+
+router
+  .route('/machine-order-assignments/:assignmentId/reset')
+  .post(validate(machineOrderAssignmentValidation.resetMachineOrderAssignment), productionController.resetMachineOrderAssignment);
+
+router
+  .route('/machine-order-assignments/:assignmentId')
+  .get(validate(machineOrderAssignmentValidation.getMachineOrderAssignment), productionController.getMachineOrderAssignment)
+  .patch(validate(machineOrderAssignmentValidation.updateMachineOrderAssignment), productionController.updateMachineOrderAssignment)
+  .delete(validate(machineOrderAssignmentValidation.deleteMachineOrderAssignment), productionController.deleteMachineOrderAssignment);
+
+router
+  .route('/machine-order-assignments/:assignmentId/logs')
+  .get(validate(machineOrderAssignmentValidation.getAssignmentLogs), productionController.getAssignmentLogs);
 
 // ==================== ORDER MANAGEMENT ROUTES ====================
 
@@ -110,6 +136,10 @@ router
 router
   .route('/reports/order-tracking/:orderId')
   .get(validate(productionValidation.getOrderTrackingReport), productionController.getOrderTrackingReport);
+
+router
+  .route('/reports/article-wise')
+  .get(validate(productionValidation.getArticleWiseData), productionController.getArticleWiseData);
 
 // ==================== LOGGING AND AUDIT ROUTES ====================
 

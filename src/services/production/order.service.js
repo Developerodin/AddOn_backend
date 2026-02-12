@@ -5,6 +5,7 @@ import Product from '../../models/product.model.js';
 import ApiError from '../../utils/ApiError.js';
 import { generateArticleNumber } from '../../utils/generateId.js';
 import { getAllFloorsOrder, getFloorKey, validateProductProcesses } from '../../utils/productionHelper.js';
+import { removeProductionOrderFromAssignments } from './machineOrderAssignment.service.js';
 // import { generateOrderNumber } from '../../utils/generateId.js'; // Using model's auto-generation instead
 
 /**
@@ -449,6 +450,9 @@ export const deleteProductionOrderById = async (orderId) => {
 
   // Delete order logs
   await ArticleLog.deleteMany({ orderId: orderId.toString() });
+
+  // Remove this PO from all machine order assignment queues
+  await removeProductionOrderFromAssignments(order._id);
 
   // Delete the order
   await order.deleteOne();

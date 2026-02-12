@@ -484,3 +484,122 @@ const getQualityTrend = async (floor, startDate, endDate) => {
 
   return trend;
 };
+
+/**
+ * Get production data grouped by article (factoryCode/articleNumber).
+ * For each article number: all POs it appears on, quantity per PO, status, logs.
+ * @param {Object} filter - { articleNumber } optional, to get single article
+ * @param {Object} options - { limit, page, logsPerArticle }
+ * @returns {Promise<Object>} { results, page, limit, totalPages, total }
+ */
+export const getArticleWiseData = async (filter = {}, options = {}) => {
+  const { articleNumber: filterArticleNumber, search, status, orderNumber } = filter;
+  const limit = Math.min(parseInt(options.limit, 10) || 50, 100);
+  const page = parseInt(options.page, 10) || 1;
+  const logsPerArticle = Math.min(parseInt(options.logsPerArticle, 10) || 20, 100);
+
+  const match = {};
+  if (filterArticleNumber) {
+    match.articleNumber = filterArticleNumber;
+  } else if (search && typeof search === 'string' && search.trim()) {
+    match.articleNumber = { $regex: search.trim(), $options: 'i' };
+  }
+  if (status) match.status = status;
+  if (orderNumber && typeof orderNumber === 'string' && orderNumber.trim()) {
+    const orders = await ProductionOrder.find({
+      orderNumber: { $regex: orderNumber.trim(), $options: 'i' }
+    }).select('_id').lean();
+    const orderIds = orders.map((o) => o._id);
+    if (orderIds.length === 0) {
+      return { results: [], page, limit, totalPages: 0, total: 0 };
+    }
+    match.orderId = { $in: orderIds };
+  }
+
+  const articles = await Article.find(match)
+    .populate('orderId', 'orderNumber status priority currentFloor orderNote createdAt')
+    .populate('machineId', 'machineCode machineNumber model floor')
+    .sort({ articleNumber: 1, createdAt: -1 })
+    .lean();
+
+  const articleIds = articles.map((a) => (a._id && a._id.toString()) || a.id);
+  const allLogs = await ArticleLog.find({ articleId: { $in: articleIds } })
+    .sort({ timestamp: -1 })
+    .lean();
+
+  const logsByArticleId = {};
+  for (const log of allLogs) {
+    const aid = log.articleId && log.articleId.toString();
+    if (!aid) continue;
+    if (!logsByArticleId[aid]) logsByArticleId[aid] = [];
+    if (logsByArticleId[aid].length < logsPerArticle) {
+      logsByArticleId[aid].push({
+        id: log.id,
+        action: log.action,
+        quantity: log.quantity,
+        fromFloor: log.fromFloor,
+        toFloor: log.toFloor,
+        remarks: log.remarks,
+        timestamp: log.timestamp,
+        date: log.date,
+        userId: log.userId,
+        previousValue: log.previousValue,
+        newValue: log.newValue,
+        qualityStatus: log.qualityStatus
+      });
+    }
+  }
+
+  const byArticleNumber = {};
+  for (const a of articles) {
+    const key = a.articleNumber;
+    const orderId = a.orderId;
+    const orderDoc = orderId == null ? null : (orderId._id ? orderId : { _id: orderId });
+    const articleIdStr = (a._id && a._id.toString()) || a.id;
+
+    if (!byArticleNumber[key]) {
+      byArticleNumber[key] = {
+        factoryCode: key,
+        articleNumber: key,
+        orders: []
+      };
+    }
+
+    byArticleNumber[key].orders.push({
+      articleId: articleIdStr,
+      orderId: orderDoc ? orderDoc._id : null,
+      orderNumber: orderId && orderId.orderNumber,
+      orderStatus: orderId && orderId.status,
+      orderPriority: orderId && orderId.priority,
+      orderCurrentFloor: orderId && orderId.currentFloor,
+      orderNote: orderId && orderId.orderNote,
+      orderCreatedAt: orderId && (orderId.createdAt || orderId.created_at),
+      plannedQuantity: a.plannedQuantity,
+      status: a.status,
+      progress: a.progress,
+      linkingType: a.linkingType,
+      priority: a.priority,
+      remarks: a.remarks,
+      machineId: a.machineId,
+      machine: a.machineId && (a.machineId.machineCode ? a.machineId : null),
+      floorQuantities: a.floorQuantities,
+      startedAt: a.startedAt,
+      completedAt: a.completedAt,
+      logs: logsByArticleId[articleIdStr] || []
+    });
+  }
+
+  const list = Object.values(byArticleNumber);
+  const total = list.length;
+  const totalPages = Math.ceil(total / limit) || 1;
+  const start = (page - 1) * limit;
+  const results = list.slice(start, start + limit);
+
+  return {
+    results,
+    page,
+    limit,
+    totalPages,
+    total
+  };
+};
