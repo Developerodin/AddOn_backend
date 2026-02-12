@@ -54,6 +54,39 @@ const updateMachineOrderAssignment = {
     .min(1),
 };
 
+/** Single item: body { priority } */
+const updateProductionOrderItemPriority = {
+  params: Joi.object().keys({
+    assignmentId: Joi.string().custom(objectId).required(),
+    itemId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object()
+    .keys({
+      priority: Joi.number().integer().min(1).required(),
+    })
+    .min(1),
+};
+
+/** Multiple items: body { items: [{ itemId, priority }, ...] } */
+const updateProductionOrderItemPriorities = {
+  params: Joi.object().keys({
+    assignmentId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object()
+    .keys({
+      items: Joi.array()
+        .items(
+          Joi.object().keys({
+            itemId: Joi.string().custom(objectId).required(),
+            priority: Joi.number().integer().min(1).required(),
+          })
+        )
+        .min(1)
+        .required(),
+    })
+    .required(),
+};
+
 const resetMachineOrderAssignment = {
   params: Joi.object().keys({
     assignmentId: Joi.string().custom(objectId).required(),
@@ -100,6 +133,8 @@ export {
   getMachineOrderAssignments,
   getMachineOrderAssignment,
   updateMachineOrderAssignment,
+  updateProductionOrderItemPriority,
+  updateProductionOrderItemPriorities,
   resetMachineOrderAssignment,
   deleteMachineOrderAssignment,
   getAssignmentLogs,

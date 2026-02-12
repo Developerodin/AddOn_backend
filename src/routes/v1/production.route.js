@@ -23,6 +23,20 @@ router
   .post(validate(machineOrderAssignmentValidation.resetMachineOrderAssignment), productionController.resetMachineOrderAssignment);
 
 router
+  .route('/machine-order-assignments/:assignmentId/items')
+  .patch(
+    validate(machineOrderAssignmentValidation.updateProductionOrderItemPriorities),
+    productionController.updateMachineOrderItemPriorities
+  );
+
+router
+  .route('/machine-order-assignments/:assignmentId/items/:itemId')
+  .patch(
+    validate(machineOrderAssignmentValidation.updateProductionOrderItemPriority),
+    productionController.updateMachineOrderItemPriority
+  );
+
+router
   .route('/machine-order-assignments/:assignmentId')
   .get(validate(machineOrderAssignmentValidation.getMachineOrderAssignment), productionController.getMachineOrderAssignment)
   .patch(validate(machineOrderAssignmentValidation.updateMachineOrderAssignment), productionController.updateMachineOrderAssignment)

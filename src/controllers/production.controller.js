@@ -301,6 +301,25 @@ export const updateMachineOrderAssignment = catchAsync(async (req, res) => {
   res.send(assignment);
 });
 
+export const updateMachineOrderItemPriorities = catchAsync(async (req, res) => {
+  const assignment = await productionService.updateProductionOrderItemPrioritiesById(
+    req.params.assignmentId,
+    req.body.items,
+    req.user?._id
+  );
+  res.send(assignment);
+});
+
+export const updateMachineOrderItemPriority = catchAsync(async (req, res) => {
+  const assignment = await productionService.updateProductionOrderItemPriorityById(
+    req.params.assignmentId,
+    req.params.itemId,
+    req.body,
+    req.user?._id
+  );
+  res.send(assignment);
+});
+
 export const resetMachineOrderAssignment = catchAsync(async (req, res) => {
   const assignment = await productionService.resetMachineOrderAssignmentById(
     req.params.assignmentId,
