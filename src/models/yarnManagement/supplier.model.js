@@ -75,6 +75,12 @@ const embeddedYarnSubtypeSchema = mongoose.Schema(
 
 const yarnDetailsSchema = mongoose.Schema(
   {
+    /** Reference to YarnCatalog; when set, links this detail to a catalog entry */
+    yarnCatalogId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'YarnCatalog',
+      required: false,
+    },
     yarnName: {
       type: String,
       required: false,
@@ -205,21 +211,20 @@ supplierSchema.pre('save', async function (next) {
       // Preserve original yarnName if provided (don't overwrite it)
       const originalYarnName = detail.yarnName ? String(detail.yarnName).trim() : null;
       
-      // Validate that either yarnName or yarnType is provided
-      if (!detail.yarnName && !detail.yarnType) {
-        return next(new Error('Either yarnName or yarnType must be provided in yarnDetails'));
+      // Validate that either yarnName, yarnType, or yarnCatalogId is provided
+      if (!detail.yarnName && !detail.yarnType && !detail.yarnCatalogId) {
+        return next(new Error('Either yarnName, yarnType, or yarnCatalogId must be provided in yarnDetails'));
       }
-      
-      // If yarnName is provided, fetch yarnType and yarnSubtype from catalog
-      if (detail.yarnName && (!detail.yarnType || !detail.yarnsubtype)) {
+
+      // If yarnCatalogId is provided, fetch catalog and populate yarnName / yarnType / yarnsubtype from it
+      if (detail.yarnCatalogId) {
         try {
-          const catalog = await YarnCatalog.findOne({ 
-            yarnName: detail.yarnName,
-            status: { $ne: 'deleted' }
-          });
-          
+          const catalogId = mongoose.Types.ObjectId.isValid(detail.yarnCatalogId)
+            ? detail.yarnCatalogId
+            : new mongoose.Types.ObjectId(detail.yarnCatalogId);
+          const catalog = await YarnCatalog.findById(catalogId);
           if (catalog) {
-            // Populate yarnType from catalog
+            if (!detail.yarnName) detail.yarnName = catalog.yarnName;
             if (!detail.yarnType && catalog.yarnType) {
               detail.yarnType = {
                 _id: catalog.yarnType._id,
@@ -227,8 +232,6 @@ supplierSchema.pre('save', async function (next) {
                 status: catalog.yarnType.status,
               };
             }
-            
-            // Populate yarnSubtype from catalog
             if (!detail.yarnsubtype && catalog.yarnSubtype) {
               detail.yarnsubtype = {
                 _id: catalog.yarnSubtype._id,
@@ -236,12 +239,41 @@ supplierSchema.pre('save', async function (next) {
                 countSize: catalog.yarnSubtype.countSize || [],
               };
             }
-          } else {
-            return next(new Error(`Yarn catalog not found for yarnName: ${detail.yarnName}`));
           }
         } catch (error) {
-          console.error('Error fetching yarn catalog by yarnName:', error);
+          console.error('Error fetching yarn catalog by yarnCatalogId:', error);
           return next(error);
+        }
+      }
+      
+      // If yarnName is provided, optionally fetch from catalog and set yarnCatalogId (no error if not found)
+      if (detail.yarnName && (!detail.yarnType || !detail.yarnsubtype || !detail.yarnCatalogId)) {
+        try {
+          const catalog = await YarnCatalog.findOne({
+            yarnName: detail.yarnName.trim(),
+            status: { $ne: 'deleted' },
+          });
+          if (catalog) {
+            detail.yarnCatalogId = catalog._id;
+            if (!detail.yarnType && catalog.yarnType) {
+              detail.yarnType = {
+                _id: catalog.yarnType._id,
+                name: catalog.yarnType.name,
+                status: catalog.yarnType.status,
+              };
+            }
+            if (!detail.yarnsubtype && catalog.yarnSubtype) {
+              detail.yarnsubtype = {
+                _id: catalog.yarnSubtype._id,
+                subtype: catalog.yarnSubtype.subtype,
+                countSize: catalog.yarnSubtype.countSize || [],
+              };
+            }
+          }
+          // If no catalog found: allow save without yarnCatalogId (yarnName stored as-is)
+        } catch (error) {
+          console.error('Error fetching yarn catalog by yarnName:', error);
+          // Don't fail save; continue without catalog link
         }
       }
       

@@ -290,7 +290,7 @@ const detectIntentWithAI = async (question) => {
               "floor": "extracted floor name or null",
               "machineCode": "extracted machine code or null",
               "machineNumber": "extracted machine number or null",
-              "needleSize": "extracted needle size or null",
+              "needleSize": "extracted needle size or null (for filter; machine stores needleSizeConfig array)",
               "model": "extracted machine model or null",
               
               // Yarn Type filters
@@ -4787,7 +4787,7 @@ export const getMachinesByStatus = async (params = {}) => {
                   <td>${machine.machineNumber || 'N/A'}</td>
                   <td>${machine.model || 'N/A'}</td>
                   <td>${machine.floor || 'N/A'}</td>
-                  <td>${machine.needleSize || 'N/A'}</td>
+                  <td>${(machine.needleSizeConfig?.length && machine.needleSizeConfig.map((c) => `${c.needleSize} (${c.cutoffQuantity})`).join(', ')) || 'N/A'}</td>
                   <td>${machine.status || 'N/A'}</td>
                   <td>${machine.capacityPerDay || 0}</td>
                 </tr>
@@ -4847,7 +4847,7 @@ export const getMachinesByFloor = async (params = {}) => {
                   <td>${machine.machineNumber || 'N/A'}</td>
                   <td>${machine.model || 'N/A'}</td>
                   <td>${machine.status || 'N/A'}</td>
-                  <td>${machine.needleSize || 'N/A'}</td>
+                  <td>${(machine.needleSizeConfig?.length && machine.needleSizeConfig.map((c) => `${c.needleSize} (${c.cutoffQuantity})`).join(', ')) || 'N/A'}</td>
                   <td>${machine.capacityPerDay || 0}</td>
                 </tr>
               `).join('')}

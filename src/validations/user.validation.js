@@ -22,7 +22,8 @@ const createUser = {
         'Raw Material': Joi.boolean(),
         Processes: Joi.boolean(),
         Attributes: Joi.boolean(),
-        Machines: Joi.boolean()
+        Machines: Joi.boolean(),
+        'Needle Configuration': Joi.boolean()
       }),
       Sales: Joi.object().keys({
         'All Sales': Joi.boolean(),
@@ -188,7 +189,8 @@ const updateUserNavigation = {
           'Raw Material': Joi.boolean(),
           Processes: Joi.boolean(),
           Attributes: Joi.boolean(),
-          Machines: Joi.boolean()
+          Machines: Joi.boolean(),
+          'Needle Configuration': Joi.boolean()
         }).unknown(true),
         Sales: Joi.object().keys({
           'All Sales': Joi.boolean(),

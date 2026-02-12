@@ -5,7 +5,14 @@ const createMachine = {
   body: Joi.object().keys({
     machineCode: Joi.string().trim().optional(),
     machineNumber: Joi.string().trim().optional(),
-    needleSize: Joi.string().trim().optional(),
+    needleSizeConfig: Joi.array()
+      .items(
+        Joi.object({
+          needleSize: Joi.string().trim(),
+          cutoffQuantity: Joi.number().min(0).default(0),
+        })
+      )
+      .optional(),
     model: Joi.string().trim().optional(),
     floor: Joi.string().trim().optional(),
     company: Joi.string().trim().optional(),
@@ -33,7 +40,7 @@ const getMachines = {
     machineType: Joi.string(),
     status: Joi.string().valid('Active', 'Under Maintenance', 'Idle'),
     assignedSupervisor: Joi.string().custom(objectId),
-    needleSize: Joi.string(),
+    needleSizeConfig: Joi.array().items(Joi.object({ needleSize: Joi.string(), cutoffQuantity: Joi.number() })),
     isActive: Joi.boolean(),
     search: Joi.string(),
     sortBy: Joi.string(),
@@ -57,7 +64,13 @@ const updateMachine = {
     .keys({
       machineCode: Joi.string().trim(),
       machineNumber: Joi.string().trim(),
-      needleSize: Joi.string().trim(),
+      needleSizeConfig: Joi.array()
+        .items(
+          Joi.object({
+            needleSize: Joi.string().trim(),
+            cutoffQuantity: Joi.number().min(0).default(0),
+          })
+        ),
       model: Joi.string().trim(),
       floor: Joi.string().trim(),
       company: Joi.string().trim().allow(null),

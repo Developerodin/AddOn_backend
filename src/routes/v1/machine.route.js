@@ -100,7 +100,6 @@ export default router;
  *             required:
  *               - machineCode
  *               - machineNumber
- *               - needleSize
  *               - model
  *               - floor
  *               - installationDate
@@ -112,9 +111,14 @@ export default router;
  *               machineNumber:
  *                 type: string
  *                 description: Unique machine number
- *               needleSize:
- *                 type: string
- *                 description: Machine needle size
+ *               needleSizeConfig:
+ *                 type: array
+ *                 description: Array of { needleSize, cutoffQuantity }
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     needleSize: { type: string }
+ *                     cutoffQuantity: { type: number, default: 0 }
  *               model:
  *                 type: string
  *                 description: Machine model
@@ -157,7 +161,7 @@ export default router;
  *             example:
  *               machineCode: M001
  *               machineNumber: MN001
- *               needleSize: 12
+ *               needleSizeConfig: [{ needleSize: "12", cutoffQuantity: 100 }]
  *               model: Brother KH-890
  *               floor: Floor 1
  *               status: Idle
@@ -221,10 +225,15 @@ export default router;
  *           type: string
  *         description: Assigned supervisor ID
  *       - in: query
- *         name: needleSize
+ *         name: needleSizeConfig
  *         schema:
- *           type: string
- *         description: Needle size
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               needleSize: { type: string }
+ *               cutoffQuantity: { type: number }
+ *         description: Filter by needle config (array of { needleSize, cutoffQuantity })
  *       - in: query
  *         name: isActive
  *         schema:
@@ -519,8 +528,13 @@ export default router;
  *                 type: string
  *               machineNumber:
  *                 type: string
- *               needleSize:
- *                 type: string
+ *               needleSizeConfig:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     needleSize: { type: string }
+ *                     cutoffQuantity: { type: number }
  *               model:
  *                 type: string
  *               floor:

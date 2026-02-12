@@ -19,7 +19,7 @@ const getMachines = catchAsync(async (req, res) => {
     'machineType',
     'status',
     'assignedSupervisor',
-    'needleSize',
+    'needleSizeConfig',
     'isActive',
   ]);
   const options = pick(req.query, ['sortBy', 'sortOrder', 'limit', 'page', 'search']);

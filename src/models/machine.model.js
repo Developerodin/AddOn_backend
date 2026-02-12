@@ -15,10 +15,15 @@ const machineSchema = mongoose.Schema(
       trim: true,
       unique: true,
     },
-    needleSize: {
-      type: String,
-      required: false,
-      trim: true,
+    /** Array of { needleSize, cutoffQuantity } for multiple needle configs */
+    needleSizeConfig: {
+      type: [
+        {
+          needleSize: { type: String, trim: true },
+          cutoffQuantity: { type: Number, default: 0 },
+        },
+      ],
+      default: [],
     },
     model: {
       type: String,

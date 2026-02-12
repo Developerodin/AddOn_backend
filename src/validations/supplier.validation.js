@@ -2,18 +2,19 @@ import Joi from 'joi';
 import { objectId } from './custom.validation.js';
 
 const yarnDetailsSchema = Joi.object().keys({
+  yarnCatalogId: Joi.string().custom(objectId).allow(null, ''),
   yarnName: Joi.string().trim().allow('', null),
   yarnType: Joi.string().custom(objectId).when('yarnName', {
     is: Joi.string().min(1),
     then: Joi.optional(),
-    otherwise: Joi.required(),
+    otherwise: Joi.optional(),
   }),
   yarnsubtype: Joi.string().custom(objectId).allow(null, ''),
   color: Joi.string().custom(objectId).required(),
   shadeNumber: Joi.string().allow('', null).trim(),
   tearweight: Joi.number().required(),
-}).or('yarnName', 'yarnType').messages({
-  'object.missing': 'Either yarnName or yarnType must be provided',
+}).or('yarnName', 'yarnType', 'yarnCatalogId').messages({
+  'object.missing': 'Either yarnName, yarnType, or yarnCatalogId must be provided',
 });
 
 export const createSupplier = {
@@ -61,6 +62,13 @@ export const getSuppliers = {
 };
 
 export const getSupplier = {
+  params: Joi.object().keys({
+    supplierId: Joi.string().custom(objectId).required(),
+  }),
+};
+
+/** PATCH /suppliers/:supplierId/sync-yarn-catalog - sync yarnDetails with YarnCatalog */
+export const syncSupplierYarnCatalog = {
   params: Joi.object().keys({
     supplierId: Joi.string().custom(objectId).required(),
   }),

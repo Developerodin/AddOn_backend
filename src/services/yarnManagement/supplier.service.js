@@ -2,6 +2,7 @@ import httpStatus from 'http-status';
 import mongoose from 'mongoose';
 import { Supplier, YarnType, Color, YarnCatalog } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
+import { runSyncForSupplier } from './supplierYarnCatalogSync.js';
 
 /**
  * Convert yarnDetails IDs to embedded objects
@@ -14,25 +15,24 @@ const convertYarnDetailsToEmbedded = async (yarnDetails) => {
   for (const detail of yarnDetails) {
     // Preserve original yarnName if provided (don't overwrite it)
     const originalYarnName = detail.yarnName ? String(detail.yarnName).trim() : null;
-    
-    // Validate that either yarnName or yarnType is provided
-    if (!detail.yarnName && !detail.yarnType) {
+
+    // Validate that either yarnName, yarnType, or yarnCatalogId is provided
+    if (!detail.yarnName && !detail.yarnType && !detail.yarnCatalogId) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        'Either yarnName or yarnType must be provided in yarnDetails'
+        'Either yarnName, yarnType, or yarnCatalogId must be provided in yarnDetails'
       );
     }
-    
-    // If yarnName is provided, fetch yarnType and yarnSubtype from catalog
-    if (detail.yarnName && (!detail.yarnType || !detail.yarnsubtype)) {
+
+    // If yarnCatalogId is provided, fetch catalog and populate yarnName / yarnType / yarnsubtype
+    if (detail.yarnCatalogId) {
       try {
-        const catalog = await YarnCatalog.findOne({ 
-          yarnName: detail.yarnName.trim(),
-          status: { $ne: 'deleted' }
-        });
-        
+        const catalogId = mongoose.Types.ObjectId.isValid(detail.yarnCatalogId)
+          ? detail.yarnCatalogId
+          : new mongoose.Types.ObjectId(detail.yarnCatalogId);
+        const catalog = await YarnCatalog.findById(catalogId);
         if (catalog) {
-          // Populate yarnType from catalog if not already provided
+          if (!detail.yarnName) detail.yarnName = catalog.yarnName;
           if (!detail.yarnType && catalog.yarnType) {
             detail.yarnType = {
               _id: catalog.yarnType._id,
@@ -40,8 +40,6 @@ const convertYarnDetailsToEmbedded = async (yarnDetails) => {
               status: catalog.yarnType.status,
             };
           }
-          
-          // Populate yarnSubtype from catalog if not already provided
           if (!detail.yarnsubtype && catalog.yarnSubtype) {
             detail.yarnsubtype = {
               _id: catalog.yarnSubtype._id,
@@ -49,24 +47,46 @@ const convertYarnDetailsToEmbedded = async (yarnDetails) => {
               countSize: catalog.yarnSubtype.countSize || [],
             };
           }
-        } else {
-          throw new ApiError(
-            httpStatus.BAD_REQUEST, 
-            `Yarn catalog not found for yarnName: ${detail.yarnName}`
-          );
         }
       } catch (error) {
-        if (error instanceof ApiError) {
-          throw error;
-        }
-        console.error('Error fetching yarn catalog by yarnName:', error);
-        throw new ApiError(
-          httpStatus.INTERNAL_SERVER_ERROR,
-          `Failed to fetch yarn catalog for yarnName: ${detail.yarnName}`
-        );
+        if (error instanceof ApiError) throw error;
+        console.error('Error fetching yarn catalog by yarnCatalogId:', error);
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid or not found yarnCatalogId');
       }
     }
-    
+
+    // If yarnName is provided, optionally fetch from catalog and set yarnCatalogId (no error if not found)
+    if (detail.yarnName && (!detail.yarnType || !detail.yarnsubtype || !detail.yarnCatalogId)) {
+      try {
+        const catalog = await YarnCatalog.findOne({
+          yarnName: detail.yarnName.trim(),
+          status: { $ne: 'deleted' },
+        });
+        if (catalog) {
+          detail.yarnCatalogId = catalog._id;
+          if (!detail.yarnType && catalog.yarnType) {
+            detail.yarnType = {
+              _id: catalog.yarnType._id,
+              name: catalog.yarnType.name,
+              status: catalog.yarnType.status,
+            };
+          }
+          if (!detail.yarnsubtype && catalog.yarnSubtype) {
+            detail.yarnsubtype = {
+              _id: catalog.yarnSubtype._id,
+              subtype: catalog.yarnSubtype.subtype,
+              countSize: catalog.yarnSubtype.countSize || [],
+            };
+          }
+        }
+        // If no catalog found: allow save without yarnCatalogId (yarnName stored as-is)
+      } catch (error) {
+        if (error instanceof ApiError) throw error;
+        console.error('Error fetching yarn catalog by yarnName:', error);
+        // Don't throw; continue without catalog link
+      }
+    }
+
     // Restore original yarnName to preserve it exactly as provided (no modifications)
     if (originalYarnName) {
       detail.yarnName = originalYarnName;
@@ -211,25 +231,92 @@ const convertYarnDetailsToEmbeddedWithSkip = async (yarnDetails) => {
   for (const detail of yarnDetails) {
     // Preserve original yarnName if provided (don't overwrite it)
     const originalYarnName = detail.yarnName ? String(detail.yarnName).trim() : null;
-    
-    // Validate that either yarnName or yarnType is provided
-    if (!detail.yarnName && !detail.yarnType) {
-      // Skip this detail if neither is provided
+
+    // Skip if none of yarnName, yarnType, yarnCatalogId provided
+    if (!detail.yarnName && !detail.yarnType && !detail.yarnCatalogId) {
       continue;
     }
-    
+
+    // If yarnCatalogId is provided, fetch catalog and populate from it
+    if (detail.yarnCatalogId) {
+      try {
+        const catalogId = mongoose.Types.ObjectId.isValid(detail.yarnCatalogId)
+          ? detail.yarnCatalogId
+          : new mongoose.Types.ObjectId(detail.yarnCatalogId);
+        const catalog = await YarnCatalog.findById(catalogId);
+        if (catalog) {
+          const processedDetail = { ...detail };
+          processedDetail.yarnCatalogId = catalog._id;
+          if (!processedDetail.yarnName) processedDetail.yarnName = catalog.yarnName;
+          if (!processedDetail.yarnType && catalog.yarnType) {
+            processedDetail.yarnType = {
+              _id: catalog.yarnType._id,
+              name: catalog.yarnType.name,
+              status: catalog.yarnType.status,
+            };
+          }
+          if (!processedDetail.yarnsubtype && catalog.yarnSubtype) {
+            processedDetail.yarnsubtype = {
+              _id: catalog.yarnSubtype._id,
+              subtype: catalog.yarnSubtype.subtype,
+              countSize: catalog.yarnSubtype.countSize || [],
+            };
+          }
+          if (originalYarnName) processedDetail.yarnName = originalYarnName;
+          // Convert color ID to embedded object if needed
+          if (processedDetail.color) {
+            const origColorName = (processedDetail.color && typeof processedDetail.color === 'object' && processedDetail.color.name)
+              ? String(processedDetail.color.name).trim() : null;
+            const isColorId = mongoose.Types.ObjectId.isValid(processedDetail.color) ||
+              (typeof processedDetail.color === 'string' && mongoose.Types.ObjectId.isValid(processedDetail.color)) ||
+              (processedDetail.color && typeof processedDetail.color === 'object' && !processedDetail.color.name);
+            if (isColorId) {
+              try {
+                const colorId = mongoose.Types.ObjectId.isValid(processedDetail.color)
+                  ? processedDetail.color : new mongoose.Types.ObjectId(processedDetail.color);
+                const color = await Color.findById(colorId);
+                if (color) {
+                  processedDetail.color = {
+                    _id: color._id,
+                    name: origColorName || color.name,
+                    colorCode: color.colorCode,
+                    status: color.status,
+                  };
+                } else {
+                  processedDetail.color = {
+                    _id: colorId,
+                    name: origColorName || 'Unknown',
+                    colorCode: '#000000',
+                    status: 'deleted',
+                  };
+                }
+              } catch (err) {
+                console.error('Error converting color to embedded object:', err);
+              }
+            } else if (origColorName && processedDetail.color && typeof processedDetail.color === 'object') {
+              processedDetail.color.name = origColorName;
+            }
+          }
+          processedYarnDetails.push(processedDetail);
+        }
+      } catch (error) {
+        console.error('Error fetching yarn catalog by yarnCatalogId:', error);
+      }
+      continue;
+    }
+
     // If yarnName is provided, fetch yarnType and yarnSubtype from catalog
     if (detail.yarnName && (!detail.yarnType || !detail.yarnsubtype)) {
       try {
-        const catalog = await YarnCatalog.findOne({ 
+        const catalog = await YarnCatalog.findOne({
           yarnName: detail.yarnName.trim(),
-          status: { $ne: 'deleted' }
+          status: { $ne: 'deleted' },
         });
-        
+
         if (catalog) {
           // Create a copy of detail to avoid mutating original
           const processedDetail = { ...detail };
-          
+          processedDetail.yarnCatalogId = catalog._id;
           // Populate yarnType from catalog if not already provided
           if (!processedDetail.yarnType && catalog.yarnType) {
             processedDetail.yarnType = {
@@ -238,7 +325,6 @@ const convertYarnDetailsToEmbeddedWithSkip = async (yarnDetails) => {
               status: catalog.yarnType.status,
             };
           }
-          
           // Populate yarnSubtype from catalog if not already provided
           if (!processedDetail.yarnsubtype && catalog.yarnSubtype) {
             processedDetail.yarnsubtype = {
@@ -247,12 +333,10 @@ const convertYarnDetailsToEmbeddedWithSkip = async (yarnDetails) => {
               countSize: catalog.yarnSubtype.countSize || [],
             };
           }
-          
           // Restore original yarnName to preserve it exactly as provided (no modifications)
           if (originalYarnName) {
             processedDetail.yarnName = originalYarnName;
           }
-          
           // Convert yarnType ID to embedded object if needed
           if (processedDetail.yarnType) {
             const isObjectId = mongoose.Types.ObjectId.isValid(processedDetail.yarnType) || 
@@ -621,6 +705,66 @@ export const getSupplierYarnTearweight = async (supplierId, yarnNames) => {
     supplierId: supplier._id.toString(),
     yarnTearweights,
     notFound,
+  };
+};
+
+/**
+ * Sync all suppliers' yarnDetails with YarnCatalog (same as migrate-supplier-yarn-catalog-id.js script).
+ * For each supplier: set yarnCatalogId when missing, update yarnName/yarnType/yarnsubtype from catalog when present.
+ * @returns {Promise<{ suppliersUpdated: number, detailsLinked: number, detailsSynced: number, noMatch: number, catalogNotFound: number }>}
+ */
+export const syncAllSuppliersYarnDetailsWithCatalog = async () => {
+  const suppliers = await Supplier.find({ 'yarnDetails.0': { $exists: true } }).lean().exec();
+  let suppliersUpdated = 0;
+  let detailsLinked = 0;
+  let detailsSynced = 0;
+  let noMatch = 0;
+  let catalogNotFound = 0;
+
+  for (const plain of suppliers) {
+    const result = await runSyncForSupplier(plain);
+    if (result.detailsLinked > 0 || result.detailsSynced > 0) {
+      await Supplier.updateOne(
+        { _id: plain._id },
+        { $set: { yarnDetails: result.updatedDetails } }
+      );
+      suppliersUpdated += 1;
+    }
+    detailsLinked += result.detailsLinked;
+    detailsSynced += result.detailsSynced;
+    noMatch += result.noMatch;
+    catalogNotFound += result.catalogNotFound;
+  }
+
+  return {
+    suppliersUpdated,
+    detailsLinked,
+    detailsSynced,
+    noMatch,
+    catalogNotFound,
+  };
+};
+
+/**
+ * Sync one supplier's yarnDetails with YarnCatalog (by supplierId).
+ * @param {ObjectId} supplierId
+ * @returns {Promise<{ supplier: Supplier, detailsLinked: number, detailsSynced: number, noMatch: number, catalogNotFound: number }>}
+ */
+export const syncSupplierYarnDetailsWithCatalog = async (supplierId) => {
+  const supplier = await getSupplierById(supplierId);
+  if (!supplier) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Supplier not found');
+  }
+  const plain = supplier.toObject ? supplier.toObject() : supplier;
+  const result = await runSyncForSupplier(plain);
+  supplier.yarnDetails = result.updatedDetails;
+  await supplier.save();
+  return {
+    supplier,
+    detailsLinked: result.detailsLinked,
+    detailsSynced: result.detailsSynced,
+    noMatch: result.noMatch,
+    catalogNotFound: result.catalogNotFound,
   };
 };
 

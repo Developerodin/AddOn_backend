@@ -12,6 +12,10 @@ router
   .get(validate(supplierValidation.getSuppliers), supplierController.getSuppliers);
 
 router
+  .route('/sync-yarn-catalog')
+  .patch(supplierController.syncAllSuppliersYarnCatalog);
+
+router
   .route('/bulk-import')
   .post(
     bulkImportMiddleware,
@@ -23,6 +27,10 @@ router
 router
   .route('/:supplierId/yarn-tearweight')
   .get(validate(supplierValidation.getSupplierYarnTearweight), supplierController.getSupplierYarnTearweight);
+
+router
+  .route('/:supplierId/sync-yarn-catalog')
+  .patch(validate(supplierValidation.syncSupplierYarnCatalog), supplierController.syncSupplierYarnCatalog);
 
 router
   .route('/:supplierId')

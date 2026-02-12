@@ -45,6 +45,40 @@ export const deleteSupplier = catchAsync(async (req, res) => {
   res.status(httpStatus.NO_CONTENT).send();
 });
 
+/**
+ * Sync all suppliers' yarnDetails with YarnCatalog (same as script: link yarnCatalogId, update name/type/subtype from catalog).
+ */
+export const syncAllSuppliersYarnCatalog = catchAsync(async (req, res) => {
+  const result = await supplierService.syncAllSuppliersYarnDetailsWithCatalog();
+  res.status(httpStatus.OK).send({
+    message: 'All supplier yarn details synced with catalog',
+    summary: {
+      suppliersUpdated: result.suppliersUpdated,
+      detailsLinked: result.detailsLinked,
+      detailsSynced: result.detailsSynced,
+      noMatch: result.noMatch,
+      catalogNotFound: result.catalogNotFound,
+    },
+  });
+});
+
+/**
+ * Sync one supplier's yarnDetails with YarnCatalog by supplierId.
+ */
+export const syncSupplierYarnCatalog = catchAsync(async (req, res) => {
+  const result = await supplierService.syncSupplierYarnDetailsWithCatalog(req.params.supplierId);
+  res.status(httpStatus.OK).send({
+    message: 'Supplier yarn details synced with catalog',
+    supplier: result.supplier,
+    summary: {
+      detailsLinked: result.detailsLinked,
+      detailsSynced: result.detailsSynced,
+      noMatch: result.noMatch,
+      catalogNotFound: result.catalogNotFound,
+    },
+  });
+});
+
 export const bulkImportSuppliers = catchAsync(async (req, res) => {
   const { suppliers, batchSize = 50 } = req.body;
   

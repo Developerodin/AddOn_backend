@@ -15,7 +15,8 @@ export const DEFAULT_NAVIGATION = {
     'Raw Material': false,
     Processes: false,
     Attributes: false,
-    Machines: false
+    Machines: false,
+    'Needle Configuration': false
   },
   Sales: {
     'All Sales': false,
@@ -82,7 +83,8 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Raw Material': true,
       Processes: true,
       Attributes: true,
-      Machines: true
+      Machines: true,
+      'Needle Configuration': true
     },
     Sales: {
       'All Sales': true,
@@ -144,7 +146,8 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Raw Material': false,
       Processes: false,
       Attributes: false,
-      Machines: false
+      Machines: false,
+      'Needle Configuration': false
     },
     Sales: {
       'All Sales': true,
@@ -254,7 +257,7 @@ export const validateNavigationStructure = (navigation) => {
     console.error('Validation failed: Catalog is not an object');
     return false;
   }
-  const catalogKeys = ['Items', 'Categories', 'Raw Material', 'Processes', 'Attributes', 'Machines'];
+  const catalogKeys = ['Items', 'Categories', 'Raw Material', 'Processes', 'Attributes', 'Machines', 'Needle Configuration'];
   for (const key of catalogKeys) {
     if (!(key in navigation.Catalog) || typeof navigation.Catalog[key] !== 'boolean') {
       console.error(`Validation failed: Catalog.${key} is missing or not a boolean`);
