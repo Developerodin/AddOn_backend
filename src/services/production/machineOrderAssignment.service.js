@@ -3,7 +3,7 @@ import ApiError from '../../utils/ApiError.js';
 import Machine from '../../models/machine.model.js';
 import MachineOrderAssignment from '../../models/production/machineOrderAssignment.model.js';
 import MachineOrderAssignmentLog from '../../models/production/machineOrderAssignmentLog.model.js';
-import { LogAction, OrderStatus } from '../../models/production/enums.js';
+import { LogAction, OrderStatus, YarnIssueStatus } from '../../models/production/enums.js';
 
 /**
  * Create a machine order assignment. Logs ASSIGNMENT_CREATED with userId.
@@ -60,6 +60,33 @@ export const getMachineOrderAssignmentById = async (assignmentId) => {
     .populate('productionOrderItems.article');
 };
 
+/** Number of top-priority items to return per assignment */
+const TOP_ITEMS_LIMIT = 2;
+
+/**
+ * Get all machine order assignments that have at least one productionOrderItem with
+ * yarnIssueStatus 'In Progress', each with only the top 2 items by priority. No id required.
+ * @returns {Promise<Object[]>} Array of assignment objects with productionOrderItems limited to top 2
+ */
+export const getMachineOrderAssignmentsTopItems = async () => {
+  const assignments = await MachineOrderAssignment.find({
+    'productionOrderItems.0': { $exists: true },
+    'productionOrderItems.yarnIssueStatus': YarnIssueStatus.IN_PROGRESS,
+    isActive: true,
+  })
+    .populate('machine')
+    .populate('productionOrderItems.productionOrder')
+    .populate('productionOrderItems.article')
+    .lean();
+  return assignments.map((doc) => {
+    const items = doc.productionOrderItems || [];
+    const topTwo = [...items]
+      .sort((a, b) => (a.priority ?? 999) - (b.priority ?? 999))
+      .slice(0, TOP_ITEMS_LIMIT);
+    return { ...doc, productionOrderItems: topTwo };
+  });
+};
+
 /**
  * Update assignment by id. Builds change list and creates audit log with userId.
  * @param {ObjectId} assignmentId
@@ -103,10 +130,23 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
       const k = itemKey(item);
       const existingIdx = keyToIndex.get(k);
       if (existingIdx !== undefined) {
-        // Same item: update only fields that are sent (status, priority)
+        // Same item: update only fields that are sent (status, priority, yarnIssueStatus)
         const existing = current[existingIdx];
         if (item.status !== undefined && String(existing.status) !== String(item.status)) {
+          const newStatusVal = String(item.status);
+          if (newStatusVal === OrderStatus.IN_PROGRESS || newStatusVal === OrderStatus.COMPLETED) {
+            if (String(existing.yarnIssueStatus) !== YarnIssueStatus.COMPLETED) {
+              throw new ApiError(
+                httpStatus.BAD_REQUEST,
+                'Cannot set item status to In Progress or Completed until yarn issue is Completed. Update yarnIssueStatus to Completed first.'
+              );
+            }
+          }
           existing.status = item.status;
+          didChange = true;
+        }
+        if (item.yarnIssueStatus !== undefined && String(existing.yarnIssueStatus) !== String(item.yarnIssueStatus)) {
+          existing.yarnIssueStatus = item.yarnIssueStatus;
           didChange = true;
         }
         if (item.priority !== undefined && Number(existing.priority) !== Number(item.priority)) {
@@ -233,6 +273,115 @@ export const updateProductionOrderItemPriorityById = async (assignmentId, itemId
         remarks: 'Item priority updated',
       });
     }
+  }
+  return MachineOrderAssignment.findById(assignmentId)
+    .populate('machine')
+    .populate('productionOrderItems.productionOrder')
+    .populate('productionOrderItems.article');
+};
+
+/**
+ * Update status of a single productionOrderItem. Only one item per assignment can be "In Progress"
+ * at a time: user must change the current In Progress item to another status before setting a
+ * different item to In Progress.
+ * @param {ObjectId} assignmentId
+ * @param {ObjectId} itemId - _id of the item in productionOrderItems
+ * @param {Object} body - { status: OrderStatus }
+ * @param {ObjectId} [userId]
+ * @returns {Promise<MachineOrderAssignment>}
+ */
+export const updateProductionOrderItemStatusById = async (assignmentId, itemId, body, userId) => {
+  const assignment = await MachineOrderAssignment.findById(assignmentId);
+  if (!assignment) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Machine order assignment not found');
+  }
+  const item = assignment.productionOrderItems?.id(itemId);
+  if (!item) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Production order item not found in this assignment');
+  }
+  const newStatus = body.status;
+  if (!newStatus || !Object.values(OrderStatus).includes(String(newStatus))) {
+    throw new ApiError(httpStatus.BAD_REQUEST, `status must be one of: ${Object.values(OrderStatus).join(', ')}`);
+  }
+  const previousStatus = item.status;
+
+  if (String(newStatus) === OrderStatus.IN_PROGRESS || String(newStatus) === OrderStatus.COMPLETED) {
+    if (String(item.yarnIssueStatus) !== YarnIssueStatus.COMPLETED) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Cannot set status to In Progress or Completed until yarn issue is Completed. Update yarnIssueStatus to Completed first.'
+      );
+    }
+  }
+
+  if (String(newStatus) === OrderStatus.IN_PROGRESS) {
+    const otherInProgress = assignment.productionOrderItems.find(
+      (other) => other._id.toString() !== itemId.toString() && String(other.status) === OrderStatus.IN_PROGRESS
+    );
+    if (otherInProgress) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Another item is already In Progress. Change that item to another status (e.g. Pending or Completed) before setting this item to In Progress.'
+      );
+    }
+  }
+
+  item.status = newStatus;
+  assignment.markModified('productionOrderItems');
+  await assignment.save();
+
+  if (userId) {
+    const changes = [{ field: 'productionOrderItems.status', previousValue: previousStatus, newValue: newStatus }];
+    await MachineOrderAssignmentLog.createLogEntry({
+      assignmentId: assignment._id,
+      userId,
+      action: LogAction.ASSIGNMENT_ITEM_STATUS_CHANGED,
+      changes,
+      remarks: `Item status updated to ${newStatus}`,
+    });
+  }
+
+  return MachineOrderAssignment.findById(assignmentId)
+    .populate('machine')
+    .populate('productionOrderItems.productionOrder')
+    .populate('productionOrderItems.article');
+};
+
+/**
+ * Update yarn issue status of a single productionOrderItem.
+ * @param {ObjectId} assignmentId
+ * @param {ObjectId} itemId
+ * @param {Object} body - { yarnIssueStatus: YarnIssueStatus }
+ * @param {ObjectId} [userId]
+ * @returns {Promise<MachineOrderAssignment>}
+ */
+export const updateProductionOrderItemYarnIssueStatusById = async (assignmentId, itemId, body, userId) => {
+  const assignment = await MachineOrderAssignment.findById(assignmentId);
+  if (!assignment) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Machine order assignment not found');
+  }
+  const item = assignment.productionOrderItems?.id(itemId);
+  if (!item) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Production order item not found in this assignment');
+  }
+  const newStatus = body.yarnIssueStatus;
+  if (!newStatus || !Object.values(YarnIssueStatus).includes(String(newStatus))) {
+    throw new ApiError(httpStatus.BAD_REQUEST, `yarnIssueStatus must be one of: ${Object.values(YarnIssueStatus).join(', ')}`);
+  }
+  const previous = item.yarnIssueStatus;
+  item.yarnIssueStatus = newStatus;
+  assignment.markModified('productionOrderItems');
+  await assignment.save();
+  if (userId) {
+    await MachineOrderAssignmentLog.createLogEntry({
+      assignmentId: assignment._id,
+      userId,
+      action: LogAction.ASSIGNMENT_ITEMS_UPDATED,
+      changes: [
+        { field: 'productionOrderItems.yarnIssueStatus', previousValue: previous, newValue: newStatus },
+      ],
+      remarks: `Item yarn issue status updated to ${newStatus}`,
+    });
   }
   return MachineOrderAssignment.findById(assignmentId)
     .populate('machine')

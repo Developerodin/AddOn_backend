@@ -19,6 +19,10 @@ router
   .get(validate(machineOrderAssignmentValidation.getAssignmentLogsByUser), productionController.getAssignmentLogsByUser);
 
 router
+  .route('/machine-order-assignments/top-items')
+  .get(productionController.getMachineOrderAssignmentsTopItems);
+
+router
   .route('/machine-order-assignments/:assignmentId/reset')
   .post(validate(machineOrderAssignmentValidation.resetMachineOrderAssignment), productionController.resetMachineOrderAssignment);
 
@@ -34,6 +38,20 @@ router
   .patch(
     validate(machineOrderAssignmentValidation.updateProductionOrderItemPriority),
     productionController.updateMachineOrderItemPriority
+  );
+
+router
+  .route('/machine-order-assignments/:assignmentId/items/:itemId/status')
+  .patch(
+    validate(machineOrderAssignmentValidation.updateProductionOrderItemStatus),
+    productionController.updateMachineOrderItemStatus
+  );
+
+router
+  .route('/machine-order-assignments/:assignmentId/items/:itemId/yarn-issue-status')
+  .patch(
+    validate(machineOrderAssignmentValidation.updateProductionOrderItemYarnIssueStatus),
+    productionController.updateMachineOrderItemYarnIssueStatus
   );
 
 router

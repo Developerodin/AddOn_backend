@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { OrderStatus } from './enums.js';
+import { OrderStatus, YarnIssueStatus } from './enums.js';
 import { toJSON, paginate } from '../plugins/index.js';
 
 /**
@@ -43,6 +43,12 @@ const machineOrderAssignmentSchema = new mongoose.Schema(
           type: String,
           enum: Object.values(OrderStatus),
           default: OrderStatus.PENDING,
+        },
+        /** Yarn issue status for this item; default Pending. */
+        yarnIssueStatus: {
+          type: String,
+          enum: Object.values(YarnIssueStatus),
+          default: YarnIssueStatus.PENDING,
         },
         /** Queue position; set by client or auto-assigned (1, 2, 3, ...) if not passed. */
         priority: {

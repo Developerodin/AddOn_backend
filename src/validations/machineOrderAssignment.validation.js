@@ -1,6 +1,6 @@
 import Joi from 'joi';
 import { objectId } from './custom.validation.js';
-import { OrderStatus } from '../models/production/enums.js';
+import { OrderStatus, YarnIssueStatus } from '../models/production/enums.js';
 
 const productionOrderItemSchema = Joi.object({
   productionOrder: Joi.string().custom(objectId).required(),
@@ -8,6 +8,9 @@ const productionOrderItemSchema = Joi.object({
   status: Joi.string()
     .valid(...Object.values(OrderStatus))
     .default(OrderStatus.PENDING),
+  yarnIssueStatus: Joi.string()
+    .valid(...Object.values(YarnIssueStatus))
+    .default(YarnIssueStatus.PENDING),
   priority: Joi.number().integer().min(1).optional(),
 });
 
@@ -63,6 +66,36 @@ const updateProductionOrderItemPriority = {
   body: Joi.object()
     .keys({
       priority: Joi.number().integer().min(1).required(),
+    })
+    .min(1),
+};
+
+/** Single item status: body { status } (only one item can be In Progress per assignment) */
+const updateProductionOrderItemStatus = {
+  params: Joi.object().keys({
+    assignmentId: Joi.string().custom(objectId).required(),
+    itemId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object()
+    .keys({
+      status: Joi.string()
+        .valid(...Object.values(OrderStatus))
+        .required(),
+    })
+    .min(1),
+};
+
+/** Single item yarn issue status: body { yarnIssueStatus } */
+const updateProductionOrderItemYarnIssueStatus = {
+  params: Joi.object().keys({
+    assignmentId: Joi.string().custom(objectId).required(),
+    itemId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object()
+    .keys({
+      yarnIssueStatus: Joi.string()
+        .valid(...Object.values(YarnIssueStatus))
+        .required(),
     })
     .min(1),
 };
@@ -135,6 +168,8 @@ export {
   updateMachineOrderAssignment,
   updateProductionOrderItemPriority,
   updateProductionOrderItemPriorities,
+  updateProductionOrderItemStatus,
+  updateProductionOrderItemYarnIssueStatus,
   resetMachineOrderAssignment,
   deleteMachineOrderAssignment,
   getAssignmentLogs,
