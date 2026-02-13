@@ -145,6 +145,7 @@ const LogAction = {
   ASSIGNMENT_ITEMS_UPDATED: 'Assignment Items Updated',
   ASSIGNMENT_ITEM_STATUS_CHANGED: 'Assignment Item Status Changed',
   ASSIGNMENT_ITEM_PRIORITY_CHANGED: 'Assignment Item Priority Changed',
+  ASSIGNMENT_ITEM_COMPLETED_REMOVED: 'Assignment Item Completed And Removed',
   ASSIGNMENT_DEACTIVATED: 'Assignment Deactivated'
 };
 

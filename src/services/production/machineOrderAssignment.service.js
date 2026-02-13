@@ -3,7 +3,7 @@ import ApiError from '../../utils/ApiError.js';
 import Machine from '../../models/machine.model.js';
 import MachineOrderAssignment from '../../models/production/machineOrderAssignment.model.js';
 import MachineOrderAssignmentLog from '../../models/production/machineOrderAssignmentLog.model.js';
-import { LogAction } from '../../models/production/enums.js';
+import { LogAction, OrderStatus } from '../../models/production/enums.js';
 
 /**
  * Create a machine order assignment. Logs ASSIGNMENT_CREATED with userId.
@@ -153,6 +153,29 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
   }
 
   Object.assign(assignment, toAssign);
+
+  // Log completed items before save (pre-save will remove them and recompact priorities).
+  const completedItems = (assignment.productionOrderItems || []).filter(
+    (i) => String(i.status) === OrderStatus.COMPLETED
+  );
+  if (completedItems.length > 0 && userId) {
+    await MachineOrderAssignmentLog.createLogEntry({
+      assignmentId: assignment._id,
+      userId,
+      action: LogAction.ASSIGNMENT_ITEM_COMPLETED_REMOVED,
+      changes: completedItems.map((i) => ({
+        field: 'productionOrderItems.removed',
+        previousValue: {
+          productionOrder: i.productionOrder,
+          article: i.article,
+          priority: i.priority,
+        },
+        newValue: 'completed_and_removed',
+      })),
+      remarks: 'Completed item(s) removed; priorities recompacted to 1,2,3...',
+    });
+  }
+
   await assignment.save();
 
   if (userId && changes.length > 0) {
