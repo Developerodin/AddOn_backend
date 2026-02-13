@@ -38,6 +38,13 @@ router
   );
 
 router
+  .route('/lot')
+  .delete(
+    validate(yarnPurchaseOrderValidation.deleteLot),
+    yarnPurchaseOrderController.deleteLot
+  );
+
+router
   .route('/:purchaseOrderId')
   .get(
     validate(yarnPurchaseOrderValidation.getPurchaseOrderById),

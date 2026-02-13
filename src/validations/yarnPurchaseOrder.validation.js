@@ -226,4 +226,15 @@ export const updateLotStatusAndQcApprove = {
     .required(),
 };
 
+/** DELETE lot by poNumber and lotNumber (removes cones → boxes → lot entry) */
+export const deleteLot = {
+  params: Joi.object().keys({}),
+  body: Joi.object()
+    .keys({
+      poNumber: Joi.string().trim().required(),
+      lotNumber: Joi.string().trim().required(),
+    })
+    .required(),
+};
+
 

@@ -1,5 +1,5 @@
 import httpStatus from 'http-status';
-import { YarnPurchaseOrder, YarnBox } from '../../models/index.js';
+import { YarnPurchaseOrder, YarnBox, YarnCone } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import { yarnPurchaseOrderStatuses, lotStatuses } from '../../models/yarnReq/yarnPurchaseOrder.model.js';
 import * as supplierService from './supplier.service.js';
@@ -282,6 +282,53 @@ export const updateLotStatusAndQcApprove = async (poNumber, lotNumber, lotStatus
     updatedBoxesCount: updatedBoxes.length,
     qcStatus: qcStatus || null,
     message,
+  };
+};
+
+/**
+ * Delete a lot by poNumber and lotNumber.
+ * Order: 1) Delete all cones (poNumber + boxId in lot's boxes), 2) Delete all boxes (poNumber + lotNumber), 3) Remove lot from PO receivedLotDetails.
+ * @param {string} poNumber - PO number
+ * @param {string} lotNumber - Lot number
+ * @returns {Promise<{ purchaseOrder, deletedConesCount, deletedBoxesCount, message }>}
+ */
+export const deleteLotByPoAndLotNumber = async (poNumber, lotNumber) => {
+  const purchaseOrder = await YarnPurchaseOrder.findOne({ poNumber });
+  if (!purchaseOrder) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Purchase order not found');
+  }
+
+  const hasLot = purchaseOrder.receivedLotDetails?.some((lot) => lot.lotNumber === lotNumber);
+  if (!hasLot) {
+    throw new ApiError(httpStatus.NOT_FOUND, `Lot ${lotNumber} not found in received lot details`);
+  }
+
+  const boxes = await YarnBox.find({ poNumber, lotNumber }).select('boxId').lean();
+  const boxIds = boxes.map((b) => b.boxId);
+
+  const conesResult = await YarnCone.deleteMany({
+    poNumber,
+    boxId: { $in: boxIds },
+  });
+  const deletedConesCount = conesResult.deletedCount ?? 0;
+
+  const boxesResult = await YarnBox.deleteMany({ poNumber, lotNumber });
+  const deletedBoxesCount = boxesResult.deletedCount ?? 0;
+
+  await YarnPurchaseOrder.updateOne(
+    { poNumber },
+    { $pull: { receivedLotDetails: { lotNumber } } }
+  );
+  const updatedPo = await YarnPurchaseOrder.findOne({ poNumber })
+    .populate({ path: 'supplier', select: '_id brandName' })
+    .populate({ path: 'poItems.yarn', select: '_id yarnName' })
+    .lean();
+
+  return {
+    purchaseOrder: updatedPo,
+    deletedConesCount,
+    deletedBoxesCount,
+    message: `Lot ${lotNumber} deleted: ${deletedConesCount} cones, ${deletedBoxesCount} boxes removed; lot removed from PO.`,
   };
 };
 

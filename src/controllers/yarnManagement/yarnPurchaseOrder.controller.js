@@ -96,4 +96,11 @@ export const updateLotStatusAndQcApprove = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(result);
 });
 
+/** DELETE lot by poNumber and lotNumber (cones → boxes → lot entry) */
+export const deleteLot = catchAsync(async (req, res) => {
+  const { poNumber, lotNumber } = req.body;
+  const result = await yarnPurchaseOrderService.deleteLotByPoAndLotNumber(poNumber, lotNumber);
+  res.status(httpStatus.OK).send(result);
+});
+
 
