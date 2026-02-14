@@ -83,6 +83,12 @@ export const getPurchaseOrderById = {
   }),
 };
 
+export const getPurchaseOrderByPoNumber = {
+  params: Joi.object().keys({
+    poNumber: Joi.string().trim().required(),
+  }),
+};
+
 export const deletePurchaseOrder = {
   params: Joi.object().keys({
     purchaseOrderId: Joi.string().custom(objectId).required(),
@@ -224,6 +230,27 @@ export const updateLotStatusAndQcApprove = {
       mediaUrl: Joi.object().pattern(Joi.string(), Joi.string()).allow(null).optional(),
     })
     .required(),
+};
+
+/** QC approve all lots in a PO at once */
+export const qcApproveAllLots = {
+  params: Joi.object()
+    .keys({
+      purchaseOrderId: Joi.string().custom(objectId).required(),
+    })
+    .required(),
+  body: Joi.object()
+    .keys({
+      updated_by: Joi.object()
+        .keys({
+          username: Joi.string().trim().required(),
+          user_id: Joi.string().custom(objectId).required(),
+        })
+        .optional(),
+      notes: Joi.string().trim().allow('', null).default('QC approved all lots'),
+      remarks: Joi.string().trim().allow('', null).default(''),
+    })
+    .default({}),
 };
 
 /** DELETE lot by poNumber and lotNumber (removes cones → boxes → lot entry) */

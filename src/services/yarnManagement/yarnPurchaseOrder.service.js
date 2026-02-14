@@ -51,6 +51,27 @@ export const getPurchaseOrderById = async (purchaseOrderId) => {
 };
 
 /**
+ * Get purchase order by PO number
+ * @param {string} poNumber - PO number (e.g. PO-2026-554)
+ * @returns {Promise<Object|null>}
+ */
+export const getPurchaseOrderByPoNumber = async (poNumber) => {
+  const purchaseOrder = await YarnPurchaseOrder.findOne({ poNumber })
+    .populate({
+      path: 'supplier',
+      select: '_id brandName contactPersonName contactNumber email address city state',
+    })
+    .populate({
+      path: 'poItems.yarn',
+      select: '_id yarnName yarnType status',
+    })
+    .lean();
+
+  return purchaseOrder;
+};
+
+
+/**
  * Get supplier tearweight for a yarn by PO number and yarn name.
  * Finds the PO by poNumber, gets its supplier, then returns that supplier's tearweight for the yarn.
  * @param {string} poNumber - PO number (e.g. PO-2026-415)
@@ -332,4 +353,60 @@ export const deleteLotByPoAndLotNumber = async (poNumber, lotNumber) => {
   };
 };
 
+/**
+ * QC approve all lots in a PO at once.
+ * @param {string} purchaseOrderId - MongoDB _id of PO
+ * @param {Object} updatedBy - { username, user_id }
+ * @param {string} [notes] - notes (default: 'QC approved all lots')
+ * @param {string} [remarks] - remarks for QC
+ * @returns {Promise<{ purchaseOrder, lotsApproved, totalBoxesUpdated, results }>}
+ */
+export const qcApproveAllLotsForPo = async (purchaseOrderId, updatedBy, notes = 'QC approved all lots', remarks = '') => {
+  const purchaseOrder = await YarnPurchaseOrder.findById(purchaseOrderId);
+  if (!purchaseOrder) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Purchase order not found');
+  }
+  const poNumber = purchaseOrder.poNumber;
+  const receivedLotDetails = purchaseOrder.receivedLotDetails || [];
+  if (receivedLotDetails.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'No received lot details found for this purchase order');
+  }
+
+  const lotStatus = 'lot_accepted';
+  const qcData = { remarks: remarks || '', mediaUrl: null };
+  const results = [];
+  let totalBoxesUpdated = 0;
+
+  for (const lot of receivedLotDetails) {
+    const lotNumber = lot.lotNumber;
+    try {
+      const r = await updateLotStatusAndQcApprove(
+        poNumber,
+        lotNumber,
+        lotStatus,
+        updatedBy,
+        notes || 'QC approved all lots',
+        qcData
+      );
+      results.push({ lotNumber, success: true, boxesUpdated: r.updatedBoxesCount });
+      totalBoxesUpdated += r.updatedBoxesCount || 0;
+    } catch (err) {
+      results.push({ lotNumber, success: false, error: err.message || String(err) });
+    }
+  }
+
+  const updatedPo = await YarnPurchaseOrder.findById(purchaseOrderId)
+    .populate({ path: 'supplier', select: '_id brandName' })
+    .populate({ path: 'poItems.yarn', select: '_id yarnName' })
+    .lean();
+
+  return {
+    purchaseOrder: updatedPo,
+    lotsApproved: results.filter((r) => r.success).length,
+    lotsFailed: results.filter((r) => !r.success).length,
+    totalBoxesUpdated,
+    results,
+    message: `QC approved ${results.filter((r) => r.success).length} lot(s), ${totalBoxesUpdated} boxes updated for PO ${poNumber}`,
+  };
+};
 

@@ -78,6 +78,34 @@ export const bulkImportProducts = catchAsync(async (req, res) => {
   });
 });
 
+export const bulkUpsertProducts = catchAsync(async (req, res) => {
+  const { products, batchSize = 50 } = req.body;
+  if (!products || !Array.isArray(products) || products.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Products array is required and must not be empty');
+  }
+  const results = await productService.bulkUpsertProducts(products, batchSize);
+  res.status(httpStatus.OK).send({ message: 'Bulk upsert completed', results });
+});
+
+export const bulkExportProducts = catchAsync(async (req, res) => {
+  const allowedFilterFields = ['name', 'softwareCode', 'internalCode', 'vendorCode', 'factoryCode', 'styleCode', 'eanCode', 'brand', 'pack', 'category', 'status', 'productionType'];
+  const filter = pick(req.query, allowedFilterFields);
+  const cleanFilter = cleanFilterObjectIds(filter, ['category']);
+  const allowedOptions = ['sortBy', 'limit', 'page'];
+  const options = pick(req.query, allowedOptions);
+  if (options.limit) options.limit = parseInt(options.limit, 10);
+  if (options.page) options.page = parseInt(options.page, 10);
+  const search = req.query.search;
+
+  const { products, total } = await productService.bulkExportProducts(cleanFilter, options, search);
+
+  res.status(httpStatus.OK).send({
+    message: 'Bulk export completed',
+    total,
+    products,
+  });
+});
+
 export const debugQuery = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).json({
     message: 'Debug query parameters',

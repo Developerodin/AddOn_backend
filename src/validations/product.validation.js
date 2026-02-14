@@ -116,16 +116,16 @@ const bulkImportProducts = {
   body: Joi.object().keys({
     products: Joi.array().items(
       Joi.object().keys({
-        id: Joi.string().custom(objectId).optional(), // For updates
+        id: Joi.string().custom(objectId).optional(),
         name: Joi.string().required(),
-    styleCodes: Joi.array().items(Joi.string().custom(objectId)),
+        styleCodes: Joi.array().items(Joi.string().custom(objectId)),
         internalCode: Joi.string().optional().default(''),
         vendorCode: Joi.string().optional().default(''),
         factoryCode: Joi.string().optional().default(''),
         knittingCode: Joi.string().optional().default(''),
-    description: Joi.string().optional().default(''),
-    category: Joi.string().custom(objectId).optional(),
-        softwareCode: Joi.string().optional(), // Auto-generated if not provided
+        description: Joi.string().optional().default(''),
+        category: Joi.string().custom(objectId).optional(),
+        softwareCode: Joi.string().optional(),
         productionType: Joi.string().valid('internal', 'outsourced').optional(),
         rawMaterials: Joi.array().items(
           Joi.object().keys({
@@ -134,8 +134,61 @@ const bulkImportProducts = {
           })
         ),
       })
-    ).min(1).max(10000), // Limit batch size to 10000 products
-    batchSize: Joi.number().integer().min(1).max(100).default(50), // Default batch size
+    ).min(1).max(10000),
+    batchSize: Joi.number().integer().min(1).max(100).default(50),
+  }),
+};
+
+const bulkUpsertProducts = {
+  body: Joi.object().keys({
+    products: Joi.array().items(
+      Joi.object()
+        .keys({
+          id: Joi.string().custom(objectId).optional(),
+          name: Joi.string().required(),
+          knittingCode: Joi.string().optional().allow(''),
+          factoryCode: Joi.string().optional().allow(''),
+          'Knitting Code': Joi.string().optional().allow(''),
+          'Factory Code': Joi.string().optional().allow(''),
+          Needles: Joi.string().optional().allow(''),
+          styleCodeId1: Joi.alternatives().try(Joi.string().custom(objectId), Joi.string()).optional().allow(''),
+          styleCodeId2: Joi.alternatives().try(Joi.string().custom(objectId), Joi.string()).optional().allow(''),
+          styleCodeId3: Joi.alternatives().try(Joi.string().custom(objectId), Joi.string()).optional().allow(''),
+          styleCodeId4: Joi.alternatives().try(Joi.string().custom(objectId), Joi.string()).optional().allow(''),
+          styleCodeId5: Joi.alternatives().try(Joi.string().custom(objectId), Joi.string()).optional().allow(''),
+          styleCodeId6: Joi.alternatives().try(Joi.string().custom(objectId), Joi.string()).optional().allow(''),
+          styleCodeId7: Joi.alternatives().try(Joi.string().custom(objectId), Joi.string()).optional().allow(''),
+          styleCodeId8: Joi.alternatives().try(Joi.string().custom(objectId), Joi.string()).optional().allow(''),
+          styleCodeId9: Joi.alternatives().try(Joi.string().custom(objectId), Joi.string()).optional().allow(''),
+          styleCodeId10: Joi.alternatives().try(Joi.string().custom(objectId), Joi.string()).optional().allow(''),
+          description: Joi.string().optional().allow(''),
+          category: Joi.string().custom(objectId).optional(),
+        })
+        .unknown(true)
+    ).min(1).max(10000),
+    batchSize: Joi.number().integer().min(1).max(100).default(50),
+  }),
+};
+
+const bulkExportProducts = {
+  query: Joi.object().keys({
+    name: Joi.string(),
+    softwareCode: Joi.string(),
+    internalCode: Joi.string(),
+    vendorCode: Joi.string(),
+    factoryCode: Joi.string(),
+    knittingCode: Joi.string(),
+    styleCode: Joi.string(),
+    eanCode: Joi.string(),
+    brand: Joi.string(),
+    pack: Joi.string(),
+    category: Joi.string().custom(objectId),
+    status: Joi.string().valid('active', 'inactive'),
+    productionType: Joi.string().valid('internal', 'outsourced'),
+    sortBy: Joi.string(),
+    limit: Joi.number().integer().min(1).max(10000),
+    page: Joi.number().integer().min(1),
+    search: Joi.string(),
   }),
 };
 
@@ -158,5 +211,7 @@ export default {
   updateProduct,
   deleteProduct,
   bulkImportProducts,
+  bulkUpsertProducts,
+  bulkExportProducts,
   getProductByCode,
 }; 
