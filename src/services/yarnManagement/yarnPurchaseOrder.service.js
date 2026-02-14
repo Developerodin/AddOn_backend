@@ -22,10 +22,10 @@ export const getPurchaseOrders = async ({ startDate, endDate, statusCode }) => {
   }
 
   const purchaseOrders = await YarnPurchaseOrder.find(filter)
-    .populate({
-      path: 'supplier',
-      select: '_id brandName contactPersonName contactNumber email',
-    })
+  .populate({
+    path: 'supplier',
+    select: '_id brandName contactPersonName contactNumber email address city state pincode country gstNo',
+  })
     .populate({
       path: 'poItems.yarn',
       select: '_id yarnName yarnType status',

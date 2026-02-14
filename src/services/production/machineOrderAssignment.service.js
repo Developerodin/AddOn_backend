@@ -327,6 +327,9 @@ export const updateProductionOrderItemStatusById = async (assignmentId, itemId, 
   }
 
   item.status = newStatus;
+  if ([OrderStatus.CANCELLED, OrderStatus.ON_HOLD, OrderStatus.COMPLETED].includes(String(newStatus))) {
+    item.set('priority', undefined);
+  }
   assignment.markModified('productionOrderItems');
   await assignment.save();
 

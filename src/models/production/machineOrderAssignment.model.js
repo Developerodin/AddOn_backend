@@ -50,7 +50,7 @@ const machineOrderAssignmentSchema = new mongoose.Schema(
           enum: Object.values(YarnIssueStatus),
           default: YarnIssueStatus.PENDING,
         },
-        /** Queue position; set by client or auto-assigned (1, 2, 3, ...) if not passed. */
+        /** Queue position; set by client or auto-assigned (1, 2, 3, ...). Unset when status is Cancelled/On Hold/Completed. */
         priority: {
           type: Number,
           required: false,
@@ -69,16 +69,46 @@ const machineOrderAssignmentSchema = new mongoose.Schema(
   }
 );
 
+/** Statuses for which priority is not applicable; priority is cleared and not assigned. */
+const STATUSES_WITH_NO_PRIORITY = [
+  OrderStatus.CANCELLED,
+  OrderStatus.ON_HOLD,
+  OrderStatus.COMPLETED,
+];
+
+function hasNoPriorityStatus(item) {
+  return item?.status != null && STATUSES_WITH_NO_PRIORITY.includes(String(item.status));
+}
+
 /**
- * Auto-assign priority to productionOrderItems that don't have one.
+ * Clear priority for items whose status is Cancelled, On Hold, or Completed.
+ * Uses .set(undefined) so Mongoose persists the unset on save (delete does not always persist on subdocs).
+ */
+function clearPriorityForTerminalStatuses(items) {
+  if (!items?.length) return;
+  items.forEach((item) => {
+    if (hasNoPriorityStatus(item)) {
+      if (typeof item.set === 'function') {
+        item.set('priority', undefined);
+      } else {
+        delete item.priority;
+      }
+    }
+  });
+}
+
+/**
+ * Auto-assign priority to productionOrderItems that don't have one and are not in a terminal status.
  * Priorities start at 1; new entries get next available (max existing + 1).
+ * Items with status Cancelled/On Hold/Completed are left without priority.
  */
 function assignMissingPriorities(items) {
   if (!items?.length) return;
-  const withPriority = items.filter((item) => typeof item.priority === 'number' && item.priority >= 1);
+  const assignable = items.filter((item) => !hasNoPriorityStatus(item));
+  const withPriority = assignable.filter((item) => typeof item.priority === 'number' && item.priority >= 1);
   const maxPriority = withPriority.length ? Math.max(...withPriority.map((i) => i.priority)) : 0;
   let next = maxPriority + 1;
-  items.forEach((item) => {
+  assignable.forEach((item) => {
     if (typeof item.priority !== 'number' || item.priority < 1) {
       item.priority = next;
       next += 1;
@@ -96,8 +126,11 @@ export function removeCompletedAndRecompactPriorities(items) {
 }
 
 machineOrderAssignmentSchema.pre('save', function autoRemoveCompletedAndPriorities(next) {
-  this.productionOrderItems = removeCompletedAndRecompactPriorities(this.productionOrderItems || []);
+  const items = this.productionOrderItems || [];
+  clearPriorityForTerminalStatuses(items);
+  this.productionOrderItems = removeCompletedAndRecompactPriorities(items);
   assignMissingPriorities(this.productionOrderItems);
+  this.markModified('productionOrderItems');
   next();
 });
 
