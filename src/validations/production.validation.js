@@ -10,6 +10,7 @@ const createProductionOrder = {
     articles: Joi.array().items(
       Joi.object().keys({
         articleNumber: Joi.string().min(4).max(5).required(),
+        knittingCode: Joi.string().optional().allow(''),
         plannedQuantity: Joi.number().integer().min(1).max(100000).required(),
         linkingType: Joi.string().valid('Auto Linking', 'Rosso Linking', 'Hand Linking').required(),
         priority: Joi.string().valid('Urgent', 'High', 'Medium', 'Low').required(),
@@ -72,6 +73,7 @@ const updateProductionOrder = {
           _id: Joi.string().custom(objectId).optional(),
           id: Joi.string().optional(),
           articleNumber: Joi.string().min(4).max(5).optional(),
+          knittingCode: Joi.string().optional().allow(''),
           plannedQuantity: Joi.number().integer().min(1).max(100000).optional(),
           linkingType: Joi.string().valid('Auto Linking', 'Rosso Linking', 'Hand Linking').optional(),
           priority: Joi.string().valid('Urgent', 'High', 'Medium', 'Low').optional(),
@@ -301,6 +303,7 @@ const getOrderTrackingReport = {
 const getArticleWiseData = {
   query: Joi.object().keys({
     articleNumber: Joi.string().min(1).max(20),
+    knittingCode: Joi.string().min(1).max(50).optional(),
     search: Joi.string().min(1).max(50),
     status: Joi.string().valid('Pending', 'In Progress', 'Completed', 'On Hold', 'Cancelled'),
     orderNumber: Joi.string().min(1).max(50),
@@ -404,6 +407,7 @@ const bulkCreateOrders = {
         articles: Joi.array().items(
           Joi.object().keys({
             articleNumber: Joi.string().min(4).max(5).required(),
+            knittingCode: Joi.string().optional().allow(''),
             plannedQuantity: Joi.number().integer().min(1).max(100000).required(),
             linkingType: Joi.string().valid('Auto Linking', 'Rosso Linking', 'Hand Linking').required(),
             priority: Joi.string().valid('Urgent', 'High', 'Medium', 'Low').required(),

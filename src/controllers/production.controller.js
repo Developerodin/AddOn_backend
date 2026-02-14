@@ -153,7 +153,7 @@ export const getOrderTrackingReport = catchAsync(async (req, res) => {
 });
 
 export const getArticleWiseData = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['articleNumber', 'search', 'status', 'orderNumber']);
+  const filter = pick(req.query, ['articleNumber', 'knittingCode', 'search', 'status', 'orderNumber']);
   const options = pick(req.query, ['limit', 'page', 'logsPerArticle']);
   if (options.limit) options.limit = parseInt(options.limit, 10);
   if (options.page) options.page = parseInt(options.page, 10);
