@@ -2,7 +2,14 @@ import { StorageSlot, YarnBox, YarnCone } from '../../models/index.js';
 import pick from '../../utils/pick.js';
 import ApiError from '../../utils/ApiError.js';
 import httpStatus from 'http-status';
-import { STORAGE_ZONES, LT_SECTION_CODES } from '../../models/storageManagement/storageSlot.model.js';
+import {
+  STORAGE_ZONES,
+  LT_SECTION_CODES,
+  ST_SECTION_CODE,
+} from '../../models/storageManagement/storageSlot.model.js';
+
+const FLOORS_PER_SECTION = 4;
+const MAX_RACKS_PER_ADD = 50;
 
 const filterableFields = ['zoneCode', 'shelfNumber', 'floorNumber', 'isActive'];
 const paginationOptions = ['limit', 'page', 'sortBy'];
@@ -244,6 +251,98 @@ export const getStorageContentsByBarcode = async (barcode) => {
   }
 
   throw new ApiError(httpStatus.BAD_REQUEST, `Unknown zone code: ${zoneCode}`);
+};
+
+/**
+ * Resolve zone and validate section for add-racks. Throws ApiError if invalid.
+ */
+function getZoneAndValidateSection(storageType, sectionCode) {
+  const type = String(storageType).toLowerCase();
+  if (type === 'longterm' || type === 'lt') {
+    if (!LT_SECTION_CODES.includes(sectionCode)) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Invalid long-term section. Use one of: ${LT_SECTION_CODES.join(', ')}`
+      );
+    }
+    return { zoneCode: STORAGE_ZONES.LONG_TERM, sectionCode };
+  }
+  if (type === 'shortterm' || type === 'st') {
+    if (sectionCode !== ST_SECTION_CODE) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Invalid short-term section. Use: ${ST_SECTION_CODE}`
+      );
+    }
+    return { zoneCode: STORAGE_ZONES.SHORT_TERM, sectionCode };
+  }
+  throw new ApiError(
+    httpStatus.BAD_REQUEST,
+    "storageType must be 'longterm' or 'shortterm'"
+  );
+}
+
+/**
+ * Add N racks (shelves) to a section. Each rack has FLOORS_PER_SECTION floors.
+ * Uses upsert so existing slots are not duplicated.
+ */
+export const addRacksToSection = async (payload) => {
+  const { storageType, sectionCode, numberOfRacksToAdd } = payload;
+  if (numberOfRacksToAdd > MAX_RACKS_PER_ADD) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `numberOfRacksToAdd must be at most ${MAX_RACKS_PER_ADD}`
+    );
+  }
+
+  const { zoneCode } = getZoneAndValidateSection(storageType, sectionCode);
+
+  const existing = await StorageSlot.findOne(
+    { zoneCode, sectionCode },
+    {},
+    { sort: { shelfNumber: -1 } }
+  );
+  const startShelf = existing ? existing.shelfNumber + 1 : 1;
+  const endShelf = startShelf + numberOfRacksToAdd - 1;
+
+  const bulkOps = [];
+  for (let shelf = startShelf; shelf <= endShelf; shelf += 1) {
+    for (let floor = 1; floor <= FLOORS_PER_SECTION; floor += 1) {
+      const shelfStr = String(shelf).padStart(4, '0');
+      const floorStr = String(floor).padStart(2, '0');
+      const label = `${sectionCode}-S${shelfStr}-F${floorStr}`;
+      bulkOps.push({
+        updateOne: {
+          filter: { zoneCode, sectionCode, shelfNumber: shelf, floorNumber: floor },
+          update: {
+            $setOnInsert: {
+              zoneCode,
+              sectionCode,
+              shelfNumber: shelf,
+              floorNumber: floor,
+              label,
+              barcode: label,
+              isActive: true,
+            },
+          },
+          upsert: true,
+        },
+      });
+    }
+  }
+
+  const result = await StorageSlot.bulkWrite(bulkOps, { ordered: false });
+  const inserted = result.upsertedCount ?? 0;
+  const matched = result.matchedCount ?? 0;
+
+  return {
+    sectionCode,
+    zoneCode,
+    shelvesAdded: numberOfRacksToAdd,
+    shelfRange: { start: startShelf, end: endShelf },
+    insertedSlots: inserted,
+    alreadyPresentSlots: matched,
+  };
 };
 
 

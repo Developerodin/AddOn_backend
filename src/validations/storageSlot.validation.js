@@ -1,6 +1,8 @@
 import Joi from 'joi';
 import { STORAGE_ZONES } from '../models/storageManagement/storageSlot.model.js';
 
+const MAX_RACKS_PER_ADD = 50;
+
 const zoneField = Joi.string()
   .valid(...Object.values(STORAGE_ZONES))
   .uppercase();
@@ -35,4 +37,17 @@ export const getStorageContentsByBarcode = {
   }),
 };
 
+/** POST body: add racks to a section (longterm or shortterm). */
+export const addRacksToSection = {
+  body: Joi.object()
+    .keys({
+      storageType: Joi.string()
+        .valid('longterm', 'shortterm', 'LT', 'ST')
+        .required()
+        .insensitive(),
+      sectionCode: Joi.string().required().trim(),
+      numberOfRacksToAdd: Joi.number().integer().min(1).max(MAX_RACKS_PER_ADD).required(),
+    })
+    .required(),
+};
 
