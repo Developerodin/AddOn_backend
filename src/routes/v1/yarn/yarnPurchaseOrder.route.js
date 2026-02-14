@@ -38,6 +38,14 @@ router
   );
 
 router
+  .route('/by-number/:poNumber')
+  .get(
+    validate(yarnPurchaseOrderValidation.getPurchaseOrderByPoNumber),
+    yarnPurchaseOrderController.getPurchaseOrderByPoNumber
+  );
+
+
+router
   .route('/lot')
   .delete(
     validate(yarnPurchaseOrderValidation.deleteLot),
@@ -64,6 +72,13 @@ router
   .patch(
     validate(yarnPurchaseOrderValidation.updatePurchaseOrderStatus),
     yarnPurchaseOrderController.updatePurchaseOrderStatus
+  );
+
+router
+  .route('/:purchaseOrderId/qc-approve-all')
+  .patch(
+    validate(yarnPurchaseOrderValidation.qcApproveAllLots),
+    yarnPurchaseOrderController.qcApproveAllLots
   );
 
 export default router;

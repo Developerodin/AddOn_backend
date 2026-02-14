@@ -25,6 +25,7 @@ import orderRoute from './order.route.js';
 import colorRoute from './color.route.js';
 import countSizeRoute from './countSize.route.js';
 import blendRoute from './blend.route.js';
+import yarnReceivingRoute from './yarn/yarnReceiving.route.js';
 import yarnTypeRoute from './yarnType.route.js';
 import supplierRoute from './supplier.route.js';
 import yarnCatalogRoute from './yarnCatalog.route.js';
@@ -175,6 +176,10 @@ const defaultRoutes = [
   {
     path: '/yarn-management/yarn-inventories',
     route: yarnInventoryRoute,
+  },
+   {
+    path: '/yarn-management/yarn-receiving',
+    route: yarnReceivingRoute,
   },
   {
     path: '/storage',

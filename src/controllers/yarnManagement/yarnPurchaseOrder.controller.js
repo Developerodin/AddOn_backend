@@ -2,6 +2,7 @@ import httpStatus from 'http-status';
 import catchAsync from '../../utils/catchAsync.js';
 import pick from '../../utils/pick.js';
 import * as yarnPurchaseOrderService from '../../services/yarnManagement/yarnPurchaseOrder.service.js';
+import * as yarnReceivingPipelineService from '../../services/yarnManagement/yarnReceivingPipeline.service.js';
 
 export const getPurchaseOrders = catchAsync(async (req, res) => {
   const query = pick(req.query, ['start_date', 'end_date', 'status_code']);
@@ -31,6 +32,17 @@ export const getPurchaseOrder = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(purchaseOrder);
 });
 
+export const getPurchaseOrderByPoNumber = catchAsync(async (req, res) => {
+  const { poNumber } = req.params;
+  const purchaseOrder = await yarnPurchaseOrderService.getPurchaseOrderByPoNumber(poNumber);
+
+  if (!purchaseOrder) {
+    return res.status(httpStatus.NOT_FOUND).send({ message: 'Purchase order not found' });
+  }
+
+  res.status(httpStatus.OK).send(purchaseOrder);
+});
+
 /** GET supplier tearweight by poNumber and yarnName (query params) */
 export const getSupplierTearweightByPoAndYarnName = catchAsync(async (req, res) => {
   const { poNumber, yarnName } = req.query;
@@ -47,6 +59,22 @@ export const deletePurchaseOrder = catchAsync(async (req, res) => {
 export const updatePurchaseOrder = catchAsync(async (req, res) => {
   const { purchaseOrderId } = req.params;
   const purchaseOrder = await yarnPurchaseOrderService.updatePurchaseOrderById(purchaseOrderId, req.body);
+
+  // When packListDetails or receivedLotDetails are saved - auto-run: create boxes, update box details, QC approve
+  // Works for both goods_received and goods_partially_received status
+  if (purchaseOrder.receivedLotDetails?.length > 0) {
+    const updatedBy = {
+      username: req.user?.email || req.user?.username || 'system',
+      user_id: req.user?.id || req.user?._id?.toString?.() || '',
+    };
+    const result = await yarnReceivingPipelineService.processFromExistingPo({
+      purchaseOrderId,
+      updatedBy,
+      autoApproveQc: true,
+    });
+    return res.status(httpStatus.OK).send(result);
+  }
+
   res.status(httpStatus.OK).send(purchaseOrder);
 });
 
@@ -91,6 +119,27 @@ export const updateLotStatusAndQcApprove = catchAsync(async (req, res) => {
     updatedBy,
     notes,
     qcData
+  );
+
+  res.status(httpStatus.OK).send(result);
+});
+
+/** PATCH /:purchaseOrderId/qc-approve-all - QC approve all lots in a PO at once */
+export const qcApproveAllLots = catchAsync(async (req, res) => {
+  const { purchaseOrderId } = req.params;
+  const { updated_by: updatedBy, notes, remarks } = req.body;
+  const resolvedUpdatedBy =
+    updatedBy ||
+    {
+      username: req.user?.email || req.user?.username || 'system',
+      user_id: req.user?.id || req.user?._id?.toString?.() || '',
+    };
+
+  const result = await yarnPurchaseOrderService.qcApproveAllLotsForPo(
+    purchaseOrderId,
+    resolvedUpdatedBy,
+    notes || 'QC approved all lots',
+    remarks || ''
   );
 
   res.status(httpStatus.OK).send(result);

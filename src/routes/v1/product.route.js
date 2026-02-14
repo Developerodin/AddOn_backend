@@ -20,8 +20,24 @@ router
   .post(
     bulkImportMiddleware,
     validateBulkImportSize,
-    validate(productValidation.bulkImportProducts), 
+    validate(productValidation.bulkImportProducts),
     productController.bulkImportProducts
+  );
+
+router
+  .route('/bulk-upsert')
+  .post(
+    bulkImportMiddleware,
+    validateBulkImportSize,
+    validate(productValidation.bulkUpsertProducts),
+    productController.bulkUpsertProducts
+  );
+
+router
+  .route('/bulk-export')
+  .get(
+    validate(productValidation.bulkExportProducts),
+    productController.bulkExportProducts
   );
 
 router

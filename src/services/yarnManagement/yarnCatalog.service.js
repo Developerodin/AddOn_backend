@@ -234,6 +234,53 @@ export const queryYarnCatalogs = async (filter, options) => {
 };
 
 /**
+ * Find yarn catalog by count size, color, and shade code (for receiving pipeline).
+ * Matches countSize.name, colorFamily.name, and pantonShade or pantonName to shadeCode.
+ * @param {string} countSizeName - e.g. "70/1", "20s"
+ * @param {string} colorName - Color name
+ * @param {string} shadeCode - e.g. "WN96793" (matched against pantonShade or pantonName)
+ * @param {string[]} [poItemYarnNames] - If provided, prefer a catalog whose yarnName is in this list (PO items)
+ * @returns {Promise<{ yarnName: string, _id: ObjectId }|null>}
+ */
+export const findYarnByCountColorShade = async (countSizeName, colorName, shadeCode, poItemYarnNames = []) => {
+  const count = (countSizeName || '').trim();
+  const color = (colorName || '').trim();
+  const shade = (shadeCode || '').trim();
+  if (!count || !color) return null;
+
+  const filter = {
+    status: { $ne: 'deleted' },
+    $and: [
+      { $or: [{ 'countSize.name': new RegExp(`^${escapeRegex(count)}$`, 'i') }, { 'countSize.name': count }] },
+      { $or: [{ 'colorFamily.name': new RegExp(`^${escapeRegex(color)}$`, 'i') }, { 'colorFamily.name': color }] },
+    ],
+  };
+  if (shade) {
+    filter.$and.push({
+      $or: [
+        { pantonShade: new RegExp(`^${escapeRegex(shade)}$`, 'i') },
+        { pantonName: new RegExp(`^${escapeRegex(shade)}$`, 'i') },
+        { pantonShade: shade },
+        { pantonName: shade },
+      ],
+    });
+  }
+
+  const catalogs = await YarnCatalog.find(filter).select('yarnName _id').lean();
+  if (!catalogs.length) return null;
+  if (poItemYarnNames && poItemYarnNames.length > 0) {
+    const set = new Set(poItemYarnNames.map((n) => (n || '').trim().toLowerCase()));
+    const preferred = catalogs.find((c) => c.yarnName && set.has(c.yarnName.trim().toLowerCase()));
+    if (preferred) return { yarnName: preferred.yarnName, _id: preferred._id };
+  }
+  return { yarnName: catalogs[0].yarnName, _id: catalogs[0]._id };
+};
+
+function escapeRegex(str) {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
  * Get yarn catalog by id
  * @param {ObjectId} id
  * @returns {Promise<YarnCatalog>}
