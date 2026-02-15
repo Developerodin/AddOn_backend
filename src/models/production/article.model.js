@@ -50,6 +50,11 @@ const articleSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+
+  knittingCode: {
+    type: String,
+    required: false
+  },
   
   // Quantity management
   plannedQuantity: {

@@ -10,6 +10,10 @@ router
   .get(validate(storageSlotValidation.listStorageSlots), storageSlotController.getStorageSlots);
 
 router
+  .route('/slots/add-racks')
+  .post(validate(storageSlotValidation.addRacksToSection), storageSlotController.addRacksToSection);
+
+router
   .route('/slots/zone/:zone')
   .get(validate(storageSlotValidation.getStorageSlotsByZone), storageSlotController.getStorageSlotsByZone);
 

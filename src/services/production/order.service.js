@@ -288,6 +288,7 @@ export const updateProductionOrderById = async (orderId, updateBody) => {
           id: `ART${Date.now()}${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
           orderId: order._id,
           articleNumber: articleData.articleNumber,
+          knittingCode: articleData.knittingCode ?? '',
           articleName: articleData.articleName || '',
           plannedQuantity: articleData.plannedQuantity || 0,
           linkingType: articleData.linkingType || 'Manual Linking',
@@ -324,6 +325,7 @@ export const updateProductionOrderById = async (orderId, updateBody) => {
             
             // Update allowed fields
             if (articleData.articleNumber !== undefined) updateFields.articleNumber = articleData.articleNumber;
+            if (articleData.knittingCode !== undefined) updateFields.knittingCode = articleData.knittingCode;
             if (articleData.plannedQuantity !== undefined) updateFields.plannedQuantity = articleData.plannedQuantity;
             if (articleData.linkingType !== undefined) updateFields.linkingType = articleData.linkingType;
             if (articleData.priority !== undefined) updateFields.priority = articleData.priority;
@@ -371,6 +373,7 @@ export const updateProductionOrderById = async (orderId, updateBody) => {
               id: articleId,
               orderId: order._id,
               articleNumber: articleData.articleNumber,
+              knittingCode: articleData.knittingCode ?? '',
               articleName: articleData.articleName || '',
               plannedQuantity: articleData.plannedQuantity || 0,
               linkingType: articleData.linkingType || 'Manual Linking',

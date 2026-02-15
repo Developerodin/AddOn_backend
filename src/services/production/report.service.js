@@ -493,7 +493,7 @@ const getQualityTrend = async (floor, startDate, endDate) => {
  * @returns {Promise<Object>} { results, page, limit, totalPages, total }
  */
 export const getArticleWiseData = async (filter = {}, options = {}) => {
-  const { articleNumber: filterArticleNumber, search, status, orderNumber } = filter;
+  const { articleNumber: filterArticleNumber, knittingCode: filterKnittingCode, search, status, orderNumber } = filter;
   const limit = Math.min(parseInt(options.limit, 10) || 50, 100);
   const page = parseInt(options.page, 10) || 1;
   const logsPerArticle = Math.min(parseInt(options.logsPerArticle, 10) || 20, 100);
@@ -502,7 +502,11 @@ export const getArticleWiseData = async (filter = {}, options = {}) => {
   if (filterArticleNumber) {
     match.articleNumber = filterArticleNumber;
   } else if (search && typeof search === 'string' && search.trim()) {
-    match.articleNumber = { $regex: search.trim(), $options: 'i' };
+    const searchRegex = { $regex: search.trim(), $options: 'i' };
+    match.$or = [{ articleNumber: searchRegex }, { knittingCode: searchRegex }];
+  }
+  if (filterKnittingCode && typeof filterKnittingCode === 'string' && filterKnittingCode.trim()) {
+    match.knittingCode = { $regex: filterKnittingCode.trim(), $options: 'i' };
   }
   if (status) match.status = status;
   if (orderNumber && typeof orderNumber === 'string' && orderNumber.trim()) {
@@ -575,6 +579,7 @@ export const getArticleWiseData = async (filter = {}, options = {}) => {
       orderNote: orderId && orderId.orderNote,
       orderCreatedAt: orderId && (orderId.createdAt || orderId.created_at),
       plannedQuantity: a.plannedQuantity,
+      knittingCode: a.knittingCode,
       status: a.status,
       progress: a.progress,
       linkingType: a.linkingType,

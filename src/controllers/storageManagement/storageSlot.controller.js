@@ -24,4 +24,8 @@ export const getStorageLocationHistory = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(history);
 });
 
+export const addRacksToSection = catchAsync(async (req, res) => {
+  const result = await storageSlotService.addRacksToSection(req.body);
+  res.status(httpStatus.CREATED).send(result);
+});
 
