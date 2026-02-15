@@ -40,7 +40,7 @@ export const getPurchaseOrderById = async (purchaseOrderId) => {
   const purchaseOrder = await YarnPurchaseOrder.findById(purchaseOrderId)
     .populate({
       path: 'supplier',
-      select: '_id brandName contactPersonName contactNumber email address city state',
+      select: '_id brandName contactPersonName contactNumber email address city state gstNo',
     })
     .populate({
       path: 'poItems.yarn',
@@ -59,7 +59,7 @@ export const getPurchaseOrderByPoNumber = async (poNumber) => {
   const purchaseOrder = await YarnPurchaseOrder.findOne({ poNumber })
     .populate({
       path: 'supplier',
-      select: '_id brandName contactPersonName contactNumber email address city state',
+      select: '_id brandName contactPersonName contactNumber email address city state gstNo',
     })
     .populate({
       path: 'poItems.yarn',
