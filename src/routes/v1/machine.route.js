@@ -1,5 +1,6 @@
 import express from 'express';
 import validate from '../../middlewares/validate.js';
+import { bulkImportMiddleware, validateBulkImportSize } from '../../middlewares/bulkImport.js';
 import * as machineValidation from '../../validations/machine.validation.js';
 import * as machineController from '../../controllers/machine.controller.js';
 
@@ -13,6 +14,15 @@ router
 router
   .route('/statistics')
   .get(machineController.getMachineStatistics);
+
+router
+  .route('/bulk-import')
+  .post(
+    bulkImportMiddleware,
+    validateBulkImportSize,
+    validate(machineValidation.bulkImportMachines),
+    machineController.bulkImportMachines
+  );
 
 router
   .route('/bulk-delete')
@@ -288,6 +298,82 @@ export default router;
  *                 totalResults:
  *                   type: integer
  *                   example: 1
+ *       "401":
+ *         $ref: '#/components/responses/Unauthorized'
+ *       "403":
+ *         $ref: '#/components/responses/Forbidden'
+ */
+
+/**
+ * @swagger
+ * /machines/bulk-import:
+ *   post:
+ *     summary: Bulk import machines (create or update by ID)
+ *     description: |
+ *       Import multiple machines from JSON (e.g. from Excel). Max 10000 per request.
+ *       Upsert - If a row has ID (Excel "ID" or API "id"/"_id") and that machine exists, the machine is updated; otherwise a new machine is created.
+ *       Accepts API-shaped objects or Excel-style column names (Machine Code, Machine Number, Needles Config 1, etc.).
+ *     tags: [Machines]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - machines
+ *             properties:
+ *               machines:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 10000
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     machineCode: { type: string }
+ *                     machineNumber: { type: string }
+ *                     model: { type: string }
+ *                     floor: { type: string }
+ *                     installationDate: { type: string, format: date }
+ *                     maintenanceRequirement: { type: string, enum: [1 month, 3 months, 6 months, 12 months] }
+ *                     status: { type: string, enum: [Active, Under Maintenance, Idle] }
+ *                     assignedSupervisor: { type: string }
+ *                     capacityPerShift: { type: number }
+ *                     capacityPerDay: { type: number }
+ *                     lastMaintenanceDate: { type: string, format: date }
+ *                     nextMaintenanceDate: { type: string, format: date }
+ *                     maintenanceNotes: { type: string }
+ *                     needleSizeConfig:
+ *                       type: array
+ *                       items: { type: object, properties: { needleSize: { type: string }, cutoffQuantity: { type: number } } }
+ *               batchSize:
+ *                 type: integer
+ *                 minimum: 1
+ *                 maximum: 100
+ *                 default: 50
+ *     responses:
+ *       "200":
+ *         description: OK
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 message: { type: string }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     total: { type: integer }
+ *                     created: { type: integer }
+ *                     updated: { type: integer }
+ *                     failed: { type: integer }
+ *                     errors: { type: array, items: { type: object } }
+ *                     processingTime: { type: integer }
+ *       "400":
+ *         description: Bad Request
  *       "401":
  *         $ref: '#/components/responses/Unauthorized'
  *       "403":

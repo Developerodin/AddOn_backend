@@ -32,6 +32,175 @@ const createMachine = async (machineBody) => {
 };
 
 /**
+ * Normalize a single machine row (e.g. from Excel) into API shape.
+ * Handles flat Excel columns like "Needles Config 1", "Needles Config Cutoff 1" ... "Needles Config 5", "Needles Config Cutoff 5".
+ * @param {Object} row - Raw row (API shape or Excel flat keys)
+ * @returns {Object} - Normalized machine body for create
+ */
+const normalizeMachineImportRow = (row) => {
+  const needleSizeConfig = [];
+  if (Array.isArray(row.needleSizeConfig) && row.needleSizeConfig.length > 0) {
+    row.needleSizeConfig.forEach((item) => {
+      if (item && (item.needleSize != null && item.needleSize !== '')) {
+        needleSizeConfig.push({
+          needleSize: String(item.needleSize).trim(),
+          cutoffQuantity: Number(item.cutoffQuantity) || 0,
+        });
+      }
+    });
+  } else {
+    for (let i = 1; i <= 5; i++) {
+      const sizeKey = `Needles Config ${i}`;
+      const cutoffKey = `Needles Config Cutoff ${i}`;
+      const size = row[sizeKey] != null ? String(row[sizeKey]).trim() : '';
+      const cutoff = row[cutoffKey] != null ? Number(row[cutoffKey]) : 0;
+      if (size !== '') {
+        needleSizeConfig.push({ needleSize: size, cutoffQuantity: isNaN(cutoff) ? 0 : cutoff });
+      }
+    }
+  }
+
+  const parseDate = (v) => {
+    if (v == null || v === '') return undefined;
+    if (v instanceof Date) return v;
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? undefined : d;
+  };
+
+  const str = (v) => (v != null && v !== '' ? String(v).trim() : undefined);
+  const num = (v) => (v != null && v !== '' ? Number(v) : undefined);
+  const statusVal = row.status || row['Status'];
+  const validStatus = statusVal && ['Active', 'Under Maintenance', 'Idle'].includes(String(statusVal).trim());
+
+  const body = {
+    machineCode: str(row.machineCode ?? row['Machine Code']),
+    machineNumber: str(row.machineNumber ?? row['Machine Number']),
+    model: str(row.model ?? row['Model']),
+    floor: str(row.floor ?? row['Floor']),
+    company: str(row.company),
+    machineType: str(row.machineType ?? row['Company Machine Type']),
+    status: validStatus ? String(statusVal).trim() : 'Idle',
+    assignedSupervisor:
+      (row.assignedSupervisor ?? row['Assigned Supervisor']) && mongoose.Types.ObjectId.isValid(String(row.assignedSupervisor ?? row['Assigned Supervisor']).trim())
+        ? String(row.assignedSupervisor ?? row['Assigned Supervisor']).trim()
+        : undefined,
+    capacityPerShift: num(row.capacityPerShift ?? row['Capacity Per Shift']),
+    capacityPerDay: num(row.capacityPerDay ?? row['Capacity Per Day']),
+    installationDate: parseDate(row.installationDate ?? row['Installation Date']),
+    maintenanceRequirement: str(row.maintenanceRequirement ?? row['Maintenance Requirement']),
+    lastMaintenanceDate: parseDate(row.lastMaintenanceDate ?? row['Last Maintenance Date']),
+    nextMaintenanceDate: parseDate(row.nextMaintenanceDate ?? row['Next Maintenance Date']),
+    maintenanceNotes: str(row.maintenanceNotes ?? row['Maintenance Notes']) ?? undefined,
+    isActive: row.isActive !== false,
+  };
+  if (needleSizeConfig.length > 0) body.needleSizeConfig = needleSizeConfig;
+  return body;
+};
+
+/**
+ * Extract machine ID from row (Excel "ID" column or API "id" / "_id").
+ * @param {Object} row
+ * @returns {string|undefined} - Valid ObjectId string or undefined
+ */
+const getMachineIdFromRow = (row) => {
+  const raw = row.id ?? row._id ?? row.ID ?? row['ID'];
+  if (raw == null || raw === '') return undefined;
+  const str = String(raw).trim();
+  return mongoose.Types.ObjectId.isValid(str) ? str : undefined;
+};
+
+/**
+ * Bulk import machines with batch processing.
+ * - If row has ID (Excel "ID" or API "id"/"_id") and that machine exists → UPDATE.
+ * - Otherwise → CREATE.
+ * @param {Array} machines - Array of machine objects (API or Excel row shape)
+ * @param {number} batchSize - Number of machines per batch
+ * @returns {Promise<Object>} - { total, created, updated, failed, errors, processingTime }
+ */
+const bulkImportMachines = async (machines, batchSize = 50) => {
+  const results = {
+    total: machines.length,
+    created: 0,
+    updated: 0,
+    failed: 0,
+    errors: [],
+    processingTime: 0,
+  };
+  const startTime = Date.now();
+
+  if (machines.length > 10000) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Maximum 10000 machines allowed per request');
+  }
+
+  for (let i = 0; i < machines.length; i += batchSize) {
+    const batch = machines.slice(i, i + batchSize);
+    await Promise.all(
+      batch.map(async (row, batchIndex) => {
+        const globalIndex = i + batchIndex + 1;
+        try {
+          const machineId = getMachineIdFromRow(row);
+          const body = normalizeMachineImportRow(row);
+
+          if (machineId) {
+            const existing = await Machine.findById(machineId);
+            if (!existing) {
+              results.failed += 1;
+              results.errors.push({
+                row: globalIndex,
+                message: 'Machine not found for given ID',
+                machineId,
+                machineCode: row.machineCode ?? row['Machine Code'],
+                machineNumber: row.machineNumber ?? row['Machine Number'],
+              });
+              return;
+            }
+            if (body.machineCode && (await Machine.isMachineCodeTaken(body.machineCode, machineId))) {
+              throw new ApiError(httpStatus.BAD_REQUEST, 'Machine code already taken');
+            }
+            if (body.machineNumber && (await Machine.isMachineNumberTaken(body.machineNumber, machineId))) {
+              throw new ApiError(httpStatus.BAD_REQUEST, 'Machine number already taken');
+            }
+            if (body.lastMaintenanceDate && (body.maintenanceRequirement || existing.maintenanceRequirement)) {
+              body.nextMaintenanceDate = existing.calculateNextMaintenanceDate(
+                body.lastMaintenanceDate,
+                body.maintenanceRequirement || existing.maintenanceRequirement
+              );
+            } else if (body.maintenanceRequirement && existing.lastMaintenanceDate) {
+              body.nextMaintenanceDate = existing.calculateNextMaintenanceDate(
+                existing.lastMaintenanceDate,
+                body.maintenanceRequirement
+              );
+            }
+            Object.assign(existing, body);
+            await existing.save();
+            results.updated += 1;
+          } else {
+            if (!body.machineCode && !body.machineNumber) {
+              results.failed += 1;
+              results.errors.push({ row: globalIndex, message: 'machineCode or machineNumber is required' });
+              return;
+            }
+            await createMachine(body);
+            results.created += 1;
+          }
+        } catch (err) {
+          results.failed += 1;
+          results.errors.push({
+            row: globalIndex,
+            message: err.message || 'Unknown error',
+            machineCode: row.machineCode ?? row['Machine Code'],
+            machineNumber: row.machineNumber ?? row['Machine Number'],
+          });
+        }
+      })
+    );
+  }
+
+  results.processingTime = Date.now() - startTime;
+  return results;
+};
+
+/**
  * Query for machines
  * @param {Object} filter - Mongo filter
  * @param {Object} options - Query options
@@ -809,6 +978,7 @@ const getAllMachinesUsageOverview = async (options = {}) => {
 
 export {
   createMachine,
+  bulkImportMachines,
   queryMachines,
   getMachineById,
   getMachineByCode,

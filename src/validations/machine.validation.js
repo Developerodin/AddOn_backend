@@ -168,6 +168,48 @@ const getMachinesNeedingMaintenance = {
   }),
 };
 
+const bulkImportMachines = {
+  body: Joi.object().keys({
+    machines: Joi.array()
+      .items(
+        Joi.object()
+          .keys({
+            machineCode: Joi.string().trim().allow('').optional(),
+            machineNumber: Joi.string().trim().allow('').optional(),
+            model: Joi.string().trim().allow('').optional(),
+            floor: Joi.string().trim().allow('').optional(),
+            company: Joi.string().trim().allow('').optional(),
+            machineType: Joi.string().trim().allow('').optional(),
+            status: Joi.string().valid('Active', 'Under Maintenance', 'Idle').default('Idle'),
+            assignedSupervisor: Joi.string().custom(objectId).allow('', null).optional(),
+            capacityPerShift: Joi.number().min(0).allow(null, '').optional(),
+            capacityPerDay: Joi.number().min(0).allow(null, '').optional(),
+            installationDate: Joi.date().allow(null).optional(),
+            maintenanceRequirement: Joi.string()
+              .valid('1 month', '3 months', '6 months', '12 months')
+              .allow('', null)
+              .optional(),
+            lastMaintenanceDate: Joi.date().allow(null).optional(),
+            nextMaintenanceDate: Joi.date().allow(null).optional(),
+            maintenanceNotes: Joi.string().trim().allow('').optional(),
+            isActive: Joi.boolean().default(true),
+            needleSizeConfig: Joi.array()
+              .items(
+                Joi.object({
+                  needleSize: Joi.string().trim().allow(''),
+                  cutoffQuantity: Joi.number().min(0).default(0),
+                })
+              )
+              .optional(),
+          })
+          .unknown(true)
+      )
+      .min(1)
+      .max(10000),
+    batchSize: Joi.number().integer().min(1).max(100).default(50),
+  }),
+};
+
 export {
   createMachine,
   getMachines,
@@ -178,6 +220,7 @@ export {
   assignSupervisor,
   deleteMachine,
   bulkDeleteMachines,
+  bulkImportMachines,
   getMachinesByStatus,
   getMachinesByFloor,
   getMachinesNeedingMaintenance,

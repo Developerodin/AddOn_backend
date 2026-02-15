@@ -141,6 +141,16 @@ const bulkDeleteMachines = catchAsync(async (req, res) => {
   });
 });
 
+const bulkImportMachines = catchAsync(async (req, res) => {
+  const { machines, batchSize } = req.body;
+  const results = await machineService.bulkImportMachines(machines, batchSize);
+  res.status(httpStatus.OK).json({
+    success: true,
+    message: `Imported ${results.total} machines: ${results.created} created, ${results.updated} updated. ${results.failed} failed.`,
+    data: results,
+  });
+});
+
 export {
   createMachine,
   getMachines,
@@ -161,4 +171,5 @@ export {
   getAllMachinesUsageOverview,
   deleteMachine,
   bulkDeleteMachines,
+  bulkImportMachines,
 };
