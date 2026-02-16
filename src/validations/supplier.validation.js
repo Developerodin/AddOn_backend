@@ -11,6 +11,10 @@ const yarnDetailsSchema = Joi.object().keys({
   }),
   yarnsubtype: Joi.string().custom(objectId).allow(null, ''),
   color: Joi.string().custom(objectId).required(),
+  /** Display name for color (maps to embedded color.name); optional, used when resolving color by ID */
+  colorName: Joi.string().trim().allow('', null),
+  /** Pantone name for color (maps to embedded color.pantoneName); optional */
+  pantoneName: Joi.string().trim().allow('', null),
   shadeNumber: Joi.string().allow('', null).trim(),
   tearweight: Joi.number().required(),
 }).or('yarnName', 'yarnType', 'yarnCatalogId').messages({
