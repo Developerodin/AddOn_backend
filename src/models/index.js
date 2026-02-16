@@ -27,6 +27,7 @@ import YarnCone from './yarnReq/yarnCone.model.js';
 import YarnTransaction from './yarnReq/yarnTransaction.model.js';
 import YarnInventory from './yarnReq/yarnInventory.model.js';
 import StorageSlot from './storageManagement/storageSlot.model.js';
+import Vendor from './vendor.model.js';
 
 export {
   Token,
@@ -58,4 +59,5 @@ export {
   YarnTransaction,
   YarnInventory,
   StorageSlot,
+  Vendor,
 };
