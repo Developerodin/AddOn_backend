@@ -63,6 +63,7 @@ const vendorSchema = mongoose.Schema(
       type: String,
       enum: ['active', 'inactive'],
       default: 'active',
+      lowercase: true,
     },
   },
   { timestamps: true }
@@ -70,6 +71,24 @@ const vendorSchema = mongoose.Schema(
 
 vendorSchema.plugin(toJSON);
 vendorSchema.plugin(paginate);
+
+vendorSchema.statics.isVendorCodeTaken = async function (vendorCode, excludeVendorId) {
+  if (!vendorCode) return false;
+  const vendor = await this.findOne({
+    vendorCode: vendorCode.toUpperCase(),
+    _id: { $ne: excludeVendorId },
+  });
+  return !!vendor;
+};
+
+vendorSchema.statics.isEmailTaken = async function (email, excludeVendorId) {
+  if (!email) return false;
+  const vendor = await this.findOne({
+    email: email.toLowerCase(),
+    _id: { $ne: excludeVendorId },
+  });
+  return !!vendor;
+};
 
 const Vendor = mongoose.model('Vendor', vendorSchema);
 

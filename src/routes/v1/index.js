@@ -36,6 +36,7 @@ import yarnTransactionRoute from './yarn/yarnTransaction.route.js';
 import yarnInventoryRoute from './yarn/yarnInventory.route.js';
 import storageRoute from './storage.route.js';
 import yarnReqRoute from './yarn/yarnReq.route.js';
+import vendorRoute from './vendor.route.js';
 import config from '../../config/config.js';
 
 const router = express.Router();
@@ -184,6 +185,10 @@ const defaultRoutes = [
   {
     path: '/storage',
     route: storageRoute,
+  },
+  {
+    path: '/vendors',
+    route: vendorRoute,
   },
 ];
 

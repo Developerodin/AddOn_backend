@@ -1,0 +1,168 @@
+{
+  "info": {
+    "name": "Vendors API",
+    "description": "Collection for testing Vendor CRUD operations",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Create Vendor",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"vendorName\": \"ABC Textiles\",\n  \"vendorCode\": \"VEND001\",\n  \"contactPerson\": \"Rahul Shah\",\n  \"phone\": \"+91-9876543210\",\n  \"email\": \"rahul@abctextiles.com\",\n  \"address\": \"B-21 Industrial Estate, Surat\",\n  \"gstin\": \"24ABCDE1234F1Z5\",\n  \"remarks\": \"Preferred yarn vendor\",\n  \"status\": \"active\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/vendors",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "vendors"]
+        }
+      }
+    },
+    {
+      "name": "Get All Vendors",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/v1/vendors?limit=10&page=1&sortBy=createdAt:desc",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "vendors"],
+          "query": [
+            {
+              "key": "limit",
+              "value": "10"
+            },
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "sortBy",
+              "value": "createdAt:desc"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Vendor by ID",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/v1/vendors/{{vendorId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "vendors", "{{vendorId}}"]
+        }
+      }
+    },
+    {
+      "name": "Update Vendor",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"contactPerson\": \"Nitin Mehta\",\n  \"phone\": \"+91-9999999999\",\n  \"remarks\": \"Updated contact person and number\",\n  \"status\": \"inactive\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/vendors/{{vendorId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "vendors", "{{vendorId}}"]
+        }
+      }
+    },
+    {
+      "name": "Delete Vendor",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/v1/vendors/{{vendorId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "vendors", "{{vendorId}}"]
+        }
+      }
+    },
+    {
+      "name": "Search Vendors",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/v1/vendors?search=abc&status=active",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "vendors"],
+          "query": [
+            {
+              "key": "search",
+              "value": "abc"
+            },
+            {
+              "key": "status",
+              "value": "active"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "vendorId",
+      "value": "your-vendor-id-here",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "your-jwt-access-token-here",
+      "type": "string"
+    }
+  ]
+}
