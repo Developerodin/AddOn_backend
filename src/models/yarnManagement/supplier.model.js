@@ -44,6 +44,10 @@ const embeddedColorSchema = mongoose.Schema(
       required: true,
       trim: true,
     },
+    pantoneName: {
+      type: String,
+      trim: true,
+    },
     status: {
       type: String,
       enum: ['active', 'inactive', 'deleted'],
@@ -344,6 +348,7 @@ supplierSchema.pre('save', async function (next) {
                 _id: color._id,
                 name: colorNameToUse, // Preserve original name if provided
                 colorCode: color.colorCode,
+                pantoneName: color.pantoneName,
                 status: color.status,
               };
             } else {
@@ -351,6 +356,7 @@ supplierSchema.pre('save', async function (next) {
                 _id: colorId,
                 name: originalColorName || 'Unknown',
                 colorCode: '#000000',
+                pantoneName: undefined,
                 status: 'deleted',
               };
             }
@@ -360,6 +366,7 @@ supplierSchema.pre('save', async function (next) {
               _id: mongoose.Types.ObjectId.isValid(detail.color) ? detail.color : new mongoose.Types.ObjectId(detail.color),
               name: originalColorName || 'Unknown',
               colorCode: '#000000',
+              pantoneName: undefined,
               status: 'deleted',
             };
           }

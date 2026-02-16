@@ -74,6 +74,10 @@ const poItemSchema = mongoose.Schema(
       type: String,
       trim: true,
     },
+    pantoneName: {
+      type: String,
+      trim: true,
+    },
     rate: {
       type: Number,
       required: true,

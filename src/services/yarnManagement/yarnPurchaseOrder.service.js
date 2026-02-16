@@ -4,6 +4,29 @@ import ApiError from '../../utils/ApiError.js';
 import { yarnPurchaseOrderStatuses, lotStatuses } from '../../models/yarnReq/yarnPurchaseOrder.model.js';
 import * as supplierService from './supplier.service.js';
 
+/**
+ * Enriches each PO line item with yarn subtype and colour for Excel/API consumers.
+ * Sets item.yarnSubtype, item.colour, and item.yarn.subtype, item.yarn.colour.
+ * @param {Object} po - Purchase order (plain object or doc with poItems)
+ */
+const enrichPoItemsWithSubtypeAndColour = (po) => {
+  if (!po?.poItems?.length) return;
+  po.poItems.forEach((item) => {
+    const yarn = item.yarn;
+    const subtype =
+      yarn?.yarnSubtype && typeof yarn.yarnSubtype === 'object'
+        ? yarn.yarnSubtype.subtype
+        : yarn?.yarnSubtype ?? null;
+    const colour = yarn?.colorFamily?.name ?? yarn?.colorFamily?.colorCode ?? null;
+    item.yarnSubtype = subtype ?? null;
+    item.colour = colour ?? null;
+    if (yarn && typeof yarn === 'object') {
+      yarn.subtype = subtype ?? null;
+      yarn.colour = colour ?? null;
+    }
+  });
+};
+
 export const getPurchaseOrders = async ({ startDate, endDate, statusCode }) => {
   const start = new Date(startDate);
   start.setHours(0, 0, 0, 0);
@@ -28,11 +51,12 @@ export const getPurchaseOrders = async ({ startDate, endDate, statusCode }) => {
   })
     .populate({
       path: 'poItems.yarn',
-      select: '_id yarnName yarnType status',
+      select: '_id yarnName yarnType status yarnSubtype colorFamily',
     })
     .sort({ createDate: -1 })
     .lean();
 
+  purchaseOrders.forEach(enrichPoItemsWithSubtypeAndColour);
   return purchaseOrders;
 };
 
@@ -44,9 +68,11 @@ export const getPurchaseOrderById = async (purchaseOrderId) => {
     })
     .populate({
       path: 'poItems.yarn',
-      select: '_id yarnName yarnType status',
-    });
+      select: '_id yarnName yarnType status yarnSubtype colorFamily',
+    })
+    .lean();
 
+  if (purchaseOrder) enrichPoItemsWithSubtypeAndColour(purchaseOrder);
   return purchaseOrder;
 };
 
@@ -63,10 +89,11 @@ export const getPurchaseOrderByPoNumber = async (poNumber) => {
     })
     .populate({
       path: 'poItems.yarn',
-      select: '_id yarnName yarnType status',
+      select: '_id yarnName yarnType status yarnSubtype colorFamily',
     })
     .lean();
 
+  if (purchaseOrder) enrichPoItemsWithSubtypeAndColour(purchaseOrder);
   return purchaseOrder;
 };
 
