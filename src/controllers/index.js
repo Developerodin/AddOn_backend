@@ -12,6 +12,7 @@ import * as salesController from './sales.controller.js';
 import * as analyticsController from './analytics.controller.js';
 import * as machineController from './machine.controller.js';
 import * as orderController from './order.controller.js';
+import * as vendorController from './vendor.controller.js';
 
 export { 
   authController, 
@@ -27,6 +28,7 @@ export {
   salesController,
   analyticsController,
   machineController,
-  orderController
+  orderController,
+  vendorController
 };
 
