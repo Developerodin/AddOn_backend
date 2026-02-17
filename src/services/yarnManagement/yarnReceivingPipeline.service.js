@@ -612,14 +612,26 @@ export const processFromExistingPo = async ({
     boxUpdates: [], // Will generate below
   }));
 
+  // Resolve yarnName per lot from PO's poItems (first poItem in lot)
+  const poItems = purchaseOrder.poItems || [];
+  const getYarnNameForLot = (lot) => {
+    const firstRef = (lot.poItems || [])[0]?.poItem;
+    if (!firstRef) return null;
+    const id = typeof firstRef === 'string' ? firstRef : firstRef?.toString?.();
+    const item = poItems.find((i) => i._id && i._id.toString() === id);
+    return (item?.yarn?.yarnName || item?.yarnName || '').trim() || null;
+  };
+
   // Generate boxUpdates from lot totals (distribute weight and cones across boxes)
   for (const lot of lots) {
+    const yarnName = getYarnNameForLot(lot);
     const n = Math.max(1, lot.numberOfBoxes);
     const perBoxWeight = (lot.totalWeight || 0) / n;
     const perBoxCones = Math.floor((lot.numberOfCones || 0) / n);
     const remainder = (lot.numberOfCones || 0) % n;
     for (let i = 0; i < n; i++) {
       lot.boxUpdates.push({
+        ...(yarnName && { yarnName }),
         boxWeight: perBoxWeight,
         numberOfCones: i < n - 1 ? perBoxCones : perBoxCones + remainder,
       });

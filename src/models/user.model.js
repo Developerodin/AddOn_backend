@@ -83,7 +83,9 @@ const userSchema = mongoose.Schema(
           Attributes: false,
           'Style Codes': false,
           Machines: false,
-          'Needle Configuration': false
+          'Needle Configuration': false,
+          'Team Master': false,
+          'Containers Master': false
         },
         Sales: {
           'All Sales': false,

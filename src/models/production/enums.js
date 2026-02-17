@@ -65,6 +65,24 @@ const RepairStatus = {
   REJECTED: 'Rejected'
 };
 
+// Team Master – role of the person
+const TeamRole = {
+  SUPERVISOR: 'Supervisor',
+  TEAM_MEMBER: 'Team Member'
+};
+
+// Team Master – record status
+const TeamMemberStatus = {
+  ACTIVE: 'Active',
+  INACTIVE: 'Inactive'
+};
+
+// Containers Master – container status
+const ContainerStatus = {
+  ACTIVE: 'Active',
+  INACTIVE: 'Inactive'
+};
+
 // Complete list of all loggable actions
 const LogAction = {
   // Order Management
@@ -164,5 +182,8 @@ export {
   ProductionFloor,
   QualityCategory,
   RepairStatus,
-  LogAction
+  LogAction,
+  TeamRole,
+  TeamMemberStatus,
+  ContainerStatus
 };

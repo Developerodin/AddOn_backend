@@ -1,0 +1,59 @@
+import mongoose from 'mongoose';
+import { paginate } from '../plugins/index.js';
+import { ProductionFloor, ContainerStatus } from './enums.js';
+
+/**
+ * Containers Master Model
+ * Stores containers with name, barcode (_id), container floor and status.
+ */
+const containersMasterSchema = new mongoose.Schema(
+  {
+    /** Display name for the container */
+    containerName: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    /** Barcode: stores _id (MongoDB id) for scan lookup; set automatically on create */
+    barcode: {
+      type: String,
+      trim: true,
+      unique: true,
+      sparse: true,
+      index: true,
+    },
+    /** Floor where the container is located */
+    containerFloor: {
+      type: String,
+      required: true,
+      enum: Object.values(ProductionFloor),
+      index: true,
+    },
+    /** Container status */
+    status: {
+      type: String,
+      required: true,
+      enum: Object.values(ContainerStatus),
+      default: ContainerStatus.ACTIVE,
+      index: true,
+    },
+  },
+  {
+    timestamps: true,
+    collection: 'containers_masters',
+  }
+);
+
+containersMasterSchema.pre('save', function (next) {
+  if (this.isNew && !this.barcode) {
+    this.barcode = this._id ? this._id.toString() : null;
+  }
+  if (this.barcode === '' || this.barcode === null) this.barcode = this._id?.toString();
+  next();
+});
+
+containersMasterSchema.index({ containerFloor: 1, status: 1 });
+containersMasterSchema.index({ containerName: 1 });
+containersMasterSchema.plugin(paginate);
+
+export default mongoose.model('ContainersMaster', containersMasterSchema);

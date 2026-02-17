@@ -37,6 +37,8 @@ import yarnInventoryRoute from './yarn/yarnInventory.route.js';
 import storageRoute from './storage.route.js';
 import yarnReqRoute from './yarn/yarnReq.route.js';
 import vendorRoute from './vendor.route.js';
+import teamMasterRoute from './teamMaster.route.js';
+import containersMasterRoute from './containersMaster.route.js';
 import config from '../../config/config.js';
 
 const router = express.Router();
@@ -189,6 +191,14 @@ const defaultRoutes = [
   {
     path: '/vendors',
     route: vendorRoute,
+  },
+  {
+    path: '/team-masters',
+    route: teamMasterRoute,
+  },
+  {
+    path: '/containers-masters',
+    route: containersMasterRoute,
   },
 ];
 
