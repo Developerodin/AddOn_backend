@@ -220,17 +220,11 @@ export const generateConesByBox = async (boxId, options = {}) => {
 
   const createdCones = await YarnCone.insertMany(conesToCreate);
 
+  // Only set numberOfCones when generating cone records. Do NOT set conesIssued/coneIssueDate
+  // here — those mean "cones have been issued to production/ST"; they are set when cones
+  // are actually moved to short-term storage (yarnCone post-save / storageSlot).
   yarnBox.set('numberOfCones', numberOfCones);
-  yarnBox.set('coneData.conesIssued', true);
   yarnBox.set('coneData.numberOfCones', numberOfCones);
-  yarnBox.set(
-    'coneData.coneIssueDate',
-    toDate(options.coneIssueDate) ?? new Date()
-  );
-
-  if (options.coneIssueBy) {
-    yarnBox.set('coneData.coneIssueBy', options.coneIssueBy);
-  }
 
   await yarnBox.save();
 

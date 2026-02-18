@@ -121,11 +121,43 @@ export const queryYarnBoxes = async (filters = {}) => {
   return yarnBoxes;
 };
 
+/**
+ * Resolve yarnName and shadeCode for a lot from PO when the lot has exactly one poItem.
+ * Uses PO's poItems (with populated yarn) and receivedLotDetails. Returns nulls when lot has multiple poItems.
+ * @param {Object} po - Purchase order (lean) with poItems.yarn populated and receivedLotDetails
+ * @param {string} lotNumber - Lot number
+ * @returns {{ yarnName: string | null, shadeCode: string | null }}
+ */
+const getYarnAndShadeForLotFromPo = (po, lotNumber) => {
+  const receivedLots = po?.receivedLotDetails || [];
+  const lot = receivedLots.find((l) => (l.lotNumber || '').trim() === (lotNumber || '').trim());
+  const lotPoItems = lot?.poItems || [];
+  if (lotPoItems.length !== 1) return { yarnName: null, shadeCode: null };
+  const poItemId = typeof lotPoItems[0].poItem === 'string' ? lotPoItems[0].poItem : lotPoItems[0].poItem?.toString?.();
+  if (!poItemId) return { yarnName: null, shadeCode: null };
+  const poItems = po?.poItems || [];
+  const item = poItems.find((i) => i._id && i._id.toString() === poItemId);
+  const yarnName = (item?.yarn?.yarnName || item?.yarnName || '').trim() || null;
+  const shadeCode = (item?.shadeCode || item?.shade || item?.yarn?.colorFamily?.colorCode || '')?.trim?.() || null;
+  return { yarnName, shadeCode };
+};
+
 export const bulkCreateYarnBoxes = async (bulkData) => {
   const { lotDetails, poNumber } = bulkData;
 
   if (!lotDetails || !Array.isArray(lotDetails) || lotDetails.length === 0) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'lotDetails array is required with at least one lot');
+  }
+
+  // Fetch PO once to resolve yarnName/shadeCode per lot (backend as source of truth; avoids wrong frontend-derived names)
+  let purchaseOrder = null;
+  try {
+    purchaseOrder = await YarnPurchaseOrder.findOne({ poNumber })
+      .populate({ path: 'poItems.yarn', select: '_id yarnName colorFamily' })
+      .select('poItems receivedLotDetails')
+      .lean();
+  } catch {
+    // Non-fatal: we'll use placeholder yarnName if PO not found
   }
 
   // Check each lot individually and create boxes only for lots that don't exist
@@ -159,21 +191,27 @@ export const bulkCreateYarnBoxes = async (bulkData) => {
       continue;
     }
 
+    const { yarnName: resolvedYarnName, shadeCode: resolvedShadeCode } = purchaseOrder
+      ? getYarnAndShadeForLotFromPo(purchaseOrder, lotNumber)
+      : { yarnName: null, shadeCode: null };
+    const yarnName = (resolvedYarnName && resolvedYarnName.trim()) || `Yarn-${poNumber}`;
+
     // Create boxes for this lot
     for (let i = 0; i < numberOfBoxes; i++) {
       const boxId = `BOX-${poNumber}-${lotNumber}-${baseTimestamp}-${boxCounter}`;
       // Generate unique barcode using ObjectId (insertMany doesn't trigger pre-save hooks)
       const uniqueBarcode = new mongoose.Types.ObjectId().toString();
 
-      boxesToCreate.push({
+      const boxPayload = {
         boxId,
         poNumber,
         lotNumber,
         barcode: uniqueBarcode,
-        // Set only required fields with defaults
-        yarnName: `Yarn-${poNumber}`, // Default, will be updated later
-        receivedDate: new Date(), // Default to current date
-      });
+        yarnName,
+        receivedDate: new Date(),
+      };
+      if (resolvedShadeCode) boxPayload.shadeCode = resolvedShadeCode;
+      boxesToCreate.push(boxPayload);
       boxCounter++;
     }
   }

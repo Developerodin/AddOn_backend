@@ -341,33 +341,39 @@ export const updateLotStatusAndQcApprove = async (poNumber, lotNumber, lotStatus
  * @returns {Promise<{ purchaseOrder, deletedConesCount, deletedBoxesCount, message }>}
  */
 export const deleteLotByPoAndLotNumber = async (poNumber, lotNumber) => {
-  const purchaseOrder = await YarnPurchaseOrder.findOne({ poNumber });
+  const po = (poNumber || '').trim();
+  const lot = (lotNumber || '').trim();
+  if (!po || !lot) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'poNumber and lotNumber are required');
+  }
+
+  const purchaseOrder = await YarnPurchaseOrder.findOne({ poNumber: po });
   if (!purchaseOrder) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Purchase order not found');
   }
 
-  const hasLot = purchaseOrder.receivedLotDetails?.some((lot) => lot.lotNumber === lotNumber);
+  const hasLot = purchaseOrder.receivedLotDetails?.some((l) => (l.lotNumber || '').trim() === lot);
   if (!hasLot) {
-    throw new ApiError(httpStatus.NOT_FOUND, `Lot ${lotNumber} not found in received lot details`);
+    throw new ApiError(httpStatus.NOT_FOUND, `Lot ${lot} not found in received lot details`);
   }
 
-  const boxes = await YarnBox.find({ poNumber, lotNumber }).select('boxId').lean();
+  const boxes = await YarnBox.find({ poNumber: po, lotNumber: lot }).select('boxId').lean();
   const boxIds = boxes.map((b) => b.boxId);
 
   const conesResult = await YarnCone.deleteMany({
-    poNumber,
+    poNumber: po,
     boxId: { $in: boxIds },
   });
   const deletedConesCount = conesResult.deletedCount ?? 0;
 
-  const boxesResult = await YarnBox.deleteMany({ poNumber, lotNumber });
+  const boxesResult = await YarnBox.deleteMany({ poNumber: po, lotNumber: lot });
   const deletedBoxesCount = boxesResult.deletedCount ?? 0;
 
   await YarnPurchaseOrder.updateOne(
-    { poNumber },
-    { $pull: { receivedLotDetails: { lotNumber } } }
+    { poNumber: po },
+    { $pull: { receivedLotDetails: { lotNumber: lot } } }
   );
-  const updatedPo = await YarnPurchaseOrder.findOne({ poNumber })
+  const updatedPo = await YarnPurchaseOrder.findOne({ poNumber: po })
     .populate({ path: 'supplier', select: '_id brandName' })
     .populate({ path: 'poItems.yarn', select: '_id yarnName' })
     .lean();
@@ -376,7 +382,7 @@ export const deleteLotByPoAndLotNumber = async (poNumber, lotNumber) => {
     purchaseOrder: updatedPo,
     deletedConesCount,
     deletedBoxesCount,
-    message: `Lot ${lotNumber} deleted: ${deletedConesCount} cones, ${deletedBoxesCount} boxes removed; lot removed from PO.`,
+    message: `Lot ${lot} deleted: ${deletedConesCount} cones, ${deletedBoxesCount} boxes removed; lot removed from PO.`,
   };
 };
 

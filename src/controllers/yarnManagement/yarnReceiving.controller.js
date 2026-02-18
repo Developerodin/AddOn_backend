@@ -30,10 +30,8 @@ export const processFromExistingPo = catchAsync(async (req, res) => {
 
 /**
  * POST /v1/yarn-management/yarn-receiving/process
+ * Normal flow (e.g. step-by-step or multi-PO with append). Appends pack list and received lots per PO.
  * Body: { items: [{ poNumber, packing?, lots, notes? }], notes?, autoApproveQc? }
- * Runs full receiving pipeline per PO (pack list + in_transit → received lots → create boxes → update box weight/cones).
- * updated_by is set from req.user (username, user_id).
- * If autoApproveQc is true and data matches, QC is auto-approved.
  */
 export const processReceiving = catchAsync(async (req, res) => {
   const { items, notes, autoApproveQc } = req.body;
@@ -42,7 +40,6 @@ export const processReceiving = catchAsync(async (req, res) => {
     user_id: req.user?.id || req.user?._id?.toString?.() || '',
   };
 
-  // Process each item with auto-approval if enabled
   const results = [];
   let successCount = 0;
   let failCount = 0;
@@ -68,6 +65,78 @@ export const processReceiving = catchAsync(async (req, res) => {
         updatedBy,
         notes: item.notes ?? notes,
         autoApproveQc: item.autoApproveQc ?? autoApproveQc ?? true,
+        replacePackListAndLots: false,
+      });
+      results.push({
+        poNumber,
+        success: r.success,
+        message: r.message,
+        purchaseOrder: r.purchaseOrder,
+        boxesCreated: r.boxesCreated,
+        boxesUpdated: r.boxesUpdated,
+        errors: r.errors || [],
+      });
+      if (r.success) successCount += 1;
+      else failCount += 1;
+    } catch (err) {
+      results.push({
+        poNumber,
+        success: false,
+        message: err.message || String(err),
+        errors: [{ error: err.message || String(err) }],
+      });
+      failCount += 1;
+    }
+  }
+
+  res.status(httpStatus.OK).send({
+    results,
+    summary: {
+      total: results.length,
+      success: successCount,
+      failed: failCount,
+    },
+  });
+});
+
+/**
+ * POST /v1/yarn-management/yarn-receiving/process-excel
+ * Excel process flow only. Replaces pack list and received lots for each PO (no append → no duplicate).
+ * Body: same as /process — { items: [{ poNumber, packing?, lots, notes? }], notes?, autoApproveQc? }
+ */
+export const processExcel = catchAsync(async (req, res) => {
+  const { items, notes, autoApproveQc } = req.body;
+  const updatedBy = {
+    username: req.user?.email || req.user?.username || 'system',
+    user_id: req.user?.id || req.user?._id?.toString?.() || '',
+  };
+
+  const results = [];
+  let successCount = 0;
+  let failCount = 0;
+
+  for (const item of items || []) {
+    const poNumber = (item.poNumber || '').trim();
+    if (!poNumber) {
+      results.push({
+        poNumber: null,
+        success: false,
+        message: 'Missing poNumber',
+        errors: [],
+      });
+      failCount += 1;
+      continue;
+    }
+
+    try {
+      const r = await yarnReceivingPipelineService.runReceivingPipelineForPo({
+        poNumber,
+        packing: item.packing || {},
+        lots: item.lots || [],
+        updatedBy,
+        notes: item.notes ?? notes,
+        autoApproveQc: item.autoApproveQc ?? autoApproveQc ?? true,
+        replacePackListAndLots: true,
       });
       results.push({
         poNumber,

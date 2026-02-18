@@ -105,6 +105,17 @@ export const processReceiving = {
     .required(),
 };
 
+/** Same body as processReceiving; used for POST /process-excel (Excel flow – replace pack list/lots, no duplicate). */
+export const processExcelReceiving = {
+  body: Joi.object()
+    .keys({
+      items: Joi.array().items(itemSchema).min(1).required(),
+      notes: Joi.string().trim().allow('', null),
+      autoApproveQc: Joi.boolean().default(true),
+    })
+    .required(),
+};
+
 export const processReceivingStepByStep = {
   body: Joi.object()
     .keys({

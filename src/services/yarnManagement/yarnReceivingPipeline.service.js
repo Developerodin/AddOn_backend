@@ -86,6 +86,55 @@ const checkDataMatch = (purchaseOrder, lots) => {
 };
 
 /**
+ * Build payload for updating a yarn box. Only includes yarnName/shadeCode when explicitly set on update
+ * or when overrides are provided (e.g. PO-derived so we don't overwrite with wrong frontend value).
+ * @param {Object} update - { yarnName?, shadeCode?, boxWeight?, numberOfCones? }
+ * @param {Object} box - existing box (for fallback weight/cones)
+ * @param {{ yarnName?: string | null, shadeCode?: string | null }} [overrides] - PO-derived yarnName/shadeCode (take precedence over update)
+ * @returns {Object} - payload for updateYarnBoxById
+ */
+const buildBoxUpdatePayload = (update, box, overrides = {}) => {
+  const payload = {
+    boxWeight: update.boxWeight != null ? Number(update.boxWeight) : box.boxWeight,
+    numberOfCones: update.numberOfCones != null ? Number(update.numberOfCones) : box.numberOfCones,
+  };
+  const yarnVal = overrides.yarnName != null && String(overrides.yarnName).trim() !== ''
+    ? String(overrides.yarnName).trim()
+    : (update.yarnName != null ? String(update.yarnName).trim() : null);
+  if (yarnVal !== null && yarnVal !== '') {
+    payload.yarnName = yarnVal;
+  }
+  const shadeVal = overrides.shadeCode != null
+    ? (typeof overrides.shadeCode === 'string' ? overrides.shadeCode.trim() : String(overrides.shadeCode ?? ''))
+    : (update.shadeCode != null ? (typeof update.shadeCode === 'string' ? update.shadeCode.trim() : String(update.shadeCode ?? '')) : null);
+  if (shadeVal !== null && shadeVal !== undefined) {
+    payload.shadeCode = shadeVal;
+  }
+  return payload;
+};
+
+/**
+ * Resolve yarnName and shadeCode for a lot from PO when the lot has exactly one poItem.
+ * Used so Step 4 uses PO as source of truth instead of frontend boxUpdates (which may send wrong yarnName).
+ * @param {Object} po - PO with poItems (yarn populated) and receivedLotDetails
+ * @param {string} lotNumber - Lot number
+ * @returns {{ yarnName: string | null, shadeCode: string | null }}
+ */
+const getYarnAndShadeForLotFromPo = (po, lotNumber) => {
+  const receivedLots = po?.receivedLotDetails || [];
+  const lot = receivedLots.find((l) => (l.lotNumber || '').trim() === (lotNumber || '').trim());
+  const lotPoItems = lot?.poItems || [];
+  if (lotPoItems.length !== 1) return { yarnName: null, shadeCode: null };
+  const poItemId = typeof lotPoItems[0].poItem === 'string' ? lotPoItems[0].poItem : lotPoItems[0].poItem?.toString?.();
+  if (!poItemId) return { yarnName: null, shadeCode: null };
+  const poItems = po?.poItems || [];
+  const item = poItems.find((i) => i._id && i._id.toString() === poItemId);
+  const yarnName = (item?.yarn?.yarnName || item?.yarnName || '').trim() || null;
+  const shadeCode = (item?.shadeCode || item?.shade || item?.yarn?.colorFamily?.colorCode || '')?.trim?.() || null;
+  return { yarnName, shadeCode };
+};
+
+/**
  * Step 1: Update PO to in_transit with packing details
  * @param {Object} params
  * @param {string} params.poNumber - PO number
@@ -264,12 +313,7 @@ export const updateBoxDetails = async ({ poNumber, lots }) => {
       const box = boxes[i];
       if (!box || !box._id) continue;
       try {
-        await yarnBoxService.updateYarnBoxById(box._id.toString(), {
-          yarnName: (update.yarnName || box.yarnName || '').trim() || box.yarnName,
-          shadeCode: (update.shadeCode != null ? update.shadeCode : box.shadeCode)?.trim?.() ?? box.shadeCode,
-          boxWeight: update.boxWeight != null ? Number(update.boxWeight) : box.boxWeight,
-          numberOfCones: update.numberOfCones != null ? Number(update.numberOfCones) : box.numberOfCones,
-        });
+        await yarnBoxService.updateYarnBoxById(box._id.toString(), buildBoxUpdatePayload(update, box));
         updatedCount += 1;
       } catch (err) {
         errors.push({
@@ -350,9 +394,18 @@ export const approveQc = async ({ poNumber, lotNumber, updatedBy, notes, qcData 
  * @param {Object} params.updatedBy - { username, user_id }
  * @param {string} [params.notes] - optional notes for status log
  * @param {boolean} [params.autoApproveQc] - if true and data matches, auto-approve QC (default true for Excel flow)
+ * @param {boolean} [params.replacePackListAndLots] - if true (Excel flow), replace pack list and received lots for this PO instead of appending; prevents duplicates
  * @returns {Promise<Object>} - { success, message, purchaseOrder, boxesCreated, boxesUpdated, errors }
  */
-export const runReceivingPipelineForPo = async ({ poNumber, packing, lots, updatedBy, notes, autoApproveQc = true }) => {
+export const runReceivingPipelineForPo = async ({
+  poNumber,
+  packing,
+  lots,
+  updatedBy,
+  notes,
+  autoApproveQc = true,
+  replacePackListAndLots = false,
+}) => {
   const result = {
     success: false,
     message: '',
@@ -420,10 +473,11 @@ export const runReceivingPipelineForPo = async ({ poNumber, packing, lots, updat
 
   try {
     // Step 1a: PATCH PO with packListDetails and receivedLotDetails (both at root)
+    // Excel flow: replace so one submission = one pack list/lots per PO (no duplicate). Normal flow (step-by-step) uses append.
     const existingPackList = purchaseOrder.packListDetails || [];
     const existingReceivedLots = purchaseOrder.receivedLotDetails || [];
-    const newPackList = [...existingPackList, packListEntry];
-    const newReceivedLots = [...existingReceivedLots, ...receivedLotDetails];
+    const newPackList = replacePackListAndLots ? [packListEntry] : [...existingPackList, packListEntry];
+    const newReceivedLots = replacePackListAndLots ? receivedLotDetails : [...existingReceivedLots, ...receivedLotDetails];
 
     await yarnPurchaseOrderService.updatePurchaseOrderById(poId, {
       packListDetails: newPackList,
@@ -446,7 +500,16 @@ export const runReceivingPipelineForPo = async ({ poNumber, packing, lots, updat
 
     result.boxesCreated = bulkResult.createdCount || 0;
 
-    // Step 4: Update each box with yarnName, shadeCode, boxWeight, numberOfCones
+    // Step 4: Update each box with yarnName, shadeCode, boxWeight, numberOfCones.
+    // Use PO as source of truth for yarnName/shadeCode (per lot, when lot has single poItem) so we don't
+    // overwrite with wrong frontend-derived values (e.g. "2/60s-Kora-Kora-Cotton" instead of "2/60s-Ecru-Kora-Cotton/Giza Cotton").
+    const poForBoxUpdates = await yarnPurchaseOrderService.getPurchaseOrderById(poId);
+    const lotToYarnShade = new Map();
+    for (const lot of lots || []) {
+      const ln = (lot.lotNumber || '').trim();
+      if (ln) lotToYarnShade.set(ln, getYarnAndShadeForLotFromPo(poForBoxUpdates, ln));
+    }
+
     const lotNumbers = lots.map((l) => (l.lotNumber || '').trim()).filter(Boolean);
     const boxesByLot =
       lotNumbers.length > 0
@@ -467,17 +530,16 @@ export const runReceivingPipelineForPo = async ({ poNumber, packing, lots, updat
       const lotNumber = (lot.lotNumber || '').trim();
       const boxUpdates = lot.boxUpdates || [];
       const boxes = lotToBoxes.get(lotNumber) || [];
+      const yarnShadeOverride = lotToYarnShade.get(lotNumber) || {};
       for (let i = 0; i < boxUpdates.length && i < boxes.length; i++) {
         const update = boxUpdates[i];
         const box = boxes[i];
         if (!box || !box._id) continue;
         try {
-          await yarnBoxService.updateYarnBoxById(box._id.toString(), {
-            yarnName: (update.yarnName || box.yarnName || '').trim() || box.yarnName,
-            shadeCode: (update.shadeCode != null ? update.shadeCode : box.shadeCode)?.trim?.() ?? box.shadeCode,
-            boxWeight: update.boxWeight != null ? Number(update.boxWeight) : box.boxWeight,
-            numberOfCones: update.numberOfCones != null ? Number(update.numberOfCones) : box.numberOfCones,
-          });
+          await yarnBoxService.updateYarnBoxById(
+            box._id.toString(),
+            buildBoxUpdatePayload(update, box, yarnShadeOverride)
+          );
           updatedCount += 1;
         } catch (err) {
           result.errors.push({
@@ -575,7 +637,7 @@ export const processFromExistingPo = async ({
     return result;
   }
 
-  // If request provides packListDetails and/or receivedLotDetails, update PO first (merge with existing)
+  // If request provides packListDetails and/or receivedLotDetails, update PO first (full replace; no append)
   if (
     (requestPackList && Array.isArray(requestPackList) && requestPackList.length > 0) ||
     (requestReceivedLots && Array.isArray(requestReceivedLots) && requestReceivedLots.length > 0)
@@ -612,29 +674,35 @@ export const processFromExistingPo = async ({
     boxUpdates: [], // Will generate below
   }));
 
-  // Resolve yarnName per lot from PO's poItems (first poItem in lot)
+  // Resolve yarnName/shadeCode per lot only when lot has a single poItem (else one value would overwrite all boxes wrongly)
   const poItems = purchaseOrder.poItems || [];
-  const getYarnNameForLot = (lot) => {
-    const firstRef = (lot.poItems || [])[0]?.poItem;
-    if (!firstRef) return null;
+  const getYarnAndShadeForLot = (lot) => {
+    const lotPoItems = lot.poItems || [];
+    if (lotPoItems.length !== 1) return { yarnName: null, shadeCode: null };
+    const firstRef = lotPoItems[0]?.poItem;
+    if (!firstRef) return { yarnName: null, shadeCode: null };
     const id = typeof firstRef === 'string' ? firstRef : firstRef?.toString?.();
     const item = poItems.find((i) => i._id && i._id.toString() === id);
-    return (item?.yarn?.yarnName || item?.yarnName || '').trim() || null;
+    const yarnName = (item?.yarn?.yarnName || item?.yarnName || '').trim() || null;
+    const shadeCode = (item?.shadeCode || item?.shade || item?.yarn?.shadeCode || '')?.trim?.() || null;
+    return { yarnName, shadeCode };
   };
 
   // Generate boxUpdates from lot totals (distribute weight and cones across boxes)
   for (const lot of lots) {
-    const yarnName = getYarnNameForLot(lot);
+    const { yarnName, shadeCode } = getYarnAndShadeForLot(lot);
     const n = Math.max(1, lot.numberOfBoxes);
     const perBoxWeight = (lot.totalWeight || 0) / n;
     const perBoxCones = Math.floor((lot.numberOfCones || 0) / n);
     const remainder = (lot.numberOfCones || 0) % n;
     for (let i = 0; i < n; i++) {
-      lot.boxUpdates.push({
-        ...(yarnName && { yarnName }),
+      const entry = {
         boxWeight: perBoxWeight,
         numberOfCones: i < n - 1 ? perBoxCones : perBoxCones + remainder,
-      });
+      };
+      if (yarnName) entry.yarnName = yarnName;
+      if (shadeCode) entry.shadeCode = shadeCode;
+      lot.boxUpdates.push(entry);
     }
   }
 
@@ -711,12 +779,7 @@ export const processFromExistingPo = async ({
         const box = boxes[i];
         if (!box || !box._id) continue;
         try {
-          await yarnBoxService.updateYarnBoxById(box._id.toString(), {
-            yarnName: (update.yarnName || box.yarnName || '').trim() || box.yarnName,
-            shadeCode: (update.shadeCode != null ? update.shadeCode : box.shadeCode)?.trim?.() ?? box.shadeCode,
-            boxWeight: update.boxWeight != null ? Number(update.boxWeight) : box.boxWeight,
-            numberOfCones: update.numberOfCones != null ? Number(update.numberOfCones) : box.numberOfCones,
-          });
+          await yarnBoxService.updateYarnBoxById(box._id.toString(), buildBoxUpdatePayload(update, box));
           updatedCount += 1;
         } catch (err) {
           result.errors.push({ lotNumber, boxIndex: i, boxId: box.boxId, error: err.message || String(err) });
