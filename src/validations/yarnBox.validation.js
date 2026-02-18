@@ -125,6 +125,8 @@ export const getYarnBoxes = {
     shade_code: Joi.string().trim().optional(),
     storage_location: Joi.string().trim().optional(),
     cones_issued: Joi.boolean().optional(),
+    stored_status: Joi.alternatives().try(Joi.boolean(), Joi.string().valid('true', 'false')).optional(),
+    limit: Joi.number().integer().min(1).max(10000).optional().options({ convert: true }),
   }),
 };
 

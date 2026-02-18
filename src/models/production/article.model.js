@@ -114,7 +114,9 @@ const articleSchema = new mongoose.Schema({
       remaining: { type: Number, default: 0 },
       transferred: { type: Number, default: 0 },
       // Quality tracking fields for knitting floor (M4 = defect quantity)
-      m4Quantity: { type: Number, default: 0, min: 0 }
+      m4Quantity: { type: Number, default: 0, min: 0 },
+      // Weight of article on knitting floor (e.g. kg)
+      weight: { type: Number, default: 0, min: 0 }
     },
     linking: {
       received: { type: Number, default: 0 },
@@ -1579,10 +1581,13 @@ articleSchema.methods.getFloorStatus = function(floor) {
     completionRate: floorData.received > 0 ? Math.round((floorData.completed / floorData.received) * 100) : 0
   };
   
-  // Add M4 quantity for knitting floor
-  if (floor === ProductionFloor.KNITTING && floorData.m4Quantity !== undefined) {
-    status.m4Quantity = floorData.m4Quantity;
-    status.goodQuantity = floorData.completed - (floorData.m4Quantity || 0);
+  // Add M4 quantity and weight for knitting floor
+  if (floor === ProductionFloor.KNITTING) {
+    if (floorData.m4Quantity !== undefined) {
+      status.m4Quantity = floorData.m4Quantity;
+      status.goodQuantity = floorData.completed - (floorData.m4Quantity || 0);
+    }
+    if (floorData.weight !== undefined) status.weight = floorData.weight;
   }
   
   return status;

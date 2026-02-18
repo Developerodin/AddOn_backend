@@ -123,6 +123,8 @@ const updateArticleProgress = {
     m2Quantity: Joi.number().integer().min(0).optional(),
     m3Quantity: Joi.number().integer().min(0).optional(),
     m4Quantity: Joi.number().integer().min(0).optional(),
+    // Knitting floor: weight of article (e.g. kg)
+    weight: Joi.number().min(0).optional(),
     repairStatus: Joi.string().valid('Not Required', 'In Review', 'Repaired', 'Rejected').optional(),
     repairRemarks: Joi.string().optional(),
     userId: Joi.string().custom(objectId).required(),
@@ -440,6 +442,7 @@ const bulkUpdateArticles = {
         m2Quantity: Joi.number().integer().min(0).optional(),
         m3Quantity: Joi.number().integer().min(0).optional(),
         m4Quantity: Joi.number().integer().min(0).optional(),
+        weight: Joi.number().min(0).optional(),
         repairStatus: Joi.string().valid('Not Required', 'In Review', 'Repaired', 'Rejected').optional(),
         repairRemarks: Joi.string().optional(),
         userId: Joi.string().custom(objectId).required(),

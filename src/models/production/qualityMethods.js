@@ -256,9 +256,9 @@ export const confirmFinalQuality = async function(confirmed, userId, floorSuperv
 };
 
 /**
- * Update M4 quantity for knitting floor
+ * Update M4 quantity and optional weight for knitting floor
  */
-export const updateKnittingM4Quantity = async function(m4Quantity, userId, floorSupervisorId, remarks, machineId, shiftId) {
+export const updateKnittingM4Quantity = async function(m4Quantity, userId, floorSupervisorId, remarks, machineId, shiftId, weight) {
   if (this.currentFloor !== ProductionFloor.KNITTING) {
     throw new Error('M4 quantity can only be updated on knitting floor');
   }
@@ -274,8 +274,15 @@ export const updateKnittingM4Quantity = async function(m4Quantity, userId, floor
     throw new Error(`M4 quantity must be between 0 and completed quantity (${floorData.completed})`);
   }
   
+  if (weight !== undefined && weight !== null && weight < 0) {
+    throw new Error('Weight must be >= 0');
+  }
+  
   const previousM4Quantity = floorData.m4Quantity || 0;
   floorData.m4Quantity = m4Quantity;
+  if (weight !== undefined && weight !== null) {
+    floorData.weight = weight;
+  }
   
   if (remarks) {
     this.remarks = remarks;
@@ -288,7 +295,7 @@ export const updateKnittingM4Quantity = async function(m4Quantity, userId, floor
       orderId: this.orderId.toString(),
       action: 'M4 Quantity Updated (Knitting)',
       quantity: m4Quantity - previousM4Quantity,
-      remarks: remarks || `M4 (defect) quantity updated to ${m4Quantity} on knitting floor`,
+      remarks: remarks || `M4 (defect) quantity updated to ${m4Quantity} on knitting floor${weight != null ? `, weight: ${weight}` : ''}`,
       previousValue: previousM4Quantity,
       newValue: m4Quantity,
       changeReason: 'Defect quantity tracking',
@@ -303,7 +310,7 @@ export const updateKnittingM4Quantity = async function(m4Quantity, userId, floor
     // Don't throw error for logging failure, just log it
   }
   
-  return {
+  const result = {
     floor: this.currentFloor,
     previousM4Quantity,
     newM4Quantity: m4Quantity,
@@ -311,6 +318,8 @@ export const updateKnittingM4Quantity = async function(m4Quantity, userId, floor
     completedQuantity: floorData.completed,
     goodQuantity: floorData.completed - m4Quantity
   };
+  if (floorData.weight !== undefined) result.weight = floorData.weight;
+  return result;
 };
 
 /**

@@ -117,7 +117,19 @@ export const queryYarnBoxes = async (filters = {}) => {
     mongooseFilter['coneData.conesIssued'] = filters.cones_issued;
   }
 
-  const yarnBoxes = await YarnBox.find(mongooseFilter).sort({ createdAt: -1 }).lean();
+  const storedStatus = filters.stored_status;
+  if (storedStatus === true || storedStatus === 'true') {
+    mongooseFilter.storedStatus = true;
+  } else if (storedStatus === false || storedStatus === 'false') {
+    mongooseFilter.storedStatus = false;
+  }
+
+  let query = YarnBox.find(mongooseFilter).sort({ createdAt: -1 });
+  const limitNum = typeof filters.limit === 'number' ? filters.limit : parseInt(filters.limit, 10);
+  if (!Number.isNaN(limitNum) && limitNum > 0) {
+    query = query.limit(limitNum);
+  }
+  const yarnBoxes = await query.lean();
   return yarnBoxes;
 };
 
