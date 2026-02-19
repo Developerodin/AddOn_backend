@@ -518,6 +518,9 @@ export const getArticleWiseData = async (filter = {}, options = {}) => {
       return { results: [], page, limit, totalPages: 0, total: 0 };
     }
     match.orderId = { $in: orderIds };
+  } else {
+    // Only include articles that are linked to an order
+    match.orderId = { $exists: true, $ne: null };
   }
 
   const articles = await Article.find(match)
@@ -556,9 +559,12 @@ export const getArticleWiseData = async (filter = {}, options = {}) => {
 
   const byArticleNumber = {};
   for (const a of articles) {
-    const key = a.articleNumber;
     const orderId = a.orderId;
-    const orderDoc = orderId == null ? null : (orderId._id ? orderId : { _id: orderId });
+    // Skip articles not linked to any order (defensive: query already filters, this catches edge cases)
+    if (orderId == null || orderId === undefined) continue;
+
+    const key = a.articleNumber;
+    const orderDoc = orderId._id ? orderId : { _id: orderId };
     const articleIdStr = (a._id && a._id.toString()) || a.id;
 
     if (!byArticleNumber[key]) {

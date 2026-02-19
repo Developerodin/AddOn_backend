@@ -19,6 +19,13 @@ const YarnIssueStatus = {
   COMPLETED: 'Completed'
 };
 
+// Yarn return status (per production order item in machine assignment; same values as YarnIssueStatus)
+const YarnReturnStatus = {
+  PENDING: 'Pending',
+  IN_PROGRESS: 'In Progress',
+  COMPLETED: 'Completed'
+};
+
 // Priority Levels
 const Priority = {
   URGENT: 'Urgent',
@@ -177,6 +184,7 @@ const LogAction = {
 export {
   OrderStatus,
   YarnIssueStatus,
+  YarnReturnStatus,
   Priority,
   LinkingType,
   ProductionFloor,

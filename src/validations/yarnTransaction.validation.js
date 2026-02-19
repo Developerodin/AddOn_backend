@@ -20,8 +20,13 @@ export const createYarnTransaction = {
       totalTearWeight: Joi.number().min(0).allow(null),
       numberOfCones: Joi.number().min(0).allow(null),
       totalBlockedWeight: Joi.number().min(0).allow(null),
+      orderId: Joi.string().custom(objectId).allow(null, ''),
       orderno: Joi.string().trim().allow(null, ''),
+      articleId: Joi.string().custom(objectId).allow(null, ''),
       articleNumber: Joi.string().trim().allow(null, ''),
+      machineId: Joi.string().custom(objectId).allow(null, ''),
+      boxIds: Joi.array().items(Joi.string()).optional(),
+      conesIdsArray: Joi.array().items(Joi.string().custom(objectId)).optional(),
     })
     .custom((value, helpers) => {
       const type = value.transactionType;
@@ -66,7 +71,10 @@ export const getYarnTransactions = {
     transaction_type: transactionTypeField.optional(),
     yarn_id: Joi.string().custom(objectId).optional(),
     yarn_name: Joi.string().trim().optional(),
+    order_id: Joi.string().custom(objectId).optional(),
     orderno: Joi.string().trim().optional(),
+    article_id: Joi.string().custom(objectId).optional(),
+    article_number: Joi.string().trim().optional(),
     group_by: Joi.string().valid('article', 'yarn').optional(),
   }),
 };

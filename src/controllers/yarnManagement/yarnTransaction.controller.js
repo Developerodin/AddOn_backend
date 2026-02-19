@@ -9,7 +9,7 @@ export const createYarnTransaction = catchAsync(async (req, res) => {
 });
 
 export const getYarnTransactions = catchAsync(async (req, res) => {
-  const filters = pick(req.query, ['start_date', 'end_date', 'transaction_type', 'yarn_id', 'yarn_name', 'orderno', 'group_by']);
+  const filters = pick(req.query, ['start_date', 'end_date', 'transaction_type', 'yarn_id', 'yarn_name', 'order_id', 'orderno', 'article_id', 'article_number', 'group_by']);
   const groupBy = req.query.group_by; // 'article' or 'yarn' or undefined
   
   const transactions = await yarnTransactionService.queryYarnTransactions(filters);

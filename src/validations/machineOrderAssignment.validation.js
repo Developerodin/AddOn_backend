@@ -1,6 +1,6 @@
 import Joi from 'joi';
 import { objectId } from './custom.validation.js';
-import { OrderStatus, YarnIssueStatus } from '../models/production/enums.js';
+import { OrderStatus, YarnIssueStatus, YarnReturnStatus } from '../models/production/enums.js';
 
 const productionOrderItemSchema = Joi.object({
   productionOrder: Joi.string().custom(objectId).required(),
@@ -11,6 +11,9 @@ const productionOrderItemSchema = Joi.object({
   yarnIssueStatus: Joi.string()
     .valid(...Object.values(YarnIssueStatus))
     .default(YarnIssueStatus.PENDING),
+  yarnReturnStatus: Joi.string()
+    .valid(...Object.values(YarnReturnStatus))
+    .default(YarnReturnStatus.PENDING),
   priority: Joi.number().integer().min(1).optional(),
 });
 
@@ -100,6 +103,21 @@ const updateProductionOrderItemYarnIssueStatus = {
     .min(1),
 };
 
+/** Single item yarn return status: body { yarnReturnStatus } */
+const updateProductionOrderItemYarnReturnStatus = {
+  params: Joi.object().keys({
+    assignmentId: Joi.string().custom(objectId).required(),
+    itemId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object()
+    .keys({
+      yarnReturnStatus: Joi.string()
+        .valid(...Object.values(YarnReturnStatus))
+        .required(),
+    })
+    .min(1),
+};
+
 /** Multiple items: body { items: [{ itemId, priority }, ...] } */
 const updateProductionOrderItemPriorities = {
   params: Joi.object().keys({
@@ -170,6 +188,7 @@ export {
   updateProductionOrderItemPriorities,
   updateProductionOrderItemStatus,
   updateProductionOrderItemYarnIssueStatus,
+  updateProductionOrderItemYarnReturnStatus,
   resetMachineOrderAssignment,
   deleteMachineOrderAssignment,
   getAssignmentLogs,

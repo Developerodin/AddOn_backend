@@ -297,6 +297,11 @@ export const getMachineOrderAssignmentsTopItems = catchAsync(async (req, res) =>
   res.send(data);
 });
 
+export const getMachineOrderAssignmentsCompletedItems = catchAsync(async (req, res) => {
+  const data = await productionService.getMachineOrderAssignmentsCompletedItems();
+  res.send(data);
+});
+
 export const updateMachineOrderAssignment = catchAsync(async (req, res) => {
   const assignment = await productionService.updateMachineOrderAssignmentById(
     req.params.assignmentId,
@@ -337,6 +342,16 @@ export const updateMachineOrderItemStatus = catchAsync(async (req, res) => {
 
 export const updateMachineOrderItemYarnIssueStatus = catchAsync(async (req, res) => {
   const assignment = await productionService.updateProductionOrderItemYarnIssueStatusById(
+    req.params.assignmentId,
+    req.params.itemId,
+    req.body,
+    req.user?._id
+  );
+  res.send(assignment);
+});
+
+export const updateMachineOrderItemYarnReturnStatus = catchAsync(async (req, res) => {
+  const assignment = await productionService.updateProductionOrderItemYarnReturnStatusById(
     req.params.assignmentId,
     req.params.itemId,
     req.body,

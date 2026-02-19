@@ -23,6 +23,10 @@ router
   .get(productionController.getMachineOrderAssignmentsTopItems);
 
 router
+  .route('/machine-order-assignments/completed-items')
+  .get(productionController.getMachineOrderAssignmentsCompletedItems);
+
+router
   .route('/machine-order-assignments/:assignmentId/reset')
   .post(validate(machineOrderAssignmentValidation.resetMachineOrderAssignment), productionController.resetMachineOrderAssignment);
 
@@ -52,6 +56,13 @@ router
   .patch(
     validate(machineOrderAssignmentValidation.updateProductionOrderItemYarnIssueStatus),
     productionController.updateMachineOrderItemYarnIssueStatus
+  );
+
+router
+  .route('/machine-order-assignments/:assignmentId/items/:itemId/yarn-return-status')
+  .patch(
+    validate(machineOrderAssignmentValidation.updateProductionOrderItemYarnReturnStatus),
+    productionController.updateMachineOrderItemYarnReturnStatus
   );
 
 router

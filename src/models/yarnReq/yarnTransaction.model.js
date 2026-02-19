@@ -41,17 +41,35 @@ const yarnTransactionSchema = mongoose.Schema(
       type: Number,
       min: 0,
     },
+    orderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ProductionOrder',
+    },
     orderno: {
       type: String,
       trim: true,
+    },
+    articleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Article',
     },
     articleNumber: {
       type: String,
       trim: true,
     },
+    machineId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Machine',
+    },
     // For internal_transfer: Track which boxes were transferred
     boxIds: {
       type: [String],
+      default: [],
+    },
+    // Track which cones are involved in this transaction (e.g. issued/transferred)
+    conesIdsArray: {
+      type: [mongoose.Schema.Types.ObjectId],
+      ref: 'YarnCone',
       default: [],
     },
     // Track storage locations for transfer history

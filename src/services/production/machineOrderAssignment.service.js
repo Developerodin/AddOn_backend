@@ -3,7 +3,7 @@ import ApiError from '../../utils/ApiError.js';
 import Machine from '../../models/machine.model.js';
 import MachineOrderAssignment from '../../models/production/machineOrderAssignment.model.js';
 import MachineOrderAssignmentLog from '../../models/production/machineOrderAssignmentLog.model.js';
-import { LogAction, OrderStatus, YarnIssueStatus } from '../../models/production/enums.js';
+import { LogAction, OrderStatus, YarnIssueStatus, YarnReturnStatus } from '../../models/production/enums.js';
 
 /**
  * Create a machine order assignment. Logs ASSIGNMENT_CREATED with userId.
@@ -63,15 +63,19 @@ export const getMachineOrderAssignmentById = async (assignmentId) => {
 /** Number of top-priority items to return per assignment */
 const TOP_ITEMS_LIMIT = 2;
 
+/** Item statuses that exclude an order from top-items (once all items are in these, order is hidden). */
+const EXCLUDED_ITEM_STATUSES = [OrderStatus.COMPLETED, OrderStatus.ON_HOLD];
+
 /**
  * Get all machine order assignments that have at least one productionOrderItem with
- * yarnIssueStatus 'In Progress', each with only the top 2 items by priority. No id required.
- * @returns {Promise<Object[]>} Array of assignment objects with productionOrderItems limited to top 2
+ * status not Completed/On Hold. Returns each assignment with only the top 2 such items by priority.
+ * Once an item's status becomes Completed or On Hold, it is excluded; when all items are Completed/On Hold, the order no longer appears.
+ * @returns {Promise<Object[]>} Array of assignment objects with productionOrderItems limited to top 2 (active items only)
  */
 export const getMachineOrderAssignmentsTopItems = async () => {
   const assignments = await MachineOrderAssignment.find({
     'productionOrderItems.0': { $exists: true },
-    'productionOrderItems.yarnIssueStatus': YarnIssueStatus.IN_PROGRESS,
+    'productionOrderItems.status': { $nin: EXCLUDED_ITEM_STATUSES },
     isActive: true,
   })
     .populate('machine')
@@ -79,11 +83,38 @@ export const getMachineOrderAssignmentsTopItems = async () => {
     .populate('productionOrderItems.article')
     .lean();
   return assignments.map((doc) => {
-    const items = doc.productionOrderItems || [];
+    const items = (doc.productionOrderItems || []).filter(
+      (i) => !EXCLUDED_ITEM_STATUSES.includes(String(i.status))
+    );
     const topTwo = [...items]
       .sort((a, b) => (a.priority ?? 999) - (b.priority ?? 999))
       .slice(0, TOP_ITEMS_LIMIT);
     return { ...doc, productionOrderItems: topTwo };
+  });
+};
+
+/**
+ * Get all machine order assignments that have at least one productionOrderItem with
+ * yarnIssueStatus Completed and status Completed. Returns each assignment with all such items (no priority, no limit).
+ * @returns {Promise<Object[]>} Array of assignment objects with productionOrderItems = all completed items only
+ */
+export const getMachineOrderAssignmentsCompletedItems = async () => {
+  const assignments = await MachineOrderAssignment.find({
+    'productionOrderItems.0': { $exists: true },
+    'productionOrderItems.yarnIssueStatus': YarnIssueStatus.COMPLETED,
+    'productionOrderItems.status': OrderStatus.COMPLETED,
+    isActive: true,
+  })
+    .populate('machine')
+    .populate('productionOrderItems.productionOrder')
+    .populate('productionOrderItems.article')
+    .lean();
+  return assignments.map((doc) => {
+    const items = (doc.productionOrderItems || []).filter(
+      (i) =>
+        String(i.yarnIssueStatus) === YarnIssueStatus.COMPLETED && String(i.status) === OrderStatus.COMPLETED
+    );
+    return { ...doc, productionOrderItems: items };
   });
 };
 
@@ -130,7 +161,7 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
       const k = itemKey(item);
       const existingIdx = keyToIndex.get(k);
       if (existingIdx !== undefined) {
-        // Same item: update only fields that are sent (status, priority, yarnIssueStatus)
+        // Same item: update only fields that are sent (status, priority, yarnIssueStatus, yarnReturnStatus)
         const existing = current[existingIdx];
         if (item.status !== undefined && String(existing.status) !== String(item.status)) {
           const newStatusVal = String(item.status);
@@ -147,6 +178,10 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
         }
         if (item.yarnIssueStatus !== undefined && String(existing.yarnIssueStatus) !== String(item.yarnIssueStatus)) {
           existing.yarnIssueStatus = item.yarnIssueStatus;
+          didChange = true;
+        }
+        if (item.yarnReturnStatus !== undefined && String(existing.yarnReturnStatus) !== String(item.yarnReturnStatus)) {
+          existing.yarnReturnStatus = item.yarnReturnStatus;
           didChange = true;
         }
         if (item.priority !== undefined && Number(existing.priority) !== Number(item.priority)) {
@@ -384,6 +419,48 @@ export const updateProductionOrderItemYarnIssueStatusById = async (assignmentId,
         { field: 'productionOrderItems.yarnIssueStatus', previousValue: previous, newValue: newStatus },
       ],
       remarks: `Item yarn issue status updated to ${newStatus}`,
+    });
+  }
+  return MachineOrderAssignment.findById(assignmentId)
+    .populate('machine')
+    .populate('productionOrderItems.productionOrder')
+    .populate('productionOrderItems.article');
+};
+
+/**
+ * Update yarn return status of a single productionOrderItem.
+ * @param {ObjectId} assignmentId
+ * @param {ObjectId} itemId
+ * @param {Object} body - { yarnReturnStatus: YarnReturnStatus }
+ * @param {ObjectId} [userId]
+ * @returns {Promise<MachineOrderAssignment>}
+ */
+export const updateProductionOrderItemYarnReturnStatusById = async (assignmentId, itemId, body, userId) => {
+  const assignment = await MachineOrderAssignment.findById(assignmentId);
+  if (!assignment) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Machine order assignment not found');
+  }
+  const item = assignment.productionOrderItems?.id(itemId);
+  if (!item) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Production order item not found in this assignment');
+  }
+  const newStatus = body.yarnReturnStatus;
+  if (!newStatus || !Object.values(YarnReturnStatus).includes(String(newStatus))) {
+    throw new ApiError(httpStatus.BAD_REQUEST, `yarnReturnStatus must be one of: ${Object.values(YarnReturnStatus).join(', ')}`);
+  }
+  const previous = item.yarnReturnStatus;
+  item.yarnReturnStatus = newStatus;
+  assignment.markModified('productionOrderItems');
+  await assignment.save();
+  if (userId) {
+    await MachineOrderAssignmentLog.createLogEntry({
+      assignmentId: assignment._id,
+      userId,
+      action: LogAction.ASSIGNMENT_ITEMS_UPDATED,
+      changes: [
+        { field: 'productionOrderItems.yarnReturnStatus', previousValue: previous, newValue: newStatus },
+      ],
+      remarks: `Item yarn return status updated to ${newStatus}`,
     });
   }
   return MachineOrderAssignment.findById(assignmentId)

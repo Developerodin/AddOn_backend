@@ -110,6 +110,21 @@ const yarnConeSchema = mongoose.Schema(
 );
 
 /**
+ * Pre-save hook: When a yarn cone is returned (returnStatus set to 'returned'), set issueStatus to not_issued
+ * and returnStatus to not_returned so the cone is back in pool / available again.
+ */
+yarnConeSchema.pre('save', function (next) {
+  if (this.returnStatus === 'returned') {
+    this.issueStatus = 'not_issued';
+    this.returnStatus = 'not_returned';
+  }
+  if (this.coneWeight === 0 || this.coneWeight == null) {
+    this.coneStorageId = undefined;
+  }
+  next();
+});
+
+/**
  * Post-save hook: Automatically sync cone to inventory when stored in short-term storage
  * This ensures inventory is updated automatically when cones are created/stored
  */

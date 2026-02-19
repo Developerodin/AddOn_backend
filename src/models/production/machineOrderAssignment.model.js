@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { OrderStatus, YarnIssueStatus } from './enums.js';
+import { OrderStatus, YarnIssueStatus, YarnReturnStatus } from './enums.js';
 import { toJSON, paginate } from '../plugins/index.js';
 
 /**
@@ -49,6 +49,12 @@ const machineOrderAssignmentSchema = new mongoose.Schema(
           type: String,
           enum: Object.values(YarnIssueStatus),
           default: YarnIssueStatus.PENDING,
+        },
+        /** Yarn return status for this item; default Pending. */
+        yarnReturnStatus: {
+          type: String,
+          enum: Object.values(YarnReturnStatus),
+          default: YarnReturnStatus.PENDING,
         },
         /** Queue position; set by client or auto-assigned (1, 2, 3, ...). Unset when status is Cancelled/On Hold/Completed. */
         priority: {
@@ -117,12 +123,24 @@ function assignMissingPriorities(items) {
 }
 
 /**
- * Remove productionOrderItems with status Completed. Does not overwrite existing priorities
- * so that user-set priorities (e.g. from PATCH /items) are preserved.
+ * True when item is fully done: order status, yarn issue, and yarn return all Completed.
+ * Only then do we remove the item from the array.
+ */
+function isItemFullyCompleted(item) {
+  return (
+    String(item?.status) === OrderStatus.COMPLETED &&
+    String(item?.yarnIssueStatus) === YarnIssueStatus.COMPLETED &&
+    String(item?.yarnReturnStatus) === YarnReturnStatus.COMPLETED
+  );
+}
+
+/**
+ * Remove productionOrderItems only when all three (status, yarnIssueStatus, yarnReturnStatus) are Completed.
+ * Does not overwrite existing priorities so that user-set priorities (e.g. from PATCH /items) are preserved.
  */
 export function removeCompletedAndRecompactPriorities(items) {
   if (!items?.length) return items;
-  return items.filter((item) => String(item.status) !== OrderStatus.COMPLETED);
+  return items.filter((item) => !isItemFullyCompleted(item));
 }
 
 machineOrderAssignmentSchema.pre('save', function autoRemoveCompletedAndPriorities(next) {
@@ -143,6 +161,7 @@ machineOrderAssignmentSchema.index({ activeNeedle: 1 });
 machineOrderAssignmentSchema.index({ 'productionOrderItems.productionOrder': 1 });
 machineOrderAssignmentSchema.index({ 'productionOrderItems.article': 1 });
 machineOrderAssignmentSchema.index({ 'productionOrderItems.status': 1 });
+machineOrderAssignmentSchema.index({ 'productionOrderItems.yarnReturnStatus': 1 });
 machineOrderAssignmentSchema.index({ 'productionOrderItems.priority': 1 });
 machineOrderAssignmentSchema.index({ isActive: 1 });
 

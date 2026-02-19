@@ -87,10 +87,14 @@ const normaliseTransactionPayload = (inputBody) => {
     transactionTotalWeight: 0,
     transactionTearWeight: 0,
     transactionConeCount: 0,
+    orderId: body.orderId || undefined,
     orderno: body.orderno,
+    articleId: body.articleId || undefined,
     articleNumber: body.articleNumber,
+    machineId: body.machineId || undefined,
     // Transfer tracking fields
     boxIds: body.boxIds || [],
+    conesIdsArray: body.conesIdsArray || [],
     fromStorageLocation: body.fromStorageLocation,
     toStorageLocation: body.toStorageLocation,
   };
@@ -343,8 +347,20 @@ export const queryYarnTransactions = async (filters = {}) => {
     mongooseFilter.yarnName = { $regex: filters.yarn_name, $options: 'i' };
   }
 
+  if (filters.order_id) {
+    mongooseFilter.orderId = filters.order_id;
+  }
+
   if (filters.orderno) {
     mongooseFilter.orderno = { $regex: filters.orderno, $options: 'i' };
+  }
+
+  if (filters.article_id) {
+    mongooseFilter.articleId = filters.article_id;
+  }
+
+  if (filters.article_number) {
+    mongooseFilter.articleNumber = { $regex: filters.article_number, $options: 'i' };
   }
 
   if (filters.start_date || filters.end_date) {
@@ -366,6 +382,9 @@ export const queryYarnTransactions = async (filters = {}) => {
       path: 'yarn',
       select: '_id yarnName yarnType status',
     })
+    .populate({ path: 'orderId', select: 'orderNumber' })
+    .populate({ path: 'articleId', select: 'articleNumber orderId machineId' })
+    .populate({ path: 'machineId', select: 'machineCode machineNumber model floor' })
     .sort({ transactionDate: -1 })
     .lean();
 
