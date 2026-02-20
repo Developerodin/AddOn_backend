@@ -17,16 +17,15 @@ export const createContainersMaster = async (body) => {
 };
 
 /**
- * Query containers with filter (containerFloor, status, search) and pagination.
+ * Query containers with filter (status, search) and pagination.
  * @param {Object} filter
  * @param {Object} options
  * @returns {Promise<QueryResult>}
  */
 export const queryContainersMasters = async (filter, options = {}) => {
-  const { containerName, containerFloor, status, search, ...rest } = filter || {};
+  const { containerName, status, search, ...rest } = filter || {};
   const query = { ...rest };
   if (containerName) query.containerName = { $regex: containerName, $options: 'i' };
-  if (containerFloor) query.containerFloor = containerFloor;
   if (status) query.status = status;
   if (search && String(search).trim()) {
     const term = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

@@ -1,10 +1,10 @@
 import mongoose from 'mongoose';
 import { paginate } from '../plugins/index.js';
-import { ProductionFloor, ContainerStatus } from './enums.js';
+import { ContainerStatus } from './enums.js';
 
 /**
  * Containers Master Model
- * Stores containers with name, barcode (_id), container floor and status.
+ * Stores containers with name, barcode (_id), and status.
  */
 const containersMasterSchema = new mongoose.Schema(
   {
@@ -20,13 +20,6 @@ const containersMasterSchema = new mongoose.Schema(
       trim: true,
       unique: true,
       sparse: true,
-      index: true,
-    },
-    /** Floor where the container is located */
-    containerFloor: {
-      type: String,
-      required: true,
-      enum: Object.values(ProductionFloor),
       index: true,
     },
     /** Container status */
@@ -52,7 +45,7 @@ containersMasterSchema.pre('save', function (next) {
   next();
 });
 
-containersMasterSchema.index({ containerFloor: 1, status: 1 });
+containersMasterSchema.index({ status: 1 });
 containersMasterSchema.index({ containerName: 1 });
 containersMasterSchema.plugin(paginate);
 

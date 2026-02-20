@@ -42,7 +42,7 @@ Use these column names in your Excel (exact match recommended; spaces matter for
 | Needles Config 1               | needleSizeConfig[0].needleSize | string |
 | Needles Config Cutoff 1        | needleSizeConfig[0].cutoffQuantity | number |
 | Needles Config 2 … Cutoff 2    | needleSizeConfig[1]    | same pattern |
-| … up to Needles Config 5 / Cutoff 5 | needleSizeConfig[4] | up to 5 entries |
+| … up to Needles Config 7 / Cutoff 7 | needleSizeConfig[6] | up to 7 entries |
 
 Only **Machine Code** or **Machine Number** (one of them) is required per row. All other columns are optional.
 

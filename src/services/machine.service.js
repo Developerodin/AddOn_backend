@@ -33,7 +33,7 @@ const createMachine = async (machineBody) => {
 
 /**
  * Normalize a single machine row (e.g. from Excel) into API shape.
- * Handles flat Excel columns like "Needles Config 1", "Needles Config Cutoff 1" ... "Needles Config 5", "Needles Config Cutoff 5".
+ * Handles flat Excel columns like "Needles Config 1", "Needles Config Cutoff 1" ... "Needles Config 7", "Needles Config Cutoff 7".
  * @param {Object} row - Raw row (API shape or Excel flat keys)
  * @returns {Object} - Normalized machine body for create
  */
@@ -49,7 +49,7 @@ const normalizeMachineImportRow = (row) => {
       }
     });
   } else {
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 1; i <= 7; i++) {
       const sizeKey = `Needles Config ${i}`;
       const cutoffKey = `Needles Config Cutoff ${i}`;
       const size = row[sizeKey] != null ? String(row[sizeKey]).trim() : '';

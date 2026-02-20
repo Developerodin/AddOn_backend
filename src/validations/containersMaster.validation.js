@@ -1,16 +1,12 @@
 import Joi from 'joi';
 import { objectId } from './custom.validation.js';
-import { ProductionFloor, ContainerStatus } from '../models/production/enums.js';
+import { ContainerStatus } from '../models/production/enums.js';
 
-const floorValues = Object.values(ProductionFloor);
 const statusValues = Object.values(ContainerStatus);
 
 export const createContainersMaster = {
   body: Joi.object().keys({
     containerName: Joi.string().trim().allow('', null),
-    containerFloor: Joi.string()
-      .required()
-      .valid(...floorValues),
     status: Joi.string()
       .valid(...statusValues)
       .default(ContainerStatus.ACTIVE),
@@ -20,7 +16,6 @@ export const createContainersMaster = {
 export const getContainersMasters = {
   query: Joi.object().keys({
     containerName: Joi.string().trim(),
-    containerFloor: Joi.string().valid(...floorValues),
     status: Joi.string().valid(...statusValues),
     search: Joi.string().trim(),
     sortBy: Joi.string(),
@@ -48,7 +43,6 @@ export const updateContainersMaster = {
   body: Joi.object()
     .keys({
       containerName: Joi.string().trim().allow('', null),
-      containerFloor: Joi.string().valid(...floorValues),
       status: Joi.string().valid(...statusValues),
     })
     .min(1),
