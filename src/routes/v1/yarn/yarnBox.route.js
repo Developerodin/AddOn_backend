@@ -24,6 +24,13 @@ router
   );
 
 router
+  .route('/bulk-match-update')
+  .post(
+    validate(yarnBoxValidation.bulkMatchUpdateYarnBoxes),
+    yarnBoxController.bulkMatchUpdateYarnBoxes
+  );
+
+router
   .route('/update-qc-status')
   .patch(
     validate(yarnBoxValidation.updateQcStatusByPoNumber),

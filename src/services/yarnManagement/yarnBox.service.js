@@ -272,6 +272,79 @@ export const bulkCreateYarnBoxes = async (bulkData) => {
   };
 };
 
+/**
+ * Bulk match-update: for each item, find exactly one box where all of
+ * (lotNumber, poNumber, yarnName, shadeCode, boxWeight, numberOfCones) match, then set barcode and boxId.
+ * Returns updated and failed items.
+ */
+export const bulkMatchUpdateYarnBoxes = async (payload) => {
+  const { items } = payload;
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'items array is required with at least one item');
+  }
+
+  const updated = [];
+  const failed = [];
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const matchFilter = {
+      lotNumber: (item.lotNumber || '').trim(),
+      poNumber: (item.poNumber || '').trim(),
+      yarnName: (item.yarnName || '').trim(),
+      shadeCode: (item.shadeCode || '').trim(),
+      boxWeight: Number(item.boxWeight),
+      numberOfCones: Number(item.numberOfCones),
+    };
+    const newBarcode = (item.barcode || '').trim();
+    const newBoxId = (item.boxId || '').trim();
+
+    const boxes = await YarnBox.find(matchFilter).limit(2);
+    if (boxes.length === 0) {
+      failed.push({ index: i, match: matchFilter, reason: 'no_matching_box' });
+      continue;
+    }
+    if (boxes.length > 1) {
+      failed.push({ index: i, match: matchFilter, reason: 'multiple_matching_boxes' });
+      continue;
+    }
+
+    const box = boxes[0];
+    if (newBarcode !== box.barcode) {
+      const existingBarcode = await YarnBox.findOne({ barcode: newBarcode, _id: { $ne: box._id } });
+      if (existingBarcode) {
+        failed.push({ index: i, match: matchFilter, reason: 'barcode_already_exists', barcode: newBarcode });
+        continue;
+      }
+    }
+    if (newBoxId !== box.boxId) {
+      const existingBoxId = await YarnBox.findOne({ boxId: newBoxId, _id: { $ne: box._id } });
+      if (existingBoxId) {
+        failed.push({ index: i, match: matchFilter, reason: 'box_id_already_exists', boxId: newBoxId });
+        continue;
+      }
+    }
+
+    box.barcode = newBarcode;
+    box.boxId = newBoxId;
+    await box.save();
+    updated.push({
+      index: i,
+      _id: box._id.toString(),
+      boxId: newBoxId,
+      barcode: newBarcode,
+    });
+  }
+
+  return {
+    message: `Updated ${updated.length} box(es), ${failed.length} failed`,
+    updatedCount: updated.length,
+    failedCount: failed.length,
+    updated,
+    failed,
+  };
+};
+
 export const updateQcStatusByPoNumber = async (poNumber, qcStatus, qcData = {}) => {
   const validStatuses = ['qc_approved', 'qc_rejected'];
   

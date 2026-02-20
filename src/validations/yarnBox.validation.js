@@ -118,6 +118,31 @@ export const updateQcStatusByPoNumber = {
     .required(),
 };
 
+/** Bulk match boxes by (lotNumber, poNumber, yarnName, shadeCode, boxWeight, numberOfCones) and update barcode + boxId */
+export const bulkMatchUpdateYarnBoxes = {
+  body: Joi.object()
+    .keys({
+      items: Joi.array()
+        .items(
+          Joi.object()
+            .keys({
+              lotNumber: Joi.string().trim().required(),
+              poNumber: Joi.string().trim().required(),
+              yarnName: Joi.string().trim().required(),
+              shadeCode: Joi.string().trim().required(),
+              boxWeight: Joi.number().min(0).required(),
+              numberOfCones: Joi.number().min(0).required(),
+              barcode: Joi.string().trim().required(),
+              boxId: Joi.string().trim().required(),
+            })
+            .required()
+        )
+        .min(1)
+        .required(),
+    })
+    .required(),
+};
+
 export const getYarnBoxes = {
   query: Joi.object().keys({
     po_number: Joi.string().trim().optional(),
