@@ -29,3 +29,8 @@ export const addRacksToSection = catchAsync(async (req, res) => {
   res.status(httpStatus.CREATED).send(result);
 });
 
+export const bulkAssignBoxesToSlots = catchAsync(async (req, res) => {
+  const result = await storageSlotService.bulkAssignBoxesToSlots(req.body);
+  res.status(httpStatus.OK).send(result);
+});
+

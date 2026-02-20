@@ -51,3 +51,22 @@ export const addRacksToSection = {
     .required(),
 };
 
+/** POST body: bulk assign boxes to storage slots by rack barcode + box barcodes. */
+export const bulkAssignBoxesToSlots = {
+  body: Joi.object()
+    .keys({
+      assignments: Joi.array()
+        .items(
+          Joi.object()
+            .keys({
+              rackBarcode: Joi.string().trim().required(),
+              boxBarcodes: Joi.array().items(Joi.string().trim()).min(1).required(),
+            })
+            .required()
+        )
+        .min(1)
+        .required(),
+    })
+    .required(),
+};
+

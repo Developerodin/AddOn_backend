@@ -345,4 +345,68 @@ export const addRacksToSection = async (payload) => {
   };
 };
 
+/**
+ * Bulk assign yarn boxes to storage slots. For each assignment: find slot by rack barcode,
+ * find boxes by box barcode, set box.storageLocation = slot.barcode and box.storedStatus = true.
+ */
+export const bulkAssignBoxesToSlots = async (payload) => {
+  const { assignments } = payload;
+  if (!assignments?.length) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'assignments array is required with at least one item');
+  }
+
+  const updated = [];
+  const failed = [];
+
+  for (let i = 0; i < assignments.length; i++) {
+    const { rackBarcode, boxBarcodes } = assignments[i];
+    const slotBarcode = (rackBarcode || '').trim();
+    const barcodes = [...new Set((boxBarcodes || []).map((b) => (b || '').trim()).filter(Boolean))];
+
+    if (!barcodes.length) {
+      failed.push({ index: i, rackBarcode: slotBarcode, reason: 'no_box_barcodes' });
+      continue;
+    }
+
+    const slot = await StorageSlot.findOne({ barcode: slotBarcode, isActive: true });
+    if (!slot) {
+      failed.push({ index: i, rackBarcode: slotBarcode, reason: 'slot_not_found' });
+      continue;
+    }
+
+    const boxes = await YarnBox.find({ barcode: { $in: barcodes } });
+    const foundBarcodes = new Set(boxes.map((b) => b.barcode));
+    const missingBarcodes = barcodes.filter((b) => !foundBarcodes.has(b));
+
+    for (const box of boxes) {
+      box.storageLocation = slot.barcode;
+      box.storedStatus = true;
+      await box.save();
+      updated.push({
+        assignmentIndex: i,
+        rackBarcode: slot.barcode,
+        boxId: box.boxId,
+        barcode: box.barcode,
+      });
+    }
+
+    if (missingBarcodes.length) {
+      failed.push({
+        index: i,
+        rackBarcode: slotBarcode,
+        reason: 'boxes_not_found',
+        boxBarcodes: missingBarcodes,
+      });
+    }
+  }
+
+  return {
+    message: `Assigned ${updated.length} box(es) to slot(s), ${failed.length} assignment(s) had issues`,
+    updatedCount: updated.length,
+    failedCount: failed.length,
+    updated,
+    failed,
+  };
+};
+
 

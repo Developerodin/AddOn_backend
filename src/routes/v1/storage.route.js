@@ -22,6 +22,10 @@ router
   .get(validate(storageSlotValidation.getStorageContentsByBarcode), storageSlotController.getStorageContentsByBarcode);
 
 router
+  .route('/slots/bulk-assign-boxes')
+  .post(validate(storageSlotValidation.bulkAssignBoxesToSlots), storageSlotController.bulkAssignBoxesToSlots);
+
+router
   .route('/slots/:storageLocation/history')
   .get(storageSlotController.getStorageLocationHistory);
 
