@@ -257,40 +257,36 @@ yarnConeSchema.post('save', async function (doc) {
 
     await inventory.save();
 
-    // If cone is in ST storage and has a boxId, check if box should be removed from LT
-    // When cones are extracted from a box and stored in ST, the box is empty and should be removed from LT
+    // If cone is in ST storage and has a boxId, check if box is fully transferred and should be reset
+    // When entire box weight is in cones in ST, reset box: clear storageLocation, boxWeight=0, storedStatus=false
     if (doc.boxId && isShortTermStorage) {
       try {
         const box = await YarnBox.findOne({ boxId: doc.boxId });
-        if (box) {
-          // Check if cones exist in ST for this box
-          const totalConesInST = await mongoose.model('YarnCone').countDocuments({
+        if (box && box.boxWeight != null && box.boxWeight > 0) {
+          const conesInST = await mongoose.model('YarnCone').find({
             boxId: doc.boxId,
             coneStorageId: { $regex: /^ST-/i },
-          });
-          
-          // If cones exist in ST for this box, remove box from LT storage
-          // Box is now empty (cones extracted), so it should not be counted in LT inventory
-          if (totalConesInST > 0) {
-            // Remove box from LT storage
-            box.storageLocation = null; // Box is no longer in storage
-            box.storedStatus = false; // Box is not stored anymore (empty)
-            
-            // Update cone data
-            if (!box.coneData) {
-              box.coneData = {};
-            }
+          }).lean();
+          const totalConesInST = conesInST.length;
+          const totalConeWeight = conesInST.reduce((sum, c) => sum + (c.coneWeight || 0), 0);
+          const boxWeight = box.boxWeight || 0;
+          // Fully transferred when cone weight matches box weight (allow small rounding)
+          const fullyTransferred = totalConesInST > 0 && totalConeWeight >= boxWeight - 0.001;
+
+          if (fullyTransferred) {
+            box.boxWeight = 0;
+            box.storageLocation = undefined; // unset so field is removed from document
+            box.storedStatus = false;
+            if (!box.coneData) box.coneData = {};
             box.coneData.conesIssued = true;
             box.coneData.numberOfCones = totalConesInST;
             box.coneData.coneIssueDate = doc.createdAt || new Date();
-            
             await box.save();
-            console.log(`[YarnCone] Removed box ${doc.boxId} from LT storage - ${totalConesInST} cones now in ST`);
+            console.log(`[YarnCone] Reset box ${doc.boxId} (fully transferred to cones): storageLocation cleared, boxWeight=0`);
           }
         }
       } catch (boxError) {
-        // Log error but don't throw - don't break cone save operation
-        console.error(`[YarnCone] Error removing box ${doc.boxId} from LT storage:`, boxError.message);
+        console.error(`[YarnCone] Error resetting box ${doc.boxId}:`, boxError.message);
       }
     }
   } catch (error) {

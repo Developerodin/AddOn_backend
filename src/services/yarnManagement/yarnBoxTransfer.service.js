@@ -153,31 +153,30 @@ export const transferBoxes = async (transferData) => {
         toStorageLocation,
       });
 
-      // After transaction: If cones exist in ST for these boxes, remove boxes from LT storage
-      // Box is now empty (cones extracted), so it should not be counted in LT inventory
+      // After transaction: If box is fully transferred (cones in ST, total cone weight >= box weight), reset box
       for (const box of yarnBoxes) {
-        const conesForThisBox = await YarnCone.countDocuments({
+        const conesForThisBox = await YarnCone.find({
           boxId: box.boxId,
           coneStorageId: { $regex: /^ST-/i },
-        });
+        }).lean();
+        const coneCount = conesForThisBox.length;
+        const totalConeWeight = conesForThisBox.reduce((sum, c) => sum + (c.coneWeight || 0), 0);
+        const boxWeight = box.boxWeight || 0;
+        const fullyTransferred = coneCount > 0 && totalConeWeight >= boxWeight - 0.001;
 
-        if (conesForThisBox > 0) {
-          // Cones exist in ST for this box - box is empty, remove from LT storage
-          box.storageLocation = null; // Box is no longer in storage
-          box.storedStatus = false; // Box is not stored anymore (empty)
+        if (fullyTransferred) {
+          box.boxWeight = 0;
+          box.storageLocation = undefined; // unset so field is removed
+          box.storedStatus = false;
           box.coneData = {
             ...box.coneData,
             conesIssued: true,
-            numberOfCones: conesForThisBox,
+            numberOfCones: coneCount,
             coneIssueDate: transferDate || new Date(),
           };
           await box.save();
-        } else {
-          // No cones in ST yet - box is still in LT (waiting for cones to be created)
-          // Keep box in LT until cones are created
-          box.storageLocation = box.storageLocation; // Keep original LT location
-          await box.save();
         }
+        // If not fully transferred, box stays in LT (no save needed)
       }
     } else {
       // LT→LT or ST→ST: Location change only, no inventory update
