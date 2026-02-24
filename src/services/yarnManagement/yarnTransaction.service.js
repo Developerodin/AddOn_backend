@@ -117,9 +117,12 @@ const normaliseTransactionPayload = (inputBody) => {
 
 /**
  * Loads or creates the YarnInventory document for the provided yarn reference.
+ * @param {mongoose.ClientSession | null} session - Optional session for transaction support.
  */
 const ensureInventoryDocument = async (session, transactionPayload) => {
-  let inventory = await YarnInventory.findOne({ yarn: transactionPayload.yarn }).session(session);
+  let query = YarnInventory.findOne({ yarn: transactionPayload.yarn });
+  if (session) query = query.session(session);
+  let inventory = await query;
 
   if (!inventory) {
     inventory = new YarnInventory({
@@ -257,6 +260,13 @@ const updateInventoryStatusAndMaybeRaiseRequisition = async (
 
   const alertStatus = inventory.overbooked ? 'overbooked' : 'below_minimum';
 
+  const updateOptions = {
+    upsert: true,
+    new: true,
+    setDefaultsOnInsert: true,
+  };
+  if (session) updateOptions.session = session;
+
   await YarnRequisition.findOneAndUpdate(
     { yarn: inventory.yarn, poSent: false },
     {
@@ -268,12 +278,7 @@ const updateInventoryStatusAndMaybeRaiseRequisition = async (
       alertStatus,
       poSent: false,
     },
-    {
-      upsert: true,
-      new: true,
-      session,
-      setDefaultsOnInsert: true,
-    }
+    updateOptions
   );
 };
 
@@ -294,8 +299,42 @@ const validateBlockedDoesNotExceedInventory = (inventory, transaction) => {
 };
 
 /**
+ * Runs the transaction-creation logic either inside a MongoDB transaction (replica set / mongos)
+ * or without a session (standalone MongoDB). On standalone, we run the same steps so the feature
+ * works; writes are not atomic, so a mid-failure can leave partial state.
+ */
+const runCreateTransactionLogic = async (session, normalisedPayload) => {
+  const opts = session ? { session } : {};
+  const withSession = (q) => (session ? q.session(session) : q);
+
+  const yarnDoc = await withSession(YarnCatalog.findById(normalisedPayload.yarn)).exec();
+  if (!yarnDoc) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Referenced yarn catalog entry does not exist');
+  }
+
+  const inventory = await ensureInventoryDocument(session, normalisedPayload);
+
+  const [transaction] = await YarnTransaction.create([normalisedPayload], opts);
+  const transactionRecord = transaction;
+
+  validateBlockedDoesNotExceedInventory(inventory, transaction);
+  updateInventoryBuckets(inventory, transaction);
+
+  await updateInventoryStatusAndMaybeRaiseRequisition(
+    session,
+    inventory,
+    yarnDoc,
+    inventory.overbooked ? 'overbooked' : undefined
+  );
+
+  await inventory.save(opts);
+  return transactionRecord;
+};
+
+/**
  * Creates a yarn transaction and atomically updates inventory, status, and requisition data.
- * The entire workflow runs inside a MongoDB transaction to keep the system consistent.
+ * Uses a MongoDB transaction when connected to a replica set or mongos; otherwise runs
+ * the same logic without a session (standalone MongoDB).
  */
 export const createYarnTransaction = async (transactionBody) => {
   const normalisedPayload = normaliseTransactionPayload(transactionBody);
@@ -303,32 +342,23 @@ export const createYarnTransaction = async (transactionBody) => {
   const session = await mongoose.startSession();
   let transactionRecord;
 
-  await session.withTransaction(async () => {
-    const yarnDoc = await YarnCatalog.findById(normalisedPayload.yarn).session(session);
-    if (!yarnDoc) {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'Referenced yarn catalog entry does not exist');
+  try {
+    await session.withTransaction(async () => {
+      transactionRecord = await runCreateTransactionLogic(session, normalisedPayload);
+    });
+  } catch (err) {
+    const isStandaloneTransactionError =
+      err.message && err.message.includes('Transaction numbers are only allowed on a replica set member or mongos');
+    if (isStandaloneTransactionError) {
+      await session.endSession();
+      transactionRecord = await runCreateTransactionLogic(null, normalisedPayload);
+      return transactionRecord;
     }
-
-    const inventory = await ensureInventoryDocument(session, normalisedPayload);
-
-    const [transaction] = await YarnTransaction.create([normalisedPayload], { session });
-    transactionRecord = transaction;
-
-    validateBlockedDoesNotExceedInventory(inventory, transaction);
-    updateInventoryBuckets(inventory, transaction);
-
-    await updateInventoryStatusAndMaybeRaiseRequisition(
-      session,
-      inventory,
-      yarnDoc,
-      inventory.overbooked ? 'overbooked' : undefined
-    );
-
-    await inventory.save({ session });
-  });
+    await session.endSession();
+    throw err;
+  }
 
   await session.endSession();
-
   return transactionRecord;
 };
 
