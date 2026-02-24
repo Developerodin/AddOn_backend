@@ -56,6 +56,24 @@ const teamMasterSchema = new mongoose.Schema(
       sparse: true, // allow null/absent for legacy docs
       index: true,
     },
+    /** Article data: array of objects with activeArticle (article id) */
+    articleData: {
+      type: [
+        {
+          activeArticle: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Article',
+            default: null,
+          },
+        },
+      ],
+      default: [],
+    },
+    /** Article logs: array of log entries */
+    logs: {
+      type: [mongoose.Schema.Types.Mixed],
+      default: [],
+    },
   },
   {
     timestamps: true,

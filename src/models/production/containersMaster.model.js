@@ -30,6 +30,19 @@ const containersMasterSchema = new mongoose.Schema(
       default: ContainerStatus.ACTIVE,
       index: true,
     },
+    /** Currently active article (name or id) */
+    activeArticle: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    /** Active floor identifier */
+    activeFloor: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    
   },
   {
     timestamps: true,

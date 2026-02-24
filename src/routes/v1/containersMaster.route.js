@@ -13,7 +13,8 @@ router
 
 router
   .route('/barcode/:barcode')
-  .get(auth(), validate(containersMasterValidation.getContainerByBarcode), containersMasterController.getContainerByBarcode);
+  .get(auth(), validate(containersMasterValidation.getContainerByBarcode), containersMasterController.getContainerByBarcode)
+  .patch(auth(), validate(containersMasterValidation.updateContainerByBarcode), containersMasterController.updateContainerByBarcode);
 
 router
   .route('/:containerId')

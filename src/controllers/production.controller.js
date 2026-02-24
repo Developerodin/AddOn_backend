@@ -120,9 +120,22 @@ export const forwardToWarehouse = catchAsync(async (req, res) => {
   res.send(result);
 });
 
+export const getArticle = catchAsync(async (req, res) => {
+  const { articleId } = req.params;
+  const article = await productionService.getArticleById(articleId);
+  if (!article) throw new ApiError(httpStatus.NOT_FOUND, 'Article not found');
+  res.send(article);
+});
+
 export const qualityInspection = catchAsync(async (req, res) => {
   const { articleId } = req.params;
   const result = await productionService.qualityInspection(articleId, req.body, req.user);
+  res.send(result);
+});
+
+export const updateArticleFloorReceivedData = catchAsync(async (req, res) => {
+  const { articleId } = req.params;
+  const result = await productionService.updateArticleFloorReceivedData(articleId, req.body);
   res.send(result);
 });
 

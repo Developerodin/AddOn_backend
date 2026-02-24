@@ -33,6 +33,16 @@ const updateTeamMaster = catchAsync(async (req, res) => {
   res.send(doc);
 });
 
+const addActiveArticle = catchAsync(async (req, res) => {
+  const doc = await teamMasterService.addActiveArticle(req.params.teamMemberId, req.body.articleId);
+  res.send(doc);
+});
+
+const removeActiveArticle = catchAsync(async (req, res) => {
+  const doc = await teamMasterService.removeActiveArticle(req.params.teamMemberId, req.params.articleId);
+  res.send(doc);
+});
+
 const deleteTeamMaster = catchAsync(async (req, res) => {
   await teamMasterService.deleteTeamMasterById(req.params.teamMemberId);
   res.status(httpStatus.NO_CONTENT).send();
@@ -44,5 +54,7 @@ export {
   getTeamMaster,
   getTeamMemberByBarcode,
   updateTeamMaster,
+  addActiveArticle,
+  removeActiveArticle,
   deleteTeamMaster,
 };

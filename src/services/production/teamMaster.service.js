@@ -42,6 +42,49 @@ export const queryTeamMasters = async (filter, options = {}) => {
 };
 
 /**
+ * Add article as active article for a team member (push to articleData).
+ * @param {string} teamMemberId
+ * @param {string} articleId
+ * @returns {Promise<TeamMaster>}
+ */
+export const addActiveArticle = async (teamMemberId, articleId) => {
+  const doc = await TeamMaster.findById(teamMemberId);
+  if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Team member not found');
+  if (!Array.isArray(doc.articleData)) doc.articleData = [];
+  doc.articleData.push({ activeArticle: articleId });
+  doc.markModified('articleData');
+  await doc.save();
+  return doc;
+};
+
+/**
+ * Remove active article from team member and append a log entry with timestamp.
+ * @param {string} teamMemberId
+ * @param {string} articleId
+ * @returns {Promise<TeamMaster>}
+ */
+export const removeActiveArticle = async (teamMemberId, articleId) => {
+  const doc = await TeamMaster.findById(teamMemberId);
+  if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Team member not found');
+  if (!Array.isArray(doc.articleData)) doc.articleData = [];
+  const before = doc.articleData.length;
+  doc.articleData = doc.articleData.filter(
+    (item) => item.activeArticle && item.activeArticle.toString() !== articleId
+  );
+  const removed = before !== doc.articleData.length;
+  if (!Array.isArray(doc.logs)) doc.logs = [];
+  doc.logs.push({
+    articleId,
+    action: 'activeArticleRemoved',
+    timestamp: new Date(),
+  });
+  doc.markModified('articleData');
+  doc.markModified('logs');
+  await doc.save();
+  return doc;
+};
+
+/**
  * Get team member by id.
  * @param {string} id
  * @returns {Promise<TeamMaster|null>}

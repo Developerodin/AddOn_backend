@@ -152,10 +152,20 @@ router
   .route('/floors/final-checking/forward-to-warehouse')
   .post(validate(productionValidation.forwardToWarehouse), productionController.forwardToWarehouse);
 
+// Get article by id
+router
+  .route('/articles/:articleId')
+  .get(validate(productionValidation.getArticle), productionController.getArticle);
+
 // Direct article quality inspection (works for any floor)
 router
   .route('/articles/:articleId/quality-inspection')
   .post(validate(productionValidation.qualityInspection), productionController.qualityInspection);
+
+// Update floor receivedData (receivedStatusFromPreviousFloor, receivedInContainerId, receivedTimestamp)
+router
+  .route('/articles/:articleId/floor-received-data')
+  .patch(validate(productionValidation.updateArticleFloorReceivedData), productionController.updateArticleFloorReceivedData);
 
 // Fix data corruption for specific article
 router

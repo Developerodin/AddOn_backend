@@ -116,7 +116,15 @@ const articleSchema = new mongoose.Schema({
       // Quality tracking fields for knitting floor (M4 = defect quantity)
       m4Quantity: { type: Number, default: 0, min: 0 },
       // Weight of article on knitting floor (e.g. kg)
-      weight: { type: Number, default: 0, min: 0 }
+      weight: { type: Number, default: 0, min: 0 },
+      receivedData: {
+        type: [{
+          receivedStatusFromPreviousFloor: { type: String, default: '' },
+          receivedInContainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'ContainersMaster', default: null },
+          receivedTimestamp: { type: Date, default: null }
+        }],
+        default: []
+      }
     },
     linking: {
       received: { type: Number, default: 0 },
@@ -124,7 +132,15 @@ const articleSchema = new mongoose.Schema({
       remaining: { type: Number, default: 0 },
       transferred: { type: Number, default: 0 },
       // Track repair items received from checking floors
-      repairReceived: { type: Number, default: 0, min: 0 }
+      repairReceived: { type: Number, default: 0, min: 0 },
+      receivedData: {
+        type: [{
+          receivedStatusFromPreviousFloor: { type: String, default: '' },
+          receivedInContainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'ContainersMaster', default: null },
+          receivedTimestamp: { type: Date, default: null }
+        }],
+        default: []
+      }
     },
     checking: {
       received: { type: Number, default: 0 },
@@ -147,7 +163,15 @@ const articleSchema = new mongoose.Schema({
         enum: Object.values(RepairStatus), 
         default: RepairStatus.NOT_REQUIRED 
       },
-      repairRemarks: { type: String, default: '' }
+      repairRemarks: { type: String, default: '' },
+      receivedData: {
+        type: [{
+          receivedStatusFromPreviousFloor: { type: String, default: '' },
+          receivedInContainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'ContainersMaster', default: null },
+          receivedTimestamp: { type: Date, default: null }
+        }],
+        default: []
+      }
     },
     washing: {
       received: { type: Number, default: 0 },
@@ -155,7 +179,15 @@ const articleSchema = new mongoose.Schema({
       remaining: { type: Number, default: 0 },
       transferred: { type: Number, default: 0 },
       // Track repair items received from checking floors
-      repairReceived: { type: Number, default: 0, min: 0 }
+      repairReceived: { type: Number, default: 0, min: 0 },
+      receivedData: {
+        type: [{
+          receivedStatusFromPreviousFloor: { type: String, default: '' },
+          receivedInContainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'ContainersMaster', default: null },
+          receivedTimestamp: { type: Date, default: null }
+        }],
+        default: []
+      }
     },
     boarding: {
       received: { type: Number, default: 0 },
@@ -163,7 +195,15 @@ const articleSchema = new mongoose.Schema({
       remaining: { type: Number, default: 0 },
       transferred: { type: Number, default: 0 },
       // Track repair items received from checking floors
-      repairReceived: { type: Number, default: 0, min: 0 }
+      repairReceived: { type: Number, default: 0, min: 0 },
+      receivedData: {
+        type: [{
+          receivedStatusFromPreviousFloor: { type: String, default: '' },
+          receivedInContainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'ContainersMaster', default: null },
+          receivedTimestamp: { type: Date, default: null }
+        }],
+        default: []
+      }
     },
     silicon: {
       received: { type: Number, default: 0 },
@@ -171,7 +211,15 @@ const articleSchema = new mongoose.Schema({
       remaining: { type: Number, default: 0 },
       transferred: { type: Number, default: 0 },
       // Track repair items received from checking floors
-      repairReceived: { type: Number, default: 0, min: 0 }
+      repairReceived: { type: Number, default: 0, min: 0 },
+      receivedData: {
+        type: [{
+          receivedStatusFromPreviousFloor: { type: String, default: '' },
+          receivedInContainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'ContainersMaster', default: null },
+          receivedTimestamp: { type: Date, default: null }
+        }],
+        default: []
+      }
     },
     secondaryChecking: {
       received: { type: Number, default: 0 },
@@ -194,7 +242,15 @@ const articleSchema = new mongoose.Schema({
         enum: Object.values(RepairStatus), 
         default: RepairStatus.NOT_REQUIRED 
       },
-      repairRemarks: { type: String, default: '' }
+      repairRemarks: { type: String, default: '' },
+      receivedData: {
+        type: [{
+          receivedStatusFromPreviousFloor: { type: String, default: '' },
+          receivedInContainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'ContainersMaster', default: null },
+          receivedTimestamp: { type: Date, default: null }
+        }],
+        default: []
+      }
     },
     finalChecking: {
       received: { type: Number, default: 0 },
@@ -217,7 +273,15 @@ const articleSchema = new mongoose.Schema({
         enum: Object.values(RepairStatus), 
         default: RepairStatus.NOT_REQUIRED 
       },
-      repairRemarks: { type: String, default: '' }
+      repairRemarks: { type: String, default: '' },
+      receivedData: {
+        type: [{
+          receivedStatusFromPreviousFloor: { type: String, default: '' },
+          receivedInContainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'ContainersMaster', default: null },
+          receivedTimestamp: { type: Date, default: null }
+        }],
+        default: []
+      }
     },
     branding: {
       received: { type: Number, default: 0 },
@@ -225,7 +289,15 @@ const articleSchema = new mongoose.Schema({
       remaining: { type: Number, default: 0 },
       transferred: { type: Number, default: 0 },
       // Track repair items received from checking floors
-      repairReceived: { type: Number, default: 0, min: 0 }
+      repairReceived: { type: Number, default: 0, min: 0 },
+      receivedData: {
+        type: [{
+          receivedStatusFromPreviousFloor: { type: String, default: '' },
+          receivedInContainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'ContainersMaster', default: null },
+          receivedTimestamp: { type: Date, default: null }
+        }],
+        default: []
+      }
     },
     warehouse: {
       received: { type: Number, default: 0 },
@@ -233,7 +305,15 @@ const articleSchema = new mongoose.Schema({
       remaining: { type: Number, default: 0 },
       transferred: { type: Number, default: 0 },
       // Track repair items received from checking floors
-      repairReceived: { type: Number, default: 0, min: 0 }
+      repairReceived: { type: Number, default: 0, min: 0 },
+      receivedData: {
+        type: [{
+          receivedStatusFromPreviousFloor: { type: String, default: '' },
+          receivedInContainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'ContainersMaster', default: null },
+          receivedTimestamp: { type: Date, default: null }
+        }],
+        default: []
+      }
     },
     dispatch: {
       received: { type: Number, default: 0 },
@@ -241,7 +321,15 @@ const articleSchema = new mongoose.Schema({
       remaining: { type: Number, default: 0 },
       transferred: { type: Number, default: 0 },
       // Track repair items received from checking floors
-      repairReceived: { type: Number, default: 0, min: 0 }
+      repairReceived: { type: Number, default: 0, min: 0 },
+      receivedData: {
+        type: [{
+          receivedStatusFromPreviousFloor: { type: String, default: '' },
+          receivedInContainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'ContainersMaster', default: null },
+          receivedTimestamp: { type: Date, default: null }
+        }],
+        default: []
+      }
     }
   },
   

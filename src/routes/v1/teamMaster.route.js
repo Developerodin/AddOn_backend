@@ -16,6 +16,14 @@ router
   .get(auth(), validate(teamMasterValidation.getTeamMemberByBarcode), teamMasterController.getTeamMemberByBarcode);
 
 router
+  .route('/:teamMemberId/active-article')
+  .post(auth(), validate(teamMasterValidation.addActiveArticle), teamMasterController.addActiveArticle);
+
+router
+  .route('/:teamMemberId/active-article/:articleId')
+  .delete(auth(), validate(teamMasterValidation.removeActiveArticle), teamMasterController.removeActiveArticle);
+
+router
   .route('/:teamMemberId')
   .get(auth(), validate(teamMasterValidation.getTeamMaster), teamMasterController.getTeamMaster)
   .patch(auth(), validate(teamMasterValidation.updateTeamMaster), teamMasterController.updateTeamMaster)

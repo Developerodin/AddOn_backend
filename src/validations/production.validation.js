@@ -238,6 +238,13 @@ const forwardToWarehouse = {
   }),
 };
 
+/** Get single article by id */
+const getArticle = {
+  params: Joi.object().keys({
+    articleId: Joi.string().custom(objectId).required(),
+  }),
+};
+
 const qualityInspection = {
   params: Joi.object().keys({
     articleId: Joi.string().custom(objectId).required(),
@@ -315,7 +322,36 @@ const getArticleWiseData = {
   }),
 };
 
-// ==================== LOGGING VALIDATIONS ====================
+/** Update receivedData for a floor on an article */
+const updateArticleFloorReceivedData = {
+  params: Joi.object().keys({
+    articleId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object().keys({
+    floor: Joi.string()
+      .valid(
+        'Knitting',
+        'Linking',
+        'Checking',
+        'Washing',
+        'Boarding',
+        'Silicon',
+        'Secondary Checking',
+        'Branding',
+        'Final Checking',
+        'Warehouse',
+        'Dispatch'
+      )
+      .required(),
+    receivedData: Joi.object()
+      .keys({
+        receivedStatusFromPreviousFloor: Joi.string().trim().allow('', null),
+        receivedInContainerId: Joi.string().custom(objectId).allow(null),
+        receivedTimestamp: Joi.date().allow(null),
+      })
+      .required(),
+  }),
+};
 
 const getArticleLogs = {
   params: Joi.object().keys({
@@ -476,6 +512,7 @@ export default {
   confirmFinalQuality,
   forwardToWarehouse,
   qualityInspection,
+  getArticle,
   
   // Reports validations
   getProductionDashboard,
@@ -495,4 +532,5 @@ export default {
   // Bulk operations validations
   bulkCreateOrders,
   bulkUpdateArticles,
+  updateArticleFloorReceivedData,
 };

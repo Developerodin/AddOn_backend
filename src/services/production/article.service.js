@@ -13,6 +13,18 @@ import {
 } from '../../utils/loggingHelper.js';
 
 /**
+ * Get article by id.
+ * @param {string} articleId - Article _id
+ * @returns {Promise<Article|null>}
+ */
+export const getArticleById = async (articleId) => {
+  const article = await Article.findById(articleId)
+    .populate('machineId', 'machineCode machineNumber model floor status')
+    .populate('orderId', 'orderNumber priority status');
+  return article;
+};
+
+/**
  * Update article progress on a specific floor
  * @param {string} floor
  * @param {ObjectId} orderId
@@ -1078,6 +1090,57 @@ export const fixDataCorruption = async (articleId) => {
     console.error('❌ Error fixing data corruption:', error);
     throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to fix data corruption');
   }
+};
+
+/**
+ * Update receivedData for a specific floor on an article.
+ * @param {string} articleId - Article _id
+ * @param {{ floor: string, receivedData: { receivedStatusFromPreviousFloor?: string, receivedInContainerId?: string, receivedTimestamp?: Date } }} payload
+ * @returns {Promise<Article>}
+ */
+export const updateArticleFloorReceivedData = async (articleId, payload) => {
+  const article = await Article.findById(articleId);
+  if (!article) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Article not found');
+  }
+
+  const floorMapping = {
+    'FinalChecking': 'Final Checking',
+    'finalchecking': 'Final Checking',
+    'SecondaryChecking': 'Secondary Checking',
+    'secondarychecking': 'Secondary Checking',
+    'Silicon': 'Silicon',
+    'silicon': 'Silicon',
+    'Knitting': 'Knitting',
+    'Linking': 'Linking',
+    'Checking': 'Checking',
+    'Washing': 'Washing',
+    'Boarding': 'Boarding',
+    'Branding': 'Branding',
+    'Warehouse': 'Warehouse',
+    'Dispatch': 'Dispatch',
+  };
+  const normalizedFloor = floorMapping[payload.floor] || payload.floor;
+  const floorKey = article.getFloorKey(normalizedFloor);
+
+  if (!floorKey || !article.floorQuantities[floorKey]) {
+    throw new ApiError(httpStatus.BAD_REQUEST, `Invalid floor: "${payload.floor}". Must be one of: Knitting, Linking, Checking, Washing, Boarding, Silicon, Secondary Checking, Branding, Final Checking, Warehouse, Dispatch.`);
+  }
+
+  const floorData = article.floorQuantities[floorKey];
+  if (!Array.isArray(floorData.receivedData)) {
+    floorData.receivedData = [];
+  }
+  const rd = payload.receivedData || {};
+  floorData.receivedData.push({
+    receivedStatusFromPreviousFloor: rd.receivedStatusFromPreviousFloor != null ? rd.receivedStatusFromPreviousFloor : '',
+    receivedInContainerId: rd.receivedInContainerId || null,
+    receivedTimestamp: rd.receivedTimestamp ? new Date(rd.receivedTimestamp) : null,
+  });
+
+  article.markModified(`floorQuantities.${floorKey}`);
+  await article.save();
+  return article;
 };
 
 export const qualityInspection = async (articleId, inspectionData, user = null) => {

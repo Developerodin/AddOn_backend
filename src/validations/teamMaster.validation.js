@@ -42,6 +42,24 @@ export const getTeamMaster = {
   }),
 };
 
+/** Add article as active article for team member */
+export const addActiveArticle = {
+  params: Joi.object().keys({
+    teamMemberId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object().keys({
+    articleId: Joi.string().custom(objectId).required(),
+  }),
+};
+
+/** Remove active article and log removal with timestamp */
+export const removeActiveArticle = {
+  params: Joi.object().keys({
+    teamMemberId: Joi.string().custom(objectId).required(),
+    articleId: Joi.string().custom(objectId).required(),
+  }),
+};
+
 export const getTeamMemberByBarcode = {
   params: Joi.object().keys({
     barcode: Joi.string().trim().required(),
