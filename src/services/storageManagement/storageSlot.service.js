@@ -147,7 +147,7 @@ export const getStorageContentsByBarcode = async (barcode) => {
     for (const box of allBoxes) {
       const conesInST = await YarnCone.countDocuments({
         boxId: box.boxId,
-        coneStorageId: { $regex: /^ST-/i },
+        coneStorageId: { $exists: true, $nin: [null, ''] },
       });
       
       // Only include box if it has no cones in ST (box still has yarn in it)

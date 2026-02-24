@@ -129,10 +129,10 @@ export const transferBoxes = async (transferData) => {
       // 2. Check if cones exist in ST for these boxes (cones are created separately)
       // 3. If cones exist in ST, remove boxes from LT storage (box is empty, no longer in LT)
       
-      // Count actual cones in ST for these boxes
+      // Count actual cones with storage assigned for these boxes (any non-empty coneStorageId)
       const conesInST = await YarnCone.find({
         boxId: { $in: boxIdsForYarn },
-        coneStorageId: { $regex: /^ST-/i },
+        coneStorageId: { $exists: true, $nin: [null, ''] },
       }).lean();
       
       const actualConeCount = conesInST.length;
@@ -157,7 +157,7 @@ export const transferBoxes = async (transferData) => {
       for (const box of yarnBoxes) {
         const conesForThisBox = await YarnCone.find({
           boxId: box.boxId,
-          coneStorageId: { $regex: /^ST-/i },
+          coneStorageId: { $exists: true, $nin: [null, ''] },
         }).lean();
         const coneCount = conesForThisBox.length;
         const totalConeWeight = conesForThisBox.reduce((sum, c) => sum + (c.coneWeight || 0), 0);

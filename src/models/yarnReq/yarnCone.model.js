@@ -126,17 +126,15 @@ yarnConeSchema.pre('save', function (next) {
 
 /**
  * Post-save hook: Automatically sync cone to inventory when stored in short-term storage
- * This ensures inventory is updated automatically when cones are created/stored
+ * (Any non-empty coneStorageId = cone is in short-term / slot storage.)
  */
 yarnConeSchema.post('save', async function (doc) {
-  // Only process if cone is stored in short-term storage
-  const isShortTermStorage = doc.coneStorageId && /^ST-/i.test(doc.coneStorageId);
+  const hasStorage = doc.coneStorageId != null && String(doc.coneStorageId).trim() !== '';
   const isNotIssued = doc.issueStatus !== 'issued';
   const hasWeight = doc.coneWeight && doc.coneWeight > 0;
 
-  // Check if conditions are met
-  if (!isShortTermStorage || !isNotIssued || !hasWeight) {
-    return; // Skip if conditions not met
+  if (!hasStorage || !isNotIssued || !hasWeight) {
+    return;
   }
 
   // Only trigger if coneStorageId or coneWeight changed, or if it's a new document
@@ -209,7 +207,7 @@ yarnConeSchema.post('save', async function (doc) {
     // Recalculate short-term inventory from all available cones
     // This ensures we always have accurate counts
     const allSTCones = await mongoose.model('YarnCone').find({
-      coneStorageId: { $regex: /^ST-/i },
+      coneStorageId: { $exists: true, $nin: [null, ''] },
       issueStatus: { $ne: 'issued' },
       yarn: yarnCatalog._id,
     }).lean();
@@ -257,15 +255,14 @@ yarnConeSchema.post('save', async function (doc) {
 
     await inventory.save();
 
-    // If cone is in ST storage and has a boxId, check if box is fully transferred and should be reset
-    // When entire box weight is in cones in ST, reset box: clear storageLocation, boxWeight=0, storedStatus=false
-    if (doc.boxId && isShortTermStorage) {
+    // If cone has storage and has a boxId, check if box is fully transferred and should be reset
+    if (doc.boxId && hasStorage) {
       try {
         const box = await YarnBox.findOne({ boxId: doc.boxId });
         if (box && box.boxWeight != null && box.boxWeight > 0) {
           const conesInST = await mongoose.model('YarnCone').find({
             boxId: doc.boxId,
-            coneStorageId: { $regex: /^ST-/i },
+            coneStorageId: { $exists: true, $nin: [null, ''] },
           }).lean();
           const totalConesInST = conesInST.length;
           const totalConeWeight = conesInST.reduce((sum, c) => sum + (c.coneWeight || 0), 0);

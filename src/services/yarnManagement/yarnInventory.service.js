@@ -96,9 +96,9 @@ const recalculateInventoryFromStorage = async (inventory) => {
 
   const stBoxes = await YarnBox.find(stBoxQuery).lean();
 
-  // Count cones in ST storage
+  // Count cones with storage assigned (any non-empty coneStorageId)
   const stConeQuery = {
-    coneStorageId: { $regex: /^ST-/i },
+    coneStorageId: { $exists: true, $nin: [null, ''] },
     issueStatus: { $ne: 'issued' },
   };
   

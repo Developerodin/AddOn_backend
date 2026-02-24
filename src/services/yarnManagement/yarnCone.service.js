@@ -297,32 +297,20 @@ export const returnYarnCone = async (barcode, returnData = {}) => {
 
   // Handle two cases:
   if (isEmpty) {
-    // Case 1: Empty cone - update weight to 0, don't update storage location
     yarnCone.coneWeight = 0;
     yarnCone.tearWeight = 0;
-    // Keep existing storage location or set to null if not in ST storage
-    if (!yarnCone.coneStorageId || !/^ST-/i.test(yarnCone.coneStorageId)) {
-      yarnCone.coneStorageId = null; // Empty cone doesn't need storage location
+    if (!yarnCone.coneStorageId || String(yarnCone.coneStorageId).trim() === '') {
+      yarnCone.coneStorageId = null;
     }
   } else {
-    // Case 2: Cone has remaining yarn - update weight and storage location
-    // Update cone weight to reflect remaining yarn
     yarnCone.coneWeight = returnWeight;
-    yarnCone.tearWeight = 0; // Reset tear weight for returned cone
-    
-    // Validate and update storage location to short-term storage
+    yarnCone.tearWeight = 0;
+
     const coneStorageId = returnData.coneStorageId;
-    if (coneStorageId) {
-      if (!/^ST-/i.test(coneStorageId)) {
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          `Storage ID must start with 'ST-' for short-term storage. Provided: ${coneStorageId}`
-        );
-      }
-      yarnCone.coneStorageId = coneStorageId;
-    } else if (!yarnCone.coneStorageId || !/^ST-/i.test(yarnCone.coneStorageId)) {
-      // If no storage ID provided and current storage is not ST, set a default ST location
-      yarnCone.coneStorageId = `ST-RETURNED-${yarnCone.barcode}`;
+    if (coneStorageId && String(coneStorageId).trim() !== '') {
+      yarnCone.coneStorageId = coneStorageId.trim();
+    } else if (!yarnCone.coneStorageId || String(yarnCone.coneStorageId).trim() === '') {
+      yarnCone.coneStorageId = `RETURNED-${yarnCone.barcode}`;
     }
   }
 

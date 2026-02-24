@@ -120,7 +120,7 @@ export const returnYarnCone = {
       returnWeight: Joi.number().min(0).optional(),
       returnBy: userRefSchema.optional(),
       returnDate: Joi.date().iso().optional(),
-      coneStorageId: Joi.string().trim().pattern(/^ST-/i).optional(),
+      coneStorageId: Joi.string().trim().optional(),
     })
     .optional(),
 };
