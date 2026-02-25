@@ -611,7 +611,8 @@ export const runReceivingPipelineForPo = async ({
  * @param {Array} [params.packListDetails] - optional, update PO with this before processing
  * @param {Array} [params.receivedLotDetails] - optional, update PO with this before processing
  * @param {string} [params.notes]
- * @param {boolean} [params.autoApproveQc] - default true
+ * @param {boolean} [params.autoApproveQc] - default true; false for manual entry (no QC auto-approve)
+ * @param {boolean} [params.fillBoxWeight] - default true; false for manual entry (do not set box weight from lot totals)
  * @returns {Promise<Object>} - { success, message, purchaseOrder, boxesCreated, boxesUpdated, errors }
  */
 export const processFromExistingPo = async ({
@@ -621,6 +622,7 @@ export const processFromExistingPo = async ({
   receivedLotDetails: requestReceivedLots,
   notes,
   autoApproveQc = true,
+  fillBoxWeight = true,
 }) => {
   const result = {
     success: false,
@@ -688,7 +690,7 @@ export const processFromExistingPo = async ({
     return { yarnName, shadeCode };
   };
 
-  // Generate boxUpdates from lot totals (distribute weight and cones across boxes)
+  // Generate boxUpdates: pipeline = weight + cones + yarn/shade; manual = only yarnName/shadeCode (no auto-fill)
   for (const lot of lots) {
     const { yarnName, shadeCode } = getYarnAndShadeForLot(lot);
     const n = Math.max(1, lot.numberOfBoxes);
@@ -696,10 +698,11 @@ export const processFromExistingPo = async ({
     const perBoxCones = Math.floor((lot.numberOfCones || 0) / n);
     const remainder = (lot.numberOfCones || 0) % n;
     for (let i = 0; i < n; i++) {
-      const entry = {
-        boxWeight: perBoxWeight,
-        numberOfCones: i < n - 1 ? perBoxCones : perBoxCones + remainder,
-      };
+      const entry = {};
+      if (fillBoxWeight) {
+        entry.boxWeight = perBoxWeight;
+        entry.numberOfCones = i < n - 1 ? perBoxCones : perBoxCones + remainder;
+      }
       if (yarnName) entry.yarnName = yarnName;
       if (shadeCode) entry.shadeCode = shadeCode;
       lot.boxUpdates.push(entry);

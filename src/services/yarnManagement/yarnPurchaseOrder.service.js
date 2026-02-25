@@ -1,4 +1,5 @@
 import httpStatus from 'http-status';
+import mongoose from 'mongoose';
 import { YarnPurchaseOrder, YarnBox, YarnCone } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import { yarnPurchaseOrderStatuses, lotStatuses } from '../../models/yarnReq/yarnPurchaseOrder.model.js';
@@ -285,7 +286,7 @@ export const updateLotStatusAndQcApprove = async (poNumber, lotNumber, lotStatus
   // Find the lot in receivedLotDetails
   const lotIndex = purchaseOrder.receivedLotDetails.findIndex(
     (lot) => lot.lotNumber === lotNumber
-  );
+  ); 
 
   if (lotIndex === -1) {
     throw new ApiError(httpStatus.NOT_FOUND, `Lot ${lotNumber} not found in received lot details`);
@@ -294,11 +295,13 @@ export const updateLotStatusAndQcApprove = async (poNumber, lotNumber, lotStatus
   // Update the lot status
   purchaseOrder.receivedLotDetails[lotIndex].status = lotStatus;
 
-  // Update receivedBy if provided
+  // Update receivedBy if provided (only set user when valid ObjectId to avoid cast error)
   if (updatedBy) {
+    const userId = updatedBy.user_id != null ? String(updatedBy.user_id).trim() : '';
+    const hasValidUser = userId && mongoose.Types.ObjectId.isValid(userId);
     purchaseOrder.receivedBy = {
-      username: updatedBy.username,
-      user: updatedBy.user_id,
+      username: updatedBy.username ?? undefined,
+      ...(hasValidUser && { user: userId }),
       receivedAt: new Date(),
     };
   }

@@ -60,9 +60,9 @@ export const updatePurchaseOrder = catchAsync(async (req, res) => {
   const { purchaseOrderId } = req.params;
   const purchaseOrder = await yarnPurchaseOrderService.updatePurchaseOrderById(purchaseOrderId, req.body);
 
-  // When packListDetails or receivedLotDetails are saved - auto-run: create boxes, update box details, QC approve
-  // Works for both goods_received and goods_partially_received status
+  // When packListDetails or receivedLotDetails are saved: create/update boxes. Manual entry = no box weight fill, no QC auto-approve.
   if (purchaseOrder.receivedLotDetails?.length > 0) {
+    const runPipeline = req.body.run_pipeline === true;
     const updatedBy = {
       username: req.user?.email || req.user?.username || 'system',
       user_id: req.user?.id || req.user?._id?.toString?.() || '',
@@ -70,7 +70,8 @@ export const updatePurchaseOrder = catchAsync(async (req, res) => {
     const result = await yarnReceivingPipelineService.processFromExistingPo({
       purchaseOrderId,
       updatedBy,
-      autoApproveQc: true,
+      autoApproveQc: runPipeline,
+      fillBoxWeight: runPipeline,
     });
     return res.status(httpStatus.OK).send(result);
   }
