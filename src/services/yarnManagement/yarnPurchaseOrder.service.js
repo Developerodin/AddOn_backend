@@ -136,38 +136,38 @@ export const getSupplierTearweightByPoAndYarnName = async (poNumber, yarnName) =
  */
 export const getNextPoNumberForYear = async (year) => {
   const prefix = `PO-${year}-`;
-  const regex = new RegExp(`^${prefix}\\d+$`);
   const result = await YarnPurchaseOrder.aggregate([
-    { $match: { poNumber: regex } },
+    { $match: { poNumber: { $regex: `^PO-${year}-[0-9]+$` } } },
     {
       $addFields: {
         seq: { $toInt: { $arrayElemAt: [{ $split: ['$poNumber', '-'] }, 2] } },
       },
     },
+    { $match: { seq: { $ne: null, $gte: 0 } } },
     { $group: { _id: null, maxSeq: { $max: '$seq' } } },
   ]);
-  const nextSeq = result.length && result[0].maxSeq != null ? result[0].maxSeq + 1 : 1;
+  const maxSeq = result[0]?.maxSeq;
+  const nextSeq = typeof maxSeq === 'number' && Number.isInteger(maxSeq) ? maxSeq + 1 : 1;
   const suffix = nextSeq < 1000 ? String(nextSeq).padStart(3, '0') : String(nextSeq);
   return `${prefix}${suffix}`;
 };
 
 export const createPurchaseOrder = async (purchaseOrderBody) => {
-  let poNumber = (purchaseOrderBody.poNumber || '').trim();
-  if (!poNumber) {
-    const year = new Date().getFullYear();
-    poNumber = await getNextPoNumberForYear(year);
-    purchaseOrderBody = { ...purchaseOrderBody, poNumber };
-  }
+  // Always generate next sequential PO number (ignore client value so sequence is authoritative)
+  const year = new Date().getFullYear();
+  const poNumber = await getNextPoNumberForYear(year);
+  const body = { ...purchaseOrderBody, poNumber };
+
   const existing = await YarnPurchaseOrder.findOne({ poNumber });
   if (existing) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'PO number already exists');
   }
 
-  const statusLogs = purchaseOrderBody.statusLogs || [];
-  const currentStatus = purchaseOrderBody.currentStatus || yarnPurchaseOrderStatuses[0];
+  const statusLogs = body.statusLogs || [];
+  const currentStatus = body.currentStatus || yarnPurchaseOrderStatuses[0];
 
   const payload = {
-    ...purchaseOrderBody,
+    ...body,
     currentStatus,
     statusLogs,
   };
