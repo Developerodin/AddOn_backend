@@ -179,6 +179,7 @@ export const updatePurchaseOrder = {
         user: Joi.string().custom(objectId).allow(null),
         receivedAt: Joi.date().iso().allow(null),
       }),
+      run_pipeline: Joi.boolean().optional(),
     })
     .min(1),
 };
