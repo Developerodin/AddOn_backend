@@ -126,8 +126,38 @@ export const getSupplierTearweightByPoAndYarnName = async (poNumber, yarnName) =
   };
 };
 
+/**
+ * Get the next sequential PO number for a given year.
+ * Format: PO-YYYY-N where N is 3 digits (001–999), then 4 (1000–9999), 5, 6 as needed.
+ * Finds the highest existing PO-YYYY-* in DB and returns PO-YYYY-(max+1).
+ * @param {number} year - Full year (e.g. 2026)
+ * @returns {Promise<string>} e.g. PO-2026-749
+ */
+export const getNextPoNumberForYear = async (year) => {
+  const prefix = `PO-${year}-`;
+  const regex = new RegExp(`^${prefix}\\d+$`);
+  const result = await YarnPurchaseOrder.aggregate([
+    { $match: { poNumber: regex } },
+    {
+      $addFields: {
+        seq: { $toInt: { $arrayElemAt: [{ $split: ['$poNumber', '-'] }, 2] } },
+      },
+    },
+    { $group: { _id: null, maxSeq: { $max: '$seq' } } },
+  ]);
+  const nextSeq = result.length && result[0].maxSeq != null ? result[0].maxSeq + 1 : 1;
+  const suffix = nextSeq < 1000 ? String(nextSeq).padStart(3, '0') : String(nextSeq);
+  return `${prefix}${suffix}`;
+};
+
 export const createPurchaseOrder = async (purchaseOrderBody) => {
-  const existing = await YarnPurchaseOrder.findOne({ poNumber: purchaseOrderBody.poNumber });
+  let poNumber = (purchaseOrderBody.poNumber || '').trim();
+  if (!poNumber) {
+    const year = new Date().getFullYear();
+    poNumber = await getNextPoNumberForYear(year);
+    purchaseOrderBody = { ...purchaseOrderBody, poNumber };
+  }
+  const existing = await YarnPurchaseOrder.findOne({ poNumber });
   if (existing) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'PO number already exists');
   }

@@ -45,7 +45,7 @@ export const getSupplierTearweightByPoAndYarnName = {
 export const createPurchaseOrder = {
   body: Joi.object()
     .keys({
-      poNumber: Joi.string().trim().required(),
+      poNumber: Joi.string().trim().allow('', null).optional(),
       supplierName: Joi.string().trim().required(),
       supplier: Joi.string().custom(objectId).required(),
       poItems: Joi.array().items(poItemSchema).min(1).required(),
