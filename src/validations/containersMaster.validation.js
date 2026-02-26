@@ -53,6 +53,13 @@ export const updateContainerByBarcode = {
     .required(),
 };
 
+/** Clear activeArticle and activeFloor for container by barcode */
+export const clearActiveByBarcode = {
+  params: Joi.object().keys({
+    barcode: Joi.string().trim().required(),
+  }),
+};
+
 export const updateContainersMaster = {
   params: Joi.object().keys({
     containerId: Joi.string().custom(objectId).required(),

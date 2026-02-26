@@ -76,6 +76,20 @@ export const updateContainersMasterByBarcode = async (barcode, body) => {
 };
 
 /**
+ * Clear activeArticle and activeFloor for container by barcode.
+ * @param {string} barcode
+ * @returns {Promise<ContainersMaster>}
+ */
+export const clearActiveByBarcode = async (barcode) => {
+  const doc = await getContainerByBarcode(barcode);
+  if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Container not found for this barcode');
+  doc.activeArticle = '';
+  doc.activeFloor = '';
+  await doc.save();
+  return doc;
+};
+
+/**
  * Update container by id.
  * @param {string} id
  * @param {Object} updateBody

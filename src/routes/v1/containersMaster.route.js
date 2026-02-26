@@ -12,6 +12,10 @@ router
   .get(auth(), validate(containersMasterValidation.getContainersMasters), containersMasterController.getContainersMasters);
 
 router
+  .route('/barcode/:barcode/clear-active')
+  .patch(auth(), validate(containersMasterValidation.clearActiveByBarcode), containersMasterController.clearActiveByBarcode);
+
+router
   .route('/barcode/:barcode')
   .get(auth(), validate(containersMasterValidation.getContainerByBarcode), containersMasterController.getContainerByBarcode)
   .patch(auth(), validate(containersMasterValidation.updateContainerByBarcode), containersMasterController.updateContainerByBarcode);
