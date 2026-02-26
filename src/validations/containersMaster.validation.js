@@ -60,6 +60,9 @@ export const clearActiveByBarcode = {
   }),
 };
 
+/** Reset activeArticle and activeFloor for all containers */
+export const resetAllActive = {};
+
 export const updateContainersMaster = {
   params: Joi.object().keys({
     containerId: Joi.string().custom(objectId).required(),

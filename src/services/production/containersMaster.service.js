@@ -90,6 +90,15 @@ export const clearActiveByBarcode = async (barcode) => {
 };
 
 /**
+ * Reset activeArticle and activeFloor for all containers.
+ * @returns {Promise<{ modifiedCount: number }>}
+ */
+export const resetAllActive = async () => {
+  const result = await ContainersMaster.updateMany({}, { $set: { activeArticle: '', activeFloor: '' } });
+  return { modifiedCount: result.modifiedCount };
+};
+
+/**
  * Update container by id.
  * @param {string} id
  * @param {Object} updateBody

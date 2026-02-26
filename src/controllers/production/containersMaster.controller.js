@@ -43,6 +43,11 @@ const clearActiveByBarcode = catchAsync(async (req, res) => {
   res.send(doc);
 });
 
+const resetAllActive = catchAsync(async (req, res) => {
+  const result = await containersMasterService.resetAllActive();
+  res.send(result);
+});
+
 const deleteContainersMaster = catchAsync(async (req, res) => {
   await containersMasterService.deleteContainersMasterById(req.params.containerId);
   res.status(httpStatus.NO_CONTENT).send();
@@ -56,5 +61,6 @@ export {
   updateContainersMaster,
   updateContainerByBarcode,
   clearActiveByBarcode,
+  resetAllActive,
   deleteContainersMaster,
 };
