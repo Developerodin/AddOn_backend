@@ -75,7 +75,7 @@ const EXCLUDED_ITEM_STATUSES = [OrderStatus.COMPLETED, OrderStatus.ON_HOLD];
 export const getMachineOrderAssignmentsTopItems = async () => {
   const assignments = await MachineOrderAssignment.find({
     'productionOrderItems.0': { $exists: true },
-    'productionOrderItems.status': { $nin: EXCLUDED_ITEM_STATUSES },
+    productionOrderItems: { $elemMatch: { status: { $nin: EXCLUDED_ITEM_STATUSES } } },
     isActive: true,
   })
     .populate('machine')
