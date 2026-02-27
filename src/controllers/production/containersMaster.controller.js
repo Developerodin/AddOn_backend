@@ -10,7 +10,7 @@ const createContainersMaster = catchAsync(async (req, res) => {
 });
 
 const getContainersMasters = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['containerName', 'status', 'activeArticle', 'activeFloor', 'search']);
+  const filter = pick(req.query, ['containerName', 'status', 'activeArticle', 'activeFloor', 'quantity', 'search']);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
   const result = await containersMasterService.queryContainersMasters(filter, options);
   res.send(result);

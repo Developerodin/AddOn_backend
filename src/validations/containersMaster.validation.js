@@ -12,6 +12,7 @@ export const createContainersMaster = {
       .default(ContainerStatus.ACTIVE),
     activeArticle: Joi.string().trim().allow('', null),
     activeFloor: Joi.string().trim().allow('', null),
+    quantity: Joi.number().integer().min(0),
   }),
 };
 
@@ -21,6 +22,7 @@ export const getContainersMasters = {
     status: Joi.string().valid(...statusValues),
     activeArticle: Joi.string().trim(),
     activeFloor: Joi.string().trim(),
+    quantity: Joi.number().integer().min(0),
     search: Joi.string().trim(),
     sortBy: Joi.string(),
     limit: Joi.number().integer().min(1),
@@ -40,17 +42,18 @@ export const getContainerByBarcode = {
   }),
 };
 
-/** Update container's activeArticle and activeFloor by barcode */
+/** Update container's activeArticle, activeFloor, quantity by barcode */
 export const updateContainerByBarcode = {
   params: Joi.object().keys({
     barcode: Joi.string().trim().required(),
   }),
   body: Joi.object()
     .keys({
-      activeArticle: Joi.string().custom(objectId).required(),
-      activeFloor: Joi.string().trim().required(),
+      activeArticle: Joi.string().custom(objectId).allow('', null),
+      activeFloor: Joi.string().trim().allow('', null),
+      quantity: Joi.number().integer().min(0),
     })
-    .required(),
+    .min(1),
 };
 
 /** Clear activeArticle and activeFloor for container by barcode */
@@ -73,6 +76,7 @@ export const updateContainersMaster = {
       status: Joi.string().valid(...statusValues),
       activeArticle: Joi.string().trim().allow('', null),
       activeFloor: Joi.string().trim().allow('', null),
+      quantity: Joi.number().integer().min(0),
     })
     .min(1),
 };

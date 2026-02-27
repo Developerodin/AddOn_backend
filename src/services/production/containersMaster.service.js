@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import httpStatus from 'http-status';
 import ContainersMaster from '../../models/production/containersMaster.model.js';
 import ApiError from '../../utils/ApiError.js';
@@ -23,17 +24,26 @@ export const createContainersMaster = async (body) => {
  * @returns {Promise<QueryResult>}
  */
 export const queryContainersMasters = async (filter, options = {}) => {
-  const { containerName, status, activeArticle, activeFloor, search, ...rest } = filter || {};
+  const { containerName, status, activeArticle, activeFloor, quantity, search, ...rest } = filter || {};
   const query = { ...rest };
   if (containerName) query.containerName = { $regex: containerName, $options: 'i' };
   if (status) query.status = status;
-  if (activeArticle) query.activeArticle = { $regex: activeArticle, $options: 'i' };
+  if (activeArticle != null && activeArticle !== '') {
+    query.activeArticle = mongoose.Types.ObjectId.isValid(activeArticle) && String(activeArticle).length === 24 ? activeArticle : null;
+    if (query.activeArticle === null) delete query.activeArticle;
+  }
   if (activeFloor) query.activeFloor = { $regex: activeFloor, $options: 'i' };
+  if (quantity != null && quantity !== '') {
+    const q = Number(quantity);
+    if (!Number.isNaN(q) && q >= 0) query.quantity = q;
+  }
   if (search && String(search).trim()) {
     const term = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const re = new RegExp(term, 'i');
-    query.$or = [{ barcode: re }, { containerName: re }, { activeArticle: re }, { activeFloor: re }];
+    query.$or = [{ barcode: re }, { containerName: re }, { activeFloor: re }];
+    if (mongoose.Types.ObjectId.isValid(term) && term.length === 24) query.$or.push({ activeArticle: new mongoose.Types.ObjectId(term) });
   }
+  // Don't default-populate activeArticle on list: some docs may have empty string refs (legacy), which would cause CastError
   return ContainersMaster.paginate(query, options);
 };
 
@@ -43,7 +53,7 @@ export const queryContainersMasters = async (filter, options = {}) => {
  * @returns {Promise<ContainersMaster|null>}
  */
 export const getContainersMasterById = async (id) => {
-  return ContainersMaster.findById(id);
+  return ContainersMaster.findById(id).populate('activeArticle');
 };
 
 /**
@@ -54,25 +64,27 @@ export const getContainersMasterById = async (id) => {
 export const getContainerByBarcode = async (barcode) => {
   if (!barcode || !String(barcode).trim()) return null;
   const trimmed = String(barcode).trim();
-  const byBarcode = await ContainersMaster.findOne({ barcode: trimmed });
-  if (byBarcode) return byBarcode;
-  if (/^[0-9a-fA-F]{24}$/.test(trimmed)) return ContainersMaster.findById(trimmed);
-  return null;
+  let doc = await ContainersMaster.findOne({ barcode: trimmed }).populate('activeArticle');
+  if (!doc && /^[0-9a-fA-F]{24}$/.test(trimmed)) {
+    doc = await ContainersMaster.findById(trimmed).populate('activeArticle');
+  }
+  return doc || null;
 };
 
 /**
- * Update container by barcode (sets activeArticle = article id, activeFloor = floor name).
+ * Update container by barcode (activeArticle, activeFloor, quantity).
  * @param {string} barcode
- * @param {{ activeArticle: string, activeFloor: string }} body
+ * @param {{ activeArticle?: string, activeFloor?: string, quantity?: number }} body
  * @returns {Promise<ContainersMaster>}
  */
 export const updateContainersMasterByBarcode = async (barcode, body) => {
   const doc = await getContainerByBarcode(barcode);
   if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Container not found for this barcode');
-  doc.activeArticle = body.activeArticle;
-  doc.activeFloor = body.activeFloor;
+  if (body.hasOwnProperty('activeArticle')) doc.activeArticle = body.activeArticle === '' || body.activeArticle == null ? null : body.activeArticle;
+  if (body.hasOwnProperty('activeFloor')) doc.activeFloor = body.activeFloor || '';
+  if (body.hasOwnProperty('quantity') && typeof body.quantity === 'number') doc.quantity = Math.max(0, Math.floor(body.quantity));
   await doc.save();
-  return doc;
+  return getContainerByBarcode(barcode);
 };
 
 /**
@@ -83,18 +95,19 @@ export const updateContainersMasterByBarcode = async (barcode, body) => {
 export const clearActiveByBarcode = async (barcode) => {
   const doc = await getContainerByBarcode(barcode);
   if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Container not found for this barcode');
-  doc.activeArticle = '';
+  doc.activeArticle = null;
   doc.activeFloor = '';
+  doc.quantity = 0;
   await doc.save();
-  return doc;
+  return getContainerByBarcode(barcode);
 };
 
 /**
- * Reset activeArticle and activeFloor for all containers.
+ * Reset activeArticle, activeFloor, and quantity for all containers.
  * @returns {Promise<{ modifiedCount: number }>}
  */
 export const resetAllActive = async () => {
-  const result = await ContainersMaster.updateMany({}, { $set: { activeArticle: '', activeFloor: '' } });
+  const result = await ContainersMaster.updateMany({}, { $set: { activeArticle: null, activeFloor: '', quantity: 0 } });
   return { modifiedCount: result.modifiedCount };
 };
 

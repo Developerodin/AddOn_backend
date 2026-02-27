@@ -30,11 +30,11 @@ const containersMasterSchema = new mongoose.Schema(
       default: ContainerStatus.ACTIVE,
       index: true,
     },
-    /** Currently active article (name or id) */
+    /** Currently active article (ObjectId ref for populate) */
     activeArticle: {
-      type: String,
-      trim: true,
-      default: '',
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Article',
+      default: null,
     },
     /** Active floor identifier */
     activeFloor: {
@@ -42,7 +42,12 @@ const containersMasterSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
-    
+    /** Quantity (e.g. pieces in container) */
+    quantity: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
   },
   {
     timestamps: true,
