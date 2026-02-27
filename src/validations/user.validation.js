@@ -75,6 +75,16 @@ const createUser = {
         'Layout': Joi.boolean(),
         'Stock': Joi.boolean(),
         'Reports': Joi.boolean()
+      }),
+      'Vendor PO': Joi.object().keys({
+        'Vendor List': Joi.boolean(),
+        'Vendor PO Raise': Joi.boolean(),
+        'Vendor PO Receive': Joi.boolean(),
+        'Checking': Joi.boolean(),
+        'GRN': Joi.boolean(),
+        'Branding': Joi.boolean(),
+        'Final Checking': Joi.boolean(),
+        'Counting & Dispatch': Joi.boolean()
       })
     }).optional(),
   }),
@@ -174,6 +184,16 @@ const updateUser = {
           'Layout': Joi.boolean(),
           'Stock': Joi.boolean(),
           'Reports': Joi.boolean()
+        }),
+        'Vendor PO': Joi.object().keys({
+          'Vendor List': Joi.boolean(),
+          'Vendor PO Raise': Joi.boolean(),
+          'Vendor PO Receive': Joi.boolean(),
+          'Checking': Joi.boolean(),
+          'GRN': Joi.boolean(),
+          'Branding': Joi.boolean(),
+          'Final Checking': Joi.boolean(),
+          'Counting & Dispatch': Joi.boolean()
         })
       }),
     })
@@ -247,6 +267,16 @@ const updateUserNavigation = {
           'Layout': Joi.boolean(),
           'Stock': Joi.boolean(),
           'Reports': Joi.boolean()
+        }).unknown(true),
+        'Vendor PO': Joi.object().keys({
+          'Vendor List': Joi.boolean(),
+          'Vendor PO Raise': Joi.boolean(),
+          'Vendor PO Receive': Joi.boolean(),
+          'Checking': Joi.boolean(),
+          'GRN': Joi.boolean(),
+          'Branding': Joi.boolean(),
+          'Final Checking': Joi.boolean(),
+          'Counting & Dispatch': Joi.boolean()
         }).unknown(true)
       }).unknown(true).required(),
     })

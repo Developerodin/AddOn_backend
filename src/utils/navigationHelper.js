@@ -70,6 +70,16 @@ export const DEFAULT_NAVIGATION = {
     'Layout': false,
     'Stock': false,
     'Reports': false
+  },
+  'Vendor PO': {
+    'Vendor List': false,
+    'Vendor PO Raise': false,
+    'Vendor PO Receive': false,
+    'Checking': false,
+    'GRN': false,
+    'Branding': false,
+    'Final Checking': false,
+    'Counting & Dispatch': false
   }
 };
 
@@ -140,6 +150,16 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Layout': true,
       'Stock': true,
       'Reports': true
+    },
+    'Vendor PO': {
+      'Vendor List': true,
+      'Vendor PO Raise': true,
+      'Vendor PO Receive': true,
+      'Checking': true,
+      'GRN': true,
+      'Branding': true,
+      'Final Checking': true,
+      'Counting & Dispatch': true
     }
   },
   user: {
@@ -205,6 +225,16 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Layout': false,
       'Stock': false,
       'Reports': false
+    },
+    'Vendor PO': {
+      'Vendor List': false,
+      'Vendor PO Raise': false,
+      'Vendor PO Receive': false,
+      'Checking': false,
+      'GRN': false,
+      'Branding': false,
+      'Final Checking': false,
+      'Counting & Dispatch': false
     }
   }
 };
@@ -250,7 +280,7 @@ export const validateNavigationStructure = (navigation) => {
   }
 
   // Check required top-level keys
-  const requiredKeys = ['Dashboard', 'Catalog', 'Sales', 'Stores', 'Analytics', 'Replenishment Agent', 'File Manager', 'Users', 'Production Planning', 'Yarn Management', 'Warehouse Management'];
+  const requiredKeys = ['Dashboard', 'Catalog', 'Sales', 'Stores', 'Analytics', 'Replenishment Agent', 'File Manager', 'Users', 'Production Planning', 'Yarn Management', 'Warehouse Management', 'Vendor PO'];
   for (const key of requiredKeys) {
     if (!(key in navigation)) {
       console.error(`Validation failed: Missing top-level key: ${key}`);
@@ -361,6 +391,19 @@ export const validateNavigationStructure = (navigation) => {
   for (const key of warehouseKeys) {
     if (!(key in navigation['Warehouse Management']) || typeof navigation['Warehouse Management'][key] !== 'boolean') {
       console.error(`Validation failed: Warehouse Management.${key} is missing or not a boolean`);
+      return false;
+    }
+  }
+
+  // Check Vendor PO structure
+  if (!navigation['Vendor PO'] || typeof navigation['Vendor PO'] !== 'object') {
+    console.error('Validation failed: Vendor PO is not an object');
+    return false;
+  }
+  const vendorPOKeys = ['Vendor List', 'Vendor PO Raise', 'Vendor PO Receive', 'Checking', 'GRN', 'Branding', 'Final Checking', 'Counting & Dispatch'];
+  for (const key of vendorPOKeys) {
+    if (!(key in navigation['Vendor PO']) || typeof navigation['Vendor PO'][key] !== 'boolean') {
+      console.error(`Validation failed: Vendor PO.${key} is missing or not a boolean`);
       return false;
     }
   }

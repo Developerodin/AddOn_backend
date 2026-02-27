@@ -138,6 +138,16 @@ const userSchema = mongoose.Schema(
           'Layout': false,
           'Stock': false,
           'Reports': false
+        },
+        'Vendor PO': {
+          'Vendor List': false,
+          'Vendor PO Raise': false,
+          'Vendor PO Receive': false,
+          'Checking': false,
+          'GRN': false,
+          'Branding': false,
+          'Final Checking': false,
+          'Counting & Dispatch': false
         }
       }
     }
