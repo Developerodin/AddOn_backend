@@ -6,6 +6,8 @@ const statusCodeField = Joi.string().valid(...yarnPurchaseOrderStatuses);
 const lotStatusField = Joi.string().valid(...lotStatuses);
 
 const poItemSchema = Joi.object().keys({
+  _id: Joi.string().custom(objectId).optional(),
+  id: Joi.string().custom(objectId).optional(),
   yarnName: Joi.string().trim(),
   yarn: Joi.string().custom(objectId).required(),
   sizeCount: Joi.string().trim().required(),
@@ -124,6 +126,7 @@ export const updatePurchaseOrder = {
         })
       ),
       goodsReceivedDate: Joi.date().iso().allow(null),
+      // Optional; when omitted, existing DB values are preserved (no .default so body won't overwrite with [])
       receivedLotDetails: Joi.array()
         .items(
           Joi.object().keys({
@@ -142,7 +145,7 @@ export const updatePurchaseOrder = {
             status: lotStatusField.default('lot_qc_pending'),
           })
         )
-        .default([]),
+        .optional(),
       packListDetails: Joi.array()
         .items(
           Joi.object().keys({
@@ -173,12 +176,14 @@ export const updatePurchaseOrder = {
               .default([]),
           })
         )
-        .default([]),
-      receivedBy: Joi.object().keys({
-        username: Joi.string().trim().allow('', null),
-        user: Joi.string().custom(objectId).allow(null),
-        receivedAt: Joi.date().iso().allow(null),
-      }),
+        .optional(),
+      receivedBy: Joi.object()
+        .keys({
+          username: Joi.string().trim().allow('', null),
+          user: Joi.string().custom(objectId).allow(null),
+          receivedAt: Joi.date().iso().allow(null),
+        })
+        .optional(),
       run_pipeline: Joi.boolean().optional(),
     })
     .min(1),

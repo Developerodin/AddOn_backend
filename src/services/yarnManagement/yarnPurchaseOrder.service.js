@@ -190,7 +190,73 @@ export const updatePurchaseOrderById = async (purchaseOrderId, updateBody) => {
     }
   }
 
-  Object.assign(purchaseOrder, updateBody);
+  // Only apply fields that were actually sent (undefined = omit so we don't overwrite existing data)
+  const safeUpdate = Object.fromEntries(
+    Object.entries(updateBody).filter(([, value]) => value !== undefined)
+  );
+
+  // Update poItems by _id so subdoc _ids are preserved (packListDetails.poItems reference these).
+  // Build a new array and assign once so Mongoose casts/validates correctly.
+  if (Array.isArray(safeUpdate.poItems) && safeUpdate.poItems.length > 0) {
+    const existingItems = purchaseOrder.poItems || [];
+    const toId = (item) => (item._id ?? item.id)?.toString?.();
+    const incomingIds = new Set(
+      safeUpdate.poItems.map(toId).filter(Boolean)
+    );
+    const poItemFields = [
+      'yarnName',
+      'yarn',
+      'sizeCount',
+      'shadeCode',
+      'pantoneName',
+      'rate',
+      'quantity',
+      'estimatedDeliveryDate',
+      'gstRate',
+    ];
+    const newPoItems = safeUpdate.poItems.map((inc) => {
+      const incId = toId(inc);
+      const existingDoc = incId
+        ? existingItems.find((e) => (e._id || e).toString() === incId)
+        : null;
+      const base = existingDoc
+        ? { _id: existingDoc._id }
+        : {};
+      poItemFields.forEach((key) => {
+        if (inc[key] !== undefined) base[key] = inc[key];
+      });
+      return base;
+    });
+    purchaseOrder.poItems = newPoItems;
+    delete safeUpdate.poItems;
+  }
+
+  // Merge packListDetails so nested poItems/files are preserved when incoming has empty or omitted
+  if (Array.isArray(safeUpdate.packListDetails)) {
+    const existing = purchaseOrder.packListDetails || [];
+    safeUpdate.packListDetails = safeUpdate.packListDetails.map((incoming, i) => {
+      const existingEntry =
+        existing[i] != null && typeof existing[i].toObject === 'function'
+          ? existing[i].toObject()
+          : existing[i] || {};
+      const merged = { ...existingEntry, ...incoming };
+      if (
+        incoming.poItems === undefined ||
+        (Array.isArray(incoming.poItems) && incoming.poItems.length === 0)
+      ) {
+        merged.poItems = existingEntry.poItems || [];
+      }
+      if (
+        incoming.files === undefined ||
+        (Array.isArray(incoming.files) && incoming.files.length === 0)
+      ) {
+        merged.files = existingEntry.files || [];
+      }
+      return merged;
+    });
+  }
+
+  Object.assign(purchaseOrder, safeUpdate);
   await purchaseOrder.save();
   return purchaseOrder;
 };
