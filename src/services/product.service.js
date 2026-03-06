@@ -340,7 +340,28 @@ export const updateProductById = async (productId, updateBody) => {
   if (updateBody.styleCodes) {
     styleCodes = await ensureValidStyleCodes(updateBody.styleCodes);
   }
-  Object.assign(product, { ...updateBody, ...(styleCodes ? { styleCodes } : {}) });
+  const updatePayload = { ...updateBody, ...(styleCodes ? { styleCodes } : {}) };
+
+  // Merge attributes instead of replacing the whole object, so missing keys (e.g. Needles) are preserved
+  if (updatePayload.attributes && typeof updatePayload.attributes === 'object' && !Array.isArray(updatePayload.attributes)) {
+    const incomingAttributes = updatePayload.attributes;
+    delete updatePayload.attributes;
+
+    if (product.attributes instanceof Map) {
+      Object.entries(incomingAttributes).forEach(([key, value]) => {
+        product.attributes.set(key, value);
+      });
+    } else {
+      if (!product.attributes || typeof product.attributes !== 'object') {
+        product.attributes = {};
+      }
+      Object.entries(incomingAttributes).forEach(([key, value]) => {
+        product.attributes[key] = value;
+      });
+    }
+  }
+
+  Object.assign(product, updatePayload);
   await product.save();
   return product;
 };
@@ -385,6 +406,8 @@ export const bulkImportProducts = async (products, batchSize = 50) => {
 
     const styleCodeIdSet = new Set();
     products.forEach((product) => {
+      // Collect from both styleCodes array and styleCodeId1-10 (Excel columns)
+      collectStyleCodeIdsForExcel(product).forEach((id) => styleCodeIdSet.add(id));
       if (Array.isArray(product.styleCodes)) {
         product.styleCodes.forEach((id) => {
           const normalized = String(id || '').trim();
@@ -424,74 +447,166 @@ export const bulkImportProducts = async (products, batchSize = 50) => {
           
           try {
             const hasId = productData.id && productData.id.trim() !== '';
+            console.log(`[bulkImport] Row ${globalIndex + 1}: hasId=${hasId} id=${productData.id || 'n/a'} name="${productData.name || ''}" keys=${Object.keys(productData).filter((k) => productData[k] !== undefined && productData[k] !== '').join(', ')}`);
 
-            const normalizedStyleCodes = normalizeStyleCodeIds(productData.styleCodes);
+            const normalizedStyleCodes = (() => {
+              const fromExcel = collectStyleCodeIdsForExcel(productData);
+              return fromExcel.length > 0 ? fromExcel : normalizeStyleCodeIds(productData.styleCodes);
+            })();
             if (normalizedStyleCodes.length > 0) {
               const missingStyleCode = normalizedStyleCodes.find((id) => !existingStyleCodeIdSet.has(String(id)));
               if (missingStyleCode) {
                 throw new Error(`Style code not found: ${missingStyleCode}`);
               }
             }
-            
-            const processedData = {
-              name: productData.name?.trim(),
-              styleCodes: normalizedStyleCodes,
-              internalCode: productData.internalCode?.trim() || '',
-              vendorCode: productData.vendorCode?.trim() || '',
-              factoryCode: productData.factoryCode?.trim() || '',
-              knittingCode: productData.knittingCode?.trim() || '',
-              description: productData.description?.trim() || '',
-              category: productData.category || null,
-              attributes: {},
-              bom: [],
-              processes: [],
-              rawMaterials: Array.isArray(productData.rawMaterials)
-                ? productData.rawMaterials
-                    .map((item) => {
-                      const rawMaterialId = item?.rawMaterialId || item?.rawMaterial || item?._id || item?.id;
-                      const quantity = item?.quantity;
-                      const normalizedId = rawMaterialId ? String(rawMaterialId).trim() : '';
-                      if (!normalizedId) return null;
-                      if (!mongoose.Types.ObjectId.isValid(normalizedId)) return null;
-                      const parsedQty =
-                        typeof quantity === 'number'
-                          ? quantity
-                          : quantity !== undefined
-                            ? parseFloat(quantity) || 0
-                            : 0;
-                      return { rawMaterialId: normalizedId, quantity: parsedQty < 0 ? 0 : parsedQty };
-                    })
-                    .filter(Boolean)
-                : [],
-              productionType: productData.productionType === 'outsourced' ? 'outsourced' : 'internal',
-              status: 'active',
-            };
-
-            if (!hasId) {
-              const timestamp = Date.now().toString(36);
-              const random = Math.random().toString(36).substring(2, 7);
-              processedData.softwareCode = productData.softwareCode?.trim() || `PRD-${timestamp}-${random}`.toUpperCase();
-            } else {
-              processedData.softwareCode = productData.softwareCode?.trim() || '';
-            }
 
             if (hasId) {
+              // UPDATE: only set fields provided in Excel; preserve existing attributes, bom, processes if not provided
               const existingProduct = await Product.findById(productData.id).lean();
               if (!existingProduct) {
                 throw new Error(`Product with ID ${productData.id} not found`);
               }
-              if (processedData.softwareCode && processedData.softwareCode !== existingProduct.softwareCode) {
-                const duplicateCheck = await Product.findOne({ softwareCode: processedData.softwareCode, _id: { $ne: productData.id } }).lean();
+
+              const $set = {};
+              if (productData.name !== undefined && productData.name !== null && String(productData.name).trim() !== '')
+                $set.name = String(productData.name).trim();
+              if (normalizedStyleCodes.length > 0) $set.styleCodes = normalizedStyleCodes;
+              if (productData.internalCode !== undefined) $set.internalCode = productData.internalCode?.trim() ?? '';
+              if (productData.vendorCode !== undefined) $set.vendorCode = productData.vendorCode?.trim() ?? '';
+              if (productData.factoryCode !== undefined) $set.factoryCode = productData.factoryCode?.trim() ?? '';
+              if (productData.knittingCode !== undefined) $set.knittingCode = productData.knittingCode?.trim() ?? '';
+              if (productData.description !== undefined) $set.description = productData.description?.trim() ?? '';
+              if (productData.category !== undefined) $set.category = productData.category || null;
+              const softwareCodeVal = productData.softwareCode?.trim() ?? '';
+              if (softwareCodeVal) $set.softwareCode = softwareCodeVal;
+              if (productData.productionType === 'outsourced') $set.productionType = 'outsourced';
+              else if (productData.productionType !== undefined) $set.productionType = 'internal';
+              if (productData.status !== undefined) $set.status = productData.status || 'active';
+
+              const collectedAttributes = collectAttributesForExcel(productData);
+              if (Object.keys(collectedAttributes).length > 0) {
+                Object.entries(collectedAttributes).forEach(([k, v]) => {
+                  $set[`attributes.${k}`] = v;
+                });
+                console.log(`[bulkImport] Update id=${productData.id}: setting attributes from Excel: ${Object.keys(collectedAttributes).join(', ')}`);
+              }
+              // Only set bom/processes/rawMaterials if explicitly provided in Excel; otherwise leave existing values
+              if (Array.isArray(productData.bom) && productData.bom.length > 0) {
+                const bomMapped = productData.bom
+                  .map((item) => {
+                    const yarnCatalogId = item?.yarnCatalogId || item?.yarnCatalog || item?._id || item?.id;
+                    const quantity = item?.quantity;
+                    const normalizedId = yarnCatalogId ? String(yarnCatalogId).trim() : '';
+                    if (!normalizedId || !mongoose.Types.ObjectId.isValid(normalizedId)) return null;
+                    const parsedQty = typeof quantity === 'number' ? quantity : quantity !== undefined ? parseFloat(quantity) || 0 : 0;
+                    return { yarnCatalogId: normalizedId, quantity: parsedQty < 0 ? 0 : parsedQty };
+                  })
+                  .filter(Boolean);
+                if (bomMapped.length > 0) $set.bom = bomMapped;
+              }
+              if (Array.isArray(productData.processes) && productData.processes.length > 0) {
+                const processesMapped = productData.processes
+                  .map((item) => {
+                    const processId = item?.processId || item?.process || item?._id || item?.id;
+                    const normalizedId = processId ? String(processId).trim() : '';
+                    if (!normalizedId || !mongoose.Types.ObjectId.isValid(normalizedId)) return null;
+                    return { processId: normalizedId };
+                  })
+                  .filter(Boolean);
+                if (processesMapped.length > 0) $set.processes = processesMapped;
+              }
+              if (Array.isArray(productData.rawMaterials)) {
+                const rawMapped = productData.rawMaterials
+                  .map((item) => {
+                    const rawMaterialId = item?.rawMaterialId || item?.rawMaterial || item?._id || item?.id;
+                    const quantity = item?.quantity;
+                    const normalizedId = rawMaterialId ? String(rawMaterialId).trim() : '';
+                    if (!normalizedId || !mongoose.Types.ObjectId.isValid(normalizedId)) return null;
+                    const parsedQty = typeof quantity === 'number' ? quantity : quantity !== undefined ? parseFloat(quantity) || 0 : 0;
+                    return { rawMaterialId: normalizedId, quantity: parsedQty < 0 ? 0 : parsedQty };
+                  })
+                  .filter(Boolean);
+                $set.rawMaterials = rawMapped;
+              }
+
+              if ($set.softwareCode && $set.softwareCode !== existingProduct.softwareCode) {
+                const duplicateCheck = await Product.findOne({ softwareCode: $set.softwareCode, _id: { $ne: productData.id } }).lean();
                 if (duplicateCheck) {
-                  throw new Error(`Software code ${processedData.softwareCode} already exists`);
+                  throw new Error(`Software code ${$set.softwareCode} already exists`);
                 }
               }
-              await Product.updateOne({ _id: productData.id }, { $set: processedData });
-              results.updated++;
+              if (Object.keys($set).length === 0) {
+                console.log(`[bulkImport] Update id=${productData.id}: no fields to update, skipping`);
+              } else {
+                console.log(`[bulkImport] Update id=${productData.id} name="${productData.name || existingProduct.name}": $set keys=${Object.keys($set).join(', ')} (preserving existing bom/processes/attributes if not in Excel)`);
+                await Product.updateOne({ _id: productData.id }, { $set });
+                results.updated++;
+              }
             } else {
+              // CREATE: full document with defaults for bom/processes/attributes
+              const processedData = {
+                name: productData.name?.trim(),
+                styleCodes: normalizedStyleCodes,
+                internalCode: productData.internalCode?.trim() || '',
+                vendorCode: productData.vendorCode?.trim() || '',
+                factoryCode: productData.factoryCode?.trim() || '',
+                knittingCode: productData.knittingCode?.trim() || '',
+                description: productData.description?.trim() || '',
+                category: productData.category || null,
+                attributes: collectAttributesForExcel(productData),
+                bom: Array.isArray(productData.bom) && productData.bom.length > 0
+                  ? productData.bom
+                      .map((item) => {
+                        const yarnCatalogId = item?.yarnCatalogId || item?.yarnCatalog || item?._id || item?.id;
+                        const quantity = item?.quantity;
+                        const normalizedId = yarnCatalogId ? String(yarnCatalogId).trim() : '';
+                        if (!normalizedId) return null;
+                        if (!mongoose.Types.ObjectId.isValid(normalizedId)) return null;
+                        const parsedQty = typeof quantity === 'number' ? quantity : quantity !== undefined ? parseFloat(quantity) || 0 : 0;
+                        return { yarnCatalogId: normalizedId, quantity: parsedQty < 0 ? 0 : parsedQty };
+                      })
+                      .filter(Boolean)
+                  : [],
+                processes: Array.isArray(productData.processes) && productData.processes.length > 0
+                  ? productData.processes
+                      .map((item) => {
+                        const processId = item?.processId || item?.process || item?._id || item?.id;
+                        const normalizedId = processId ? String(processId).trim() : '';
+                        if (!normalizedId || !mongoose.Types.ObjectId.isValid(normalizedId)) return null;
+                        return { processId: normalizedId };
+                      })
+                      .filter(Boolean)
+                  : [],
+                rawMaterials: Array.isArray(productData.rawMaterials)
+                  ? productData.rawMaterials
+                      .map((item) => {
+                        const rawMaterialId = item?.rawMaterialId || item?.rawMaterial || item?._id || item?.id;
+                        const quantity = item?.quantity;
+                        const normalizedId = rawMaterialId ? String(rawMaterialId).trim() : '';
+                        if (!normalizedId) return null;
+                        if (!mongoose.Types.ObjectId.isValid(normalizedId)) return null;
+                        const parsedQty =
+                          typeof quantity === 'number'
+                            ? quantity
+                            : quantity !== undefined
+                              ? parseFloat(quantity) || 0
+                              : 0;
+                        return { rawMaterialId: normalizedId, quantity: parsedQty < 0 ? 0 : parsedQty };
+                      })
+                      .filter(Boolean)
+                  : [],
+                productionType: productData.productionType === 'outsourced' ? 'outsourced' : 'internal',
+                status: 'active',
+              };
+
+              const timestamp = Date.now().toString(36);
+              const random = Math.random().toString(36).substring(2, 7);
+              processedData.softwareCode = productData.softwareCode?.trim() || `PRD-${timestamp}-${random}`.toUpperCase();
+
               if (await Product.findOne({ softwareCode: processedData.softwareCode }).lean()) {
                 throw new Error(`Software code ${processedData.softwareCode} already exists`);
               }
+              console.log(`[bulkImport] Create: name="${processedData.name}" softwareCode=${processedData.softwareCode}`);
               await Product.create(processedData);
               results.created++;
             }
