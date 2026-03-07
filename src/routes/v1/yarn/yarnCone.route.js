@@ -16,12 +16,16 @@ router
     yarnConeController.createYarnCone
   );
 
-router
-  .route('/generate-by-box/:boxId')
-  .post(
-    validate(yarnConeValidation.generateConesByBox),
-    yarnConeController.generateConesByBox
-  );
+// Match boxId that may contain slashes (e.g. BOX-PO-2026-997-CN/2067-...); capture full path after prefix
+router.post(
+  /^\/generate-by-box\/(.+)$/,
+  (req, res, next) => {
+    req.params = { boxId: req.params[0] };
+    next();
+  },
+  validate(yarnConeValidation.generateConesByBox),
+  yarnConeController.generateConesByBox
+);
 
 router
   .route('/barcode/:barcode')
