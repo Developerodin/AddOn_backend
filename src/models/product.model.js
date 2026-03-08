@@ -88,8 +88,9 @@ const productSchema = mongoose.Schema(
     },
     description: {
       type: String,
-      required: true,
+      required: false,
       trim: true,
+      default: '',
     },
     category: {
       type: mongoose.SchemaTypes.ObjectId,

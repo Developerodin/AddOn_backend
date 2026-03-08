@@ -551,7 +551,9 @@ export const bulkImportProducts = async (products, batchSize = 50) => {
                 vendorCode: productData.vendorCode?.trim() || '',
                 factoryCode: productData.factoryCode?.trim() || '',
                 knittingCode: productData.knittingCode?.trim() || '',
-                description: productData.description?.trim() || '',
+                description: (productData.description != null && String(productData.description).trim() !== '')
+                  ? String(productData.description).trim()
+                  : '',
                 category: productData.category || null,
                 attributes: collectAttributesForExcel(productData),
                 bom: Array.isArray(productData.bom) && productData.bom.length > 0
