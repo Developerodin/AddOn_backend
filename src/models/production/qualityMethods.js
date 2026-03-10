@@ -278,12 +278,13 @@ export const updateKnittingM4Quantity = async function(m4Quantity, userId, floor
     throw new Error('Weight must be >= 0');
   }
   
-  const previousM4Quantity = floorData.m4Quantity || 0;
   floorData.m4Quantity = m4Quantity;
   if (weight !== undefined && weight !== null) {
     floorData.weight = weight;
   }
-  
+  // remaining = received - completed - m4
+  floorData.remaining = Math.max(0, (floorData.received || 0) - (floorData.completed || 0) - m4Quantity);
+
   if (remarks) {
     this.remarks = remarks;
   }

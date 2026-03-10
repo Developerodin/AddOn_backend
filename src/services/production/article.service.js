@@ -146,14 +146,11 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
     floorData.completed = newCompletedQuantity;
     
     // Calculate remaining quantity
-    // For knitting floor, remaining can be negative (excess generation)
-    // For other floors, remaining is received - completed
+    // For knitting: remaining = received - completed - m4
     if (normalizedFloor === 'Knitting') {
-      // For knitting floor, remaining should never go negative due to overproduction
-      // If completed > received, remaining should be 0 (all planned work is done)
-      floorData.remaining = Math.max(0, floorData.received - newCompletedQuantity);
+      const m4ForRemaining = updateData.m4Quantity !== undefined ? updateData.m4Quantity : (floorData.m4Quantity || 0);
+      floorData.remaining = Math.max(0, (floorData.received || 0) - newCompletedQuantity - m4ForRemaining);
     } else {
-      // For other floors, normal calculation
       floorData.remaining = floorData.received - newCompletedQuantity;
     }
     
@@ -186,6 +183,8 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
     if (knittingFloorData) {
       if (updateData.m4Quantity !== undefined) knittingFloorData.m4Quantity = updateData.m4Quantity;
       if (updateData.weight !== undefined) knittingFloorData.weight = updateData.weight;
+      // remaining = received - completed - m4
+      knittingFloorData.remaining = Math.max(0, (knittingFloorData.received || 0) - (knittingFloorData.completed || 0) - (knittingFloorData.m4Quantity || 0));
     }
   }
 
@@ -215,7 +214,8 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
     // For knitting floor, allow overproduction - floor is complete when all received work is done
     // For other floors, completed must equal received
     if (article.currentFloor === 'Knitting') {
-      isFloorComplete = currentFloorData && currentFloorData.completed >= currentFloorData.received && currentFloorData.remaining === 0;
+      // Floor complete when all work done; remaining (good qty) will be transferred by auto-transfer
+      isFloorComplete = currentFloorData && currentFloorData.completed >= currentFloorData.received;
     } else {
       isFloorComplete = currentFloorData && currentFloorData.completed === currentFloorData.received && currentFloorData.remaining === 0;
     }
@@ -382,47 +382,37 @@ const transferFromPreviousFloor = async (article, fromFloor, quantity, updateDat
   const fromFloorKey = article.getFloorKey(fromFloor);
   const fromFloorData = article.floorQuantities[fromFloorKey];
   
-  // Calculate how much work is already transferred vs completed
   const alreadyTransferred = fromFloorData.transferred || 0;
   const totalCompleted = fromFloorData.completed || 0;
-  
-  // Only transfer the newly completed work (not already transferred)
   const newTransferQuantity = totalCompleted - alreadyTransferred;
-  
+
   if (newTransferQuantity <= 0) {
     console.log(`No new work to transfer from ${fromFloor}: completed=${totalCompleted}, transferred=${alreadyTransferred}`);
     return;
   }
-  
-  console.log(`Transferring ${newTransferQuantity} from ${fromFloor} to ${article.currentFloor}: completed=${totalCompleted}, transferred=${alreadyTransferred}`);
-  
-  // Update previous floor: mark additional work as transferred
-  fromFloorData.transferred = totalCompleted; // Set transferred to total completed
-  
-  // For knitting floor, remaining can be negative (excess generation)
-  // For other floors, remaining = received - completed
+
+  console.log(`Transferring ${newTransferQuantity} from ${fromFloor}: completed=${totalCompleted}, transferred=${alreadyTransferred}`);
+
+  fromFloorData.transferred = totalCompleted;
   if (fromFloor === 'Knitting') {
-    fromFloorData.remaining = Math.max(0, fromFloorData.received - totalCompleted);
+    fromFloorData.remaining = Math.max(0, (fromFloorData.received || 0) - totalCompleted - (fromFloorData.m4Quantity || 0));
   } else {
     fromFloorData.remaining = fromFloorData.received - totalCompleted;
   }
-  
-  // Update next floor: mark as received (FIXED: transfer to the next floor, not current floor)
+
   const nextFloor = await getNextFloor(article, fromFloor);
   if (!nextFloor) {
     console.log(`No next floor available after ${fromFloor}`);
     return;
   }
-  
+
   const nextFloorKey = article.getFloorKey(nextFloor);
   const nextFloorData = article.floorQuantities[nextFloorKey];
-  
-  // For knitting floor overproduction, transfer the full completed amount (including excess)
-  // For other floors, transfer the normal amount
+
   if (fromFloor === 'Knitting') {
-    nextFloorData.received = totalCompleted; // Transfer full completed amount (including overproduction)
+    nextFloorData.received = (nextFloorData.received || 0) + newTransferQuantity;
   } else {
-    nextFloorData.received = fromFloorData.transferred; // Normal transfer
+    nextFloorData.received = fromFloorData.transferred;
   }
   
   nextFloorData.remaining = nextFloorData.received - (nextFloorData.completed || 0);
@@ -500,33 +490,26 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
     throw new ApiError(httpStatus.BAD_REQUEST, 'No next floor available');
   }
 
-  // Transfer completed work from the specified floor to next floor
-  const transferQuantity = floorData.completed;
-  
-  // Update source floor: mark as transferred
-  floorData.transferred = transferQuantity;
-  
-  // For knitting floor overproduction, remaining should never go negative
-  // For other floors, normal calculation
-  if (normalizedFloor === 'Knitting') {
-    floorData.remaining = Math.max(0, floorData.received - transferQuantity);
-  } else {
-    floorData.remaining = floorData.received - transferQuantity;
+  const maxTransferable = floorData.completed - (floorData.transferred || 0);
+  const transferQuantity = Math.min(transferData.quantity ?? maxTransferable, maxTransferable);
+
+  if (transferQuantity <= 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, `No completed work to transfer from ${normalizedFloor} floor`);
   }
-  
-  // Update destination floor: mark as received
+
+  floorData.transferred = (floorData.transferred || 0) + transferQuantity;
+
+  if (normalizedFloor === 'Knitting') {
+    floorData.remaining = Math.max(0, (floorData.received || 0) - (floorData.completed || 0) - (floorData.m4Quantity || 0));
+  } else {
+    floorData.remaining = floorData.received - floorData.transferred;
+  }
+
   const nextFloorKey = article.getFloorKey(nextFloor);
   const nextFloorData = article.floorQuantities[nextFloorKey];
-  
-  // For knitting floor overproduction, transfer the full completed amount (including excess)
-  // For other floors, transfer the normal amount
+  nextFloorData.received = (nextFloorData.received || 0) + transferQuantity;
   if (normalizedFloor === 'Knitting') {
-    // KNITTING OVERPRODUCTION: Transfer full completed amount (including overproduction)
-    nextFloorData.received = transferQuantity;
-    console.log(`🎯 KNITTING MANUAL TRANSFER: Transferring ${transferQuantity} units (including overproduction) to ${nextFloor}`);
-  } else {
-    // Other floors: normal transfer
-    nextFloorData.received = transferQuantity;
+    console.log(`🎯 KNITTING MANUAL TRANSFER: Transferred ${transferQuantity} units to ${nextFloor}`);
   }
   
   nextFloorData.remaining = nextFloorData.received;
@@ -731,49 +714,35 @@ const transferCompletedWorkToNextFloor = async (article, updateData, user = null
   const sourceFloorData = article.floorQuantities[sourceFloorKey];
   const nextFloorData = article.floorQuantities[nextFloorKey];
 
-  // Calculate how much work is already transferred vs completed
   const alreadyTransferred = sourceFloorData.transferred || 0;
   const totalCompleted = sourceFloorData.completed || 0;
-  
-  // Only transfer the newly completed work (not already transferred)
   const newTransferQuantity = totalCompleted - alreadyTransferred;
-  
+
   if (newTransferQuantity <= 0) {
     console.log(`No new work to transfer from ${sourceFloor}: completed=${totalCompleted}, transferred=${alreadyTransferred}`);
-    return; // Nothing new to transfer
+    return;
   }
-  
+
   console.log(`Transferring ${newTransferQuantity} from ${sourceFloor} to ${nextFloor}: completed=${totalCompleted}, transferred=${alreadyTransferred}`);
-  
-  // Update source floor: mark additional work as transferred
-  sourceFloorData.transferred = totalCompleted; // Set transferred to total completed
-  
-  // For checking and finalChecking floors, ensure completed equals transferred
-    if (sourceFloor === 'Checking' || sourceFloor === 'Secondary Checking' || sourceFloor === 'Final Checking') {
+
+  sourceFloorData.transferred = totalCompleted;
+
+  if (sourceFloor === 'Checking' || sourceFloor === 'Secondary Checking' || sourceFloor === 'Final Checking') {
     if (sourceFloorData.completed < sourceFloorData.transferred) {
       sourceFloorData.completed = sourceFloorData.transferred;
     }
   }
-  
-  // Update remaining quantity on source floor
-  // For knitting floor overproduction, remaining should never go negative
-  // For other floors, normal calculation
+
   if (sourceFloor === 'Knitting') {
-    sourceFloorData.remaining = Math.max(0, sourceFloorData.received - sourceFloorData.transferred);
+    sourceFloorData.remaining = Math.max(0, (sourceFloorData.received || 0) - (sourceFloorData.completed || 0) - (sourceFloorData.m4Quantity || 0));
   } else {
     sourceFloorData.remaining = Math.max(0, sourceFloorData.received - sourceFloorData.transferred);
   }
-  
-  // Update next floor: mark as received (FIXED: set to total transferred to prevent double-counting)
-  // For knitting floor overproduction, transfer the full completed amount (including excess)
-  // For other floors, transfer the normal amount
+
   if (sourceFloor === 'Knitting') {
-    // KNITTING OVERPRODUCTION: Transfer full completed amount (including overproduction)
-    // Example: Received 1000, Completed 1200, Transfer 1200 to next floor
-    nextFloorData.received = sourceFloorData.completed;
-    console.log(`🎯 KNITTING TRANSFER: Transferring ${sourceFloorData.completed} units (including overproduction) to ${nextFloor}`);
+    nextFloorData.received = (nextFloorData.received || 0) + newTransferQuantity;
+    console.log(`🎯 KNITTING TRANSFER: Transferred ${newTransferQuantity} units to ${nextFloor}`);
   } else {
-    // Other floors: normal transfer based on transferred quantity
     nextFloorData.received = sourceFloorData.transferred;
   }
   
@@ -838,7 +807,11 @@ const autoTransferToNextFloor = async (article, updateData, user = null) => {
   
   // Update current floor: mark as transferred
   currentFloorData.transferred += transferQuantity;
-  currentFloorData.remaining = 0; // All remaining work is now transferred
+  if (article.currentFloor === 'Knitting') {
+    currentFloorData.remaining = Math.max(0, (currentFloorData.received || 0) - (currentFloorData.completed || 0) - (currentFloorData.m4Quantity || 0));
+  } else {
+    currentFloorData.remaining = 0;
+  }
   
   // For checking and finalChecking floors, ensure completed equals transferred
   // This fixes the issue where items are transferred without being marked as completed
@@ -1441,7 +1414,11 @@ const autoTransferCompletedWorkToNextFloor = async (article, updateData, user = 
 
   // Update current floor: mark as transferred
   currentFloorData.transferred = transferQuantity;
-  currentFloorData.remaining = 0; // All work is now transferred
+  if (article.currentFloor === 'Knitting') {
+    currentFloorData.remaining = Math.max(0, (currentFloorData.received || 0) - (currentFloorData.completed || 0) - (currentFloorData.m4Quantity || 0));
+  } else {
+    currentFloorData.remaining = 0;
+  }
   
   // For checking and finalChecking floors, ensure completed equals transferred
   // This fixes the issue where items are transferred without being marked as completed
