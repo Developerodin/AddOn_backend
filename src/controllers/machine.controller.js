@@ -23,6 +23,9 @@ const getMachines = catchAsync(async (req, res) => {
     'isActive',
   ]);
   const options = pick(req.query, ['sortBy', 'sortOrder', 'limit', 'page', 'search']);
+  if (options.sortBy && options.sortOrder) {
+    options.sortBy = `${options.sortBy}:${options.sortOrder}`;
+  }
   const result = await machineService.queryMachines(filter, options);
   res.send(result);
 });

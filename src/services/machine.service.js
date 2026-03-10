@@ -215,6 +215,12 @@ const queryMachines = async (filter, options) => {
   const activeFilter = filter.hasOwnProperty('isActive') 
     ? filter 
     : { ...filter, isActive: true };
+
+  // Default sort: machineCode asc for line-wise order (K001, K002, K003...)
+  const queryOptions = {
+    ...options,
+    sortBy: options.sortBy || 'machineCode:asc',
+  };
   
   // Handle search parameter - search across machineCode, machineNumber, and model
   if (options.search) {
@@ -230,12 +236,12 @@ const queryMachines = async (filter, options) => {
       ],
     };
     // Remove search from options as it's not a pagination option
-    const { search, ...restOptions } = options;
+    const { search, ...restOptions } = queryOptions;
     const machines = await Machine.paginate(finalFilter, restOptions);
     return machines;
   }
   
-  const machines = await Machine.paginate(activeFilter, options);
+  const machines = await Machine.paginate(activeFilter, queryOptions);
   return machines;
 };
 
