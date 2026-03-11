@@ -108,7 +108,8 @@ async function run() {
       });
     }
 
-    // Build receivedLotDetails
+    // Build receivedLotDetails and aggregate receivedQuantity per (yarnName, shadeCode)
+    const receivedQtyByKey = new Map();
     const receivedLotDetails = [];
     for (const [lotNumber, lot] of lotMap) {
       const totalWeight = lot.boxes.reduce((s, b) => s + toNum(b.boxWeight), 0);
@@ -119,12 +120,14 @@ async function run() {
         logger.warn(`Skipping lot ${lotNumber}: no YarnCatalog for ${lot.yarnName}`);
         continue;
       }
+      const receivedQty = Math.round(totalWeight * 100) / 100;
+      receivedQtyByKey.set(key, (receivedQtyByKey.get(key) || 0) + receivedQty);
       receivedLotDetails.push({
         lotNumber,
         numberOfCones: totalCones,
         totalWeight,
         numberOfBoxes: lot.boxes.length,
-        poItems: [{ poItem: item.yarnId, receivedQuantity: Math.round(totalWeight * 100) / 100 }],
+        poItems: [{ poItem: item.yarnId, receivedQuantity: receivedQty }],
         status: 'lot_accepted',
       });
     }
@@ -152,6 +155,8 @@ async function run() {
     for (const [key, item] of poItemMap) {
       if (!item.yarnId) continue;
       const poItemId = new mongoose.Types.ObjectId();
+      const qty = Math.round((receivedQtyByKey.get(key) || 0) * 100) / 100;
+      const { rate = 0, gstRate = 0 } = existingKeyToRate.get(key) || {};
       poItems.push({
         _id: poItemId,
         yarnName: item.yarnName,
@@ -159,8 +164,9 @@ async function run() {
         sizeCount: item.sizeCount,
         shadeCode: item.shadeCode,
         pantoneName: '',
-        rate: 0,
-        quantity: 0,
+        rate,
+        quantity: qty,
+        gstRate,
       });
       keyToPoItemId.set(key, poItemId);
     }
@@ -175,12 +181,32 @@ async function run() {
       }
     }
 
-    // Calculate subTotal, gst, total (use 0 for recreated)
-    const subTotal = 0;
-    const gst = 0;
-    const total = 0;
+    // Calculate subTotal, gst, total from poItems
+    let subTotal = 0;
+    let gst = 0;
+    for (const pi of poItems) {
+      const lineTotal = toNum(pi.quantity) * toNum(pi.rate);
+      subTotal += lineTotal;
+      gst += lineTotal * (toNum(pi.gstRate) / 100);
+    }
+    subTotal = Math.round(subTotal * 100) / 100;
+    gst = Math.round(gst * 100) / 100;
+    let total = Math.round((subTotal + gst) * 100) / 100;
 
     const existingPo = await YarnPurchaseOrder.findOne({ poNumber: PO_NUMBER }).lean();
+
+    // Build existingKeyToRate for preserving rate/gstRate (from existing PO or from PO we're about to delete)
+    const existingKeyToRate = new Map();
+    if (existingPo?.poItems?.length) {
+      for (const pi of existingPo.poItems) {
+        const name = (pi.yarnName || pi.yarn?.yarnName || '').trim();
+        const shade = (pi.shadeCode || '').trim();
+        existingKeyToRate.set(poItemKey(name, shade), {
+          rate: toNum(pi.rate),
+          gstRate: toNum(pi.gstRate),
+        });
+      }
+    }
 
     // Force recreate: delete existing PO and create fresh (boxes/cones unchanged)
     let supplierIdFromDeletedPo = null;
@@ -194,7 +220,8 @@ async function run() {
     }
 
     if (existingPo && !forceRecreate) {
-      logger.info(`PO ${PO_NUMBER} exists. Updating receivedLotDetails and packListDetails.`);
+      logger.info(`PO ${PO_NUMBER} exists. Updating receivedLotDetails, packListDetails, poItems (quantity), subTotal, gst, total.`);
+      let updatedPoItems = poItems;
       if (existingPo.poItems?.length) {
         // Match receivedLotDetails to existing poItem _ids by (yarnName, shadeCode)
         const existingKeyToId = new Map();
@@ -211,21 +238,48 @@ async function run() {
             if (existingId) lot.poItems[0].poItem = existingId;
           }
         }
+        // Build updated poItems: preserve existing _id, rate, gstRate; update quantity from received
+        updatedPoItems = existingPo.poItems.map((pi) => {
+          const name = (pi.yarnName || pi.yarn?.yarnName || '').trim();
+          const shade = (pi.shadeCode || '').trim();
+          const key = poItemKey(name, shade);
+          const qty = Math.round((receivedQtyByKey.get(key) ?? pi.quantity ?? 0) * 100) / 100;
+          return {
+            _id: pi._id,
+            yarnName: pi.yarnName,
+            yarn: pi.yarn,
+            sizeCount: pi.sizeCount || 'N/A',
+            shadeCode: pi.shadeCode,
+            pantoneName: pi.pantoneName || '',
+            rate: toNum(pi.rate),
+            quantity: qty,
+            gstRate: toNum(pi.gstRate),
+          };
+        });
+        // Recalc subTotal, gst, total from updated poItems
+        subTotal = 0;
+        gst = 0;
+        for (const pi of updatedPoItems) {
+          const lineTotal = toNum(pi.quantity) * toNum(pi.rate);
+          subTotal += lineTotal;
+          gst += lineTotal * (toNum(pi.gstRate) / 100);
+        }
+        subTotal = Math.round(subTotal * 100) / 100;
+        gst = Math.round(gst * 100) / 100;
+        total = Math.round((subTotal + gst) * 100) / 100;
       }
       if (!isDryRun) {
         const updatePayload = {
           receivedLotDetails,
           packListDetails,
+          poItems: updatedPoItems,
+          subTotal,
+          gst,
+          total,
         };
-        if (!existingPo.poItems?.length) {
-          updatePayload.poItems = poItems;
-          updatePayload.subTotal = subTotal;
-          updatePayload.gst = gst;
-          updatePayload.total = total;
-        }
         await YarnPurchaseOrder.updateOne({ poNumber: PO_NUMBER }, { $set: updatePayload });
       }
-      logger.info(`Updated: ${receivedLotDetails.length} lots, ${packListDetails.length} packlists`);
+      logger.info(`Updated: ${receivedLotDetails.length} lots, ${packListDetails.length} packlists, subTotal=${subTotal}, gst=${gst}, total=${total}`);
     } else {
       // PO doesn't exist, or we just deleted it (--force-recreate)
       let supplierId = SUPPLIER_ID || supplierIdFromDeletedPo;
@@ -260,7 +314,7 @@ async function run() {
           packListDetails,
         });
       }
-      logger.info(`Created PO with ${receivedLotDetails.length} lots, ${packListDetails.length} packlists`);
+      logger.info(`Created PO with ${receivedLotDetails.length} lots, ${packListDetails.length} packlists, subTotal=${subTotal}, gst=${gst}, total=${total}`);
     }
 
     logger.info('Done.');
