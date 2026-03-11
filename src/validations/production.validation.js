@@ -322,7 +322,7 @@ const getArticleWiseData = {
   }),
 };
 
-/** Update receivedData for a floor on an article */
+/** Update receivedData for a floor on an article. quantity = container qty to add to received (container accept flow) */
 const updateArticleFloorReceivedData = {
   params: Joi.object().keys({
     articleId: Joi.string().custom(objectId).required(),
@@ -350,6 +350,7 @@ const updateArticleFloorReceivedData = {
         receivedTimestamp: Joi.date().allow(null),
       })
       .required(),
+    quantity: Joi.number().integer().min(0).optional(),
   }),
 };
 

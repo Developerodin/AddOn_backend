@@ -1,7 +1,8 @@
 import httpStatus from 'http-status';
 import { Article, ArticleLog, ProductionOrder } from '../../models/production/index.js';
+import Product from '../../models/product.model.js';
 import ApiError from '../../utils/ApiError.js';
-import { getFloorOrderByLinkingType, getFloorKey, compareFloors } from '../../utils/productionHelper.js';
+import { getFloorOrderByLinkingType, getFloorKey, compareFloors, usesContainerReceive } from '../../utils/productionHelper.js';
 import { 
   createQuantityUpdateLog, 
   createTransferLog, 
@@ -22,6 +23,28 @@ export const getArticleById = async (articleId) => {
     .populate('machineId', 'machineCode machineNumber model floor status')
     .populate('orderId', 'orderNumber priority status');
   return article;
+};
+
+/**
+ * Get processes for an article. Article links to Product via articleNumber = factoryCode.
+ * Product has processes array (processId refs). Returns populated process details.
+ * @param {string} articleId - Article _id
+ * @returns {Promise<{articleNumber: string, processes: Array}>}
+ */
+export const getArticleProcesses = async (articleId) => {
+  const article = await Article.findById(articleId).select('articleNumber');
+  if (!article) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Article not found');
+  }
+  const product = await Product.findOne({ factoryCode: article.articleNumber })
+    .populate('processes.processId', 'name type description sortOrder status steps');
+  if (!product) {
+    throw new ApiError(httpStatus.NOT_FOUND, `Product not found for article ${article.articleNumber}`);
+  }
+  const processes = (product.processes || [])
+    .filter((p) => p.processId)
+    .map((p) => (typeof p.processId.toJSON === 'function' ? p.processId.toJSON() : p.processId));
+  return { articleNumber: article.articleNumber, processes };
 };
 
 /**
@@ -507,26 +530,27 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
 
   const nextFloorKey = article.getFloorKey(nextFloor);
   const nextFloorData = article.floorQuantities[nextFloorKey];
-  nextFloorData.received = (nextFloorData.received || 0) + transferQuantity;
-  if (normalizedFloor === 'Knitting') {
-    console.log(`🎯 KNITTING MANUAL TRANSFER: Transferred ${transferQuantity} units to ${nextFloor}`);
+  if (usesContainerReceive(normalizedFloor)) {
+    console.log(`🎯 CONTAINER FLOW: ${transferQuantity} units transferred from ${normalizedFloor} - received will update on container accept`);
+  } else {
+    nextFloorData.received = (nextFloorData.received || 0) + transferQuantity;
+    nextFloorData.remaining = nextFloorData.received;
   }
-  
-  nextFloorData.remaining = nextFloorData.received;
   
   // Update article machineId if provided
   if (transferData.machineId !== undefined) {
     article.machineId = transferData.machineId;
   }
-  
+
   // Update article current floor to next floor (only if transferring from current floor)
-  if (article.currentFloor === normalizedFloor) {
+  // For container flow: don't move yet - article moves when container is accepted on receiving floor
+  if (article.currentFloor === normalizedFloor && !usesContainerReceive(normalizedFloor)) {
     article.currentFloor = nextFloor;
     article.status = 'Pending';
     article.progress = 0;
     article.startedAt = null;
     article.completedAt = null;
-    
+
     // Reset floor-specific fields for new floor
     if (nextFloor !== 'Final Checking') {
       article.m1Quantity = 0;
@@ -538,14 +562,14 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
       article.finalQualityConfirmed = false;
     }
   }
-  
+
   article.quantityFromPreviousFloor = transferQuantity;
 
   await article.save();
 
-  // Update order current floor
+  // Update order current floor (only for non-container flow)
   const order = await ProductionOrder.findById(orderId);
-  if (order) {
+  if (order && !usesContainerReceive(normalizedFloor) && article.currentFloor === nextFloor) {
     order.currentFloor = nextFloor;
     await order.save();
   }
@@ -739,17 +763,18 @@ const transferCompletedWorkToNextFloor = async (article, updateData, user = null
     sourceFloorData.remaining = Math.max(0, sourceFloorData.received - sourceFloorData.transferred);
   }
 
-  if (sourceFloor === 'Knitting') {
-    nextFloorData.received = (nextFloorData.received || 0) + newTransferQuantity;
-    console.log(`🎯 KNITTING TRANSFER: Transferred ${newTransferQuantity} units to ${nextFloor}`);
+  if (usesContainerReceive(sourceFloor)) {
+    console.log(`🎯 CONTAINER FLOW: ${newTransferQuantity} units transferred from ${sourceFloor} - received will update on container accept`);
   } else {
     nextFloorData.received = sourceFloorData.transferred;
   }
   
-  nextFloorData.remaining = nextFloorData.received - (nextFloorData.completed || 0);
+  if (!usesContainerReceive(sourceFloor)) {
+    nextFloorData.remaining = nextFloorData.received - (nextFloorData.completed || 0);
+  }
 
-  // Update article current floor to next floor (only if transferring from current floor)
-  if (article.currentFloor === sourceFloor) {
+  // Update article current floor to next floor (only if transferring from current floor; container flow: move on accept)
+  if (article.currentFloor === sourceFloor && !usesContainerReceive(sourceFloor)) {
     article.currentFloor = nextFloor;
     article.quantityFromPreviousFloor = newTransferQuantity;
 
@@ -770,6 +795,8 @@ const transferCompletedWorkToNextFloor = async (article, updateData, user = null
       order.currentFloor = nextFloor;
       await order.save();
     }
+  } else if (article.currentFloor === sourceFloor) {
+    article.quantityFromPreviousFloor = newTransferQuantity;
   }
 
   await article.save();
@@ -821,46 +848,47 @@ const autoTransferToNextFloor = async (article, updateData, user = null) => {
     }
   }
   
-  // Update next floor: mark as received (FIXED: set to total transferred to prevent double-counting)
-  // For knitting floor overproduction, transfer the full completed amount (including excess)
-  // For other floors, transfer the normal amount
-  if (article.currentFloor === 'Knitting') {
-    nextFloorData.received = currentFloorData.completed; // Transfer full completed amount (including overproduction)
+  // Update next floor: all floors use container-based receive
+  if (usesContainerReceive(article.currentFloor)) {
+    console.log(`🎯 CONTAINER FLOW: Auto-transfer from ${article.currentFloor} - received will update on container accept`);
   } else {
-    nextFloorData.received = currentFloorData.transferred; // Normal transfer
+    nextFloorData.received = currentFloorData.transferred;
+    nextFloorData.remaining = nextFloorData.received - (nextFloorData.completed || 0);
   }
-  
-  nextFloorData.remaining = nextFloorData.received - (nextFloorData.completed || 0);
 
-  // Update article
-  article.currentFloor = nextFloor;
-  article.status = 'Pending';
-  article.progress = 0;
-  article.quantityFromPreviousFloor = transferQuantity;
-  article.startedAt = null;
-  article.completedAt = null;
+  // Update article (container flow: don't move - article moves when container accepted)
+  if (!usesContainerReceive(article.currentFloor)) {
+    article.currentFloor = nextFloor;
+    article.status = 'Pending';
+    article.progress = 0;
+    article.quantityFromPreviousFloor = transferQuantity;
+    article.startedAt = null;
+    article.completedAt = null;
 
-  // Reset floor-specific fields for new floor
-  if (nextFloor !== 'Final Checking') {
-    article.m1Quantity = 0;
-    article.m2Quantity = 0;
-    article.m3Quantity = 0;
-    article.m4Quantity = 0;
-    article.repairStatus = 'Not Required';
-    article.repairRemarks = '';
-    article.finalQualityConfirmed = false;
+    // Reset floor-specific fields for new floor
+    if (nextFloor !== 'Final Checking') {
+      article.m1Quantity = 0;
+      article.m2Quantity = 0;
+      article.m3Quantity = 0;
+      article.m4Quantity = 0;
+      article.repairStatus = 'Not Required';
+      article.repairRemarks = '';
+      article.finalQualityConfirmed = false;
+    }
+
+    // Update order current floor
+    const order = await ProductionOrder.findById(article.orderId);
+    if (order) {
+      order.currentFloor = nextFloor;
+      await order.save();
+    }
+  } else {
+    article.quantityFromPreviousFloor = transferQuantity;
   }
 
   await article.save();
 
-  // Update order current floor
-  const order = await ProductionOrder.findById(article.orderId);
-  if (order) {
-    order.currentFloor = nextFloor;
-    await order.save();
-  }
-
-  // Create auto-transfer log using proper enum value
+  // Create transfer log using proper enum value
   await createTransferLog({
     articleId: article._id.toString(),
     orderId: article.orderId.toString(),
@@ -1067,8 +1095,9 @@ export const fixDataCorruption = async (articleId) => {
 
 /**
  * Update receivedData for a specific floor on an article.
+ * When quantity is provided (container accept flow), also increments floor received by that amount.
  * @param {string} articleId - Article _id
- * @param {{ floor: string, receivedData: { receivedStatusFromPreviousFloor?: string, receivedInContainerId?: string, receivedTimestamp?: Date } }} payload
+ * @param {{ floor: string, receivedData: { receivedStatusFromPreviousFloor?: string, receivedInContainerId?: string, receivedTimestamp?: Date }, quantity?: number }} payload
  * @returns {Promise<Article>}
  */
 export const updateArticleFloorReceivedData = async (articleId, payload) => {
@@ -1111,8 +1140,31 @@ export const updateArticleFloorReceivedData = async (articleId, payload) => {
     receivedTimestamp: rd.receivedTimestamp ? new Date(rd.receivedTimestamp) : null,
   });
 
+  // Container accept flow: increment received by container quantity so quantity becomes visible on this floor
+  const quantity = payload.quantity;
+  if (typeof quantity === 'number' && quantity > 0) {
+    floorData.received = (floorData.received || 0) + quantity;
+    floorData.remaining = floorData.received - (floorData.completed || 0);
+    if (floorData.completed > floorData.received) {
+      floorData.completed = floorData.received;
+    }
+    // Move article to receiving floor so it shows correctly
+    article.currentFloor = normalizedFloor;
+    article.markModified('currentFloor');
+  }
+
   article.markModified(`floorQuantities.${floorKey}`);
   await article.save();
+
+  // Update order currentFloor when article moves to receiving floor
+  if (typeof quantity === 'number' && quantity > 0) {
+    const order = await ProductionOrder.findById(article.orderId);
+    if (order) {
+      order.currentFloor = normalizedFloor;
+      await order.save();
+    }
+  }
+
   return article;
 };
 
@@ -1428,33 +1480,34 @@ const autoTransferCompletedWorkToNextFloor = async (article, updateData, user = 
     }
   }
 
-  // Update next floor: mark as received (FIXED: set to total transferred to prevent double-counting)
-  // For knitting floor overproduction, transfer the full completed amount (including excess)
-  // For other floors, transfer the normal amount
-  if (article.currentFloor === 'Knitting') {
-    nextFloorData.received = currentFloorData.completed; // Transfer full completed amount (including overproduction)
+  // Update next floor: all floors use container-based receive
+  if (usesContainerReceive(article.currentFloor)) {
+    console.log(`🎯 CONTAINER FLOW: Auto-transfer from ${article.currentFloor} - received will update on container accept`);
   } else {
-    nextFloorData.received = currentFloorData.transferred; // Normal transfer
+    nextFloorData.received = currentFloorData.transferred;
+    nextFloorData.remaining = nextFloorData.received - (nextFloorData.completed || 0);
   }
-  
-  nextFloorData.remaining = nextFloorData.received - (nextFloorData.completed || 0);
 
-  // Update article
-  article.currentFloor = nextFloor;
-  article.status = 'Pending'; // Reset status for new floor
-  article.progress = 0; // Reset progress for new floor
-  article.quantityFromPreviousFloor = transferQuantity;
-  article.startedAt = null;
-  article.completedAt = null;
+  // Update article (container flow: don't move - article moves when container accepted)
+  if (!usesContainerReceive(article.currentFloor)) {
+    article.currentFloor = nextFloor;
+    article.status = 'Pending'; // Reset status for new floor
+    article.progress = 0; // Reset progress for new floor
+    article.quantityFromPreviousFloor = transferQuantity;
+    article.startedAt = null;
+    article.completedAt = null;
+
+    // Update order current floor
+    const order = await ProductionOrder.findById(article.orderId);
+    if (order) {
+      order.currentFloor = nextFloor;
+      await order.save();
+    }
+  } else {
+    article.quantityFromPreviousFloor = transferQuantity;
+  }
 
   await article.save();
-
-  // Update order current floor
-  const order = await ProductionOrder.findById(article.orderId);
-  if (order) {
-    order.currentFloor = nextFloor;
-    await order.save();
-  }
 
   // Create auto-transfer log
   await createTransferLog({
@@ -1515,10 +1568,8 @@ const transferM1ToNextFloor = async (article, m1Quantity, user = null, inspectio
   const currentM1Quantity = sourceFloorData.m1Quantity || 0;
   sourceFloorData.m1Remaining = Math.max(0, currentM1Quantity - newM1Transferred);
 
-  // Update next floor: mark M1 as received (FIXED: set to total M1 transferred to prevent double-counting)
-  const totalM1Transferred = newM1Transferred; // This is the total M1 transferred so far
-  nextFloorData.received = totalM1Transferred;
-  nextFloorData.remaining = totalM1Transferred - (nextFloorData.completed || 0);
+  // Checking floors use container-based receive - next floor received only on container accept
+  console.log(`🎯 CONTAINER FLOW: ${m1Quantity} M1 units transferred from ${sourceFloor} - received will update on container accept`);
 
   // Don't move article to next floor immediately for M1 transfer
   // Article should only move when ALL work on current floor is completed

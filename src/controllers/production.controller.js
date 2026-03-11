@@ -127,6 +127,11 @@ export const getArticle = catchAsync(async (req, res) => {
   res.send(article);
 });
 
+export const getArticleProcesses = catchAsync(async (req, res) => {
+  const result = await productionService.getArticleProcesses(req.params.articleId);
+  res.send(result);
+});
+
 export const qualityInspection = catchAsync(async (req, res) => {
   const { articleId } = req.params;
   const result = await productionService.qualityInspection(articleId, req.body, req.user);

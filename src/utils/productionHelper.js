@@ -81,6 +81,22 @@ export const getFloorKey = (floor) => {
 };
 
 /**
+ * Floors that use container-based receive (quantity visible on next floor only after container scan + accept).
+ * From Knitting onwards, receive happens on container accept on the receiving floor.
+ */
+export const FLOORS_USING_CONTAINER_RECEIVE = [
+  'Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon',
+  'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse', 'Dispatch'
+];
+
+/**
+ * Check if transfer from this floor uses container-based receive (next floor received only on container accept).
+ * @param {string} fromFloor - Source floor name
+ * @returns {boolean}
+ */
+export const usesContainerReceive = (fromFloor) => FLOORS_USING_CONTAINER_RECEIVE.includes(fromFloor);
+
+/**
  * Get next floor in the sequence based on linking type
  * @param {string} currentFloor - Current floor name
  * @param {string} linkingType - Linking type

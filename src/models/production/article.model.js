@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { OrderStatus, Priority, LinkingType, ProductionFloor, RepairStatus, LogAction } from './enums.js';
 import ArticleLog from './articleLog.model.js';
 import Product from '../product.model.js';
-import { validateProductProcesses, mapProcessToFloor, getFloorKey } from '../../utils/productionHelper.js';
+import { validateProductProcesses, mapProcessToFloor, getFloorKey, usesContainerReceive } from '../../utils/productionHelper.js';
 import { 
   updateQualityCategories, 
   shiftM2Items, 
@@ -965,18 +965,15 @@ articleSchema.methods.transferFromFloor = async function(fromFloor, quantity, us
     }
   }
   
-  // Update next floor: mark as received (full transferred including defects)
-  if (fromFloor === ProductionFloor.KNITTING) {
-    nextFloorData.received = (nextFloorData.received || 0) + quantity;
-    console.log(`🎯 KNITTING TRANSFER: Transferred ${quantity} units to ${nextFloor}`);
+  // Update next floor: all floors use container-based receive - received only when container scanned & accepted
+  if (usesContainerReceive(fromFloor)) {
+    console.log(`🎯 CONTAINER FLOW: ${quantity} units transferred from ${fromFloor} to ${nextFloor} - received will update on container accept`);
   } else {
     nextFloorData.received += quantity;
-  }
-  nextFloorData.remaining = nextFloorData.received - (nextFloorData.completed || 0);
-  
-  // Ensure next floor quantities are consistent
-  if (nextFloorData.completed > nextFloorData.received) {
-    nextFloorData.completed = nextFloorData.received;
+    nextFloorData.remaining = nextFloorData.received - (nextFloorData.completed || 0);
+    if (nextFloorData.completed > nextFloorData.received) {
+      nextFloorData.completed = nextFloorData.received;
+    }
   }
   
   if (remarks) {
@@ -1078,9 +1075,8 @@ articleSchema.methods.transferM1FromFloor = async function(fromFloor, quantity, 
   // Update remaining quantity
   fromFloorData.remaining = fromFloorData.m1Remaining;
   
-  // Update next floor: mark as received (additive)
-  nextFloorData.received = (nextFloorData.received || 0) + quantity;
-  nextFloorData.remaining = nextFloorData.received - (nextFloorData.completed || 0);
+  // Checking floors use container-based receive - next floor received only on container accept
+  console.log(`🎯 CONTAINER FLOW: ${quantity} M1 units transferred from ${fromFloor} - received will update on container accept`);
   
   if (remarks) {
     this.remarks = remarks;

@@ -157,6 +157,11 @@ router
   .route('/articles/:articleId')
   .get(validate(productionValidation.getArticle), productionController.getArticle);
 
+// Get processes for article (from Product via articleNumber = factoryCode)
+router
+  .route('/articles/:articleId/processes')
+  .get(validate(productionValidation.getArticle), productionController.getArticleProcesses);
+
 // Direct article quality inspection (works for any floor)
 router
   .route('/articles/:articleId/quality-inspection')
