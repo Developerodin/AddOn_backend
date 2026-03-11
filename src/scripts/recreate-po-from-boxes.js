@@ -149,6 +149,20 @@ async function run() {
       files: [],
     }));
 
+    // Fetch existing PO and build existingKeyToRate (needed before building poItems)
+    const existingPo = await YarnPurchaseOrder.findOne({ poNumber: PO_NUMBER }).lean();
+    const existingKeyToRate = new Map();
+    if (existingPo?.poItems?.length) {
+      for (const pi of existingPo.poItems) {
+        const name = (pi.yarnName || pi.yarn?.yarnName || '').trim();
+        const shade = (pi.shadeCode || '').trim();
+        existingKeyToRate.set(poItemKey(name, shade), {
+          rate: toNum(pi.rate),
+          gstRate: toNum(pi.gstRate),
+        });
+      }
+    }
+
     // Build poItems for PO (with _id for receivedLotDetails references)
     const poItems = [];
     const keyToPoItemId = new Map();
@@ -192,21 +206,6 @@ async function run() {
     subTotal = Math.round(subTotal * 100) / 100;
     gst = Math.round(gst * 100) / 100;
     let total = Math.round((subTotal + gst) * 100) / 100;
-
-    const existingPo = await YarnPurchaseOrder.findOne({ poNumber: PO_NUMBER }).lean();
-
-    // Build existingKeyToRate for preserving rate/gstRate (from existing PO or from PO we're about to delete)
-    const existingKeyToRate = new Map();
-    if (existingPo?.poItems?.length) {
-      for (const pi of existingPo.poItems) {
-        const name = (pi.yarnName || pi.yarn?.yarnName || '').trim();
-        const shade = (pi.shadeCode || '').trim();
-        existingKeyToRate.set(poItemKey(name, shade), {
-          rate: toNum(pi.rate),
-          gstRate: toNum(pi.gstRate),
-        });
-      }
-    }
 
     // Force recreate: delete existing PO and create fresh (boxes/cones unchanged)
     let supplierIdFromDeletedPo = null;
