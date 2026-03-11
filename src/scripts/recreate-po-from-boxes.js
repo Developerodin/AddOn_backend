@@ -8,7 +8,8 @@
  * Run:
  *   node src/scripts/recreate-po-from-boxes.js --po-number=PO-2026-869
  *   node src/scripts/recreate-po-from-boxes.js --po-number=PO-2026-869 --dry-run
- *   node src/scripts/recreate-po-from-boxes.js --po-number=PO-2026-869 --supplier-id=xxx  (required if PO doesn't exist)
+ *   node src/scripts/recreate-po-from-boxes.js --po-number=PO-2026-869 --supplier-id=xxx  (when creating new PO)
+ *   node src/scripts/recreate-po-from-boxes.js --po-number=PO-2026-869 --force-recreate  (delete existing PO, create fresh from boxes)
  */
 
 import mongoose from 'mongoose';
@@ -18,6 +19,7 @@ import logger from '../config/logger.js';
 
 const args = process.argv.slice(2);
 const isDryRun = args.includes('--dry-run');
+const forceRecreate = args.includes('--force-recreate');
 const poNumberArg = args.find((a) => a.startsWith('--po-number='));
 const supplierIdArg = args.find((a) => a.startsWith('--supplier-id='));
 const PO_NUMBER = poNumberArg ? poNumberArg.split('=')[1]?.trim() : null;
@@ -180,7 +182,18 @@ async function run() {
 
     const existingPo = await YarnPurchaseOrder.findOne({ poNumber: PO_NUMBER }).lean();
 
-    if (existingPo) {
+    // Force recreate: delete existing PO and create fresh (boxes/cones unchanged)
+    let supplierIdFromDeletedPo = null;
+    if (existingPo && forceRecreate) {
+      logger.info(`--force-recreate: Deleting existing PO ${PO_NUMBER} and creating fresh from boxes.`);
+      supplierIdFromDeletedPo = existingPo.supplier?.toString?.();
+      if (!isDryRun) {
+        await YarnPurchaseOrder.deleteOne({ poNumber: PO_NUMBER });
+      }
+      // Fall through to create path
+    }
+
+    if (existingPo && !forceRecreate) {
       logger.info(`PO ${PO_NUMBER} exists. Updating receivedLotDetails and packListDetails.`);
       if (existingPo.poItems?.length) {
         // Match receivedLotDetails to existing poItem _ids by (yarnName, shadeCode)
@@ -214,7 +227,8 @@ async function run() {
       }
       logger.info(`Updated: ${receivedLotDetails.length} lots, ${packListDetails.length} packlists`);
     } else {
-      let supplierId = SUPPLIER_ID;
+      // PO doesn't exist, or we just deleted it (--force-recreate)
+      let supplierId = SUPPLIER_ID || supplierIdFromDeletedPo;
       if (!supplierId) {
         const firstSupplier = await Supplier.findOne().lean();
         if (!firstSupplier) {
@@ -223,10 +237,8 @@ async function run() {
         }
         supplierId = firstSupplier._id.toString();
         logger.info(`Using first supplier: ${firstSupplier.brandName || supplierId}`);
-      }
-      if (!supplierId) {
-        logger.error('Cannot create PO: no supplier. Pass --supplier-id=xxx');
-        process.exit(1);
+      } else if (supplierIdFromDeletedPo) {
+        logger.info(`Using supplier from deleted PO: ${supplierId}`);
       }
       const supplier = await Supplier.findById(supplierId).lean();
       if (!supplier) {
