@@ -3,6 +3,12 @@ import mongoose from 'mongoose';
 import { YarnInventory, YarnCatalog, YarnBox, YarnCone } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import pick from '../../utils/pick.js';
+import { ST_SECTION_CODE, LT_SECTION_CODES } from '../../models/storageManagement/storageSlot.model.js';
+
+/** LT: legacy LT-* OR slot barcodes B7-02-, B7-03-, B7-04-, B7-05- (from StorageSlot) */
+const LT_STORAGE_REGEX = { $regex: new RegExp(`^(LT-|${LT_SECTION_CODES.map((s) => `${s}-`).join('|')})`, 'i') };
+/** ST: legacy ST-* OR slot barcode B7-01- (from StorageSlot) */
+const ST_STORAGE_REGEX = { $regex: new RegExp(`^(ST-|${ST_SECTION_CODE}-)`, 'i') };
 
 /**
  * Transform inventory data to include LTS/STS breakdown with blocked weight
@@ -36,37 +42,34 @@ const transformInventoryForResponse = (inventory) => {
   };
 };
 
+/** Build yarnName matcher for YarnBox (no yarn field, match by yarnName only) */
+const buildBoxYarnMatcher = (inventory) => {
+  const name = (inventory.yarnName || '').trim();
+  if (!name) return {};
+  return { yarnName: { $regex: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } };
+};
+
 /**
  * Recalculate inventory from actual storage data
- * This ensures inventory always matches actual storage
+ * LT = boxes only (weight from boxes in LT storage)
+ * ST = cones only (weight/count from cones in ST - avoid double-count with boxes)
  */
 const recalculateInventoryFromStorage = async (inventory) => {
   const toNumber = (value) => Math.max(0, Number(value ?? 0));
+  const boxYarnMatcher = buildBoxYarnMatcher(inventory);
 
-  // Recalculate long-term inventory from boxes
-  // Use yarn ID if available, otherwise fall back to yarnName
+  // Long-term: boxes only (YarnBox has yarnName, no yarn field)
   const ltBoxQuery = {
-    storageLocation: { $regex: /^LT-/i },
+    ...boxYarnMatcher,
+    storageLocation: LT_STORAGE_REGEX,
     storedStatus: true,
     'qcData.status': 'qc_approved',
   };
-  
-  if (inventory.yarn) {
-    // Try to match by yarn reference if boxes have yarn field
-    ltBoxQuery.$or = [
-      { yarn: inventory.yarn },
-      { yarnName: inventory.yarnName },
-    ];
-  } else {
-    ltBoxQuery.yarnName = inventory.yarnName;
-  }
-
   const ltBoxes = await YarnBox.find(ltBoxQuery).lean();
 
   let ltTotalWeight = 0;
   let ltTotalTearWeight = 0;
   let ltTotalNetWeight = 0;
-
   for (const box of ltBoxes) {
     const netWeight = (box.boxWeight || 0) - (box.tearweight || 0);
     ltTotalWeight += box.boxWeight || 0;
@@ -74,66 +77,47 @@ const recalculateInventoryFromStorage = async (inventory) => {
     ltTotalNetWeight += netWeight;
   }
 
-  // Recalculate short-term inventory from:
-  // 1. Boxes in ST storage (transferred from LT but not yet opened)
-  // 2. Available cones in ST storage (not issued)
-  
-  // Count boxes in ST storage
-  const stBoxQuery = {
-    storageLocation: { $regex: /^ST-/i },
-    storedStatus: true,
-    'qcData.status': 'qc_approved',
-  };
-  
-  if (inventory.yarn) {
-    stBoxQuery.$or = [
-      { yarn: inventory.yarn },
-      { yarnName: inventory.yarnName },
-    ];
-  } else {
-    stBoxQuery.yarnName = inventory.yarnName;
-  }
-
-  const stBoxes = await YarnBox.find(stBoxQuery).lean();
-
-  // Count cones with storage assigned (any non-empty coneStorageId)
+  // Short-term: cones only (cones data is source of truth; boxes in ST are transition state)
+  // Avoid double-count: when cones exist from a box, box weight is zeroed on full transfer
+  const yarnId = inventory.yarn?._id || inventory.yarn;
   const stConeQuery = {
     coneStorageId: { $exists: true, $nin: [null, ''] },
     issueStatus: { $ne: 'issued' },
   };
-  
-  if (inventory.yarn) {
-    stConeQuery.$or = [
-      { yarn: inventory.yarn },
-      { yarnName: inventory.yarnName },
-    ];
+  if (yarnId) {
+    stConeQuery.$or = [{ yarn: yarnId }, { yarnName: inventory.yarnName }];
   } else {
     stConeQuery.yarnName = inventory.yarnName;
   }
-
   const stCones = await YarnCone.find(stConeQuery).lean();
 
   let stTotalWeight = 0;
   let stTotalTearWeight = 0;
   let stTotalNetWeight = 0;
   let stConeCount = 0;
-
-  // Add weight from boxes in ST storage
-  for (const box of stBoxes) {
-    const netWeight = (box.boxWeight || 0) - (box.tearweight || 0);
-    stTotalWeight += box.boxWeight || 0;
-    stTotalTearWeight += box.tearweight || 0;
-    stTotalNetWeight += netWeight;
-    // Boxes in ST don't count as individual cones until opened
-  }
-
-  // Add weight from cones in ST storage
   for (const cone of stCones) {
     const netWeight = (cone.coneWeight || 0) - (cone.tearWeight || 0);
     stTotalWeight += cone.coneWeight || 0;
     stTotalTearWeight += cone.tearWeight || 0;
     stTotalNetWeight += netWeight;
     stConeCount += 1;
+  }
+
+  // Unopened boxes in ST (no cones from them yet) - add their weight
+  const boxIdsWithCones = new Set(stCones.map((c) => c.boxId).filter(Boolean));
+  const stBoxQuery = {
+    ...boxYarnMatcher,
+    storageLocation: ST_STORAGE_REGEX,
+    storedStatus: true,
+    'qcData.status': 'qc_approved',
+    boxId: { $nin: Array.from(boxIdsWithCones) },
+  };
+  const stBoxes = await YarnBox.find(stBoxQuery).lean();
+  for (const box of stBoxes) {
+    const netWeight = (box.boxWeight || 0) - (box.tearweight || 0);
+    stTotalWeight += box.boxWeight || 0;
+    stTotalTearWeight += box.tearweight || 0;
+    stTotalNetWeight += netWeight;
   }
 
   // Update inventory buckets
@@ -187,6 +171,64 @@ const recalculateInventoryFromStorage = async (inventory) => {
 };
 
 /**
+ * Compute total net weight and blocked weight from storage (boxes + cones) for a yarn.
+ * Used by requisition service to get accurate availableQty without relying on stale YarnInventory.
+ * @param {ObjectId} yarnId - Yarn catalog ID
+ * @returns {Promise<{ totalNetWeight: number, blockedNetWeight: number }>}
+ */
+export const computeInventoryFromStorage = async (yarnId) => {
+  const yarnCatalog = await YarnCatalog.findById(yarnId).lean();
+  if (!yarnCatalog) return { totalNetWeight: 0, blockedNetWeight: 0 };
+
+  const yarnName = yarnCatalog.yarnName || '';
+  const boxYarnMatcher = yarnName.trim()
+    ? { yarnName: { $regex: new RegExp(`^${yarnName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }
+    : {};
+
+  // LT: boxes only
+  const ltBoxes = await YarnBox.find({
+    ...boxYarnMatcher,
+    storageLocation: LT_STORAGE_REGEX,
+    storedStatus: true,
+    'qcData.status': 'qc_approved',
+  }).lean();
+  let ltNet = 0;
+  for (const b of ltBoxes) {
+    ltNet += Math.max(0, (b.boxWeight || 0) - (b.tearweight || 0));
+  }
+
+  // ST: cones only
+  const stCones = await YarnCone.find({
+    $or: [{ yarn: yarnId }, { yarnName }],
+    coneStorageId: { $exists: true, $nin: [null, ''] },
+    issueStatus: { $ne: 'issued' },
+  }).lean();
+  let stNet = 0;
+  for (const c of stCones) {
+    stNet += Math.max(0, (c.coneWeight || 0) - (c.tearWeight || 0));
+  }
+
+  // Unopened boxes in ST
+  const boxIdsWithCones = new Set(stCones.map((c) => c.boxId).filter(Boolean));
+  const stBoxes = await YarnBox.find({
+    ...boxYarnMatcher,
+    storageLocation: ST_STORAGE_REGEX,
+    storedStatus: true,
+    'qcData.status': 'qc_approved',
+    boxId: { $nin: Array.from(boxIdsWithCones) },
+  }).lean();
+  for (const b of stBoxes) {
+    stNet += Math.max(0, (b.boxWeight || 0) - (b.tearweight || 0));
+  }
+
+  const totalNetWeight = ltNet + stNet;
+  const inventory = await YarnInventory.findOne({ yarn: yarnId }).lean();
+  const blockedNetWeight = Math.max(0, Number(inventory?.blockedNetWeight ?? 0));
+
+  return { totalNetWeight, blockedNetWeight };
+};
+
+/**
  * Query yarn inventories with optional filters
  * @param {Object} filters - Filter criteria
  * @param {Object} options - Query options (pagination, sorting)
@@ -211,7 +253,12 @@ export const queryYarnInventories = async (filters = {}, options = {}) => {
     mongooseFilter.overbooked = filters.overbooked;
   }
 
-  const result = await YarnInventory.paginate(mongooseFilter, options);
+  // No limit = return entire data (use high limit when limit not specified)
+  const paginateOptions = { ...options };
+  if (!paginateOptions.limit || paginateOptions.limit <= 0) {
+    paginateOptions.limit = 100000;
+  }
+  const result = await YarnInventory.paginate(mongooseFilter, paginateOptions);
 
   // Recalculate each inventory from actual storage to ensure accuracy
   const recalculatedResults = await Promise.all(

@@ -2,6 +2,9 @@ import httpStatus from 'http-status';
 import mongoose from 'mongoose';
 import { YarnBox, YarnPurchaseOrder } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
+import { LT_SECTION_CODES } from '../../models/storageManagement/storageSlot.model.js';
+
+const LT_STORAGE_PATTERN = new RegExp(`^(LT-|${LT_SECTION_CODES.map((s) => `${s}-`).join('|')})`, 'i');
 
 export const createYarnBox = async (yarnBoxBody) => {
   if (!yarnBoxBody.boxId) {
@@ -394,7 +397,7 @@ export const updateQcStatusByPoNumber = async (poNumber, qcStatus, qcData = {}) 
     // Save each box individually to trigger post-save hooks for inventory sync
     // This ensures boxes stored in LT storage get synced to inventory
     for (const box of updatedBoxes) {
-      if (box.storedStatus && box.storageLocation && /^LT-/i.test(box.storageLocation) && box.boxWeight > 0) {
+      if (box.storedStatus && box.storageLocation && LT_STORAGE_PATTERN.test(box.storageLocation) && box.boxWeight > 0) {
         // Trigger save to activate post-save hook
         try {
           await box.save();

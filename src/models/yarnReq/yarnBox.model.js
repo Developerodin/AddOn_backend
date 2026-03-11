@@ -4,6 +4,10 @@ import paginate from '../plugins/paginate.plugin.js';
 import YarnCatalog from '../yarnManagement/yarnCatalog.model.js';
 import YarnTransaction from './yarnTransaction.model.js';
 import YarnInventory from './yarnInventory.model.js';
+import { LT_SECTION_CODES } from '../storageManagement/storageSlot.model.js';
+
+/** Matches LT: legacy LT-* OR slot barcodes B7-02-, B7-03-, B7-04-, B7-05- */
+const LT_STORAGE_PATTERN = new RegExp(`^(LT-|${LT_SECTION_CODES.map((s) => `${s}-`).join('|')})`, 'i');
 
 const qcDataSchema = mongoose.Schema(
   {
@@ -151,7 +155,7 @@ yarnBoxSchema.pre('save', function (next) {
  */
 yarnBoxSchema.post('save', async function (doc) {
   // Only process if box is stored in long-term storage with QC approval
-  const isLongTermStorage = doc.storageLocation && /^LT-/i.test(doc.storageLocation);
+  const isLongTermStorage = doc.storageLocation && LT_STORAGE_PATTERN.test(doc.storageLocation);
   const isStored = doc.storedStatus === true;
   const isQcApproved = doc.qcData?.status === 'qc_approved';
   const hasWeight = doc.boxWeight && doc.boxWeight > 0;

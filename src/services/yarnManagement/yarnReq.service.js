@@ -1,6 +1,7 @@
 import httpStatus from 'http-status';
-import { YarnRequisition, YarnInventory, YarnCatalog } from '../../models/index.js';
+import { YarnRequisition, YarnCatalog } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
+import * as yarnInventoryService from './yarnInventory.service.js';
 
 const computeAlertStatus = (minQty, availableQty, blockedQty) => {
   if (availableQty < minQty) {
@@ -13,50 +14,32 @@ const computeAlertStatus = (minQty, availableQty, blockedQty) => {
 };
 
 /**
- * Recalculate requisition values from actual inventory
- * This ensures requisitions always show accurate data
+ * Recalculate requisition values from actual inventory (boxes + cones)
+ * Uses computeInventoryFromStorage for accurate data, not stale YarnInventory
  */
 const recalculateRequisitionFromInventory = async (requisition) => {
   const toNumber = (value) => Math.max(0, Number(value ?? 0));
+  const yarnId = requisition.yarn?._id || requisition.yarn;
 
-  // Get current inventory for this yarn
-  const inventory = await YarnInventory.findOne({ yarn: requisition.yarn }).lean();
-  if (!inventory) {
-    // No inventory exists, set to zero
-    return {
-      ...requisition,
-      availableQty: 0,
-      blockedQty: 0,
-      alertStatus: 'below_minimum',
-    };
-  }
+  const { totalNetWeight, blockedNetWeight } = await yarnInventoryService.computeInventoryFromStorage(yarnId);
+  const availableNet = Math.max(totalNetWeight - blockedNetWeight, 0);
 
-  // Get yarn catalog for minQty
-  const yarnCatalog = await YarnCatalog.findById(requisition.yarn).lean();
+  const yarnCatalog = await YarnCatalog.findById(yarnId).lean();
   const minQty = toNumber(yarnCatalog?.minQuantity || requisition.minQty || 0);
+  const alertStatus = computeAlertStatus(minQty, availableNet, blockedNetWeight);
 
-  // Calculate from actual inventory
-  const totalNet = toNumber(inventory.totalInventory?.totalNetWeight || 0);
-  const blockedNet = Math.max(0, toNumber(inventory.blockedNetWeight || 0));
-  const availableNet = Math.max(totalNet - blockedNet, 0);
-
-  // Calculate alert status
-  const alertStatus = computeAlertStatus(minQty, availableNet, blockedNet);
-
-  // Update requisition in database
   await YarnRequisition.findByIdAndUpdate(requisition._id, {
     minQty,
     availableQty: availableNet,
-    blockedQty: blockedNet,
+    blockedQty: blockedNetWeight,
     alertStatus,
   });
 
-  // Return updated requisition data
   return {
     ...requisition,
     minQty,
     availableQty: availableNet,
-    blockedQty: blockedNet,
+    blockedQty: blockedNetWeight,
     alertStatus,
   };
 };

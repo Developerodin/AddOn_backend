@@ -10,7 +10,8 @@ import * as yarnInventoryService from '../../services/yarnManagement/yarnInvento
  */
 export const getYarnInventories = catchAsync(async (req, res) => {
   const filter = pick(req.query, ['yarn_id', 'yarn_name', 'inventory_status', 'overbooked']);
-  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  const options = pick(req.query, ['sortBy', 'page']);
+  // No limit - always return entire data (service uses high default)
   const result = await yarnInventoryService.queryYarnInventories(filter, options);
   res.status(httpStatus.OK).send(result);
 });
