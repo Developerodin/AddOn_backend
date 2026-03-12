@@ -56,4 +56,20 @@ export const returnYarnCone = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(result);
 });
 
+export const getConesByStorageLocation = catchAsync(async (req, res) => {
+  const { storageLocation } = req.params;
+  const cones = await yarnConeService.getConesByStorageLocation(storageLocation);
+  res.status(httpStatus.OK).send(cones);
+});
+
+export const getConesWithoutStorageLocation = catchAsync(async (req, res) => {
+  const cones = await yarnConeService.getConesWithoutStorageLocation();
+  res.status(httpStatus.OK).send(cones);
+});
+
+export const bulkSetConeStorageLocation = catchAsync(async (req, res) => {
+  const result = await yarnConeService.bulkSetConeStorageLocation(req.body);
+  res.status(httpStatus.OK).send(result);
+});
+
 

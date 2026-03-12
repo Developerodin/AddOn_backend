@@ -124,6 +124,133 @@ export const getStorageSlotsByZone = async (zoneCode, query = {}) => {
   };
 };
 
+/**
+ * Get all storage slots with their box/cone contents in a single call.
+ * No pagination limit - returns entire data.
+ * @param {string} [zone] - Zone filter (LT, ST). If omitted, returns all zones.
+ * @param {Object} [query] - Optional shelf, floor, isActive filters
+ * @returns {Promise<Object>} { results: [{ slot, boxes, cones, ... }], zoneCode?, totalResults }
+ */
+export const getStorageSlotsWithContents = async (zone, query = {}) => {
+  const filter = {};
+  if (zone) filter.zoneCode = zone;
+  if (query.shelf != null) filter.shelfNumber = Number(query.shelf);
+  if (query.floor != null) filter.floorNumber = Number(query.floor);
+  if (query.isActive !== undefined) {
+    filter.isActive = query.isActive === 'true' || query.isActive === true;
+  }
+
+  const isLTZone = zone === STORAGE_ZONES.LONG_TERM;
+  const slots = isLTZone
+    ? await StorageSlot.aggregate([
+        { $match: filter },
+        {
+          $addFields: {
+            _sectionOrder: { $indexOfArray: [LT_SECTION_CODES, '$sectionCode'] },
+          },
+        },
+        { $sort: { _sectionOrder: 1, shelfNumber: 1, floorNumber: 1 } },
+        { $project: { _sectionOrder: 0 } },
+      ])
+    : await StorageSlot.find(filter)
+        .sort({ zoneCode: 1, sectionCode: 1, shelfNumber: 1, floorNumber: 1 })
+        .lean();
+
+  if (slots.length === 0) {
+    return { results: [], totalResults: 0, zoneCode: zone || null };
+  }
+
+  const barcodes = slots.map((s) => s.barcode || s.label).filter(Boolean);
+
+  // Fetch all boxes for LT slots (storageLocation in barcodes)
+  const boxesByLocation = {};
+  const boxes = await YarnBox.find({
+    storageLocation: { $in: barcodes },
+    storedStatus: true,
+  }).lean();
+
+  // Filter out boxes whose cones are in ST (box effectively empty)
+  const boxIds = boxes.map((b) => b.boxId);
+  const conesInSTByBox = await YarnCone.aggregate([
+    {
+      $match: {
+        boxId: { $in: boxIds },
+        coneStorageId: { $exists: true, $nin: [null, ''] },
+      },
+    },
+    { $group: { _id: '$boxId', count: { $sum: 1 } } },
+  ]);
+  const boxIdsWithConesInST = new Set(conesInSTByBox.map((x) => x._id));
+
+  for (const box of boxes) {
+    if (boxIdsWithConesInST.has(box.boxId)) continue;
+    const loc = box.storageLocation;
+    if (!boxesByLocation[loc]) boxesByLocation[loc] = [];
+    boxesByLocation[loc].push(box);
+  }
+
+  // Fetch all cones for ST slots (coneStorageId in barcodes)
+  const conesByLocation = {};
+  const cones = await YarnCone.find({
+    coneStorageId: { $in: barcodes },
+    $or: [{ issueStatus: 'not_issued' }, { returnStatus: 'returned' }],
+  }).lean();
+  for (const cone of cones) {
+    const loc = cone.coneStorageId;
+    if (!conesByLocation[loc]) conesByLocation[loc] = [];
+    conesByLocation[loc].push(cone);
+  }
+
+  const results = slots.map((slot) => {
+    const barcode = slot.barcode || slot.label;
+    const slotBoxes = boxesByLocation[barcode] || [];
+    const slotCones = conesByLocation[barcode] || [];
+    const isLTZone = slot.zoneCode === STORAGE_ZONES.LONG_TERM;
+
+    let remainingWeight = { totalWeight: 0, totalNetWeight: 0, yarns: [] };
+    if (isLTZone) {
+      const yarnSummary = {};
+      for (const box of slotBoxes) {
+        const netWeight = (box.boxWeight || 0) - (box.tearweight || 0);
+        remainingWeight.totalWeight += box.boxWeight || 0;
+        remainingWeight.totalNetWeight += netWeight;
+        const yn = box.yarnName || 'Unknown';
+        if (!yarnSummary[yn]) yarnSummary[yn] = { yarnName: yn, totalWeight: 0, totalNetWeight: 0, boxCount: 0 };
+        yarnSummary[yn].totalWeight += box.boxWeight || 0;
+        yarnSummary[yn].totalNetWeight += netWeight;
+        yarnSummary[yn].boxCount += 1;
+      }
+      remainingWeight.yarns = Object.values(yarnSummary);
+    } else {
+      const yarnSummary = {};
+      for (const cone of slotCones) {
+        remainingWeight.totalWeight += cone.coneWeight || 0;
+        const yn = cone.yarnName || 'Unknown';
+        if (!yarnSummary[yn]) yarnSummary[yn] = { yarnName: yn, totalWeight: 0, coneCount: 0 };
+        yarnSummary[yn].totalWeight += cone.coneWeight || 0;
+        yarnSummary[yn].coneCount += 1;
+      }
+      remainingWeight.yarns = Object.values(yarnSummary);
+    }
+
+    return {
+      ...slot,
+      boxes: slotBoxes,
+      cones: slotCones,
+      boxCount: slotBoxes.length,
+      coneCount: slotCones.length,
+      zoneType: isLTZone ? 'LONG_TERM' : 'SHORT_TERM',
+      remainingWeight,
+    };
+  });
+
+  return {
+    results,
+    totalResults: results.length,
+    zoneCode: zone || null,
+  };
+};
+
 export const getStorageContentsByBarcode = async (barcode) => {
   const storageSlot = await StorageSlot.findOne({ barcode }).lean();
 

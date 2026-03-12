@@ -57,6 +57,24 @@ router
   );
 
 router
+  .route('/by-storage-location/:storageLocation')
+  .get(
+    validate(yarnBoxValidation.getBoxesByStorageLocation),
+    yarnBoxController.getBoxesByStorageLocation
+  );
+
+router
+  .route('/without-storage-location')
+  .get(yarnBoxController.getBoxesWithoutStorageLocation);
+
+router
+  .route('/set-storage-location')
+  .patch(
+    validate(yarnBoxValidation.bulkSetBoxStorageLocation),
+    yarnBoxController.bulkSetBoxStorageLocation
+  );
+
+router
   .route('/:yarnBoxId')
   .get(
     validate(yarnBoxValidation.getYarnBoxById),

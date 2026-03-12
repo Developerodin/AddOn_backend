@@ -7,6 +7,15 @@ const zoneField = Joi.string()
   .valid(...Object.values(STORAGE_ZONES))
   .uppercase();
 
+export const getStorageSlotsWithContents = {
+  query: Joi.object().keys({
+    zone: zoneField.optional(),
+    shelf: Joi.number().integer().min(1).max(150).optional(),
+    floor: Joi.number().integer().min(1).max(4).optional(),
+    isActive: Joi.boolean().optional(),
+  }),
+};
+
 export const listStorageSlots = {
   query: Joi.object().keys({
     zone: zoneField.optional(),

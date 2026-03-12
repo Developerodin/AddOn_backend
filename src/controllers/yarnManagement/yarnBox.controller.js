@@ -60,4 +60,20 @@ export const transferBoxesToShortTerm = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(result);
 });
 
+export const getBoxesByStorageLocation = catchAsync(async (req, res) => {
+  const { storageLocation } = req.params;
+  const boxes = await yarnBoxService.getBoxesByStorageLocation(storageLocation);
+  res.status(httpStatus.OK).send(boxes);
+});
+
+export const getBoxesWithoutStorageLocation = catchAsync(async (req, res) => {
+  const boxes = await yarnBoxService.getBoxesWithoutStorageLocation();
+  res.status(httpStatus.OK).send(boxes);
+});
+
+export const bulkSetBoxStorageLocation = catchAsync(async (req, res) => {
+  const result = await yarnBoxService.bulkSetBoxStorageLocation(req.body);
+  res.status(httpStatus.OK).send(result);
+});
+
 

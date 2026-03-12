@@ -63,6 +63,92 @@ export const getYarnConeByBarcode = async (barcode) => {
   return yarnCone;
 };
 
+/**
+ * Get cones by storage location (coneStorageId). Returns all matching cones (no limit).
+ * @param {string} storageLocation - coneStorageId to filter by
+ * @returns {Promise<Array>} Cones with the given storage location
+ */
+export const getConesByStorageLocation = async (storageLocation) => {
+  const escaped = String(storageLocation).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const cones = await YarnCone.find({
+    coneStorageId: { $regex: new RegExp(`^${escaped}$`, 'i') },
+  })
+    .populate({ path: 'yarn', select: '_id yarnName yarnType status' })
+    .sort({ createdAt: -1 })
+    .lean();
+  return cones;
+};
+
+/**
+ * Get cones without storage location (coneStorageId null, undefined, or empty).
+ * Returns all matching cones (no limit).
+ * @returns {Promise<Array>} Cones without storage location
+ */
+export const getConesWithoutStorageLocation = async () => {
+  const cones = await YarnCone.find({
+    $or: [
+      { coneStorageId: { $exists: false } },
+      { coneStorageId: null },
+      { coneStorageId: '' },
+    ],
+  })
+    .populate({ path: 'yarn', select: '_id yarnName yarnType status' })
+    .sort({ createdAt: -1 })
+    .lean();
+  return cones;
+};
+
+/**
+ * Bulk set storage location (coneStorageId) for cones that don't have one.
+ * Accepts coneIds (MongoDB ObjectIds) or barcodes.
+ * @param {Object} payload - { coneIds: string[], coneStorageId: string }
+ * @returns {Promise<Object>} Updated cones and count
+ */
+export const bulkSetConeStorageLocation = async (payload) => {
+  const { coneIds, coneStorageId } = payload;
+  if (!coneIds || !Array.isArray(coneIds) || coneIds.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'coneIds array is required with at least one cone ID or barcode');
+  }
+  if (!coneStorageId || String(coneStorageId).trim() === '') {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'coneStorageId is required');
+  }
+
+  const isObjectId = (s) => /^[a-fA-F0-9]{24}$/.test(String(s));
+  const byId = coneIds.filter((id) => isObjectId(id));
+  const byBarcode = coneIds.filter((id) => !isObjectId(id));
+  const idFilter = [
+    ...(byId.length ? [{ _id: { $in: byId.map((id) => new mongoose.Types.ObjectId(id)) } }] : []),
+    ...(byBarcode.length ? [{ barcode: { $in: byBarcode } }] : []),
+  ].filter(Boolean);
+  if (idFilter.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'coneIds must be valid MongoDB ObjectIds or barcode strings');
+  }
+
+  const filter = {
+    $and: [
+      { $or: idFilter },
+      {
+        $or: [
+          { coneStorageId: { $exists: false } },
+          { coneStorageId: null },
+          { coneStorageId: '' },
+        ],
+      },
+    ],
+  };
+
+  const result = await YarnCone.updateMany(filter, { $set: { coneStorageId: String(coneStorageId).trim() } });
+
+  const updatedCones = await YarnCone.find({ $or: idFilter })
+    .populate({ path: 'yarn', select: '_id yarnName yarnType status' })
+    .lean();
+  return {
+    message: `Updated storage location for ${result.modifiedCount} cone(s)`,
+    modifiedCount: result.modifiedCount,
+    cones: updatedCones,
+  };
+};
+
 export const queryYarnCones = async (filters = {}) => {
   const mongooseFilter = {};
 

@@ -39,6 +39,24 @@ router
   );
 
 router
+  .route('/by-storage-location/:storageLocation')
+  .get(
+    validate(yarnConeValidation.getConesByStorageLocation),
+    yarnConeController.getConesByStorageLocation
+  );
+
+router
+  .route('/without-storage-location')
+  .get(yarnConeController.getConesWithoutStorageLocation);
+
+router
+  .route('/set-storage-location')
+  .patch(
+    validate(yarnConeValidation.bulkSetConeStorageLocation),
+    yarnConeController.bulkSetConeStorageLocation
+  );
+
+router
   .route('/:yarnConeId')
   .patch(
     validate(yarnConeValidation.updateYarnCone),

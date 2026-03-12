@@ -143,6 +143,21 @@ export const bulkMatchUpdateYarnBoxes = {
     .required(),
 };
 
+export const getBoxesByStorageLocation = {
+  params: Joi.object().keys({
+    storageLocation: Joi.string().trim().required(),
+  }),
+};
+
+export const bulkSetBoxStorageLocation = {
+  body: Joi.object()
+    .keys({
+      boxIds: Joi.array().items(Joi.string().trim()).min(1).required(),
+      storageLocation: Joi.string().trim().required(),
+    })
+    .required(),
+};
+
 export const getYarnBoxes = {
   query: Joi.object().keys({
     po_number: Joi.string().trim().optional(),

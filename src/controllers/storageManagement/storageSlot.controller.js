@@ -8,6 +8,12 @@ export const getStorageSlots = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(result);
 });
 
+export const getStorageSlotsWithContents = catchAsync(async (req, res) => {
+  const { zone } = req.query;
+  const result = await storageSlotService.getStorageSlotsWithContents(zone, req.query);
+  res.status(httpStatus.OK).send(result);
+});
+
 export const getStorageSlotsByZone = catchAsync(async (req, res) => {
   const result = await storageSlotService.getStorageSlotsByZone(req.params.zone, req.query);
   res.status(httpStatus.OK).send(result);

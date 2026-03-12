@@ -63,6 +63,21 @@ export const updateYarnCone = {
     .min(1),
 };
 
+export const getConesByStorageLocation = {
+  params: Joi.object().keys({
+    storageLocation: Joi.string().trim().required(),
+  }),
+};
+
+export const bulkSetConeStorageLocation = {
+  body: Joi.object()
+    .keys({
+      coneIds: Joi.array().items(Joi.string().trim()).min(1).required(),
+      coneStorageId: Joi.string().trim().required(),
+    })
+    .required(),
+};
+
 export const getYarnCones = {
   query: Joi.object().keys({
     po_number: Joi.string().trim().optional(),

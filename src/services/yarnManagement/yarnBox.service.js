@@ -348,6 +348,88 @@ export const bulkMatchUpdateYarnBoxes = async (payload) => {
   };
 };
 
+/**
+ * Get boxes by storage location. Returns all matching boxes (no limit).
+ * @param {string} storageLocation - Storage location to filter by
+ * @returns {Promise<Array>} Boxes with the given storage location
+ */
+export const getBoxesByStorageLocation = async (storageLocation) => {
+  const escaped = String(storageLocation).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const boxes = await YarnBox.find({
+    storageLocation: { $regex: new RegExp(`^${escaped}$`, 'i') },
+  })
+    .sort({ createdAt: -1 })
+    .lean();
+  return boxes;
+};
+
+/**
+ * Get boxes without storage location (null, undefined, or empty string).
+ * Returns all matching boxes (no limit).
+ * @returns {Promise<Array>} Boxes without storage location
+ */
+export const getBoxesWithoutStorageLocation = async () => {
+  const boxes = await YarnBox.find({
+    $or: [
+      { storageLocation: { $exists: false } },
+      { storageLocation: null },
+      { storageLocation: '' },
+    ],
+  })
+    .sort({ createdAt: -1 })
+    .lean();
+  return boxes;
+};
+
+/**
+ * Bulk set storage location for boxes that don't have one.
+ * Accepts boxIds (business boxId strings) or _ids (MongoDB ObjectIds).
+ * @param {Object} payload - { boxIds: string[], storageLocation: string }
+ * @returns {Promise<Object>} Updated boxes and count
+ */
+export const bulkSetBoxStorageLocation = async (payload) => {
+  const { boxIds, storageLocation } = payload;
+  if (!boxIds || !Array.isArray(boxIds) || boxIds.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'boxIds array is required with at least one box ID');
+  }
+  if (!storageLocation || String(storageLocation).trim() === '') {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'storageLocation is required');
+  }
+
+  const isObjectId = (s) => /^[a-fA-F0-9]{24}$/.test(String(s));
+  const byId = boxIds.filter((id) => isObjectId(id));
+  const byBoxId = boxIds.filter((id) => !isObjectId(id));
+  const idFilter = [
+    ...(byId.length ? [{ _id: { $in: byId.map((id) => new mongoose.Types.ObjectId(id)) } }] : []),
+    ...(byBoxId.length ? [{ boxId: { $in: byBoxId } }] : []),
+  ].filter(Boolean);
+  if (idFilter.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'boxIds must be valid MongoDB ObjectIds or boxId strings');
+  }
+
+  const filter = {
+    $and: [
+      { $or: idFilter },
+      {
+        $or: [
+          { storageLocation: { $exists: false } },
+          { storageLocation: null },
+          { storageLocation: '' },
+        ],
+      },
+    ],
+  };
+
+  const result = await YarnBox.updateMany(filter, { $set: { storageLocation: String(storageLocation).trim() } });
+
+  const updatedBoxes = await YarnBox.find({ $or: idFilter }).lean();
+  return {
+    message: `Updated storage location for ${result.modifiedCount} box(es)`,
+    modifiedCount: result.modifiedCount,
+    boxes: updatedBoxes,
+  };
+};
+
 export const updateQcStatusByPoNumber = async (poNumber, qcStatus, qcData = {}) => {
   const validStatuses = ['qc_approved', 'qc_rejected'];
   
