@@ -695,6 +695,11 @@ articleSchema.methods.getFloorOrderFromProduct = async function() {
     throw new Error(`No valid floors found in product processes for "${this.articleNumber}"`);
   }
 
+  // Auto Linking: skip linking floor - transfer directly from Knitting to next floor in process
+  if (this.linkingType === LinkingType.AUTO_LINKING) {
+    return floorOrder.filter((floor) => floor !== ProductionFloor.LINKING);
+  }
+
   return floorOrder;
 };
 
