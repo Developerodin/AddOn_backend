@@ -73,7 +73,7 @@ const updateProductionOrderItemPriority = {
     .min(1),
 };
 
-/** Single item status: body { status } (only one item can be In Progress per assignment) */
+/** Single item status: body { status [, yarnIssueStatus ] } - yarnIssueStatus optional, applied first when both sent */
 const updateProductionOrderItemStatus = {
   params: Joi.object().keys({
     assignmentId: Joi.string().custom(objectId).required(),
@@ -84,6 +84,9 @@ const updateProductionOrderItemStatus = {
       status: Joi.string()
         .valid(...Object.values(OrderStatus))
         .required(),
+      yarnIssueStatus: Joi.string()
+        .valid(...Object.values(YarnIssueStatus))
+        .optional(),
     })
     .min(1),
 };

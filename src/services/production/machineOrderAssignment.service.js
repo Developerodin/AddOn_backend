@@ -321,7 +321,7 @@ export const updateProductionOrderItemPriorityById = async (assignmentId, itemId
  * different item to In Progress.
  * @param {ObjectId} assignmentId
  * @param {ObjectId} itemId - _id of the item in productionOrderItems
- * @param {Object} body - { status: OrderStatus }
+ * @param {Object} body - { status: OrderStatus [, yarnIssueStatus: YarnIssueStatus ] } - yarnIssueStatus applied first when both sent
  * @param {ObjectId} [userId]
  * @returns {Promise<MachineOrderAssignment>}
  */
@@ -339,6 +339,12 @@ export const updateProductionOrderItemStatusById = async (assignmentId, itemId, 
     throw new ApiError(httpStatus.BAD_REQUEST, `status must be one of: ${Object.values(OrderStatus).join(', ')}`);
   }
   const previousStatus = item.status;
+  const previousYarnIssueStatus = item.yarnIssueStatus;
+
+  // Allow yarnIssueStatus in same request - apply it first so status validation passes
+  if (body.yarnIssueStatus !== undefined && String(item.yarnIssueStatus) !== String(body.yarnIssueStatus)) {
+    item.yarnIssueStatus = body.yarnIssueStatus;
+  }
 
   if (String(newStatus) === OrderStatus.IN_PROGRESS || String(newStatus) === OrderStatus.COMPLETED) {
     if (String(item.yarnIssueStatus) !== YarnIssueStatus.COMPLETED) {
@@ -370,6 +376,13 @@ export const updateProductionOrderItemStatusById = async (assignmentId, itemId, 
 
   if (userId) {
     const changes = [{ field: 'productionOrderItems.status', previousValue: previousStatus, newValue: newStatus }];
+    if (body.yarnIssueStatus !== undefined && String(previousYarnIssueStatus) !== String(body.yarnIssueStatus)) {
+      changes.push({
+        field: 'productionOrderItems.yarnIssueStatus',
+        previousValue: previousYarnIssueStatus,
+        newValue: body.yarnIssueStatus,
+      });
+    }
     await MachineOrderAssignmentLog.createLogEntry({
       assignmentId: assignment._id,
       userId,
