@@ -16,8 +16,8 @@ export const getYarnInventories = {
     inventory_status: Joi.string().valid(...yarnInventoryStatuses).optional(),
     overbooked: Joi.boolean().optional(),
     sortBy: Joi.string().optional(),
-    limit: Joi.number().integer().optional(),
-    page: Joi.number().integer().optional(),
+    limit: Joi.number().integer().min(0).max(100000).optional().options({ convert: true }),
+    page: Joi.number().integer().min(1).optional().options({ convert: true }),
   }),
 };
 

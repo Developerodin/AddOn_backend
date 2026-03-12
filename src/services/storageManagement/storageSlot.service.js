@@ -169,7 +169,8 @@ export const getStorageSlotsWithContents = async (zone, query = {}) => {
     storedStatus: true,
   }).lean();
 
-  // Filter out boxes whose cones are in ST (box effectively empty)
+  // Filter out boxes whose cones are FULLY transferred to ST (box effectively empty)
+  // Only exclude when total cone weight in ST >= box weight (or boxWeight=0)
   const boxIds = boxes.map((b) => b.boxId);
   const conesInSTByBox = await YarnCone.aggregate([
     {
@@ -178,12 +179,15 @@ export const getStorageSlotsWithContents = async (zone, query = {}) => {
         coneStorageId: { $exists: true, $nin: [null, ''] },
       },
     },
-    { $group: { _id: '$boxId', count: { $sum: 1 } } },
+    { $group: { _id: '$boxId', totalConeWeight: { $sum: '$coneWeight' } } },
   ]);
-  const boxIdsWithConesInST = new Set(conesInSTByBox.map((x) => x._id));
+  const coneWeightByBox = new Map(conesInSTByBox.map((x) => [x._id, x.totalConeWeight || 0]));
 
   for (const box of boxes) {
-    if (boxIdsWithConesInST.has(box.boxId)) continue;
+    const boxWeight = box.boxWeight || 0;
+    const coneWeightInST = coneWeightByBox.get(box.boxId) || 0;
+    const fullyTransferred = boxWeight > 0 && coneWeightInST >= boxWeight - 0.001;
+    if (fullyTransferred) continue; // Box fully transferred to cones, skip
     const loc = box.storageLocation;
     if (!boxesByLocation[loc]) boxesByLocation[loc] = [];
     boxesByLocation[loc].push(box);

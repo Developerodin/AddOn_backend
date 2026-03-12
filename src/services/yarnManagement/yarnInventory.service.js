@@ -274,12 +274,38 @@ export const queryYarnInventories = async (filters = {}, options = {}) => {
   );
 
   // Transform each inventory item for frontend
-  const transformedResults = {
-    ...result,
-    results: recalculatedResults.map((inv) => transformInventoryForResponse(inv)),
-  };
+  const transformed = recalculatedResults.map((inv) => transformInventoryForResponse(inv));
 
-  return transformedResults;
+  // Build summary: total LT kg, total ST kg, yarn-wise breakdown
+  let totalLongTermKg = 0;
+  let totalShortTermKg = 0;
+  const yarnWiseSummary = transformed.map((inv) => {
+    const ltKg = Math.max(0, inv.longTermStorage?.netWeight ?? 0);
+    const stKg = Math.max(0, inv.shortTermStorage?.netWeight ?? 0);
+    totalLongTermKg += ltKg;
+    totalShortTermKg += stKg;
+    return {
+      yarnName: inv.yarnName,
+      yarnId: inv.yarnId,
+      longTermKg: Math.round(ltKg * 1000) / 1000,
+      shortTermKg: Math.round(stKg * 1000) / 1000,
+      totalKg: Math.round((ltKg + stKg) * 1000) / 1000,
+      longTermCones: 0,
+      shortTermCones: inv.shortTermStorage?.numberOfCones ?? 0,
+      inventoryStatus: inv.inventoryStatus,
+    };
+  });
+
+  return {
+    ...result,
+    results: transformed,
+    summary: {
+      totalLongTermKg: Math.round(totalLongTermKg * 1000) / 1000,
+      totalShortTermKg: Math.round(totalShortTermKg * 1000) / 1000,
+      totalKg: Math.round((totalLongTermKg + totalShortTermKg) * 1000) / 1000,
+      yarnWise: yarnWiseSummary,
+    },
+  };
 };
 
 /**
