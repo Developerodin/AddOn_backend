@@ -13,20 +13,18 @@ export const getYarnTransactions = catchAsync(async (req, res) => {
   const groupBy = req.query.group_by; // 'article' or 'yarn' or undefined
   
   const transactions = await yarnTransactionService.queryYarnTransactions(filters);
-  
-  // If orderno is provided, default to grouping by article (since orders are created with articles)
+  const hasOrderFilter = filters.orderno || filters.order_id;
+
+  // If orderno or order_id is provided, default to grouping by article (since orders are created with articles)
   // Use group_by=yarn to get yarn-based grouping instead
-  if (filters.orderno) {
-    // Group by article (default when orderno is provided)
+  if (hasOrderFilter) {
+    // Group by article (default when order filter is provided)
     if (!groupBy || groupBy === 'article') {
-      // Use the service function to match transactions to articles via BOM
-      const groupedByArticle = await yarnTransactionService.groupTransactionsByArticle(
-        transactions, 
-        filters.orderno
-      );
+      const orderRef = filters.order_id ? { orderId: filters.order_id, orderno: filters.orderno } : filters.orderno;
+      const groupedByArticle = await yarnTransactionService.groupTransactionsByArticle(transactions, orderRef);
       return res.status(httpStatus.OK).send(groupedByArticle);
     }
-    
+
     // Group by yarn (when group_by=yarn is explicitly requested)
     if (groupBy === 'yarn') {
       const groupedByYarn = {};

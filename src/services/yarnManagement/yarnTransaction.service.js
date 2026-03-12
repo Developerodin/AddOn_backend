@@ -424,18 +424,24 @@ export const queryYarnTransactions = async (filters = {}) => {
 /**
  * Enriches yarn transactions with article information by matching yarns to articles via BOM
  * @param {Array} transactions - Array of yarn transactions
- * @param {String} orderno - Order number to fetch articles for
+ * @param {Object} orderRef - { orderno?: string, orderId?: ObjectId } - Order number or MongoDB ObjectId
  * @returns {Array} Transactions grouped by article with article details
  */
-export const groupTransactionsByArticle = async (transactions, orderno) => {
+export const groupTransactionsByArticle = async (transactions, orderRef) => {
   if (!transactions || transactions.length === 0) {
     return [];
   }
 
-  // Find production order by orderNumber
-  const productionOrder = await ProductionOrder.findOne({ 
-    orderNumber: orderno 
-  }).lean();
+  const { orderno, orderId } = typeof orderRef === 'string' ? { orderno: orderRef, orderId: null } : (orderRef || {});
+
+  // Resolve production order: by ObjectId or by orderNumber
+  let productionOrder = null;
+  if (orderId && mongoose.Types.ObjectId.isValid(orderId)) {
+    productionOrder = await ProductionOrder.findById(orderId).lean();
+  }
+  if (!productionOrder && orderno) {
+    productionOrder = await ProductionOrder.findOne({ orderNumber: orderno }).lean();
+  }
 
   if (!productionOrder) {
     // If order not found, group by articleNumber from transactions (if available)
