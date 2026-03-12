@@ -123,4 +123,10 @@ export const getProductByCode = catchAsync(async (req, res) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Product not found');
   }
   res.send(product);
+});
+
+export const getProductsByFactoryCodes = catchAsync(async (req, res) => {
+  const { factoryCodes } = req.body;
+  const products = await productService.getProductsByFactoryCodes(factoryCodes);
+  res.send(products);
 }); 

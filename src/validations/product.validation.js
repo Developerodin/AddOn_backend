@@ -204,6 +204,12 @@ const getProductByCode = {
     }),
 };
 
+const getProductsByFactoryCodes = {
+  body: Joi.object().keys({
+    factoryCodes: Joi.array().items(Joi.string().trim()).min(1).max(500).required(),
+  }),
+};
+
 export default {
   createProduct,
   getProducts,
@@ -214,4 +220,5 @@ export default {
   bulkUpsertProducts,
   bulkExportProducts,
   getProductByCode,
+  getProductsByFactoryCodes,
 }; 

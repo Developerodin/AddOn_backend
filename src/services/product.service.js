@@ -274,6 +274,32 @@ export const getProductById = async (id) => {
 };
 
 /**
+ * Get products by array of factoryCodes. Returns full product docs with all attributes.
+ * @param {string[]} factoryCodes - Array of factory codes
+ * @returns {Promise<Product[]>}
+ */
+export const getProductsByFactoryCodes = async (factoryCodes) => {
+  if (!Array.isArray(factoryCodes) || factoryCodes.length === 0) {
+    return [];
+  }
+  const trimmed = factoryCodes.map((c) => String(c || '').trim()).filter(Boolean);
+  if (trimmed.length === 0) return [];
+
+  const filter = {
+    $or: trimmed.map((c) => ({ factoryCode: new RegExp(`^${escapeRegex(c)}$`, 'i') })),
+  };
+
+  const products = await Product.find(filter)
+    .populate('category', 'name')
+    .populate('bom.yarnCatalogId', 'yarnName yarnType countSize blend colorFamily')
+    .populate('processes.processId', 'name type')
+    .populate('styleCodes')
+    .lean();
+
+  return products;
+};
+
+/**
  * Get product by factoryCode or internalCode
  * @param {string} factoryCode - Factory code (optional)
  * @param {string} internalCode - Internal code (optional)
