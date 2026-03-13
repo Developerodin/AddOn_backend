@@ -119,7 +119,34 @@ export const getMachineOrderAssignmentsCompletedItems = async () => {
 };
 
 /**
+ * Remove (productionOrder, article) pairs from all assignments except the given one.
+ * Ensures an item exists on only one machine when moved.
+ * @param {ObjectId} excludeAssignmentId - Assignment to keep items in
+ * @param {Array<{productionOrder: ObjectId, article: ObjectId}>} items
+ * @returns {Promise<number>} Number of assignments modified
+ */
+const removeItemsFromOtherAssignments = async (excludeAssignmentId, items) => {
+  if (!items?.length) return 0;
+  let modifiedCount = 0;
+  for (const item of items) {
+    const poId = item.productionOrder?.toString?.() || item.productionOrder;
+    const artId = item.article?.toString?.() || item.article;
+    if (!poId || !artId) continue;
+    const result = await MachineOrderAssignment.updateMany(
+      {
+        _id: { $ne: excludeAssignmentId },
+        productionOrderItems: { $elemMatch: { productionOrder: poId, article: artId } },
+      },
+      { $pull: { productionOrderItems: { productionOrder: poId, article: artId } } }
+    );
+    modifiedCount += result.modifiedCount ?? 0;
+  }
+  return modifiedCount;
+};
+
+/**
  * Update assignment by id. Builds change list and creates audit log with userId.
+ * When adding items (via addProductionOrderItems or merge), removes those items from other machine assignments.
  * @param {ObjectId} assignmentId
  * @param {Object} updateBody
  * @param {ObjectId} [userId]
@@ -140,6 +167,7 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
   const toAssign = { ...updateBody };
   if (toAssign.addProductionOrderItems != null) {
     const toAdd = Array.isArray(toAssign.addProductionOrderItems) ? toAssign.addProductionOrderItems : [];
+    await removeItemsFromOtherAssignments(assignmentId, toAdd);
     assignment.productionOrderItems.push(...toAdd);
     assignment.markModified('productionOrderItems');
     changes.push({
@@ -156,6 +184,7 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
     current.forEach((c, idx) => {
       keyToIndex.set(itemKey(c), idx);
     });
+    const newlyAddedItems = [];
     let didChange = false;
     for (const item of toAssign.productionOrderItems) {
       const k = itemKey(item);
@@ -189,10 +218,14 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
           didChange = true;
         }
       } else {
+        newlyAddedItems.push(item);
         current.push(item);
         keyToIndex.set(k, current.length - 1);
         didChange = true;
       }
+    }
+    if (newlyAddedItems.length > 0) {
+      await removeItemsFromOtherAssignments(assignmentId, newlyAddedItems);
     }
     if (didChange) {
       assignment.productionOrderItems = current;
