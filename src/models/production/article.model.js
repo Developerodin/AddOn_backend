@@ -600,6 +600,10 @@ articleSchema.pre('save', async function(next) {
       // Update M1 remaining
       floorData.m1Remaining = Math.max(0, m1Quantity - m1Transferred);
       
+      // Update remaining: like knitting (received - m4), checking subtracts m2, m3, m4 from received
+      // remaining = received - m1Transferred - m2 - m3 - m4 = good items left to transfer
+      floorData.remaining = Math.max(0, (received || 0) - (m1Transferred || 0) - (m2Quantity || 0) - (m3Quantity || 0) - (m4Quantity || 0));
+      
       // Update M2 remaining
       const m2Transferred = floorData.m2Transferred || 0;
       // m2Remaining = m2Quantity (since m2Quantity is reduced when items are sent for repair)
@@ -955,8 +959,13 @@ articleSchema.methods.transferFromFloor = async function(fromFloor, quantity, us
     fromFloorData.remaining = Math.max(0, (fromFloorData.received || 0) - fromFloorData.completed - (fromFloorData.m4Quantity || 0));
     console.log(`🎯 KNITTING REMAINING: received=${fromFloorData.received}, completed=${fromFloorData.completed}, m4=${fromFloorData.m4Quantity || 0}, remaining=${fromFloorData.remaining}`);
   } else if (fromFloor === ProductionFloor.CHECKING || fromFloor === ProductionFloor.SECONDARY_CHECKING || fromFloor === ProductionFloor.FINAL_CHECKING) {
-    // For checking floors, remaining is based on M1 remaining
-    fromFloorData.remaining = fromFloorData.m1Remaining;
+    // For checking floors: remaining = received - m1Transferred - m2 - m3 - m4 (like knitting with m4)
+    const r = fromFloorData.received || 0;
+    const m1T = fromFloorData.m1Transferred || 0;
+    const m2 = fromFloorData.m2Quantity || 0;
+    const m3 = fromFloorData.m3Quantity || 0;
+    const m4 = fromFloorData.m4Quantity || 0;
+    fromFloorData.remaining = Math.max(0, r - m1T - m2 - m3 - m4);
   } else {
     // For other floors, normal calculation
     fromFloorData.remaining -= quantity;
@@ -1077,8 +1086,13 @@ articleSchema.methods.transferM1FromFloor = async function(fromFloor, quantity, 
   // Also update general transferred field (additive)
   fromFloorData.transferred = (fromFloorData.transferred || 0) + quantity;
   
-  // Update remaining quantity
-  fromFloorData.remaining = fromFloorData.m1Remaining;
+  // Update remaining: received - m1Transferred - m2 - m3 - m4 (like knitting with m4)
+  const r = fromFloorData.received || 0;
+  const m1T = fromFloorData.m1Transferred || 0;
+  const m2 = fromFloorData.m2Quantity || 0;
+  const m3 = fromFloorData.m3Quantity || 0;
+  const m4 = fromFloorData.m4Quantity || 0;
+  fromFloorData.remaining = Math.max(0, r - m1T - m2 - m3 - m4);
   
   // Checking floors use container-based receive - next floor received only on container accept
   console.log(`🎯 CONTAINER FLOW: ${quantity} M1 units transferred from ${fromFloor} - received will update on container accept`);
@@ -1199,6 +1213,13 @@ articleSchema.methods.transferM2ForRepair = async function(checkingFloor, quanti
   checkingFloorData.m2Quantity = Math.max(0, m2Quantity - quantity);
   checkingFloorData.m2Transferred = (checkingFloorData.m2Transferred || 0) + quantity;
   checkingFloorData.m2Remaining = Math.max(0, checkingFloorData.m2Quantity - checkingFloorData.m2Transferred);
+  // Recalculate remaining: received - m1Transferred - m2 - m3 - m4 (m2 changed)
+  const r = checkingFloorData.received || 0;
+  const m1T = checkingFloorData.m1Transferred || 0;
+  const m2 = checkingFloorData.m2Quantity || 0;
+  const m3 = checkingFloorData.m3Quantity || 0;
+  const m4 = checkingFloorData.m4Quantity || 0;
+  checkingFloorData.remaining = Math.max(0, r - m1T - m2 - m3 - m4);
   
   // Note: m2Remaining should now equal m2Quantity since we reduce m2Quantity when transferring
   // But we keep m2Transferred for audit trail (how many total have been sent for repair)
@@ -1289,69 +1310,84 @@ articleSchema.methods.fixCompletionStatus = function() {
   return fixed;
 };
 
-// Method to fix data inconsistencies in checking floor transfers
+// Method to fix data inconsistencies in checking floor transfers (checking, secondaryChecking, finalChecking)
 articleSchema.methods.fixCheckingFloorDataConsistency = function() {
-  const checkingFloorData = this.floorQuantities.checking;
-  if (!checkingFloorData) {
-    return { fixed: false, message: 'No checking floor data found' };
+  const checkingFloors = [
+    { key: 'checking', prevFloorKey: 'linking' },
+    { key: 'secondaryChecking', prevFloorKey: 'silicon' },
+    { key: 'finalChecking', prevFloorKey: 'branding' }
+  ];
+  let allFixes = [];
+  const updatedData = {};
+
+  for (const { key: floorKey, prevFloorKey } of checkingFloors) {
+    const floorData = this.floorQuantities[floorKey];
+    if (!floorData) continue;
+
+    const m1Quantity = floorData.m1Quantity || 0;
+    const transferred = floorData.transferred || 0;
+    const completed = floorData.completed || 0;
+    const received = floorData.received || 0;
+    const prevFloorTransferred = this.floorQuantities[prevFloorKey]?.transferred || 0;
+
+    // Fix 1: If transferred > M1, adjust transferred to M1
+    if (transferred > m1Quantity && m1Quantity > 0) {
+      const oldTransferred = transferred;
+      floorData.transferred = m1Quantity;
+      floorData.m1Transferred = m1Quantity;
+      const m2 = floorData.m2Quantity || 0;
+      const m3 = floorData.m3Quantity || 0;
+      const m4 = floorData.m4Quantity || 0;
+      floorData.remaining = Math.max(0, received - m1Quantity - m2 - m3 - m4);
+      allFixes.push(`${floorKey}: Reduced transferred from ${oldTransferred} to ${m1Quantity} (M1 quantity)`);
+    }
+
+    // Fix 2: If completed < transferred, set completed = transferred
+    if (completed < floorData.transferred) {
+      const oldCompleted = completed;
+      floorData.completed = floorData.transferred;
+      allFixes.push(`${floorKey}: Updated completed from ${oldCompleted} to ${floorData.transferred}`);
+    }
+
+    // Fix 3: If received doesn't match previous floor's transferred
+    if (received !== prevFloorTransferred && prevFloorTransferred > 0) {
+      const oldReceived = received;
+      floorData.received = prevFloorTransferred;
+      const m1T = floorData.m1Transferred || 0;
+      const m2 = floorData.m2Quantity || 0;
+      const m3 = floorData.m3Quantity || 0;
+      const m4 = floorData.m4Quantity || 0;
+      floorData.remaining = Math.max(0, prevFloorTransferred - m1T - m2 - m3 - m4);
+      allFixes.push(`${floorKey}: Fixed received from ${oldReceived} to ${prevFloorTransferred} (from ${prevFloorKey} transfer)`);
+    }
+
+    // Fix 4: Recalculate remaining (received - m1Transferred - m2 - m3 - m4)
+    const m1T = floorData.m1Transferred || 0;
+    const m2 = floorData.m2Quantity || 0;
+    const m3 = floorData.m3Quantity || 0;
+    const m4 = floorData.m4Quantity || 0;
+    const expectedRemaining = Math.max(0, (floorData.received || 0) - m1T - m2 - m3 - m4);
+    if (floorData.remaining !== expectedRemaining) {
+      floorData.remaining = expectedRemaining;
+      allFixes.push(`${floorKey}: Fixed remaining to ${expectedRemaining}`);
+    }
+
+    // Fix 5: If quality quantities don't match completed, warn
+    const m2Q = floorData.m2Quantity || 0;
+    const m3Q = floorData.m3Quantity || 0;
+    const m4Q = floorData.m4Quantity || 0;
+    const totalQualityQuantity = m1Quantity + m2Q + m3Q + m4Q;
+    if (totalQualityQuantity !== floorData.completed && floorData.completed > 0) {
+      allFixes.push(`WARNING ${floorKey}: Quality quantities (${totalQualityQuantity}) don't match completed (${floorData.completed})`);
+    }
+
+    updatedData[floorKey] = { received: floorData.received, transferred: floorData.transferred, completed: floorData.completed, remaining: floorData.remaining };
   }
-  
-  const m1Quantity = checkingFloorData.m1Quantity || 0;
-  const transferred = checkingFloorData.transferred || 0;
-  const completed = checkingFloorData.completed || 0;
-  const received = checkingFloorData.received || 0;
-  
-  let fixes = [];
-  
-  // Fix 1: If transferred > M1, adjust transferred to M1
-  if (transferred > m1Quantity && m1Quantity > 0) {
-    const oldTransferred = transferred;
-    checkingFloorData.transferred = m1Quantity;
-    checkingFloorData.remaining = received - checkingFloorData.transferred;
-    fixes.push(`Reduced transferred from ${oldTransferred} to ${m1Quantity} (M1 quantity)`);
-  }
-  
-  // Fix 2: If completed < transferred, set completed = transferred
-  if (completed < checkingFloorData.transferred) {
-    const oldCompleted = completed;
-    checkingFloorData.completed = checkingFloorData.transferred;
-    fixes.push(`Updated completed from ${oldCompleted} to ${checkingFloorData.transferred}`);
-  }
-  
-  // Fix 3: If received doesn't match expected (should be from previous floor transfer)
-  const knittingTransferred = this.floorQuantities.knitting?.transferred || 0;
-  if (received !== knittingTransferred && knittingTransferred > 0) {
-    const oldReceived = received;
-    checkingFloorData.received = knittingTransferred;
-    checkingFloorData.remaining = checkingFloorData.received - checkingFloorData.transferred;
-    fixes.push(`Fixed received from ${oldReceived} to ${knittingTransferred} (from knitting transfer)`);
-  }
-  
-  // Fix 4: If quality quantities don't match completed, warn
-  const m2Quantity = checkingFloorData.m2Quantity || 0;
-  const m3Quantity = checkingFloorData.m3Quantity || 0;
-  const m4Quantity = checkingFloorData.m4Quantity || 0;
-  const totalQualityQuantity = m1Quantity + m2Quantity + m3Quantity + m4Quantity;
-  
-  if (totalQualityQuantity !== checkingFloorData.completed && checkingFloorData.completed > 0) {
-    fixes.push(`WARNING: Quality quantities (${totalQualityQuantity}) don't match completed (${checkingFloorData.completed}). Quality inspection may be incomplete.`);
-  }
-  
-  if (fixes.length > 0) {
-    // Update progress after fixing
+
+  if (allFixes.length > 0) {
     this.progress = this.calculatedProgress;
-    return { 
-      fixed: true, 
-      fixes,
-      updatedData: {
-        received: checkingFloorData.received,
-        transferred: checkingFloorData.transferred,
-        completed: checkingFloorData.completed,
-        remaining: checkingFloorData.remaining
-      }
-    };
+    return { fixed: true, fixes: allFixes, updatedData };
   }
-  
   return { fixed: false, message: 'No inconsistencies found' };
 };
 
@@ -1403,6 +1439,12 @@ articleSchema.methods.fixFloorDataCorruption = function() {
     if (floorKey === 'knitting') {
       const m4Qty = floorData.m4Quantity || 0;
       expectedRemaining = Math.max(0, received - completed - m4Qty);
+    } else if (floorKey === 'checking' || floorKey === 'secondaryChecking' || floorKey === 'finalChecking') {
+      const m1T = floorData.m1Transferred || 0;
+      const m2 = floorData.m2Quantity || 0;
+      const m3 = floorData.m3Quantity || 0;
+      const m4 = floorData.m4Quantity || 0;
+      expectedRemaining = Math.max(0, received - m1T - m2 - m3 - m4);
     } else {
       expectedRemaining = Math.max(0, received - completed);
     }
@@ -1502,19 +1544,30 @@ articleSchema.methods.fixAllFloorDataConsistency = function() {
     }
   }
   
-  // Flow-based validation: Ensure data consistency between floors
-  const knittingTransferred = this.floorQuantities.knitting?.transferred || 0;
-  const checkingReceived = this.floorQuantities.checking?.received || 0;
-  
-  if (knittingTransferred > 0 && checkingReceived !== knittingTransferred) {
-    // Fix checking floor received to match knitting transferred
-    const oldCheckingReceived = checkingReceived;
-    this.floorQuantities.checking.received = knittingTransferred;
-    this.floorQuantities.checking.remaining = knittingTransferred - (this.floorQuantities.checking.transferred || 0);
-    allFixes.push(`Fixed checking received from ${oldCheckingReceived} to ${knittingTransferred} (from knitting transfer)`);
-    totalFixed++;
+  // Flow-based validation: Ensure data consistency between floors for all checking floors
+  const floorPairs = [
+    { checking: 'checking', prev: 'linking' },
+    { checking: 'secondaryChecking', prev: 'silicon' },
+    { checking: 'finalChecking', prev: 'branding' }
+  ];
+  for (const { checking: cKey, prev: pKey } of floorPairs) {
+    const prevTransferred = this.floorQuantities[pKey]?.transferred || 0;
+    const cf = this.floorQuantities[cKey];
+    if (!cf || prevTransferred === 0) continue;
+    const received = cf.received || 0;
+    if (received !== prevTransferred) {
+      const oldReceived = received;
+      cf.received = prevTransferred;
+      const m1T = cf.m1Transferred || 0;
+      const m2 = cf.m2Quantity || 0;
+      const m3 = cf.m3Quantity || 0;
+      const m4 = cf.m4Quantity || 0;
+      cf.remaining = Math.max(0, prevTransferred - m1T - m2 - m3 - m4);
+      allFixes.push(`Fixed ${cKey} received from ${oldReceived} to ${prevTransferred} (from ${pKey} transfer)`);
+      totalFixed++;
+    }
   }
-  
+
   if (allFixes.length > 0) {
     // Update progress after fixing
     this.progress = this.calculatedProgress;
@@ -1524,6 +1577,8 @@ articleSchema.methods.fixAllFloorDataConsistency = function() {
       fixes: allFixes,
       updatedData: {
         checking: this.floorQuantities.checking,
+        secondaryChecking: this.floorQuantities.secondaryChecking,
+        finalChecking: this.floorQuantities.finalChecking,
         washing: this.floorQuantities.washing
       }
     };
@@ -1551,67 +1606,71 @@ articleSchema.methods.getCurrentActiveFloor = async function() {
   return floorOrder[0] || ProductionFloor.KNITTING;
 };
 
-// Emergency method to fix transferred quantity corruption
+// Emergency method to fix transferred quantity corruption (checking, secondaryChecking, finalChecking)
 articleSchema.methods.fixTransferredQuantityCorruption = function() {
-  const checkingFloorData = this.floorQuantities.checking;
-  if (!checkingFloorData) {
-    return { fixed: false, message: 'No checking floor data found' };
+  const checkingFloors = ['checking', 'secondaryChecking', 'finalChecking'];
+  let allFixes = [];
+  const updatedData = {};
+
+  for (const floorKey of checkingFloors) {
+    const floorData = this.floorQuantities[floorKey];
+    if (!floorData) continue;
+
+    const m1Quantity = floorData.m1Quantity || 0;
+    const transferredQuantity = floorData.transferred || 0;
+    const receivedQuantity = floorData.received || 0;
+    let floorFixes = [];
+
+    // Fix 1: If transferred > M1, set transferred = M1
+    if (transferredQuantity > m1Quantity && m1Quantity > 0) {
+      const oldTransferred = transferredQuantity;
+      floorData.transferred = m1Quantity;
+      floorData.m1Transferred = m1Quantity;
+      const m2 = floorData.m2Quantity || 0;
+      const m3 = floorData.m3Quantity || 0;
+      const m4 = floorData.m4Quantity || 0;
+      floorData.remaining = Math.max(0, receivedQuantity - m1Quantity - m2 - m3 - m4);
+      floorFixes.push(`Reduced transferred from ${oldTransferred} to ${m1Quantity} (M1 quantity)`);
+    }
+
+    // Fix 2: If transferred > received, set transferred = received
+    if (floorData.transferred > receivedQuantity && receivedQuantity > 0) {
+      const oldTransferred = floorData.transferred;
+      floorData.transferred = receivedQuantity;
+      floorData.m1Transferred = receivedQuantity;
+      floorData.remaining = 0;
+      floorFixes.push(`Reduced transferred from ${oldTransferred} to ${receivedQuantity} (received quantity)`);
+    }
+
+    // Fix 3: Ensure completed >= transferred
+    if (floorData.completed < floorData.transferred) {
+      const oldCompleted = floorData.completed;
+      floorData.completed = floorData.transferred;
+      floorFixes.push(`Fixed completed from ${oldCompleted} to ${floorData.transferred}`);
+    }
+
+    // Fix 4: Recalculate remaining (received - m1Transferred - m2 - m3 - m4)
+    const m1T = floorData.m1Transferred || 0;
+    const m2 = floorData.m2Quantity || 0;
+    const m3 = floorData.m3Quantity || 0;
+    const m4 = floorData.m4Quantity || 0;
+    const expectedRemaining = Math.max(0, (floorData.received || 0) - m1T - m2 - m3 - m4);
+    if (floorData.remaining !== expectedRemaining) {
+      const oldRemaining = floorData.remaining;
+      floorData.remaining = expectedRemaining;
+      floorFixes.push(`Fixed remaining from ${oldRemaining} to ${expectedRemaining}`);
+    }
+
+    if (floorFixes.length > 0) {
+      allFixes.push(...floorFixes.map(f => `${floorKey}: ${f}`));
+      updatedData[floorKey] = { received: floorData.received, transferred: floorData.transferred, completed: floorData.completed, remaining: floorData.remaining, m1Quantity: floorData.m1Quantity };
+    }
   }
-  
-  const m1Quantity = checkingFloorData.m1Quantity || 0;
-  const transferredQuantity = checkingFloorData.transferred || 0;
-  const receivedQuantity = checkingFloorData.received || 0;
-  
-  let fixes = [];
-  
-  // Fix 1: If transferred > M1, set transferred = M1
-  if (transferredQuantity > m1Quantity && m1Quantity > 0) {
-    const oldTransferred = transferredQuantity;
-    checkingFloorData.transferred = m1Quantity;
-    checkingFloorData.remaining = receivedQuantity - m1Quantity;
-    fixes.push(`🚨 CRITICAL FIX: Reduced transferred from ${oldTransferred} to ${m1Quantity} (M1 quantity)`);
-  }
-  
-  // Fix 2: If transferred > received, set transferred = received
-  if (checkingFloorData.transferred > receivedQuantity && receivedQuantity > 0) {
-    const oldTransferred = checkingFloorData.transferred;
-    checkingFloorData.transferred = receivedQuantity;
-    checkingFloorData.remaining = 0;
-    fixes.push(`🚨 CRITICAL FIX: Reduced transferred from ${oldTransferred} to ${receivedQuantity} (received quantity)`);
-  }
-  
-  // Fix 3: Ensure completed >= transferred
-  if (checkingFloorData.completed < checkingFloorData.transferred) {
-    const oldCompleted = checkingFloorData.completed;
-    checkingFloorData.completed = checkingFloorData.transferred;
-    fixes.push(`Fixed completed from ${oldCompleted} to ${checkingFloorData.transferred}`);
-  }
-  
-  // Fix 4: Recalculate remaining
-  const expectedRemaining = receivedQuantity - checkingFloorData.transferred;
-  if (checkingFloorData.remaining !== expectedRemaining) {
-    const oldRemaining = checkingFloorData.remaining;
-    checkingFloorData.remaining = expectedRemaining;
-    fixes.push(`Fixed remaining from ${oldRemaining} to ${expectedRemaining}`);
-  }
-  
-  if (fixes.length > 0) {
-    // Update progress after fixing
+
+  if (allFixes.length > 0) {
     this.progress = this.calculatedProgress;
-    return { 
-      fixed: true, 
-      fixes,
-      corruptionDetected: true,
-      updatedData: {
-        received: checkingFloorData.received,
-        transferred: checkingFloorData.transferred,
-        completed: checkingFloorData.completed,
-        remaining: checkingFloorData.remaining,
-        m1Quantity: checkingFloorData.m1Quantity
-      }
-    };
+    return { fixed: true, fixes: allFixes, corruptionDetected: true, updatedData };
   }
-  
   return { fixed: false, message: 'No corruption found' };
 };
 

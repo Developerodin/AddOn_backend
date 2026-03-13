@@ -363,7 +363,12 @@ export const updateCompletedQuantityWithQuality = async function(updateData, use
   // Update completed quantity - only count M1 quantity as completed work
   // M2, M3, M4 are defects and should not be counted as completed work
   floorData.completed = m1Quantity || 0;
-  floorData.remaining = floorData.received - floorData.completed;
+  // Remaining: received - m1Transferred - m2 - m3 - m4 (like knitting with m4)
+  const m1T = floorData.m1Transferred || 0;
+  const m2Q = m2Quantity || 0;
+  const m3Q = m3Quantity || 0;
+  const m4Q = m4Quantity || 0;
+  floorData.remaining = Math.max(0, (floorData.received || 0) - m1T - m2Q - m3Q - m4Q);
   
   // Update quality quantities
   floorData.m1Quantity = m1Quantity || 0;
