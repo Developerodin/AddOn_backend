@@ -91,14 +91,17 @@ const createUser = {
 };
 
 const getUsers = {
-  query: Joi.object().keys({
-    name: Joi.string(),
-    role: Joi.string(),
-    sortBy: Joi.string(),
-    sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
-    limit: Joi.number().integer(),
-    page: Joi.number().integer(),
-  }),
+  query: Joi.object()
+    .keys({
+      name: Joi.string(),
+      role: Joi.string(),
+      search: Joi.string(),
+      sortBy: Joi.string(),
+      sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
+      limit: Joi.number().integer(),
+      page: Joi.number().integer(),
+    })
+    .unknown(true), // allow other query params (e.g. from frontend) without 400
 };
 
 const getUser = {

@@ -26,16 +26,32 @@ const createUser = async (userBody) => {
 };
 
 /**
+ * Escape special regex chars for safe $regex use
+ */
+const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
  * Query for users
- * @param {Object} filter - Mongo filter
+ * @param {Object} filter - Mongo filter (name, role, search)
  * @param {Object} options - Query options
- * @param {string} [options.sortBy] - Sort option in the format: sortField:(desc|asc)
- * @param {number} [options.limit] - Maximum number of results per page (default = 10)
- * @param {number} [options.page] - Current page (default = 1)
  * @returns {Promise<QueryResult>}
  */
 const queryUsers = async (filter, options) => {
-  const users = await User.paginate(filter, options);
+  const { search, name, role, ...rest } = filter;
+  const mongoFilter = {};
+
+  if (name) mongoFilter.name = { $regex: escapeRegex(name), $options: 'i' };
+  if (role) mongoFilter.role = role;
+
+  if (search?.trim()) {
+    const term = escapeRegex(search.trim());
+    mongoFilter.$or = [
+      { name: { $regex: term, $options: 'i' } },
+      { email: { $regex: term, $options: 'i' } },
+    ];
+  }
+
+  const users = await User.paginate(mongoFilter, options);
   return users;
 };
 
