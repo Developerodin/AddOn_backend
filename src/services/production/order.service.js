@@ -5,7 +5,7 @@ import Product from '../../models/product.model.js';
 import ApiError from '../../utils/ApiError.js';
 import { generateArticleNumber } from '../../utils/generateId.js';
 import { getAllFloorsOrder, getFloorKey, validateProductProcesses } from '../../utils/productionHelper.js';
-import { removeProductionOrderFromAssignments } from './machineOrderAssignment.service.js';
+import { removeProductionOrderFromAssignments, removeArticleFromAssignments } from './machineOrderAssignment.service.js';
 // import { generateOrderNumber } from '../../utils/generateId.js'; // Using model's auto-generation instead
 
 /**
@@ -395,6 +395,14 @@ export const updateProductionOrderById = async (orderId, updateBody) => {
       }
     }
     
+    // Remove from machine assignments any articles that were dropped from this order
+    const previousArticleIds = (order.articles || []).map((a) => (a?._id || a)?.toString?.() || a);
+    const newArticleIdsStr = articleIds.map((id) => id?.toString?.() || id);
+    const removedArticleIds = previousArticleIds.filter((id) => id && !newArticleIdsStr.includes(id));
+    for (const removedArtId of removedArticleIds) {
+      await removeArticleFromAssignments(order._id, removedArtId);
+    }
+
     // Update the order's articles array with the processed article IDs
     console.log(`Final articleIds array: ${JSON.stringify(articleIds)}`);
     order.articles = articleIds;

@@ -634,6 +634,24 @@ export const removeProductionOrderFromAssignments = async (orderId) => {
 };
 
 /**
+ * Remove productionOrderItems that reference a specific (productionOrder, article) pair.
+ * Call this when an article is removed from a production order so machine queues stay in sync.
+ * @param {ObjectId} orderId - Production order id
+ * @param {ObjectId} articleId - Article id removed from the order
+ * @returns {Promise<{ modifiedCount: number }>}
+ */
+export const removeArticleFromAssignments = async (orderId, articleId) => {
+  const poId = orderId?.toString?.() || orderId;
+  const artId = articleId?.toString?.() || articleId;
+  if (!poId || !artId) return { modifiedCount: 0 };
+  const result = await MachineOrderAssignment.updateMany(
+    { productionOrderItems: { $elemMatch: { productionOrder: poId, article: artId } } },
+    { $pull: { productionOrderItems: { productionOrder: poId, article: artId } } }
+  );
+  return { modifiedCount: result.modifiedCount ?? 0 };
+};
+
+/**
  * Delete assignment by id. Optionally log deactivation with userId.
  * @param {ObjectId} assignmentId
  * @param {ObjectId} [userId]
