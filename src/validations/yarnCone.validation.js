@@ -17,6 +17,8 @@ export const createYarnCone = {
     .keys({
       poNumber: Joi.string().trim().required(),
       boxId: Joi.string().trim().required(),
+      orderId: Joi.string().custom(objectId).allow(null),
+      articleId: Joi.string().custom(objectId).allow(null),
       coneWeight: Joi.number().min(0).allow(null),
       tearWeight: Joi.number().min(0).allow(null),
       yarnName: Joi.string().trim().allow('', null),
@@ -44,6 +46,8 @@ export const updateYarnCone = {
     .keys({
       poNumber: Joi.string().trim(),
       boxId: Joi.string().trim(),
+      orderId: Joi.string().custom(objectId),
+      articleId: Joi.string().custom(objectId),
       coneWeight: Joi.number().min(0).allow(null),
       tearWeight: Joi.number().min(0).allow(null),
       yarnName: Joi.string().trim().allow('', null),
@@ -82,6 +86,8 @@ export const getYarnCones = {
   query: Joi.object().keys({
     po_number: Joi.string().trim().optional(),
     box_id: Joi.string().trim().optional(),
+    order_id: Joi.string().custom(objectId).optional(),
+    article_id: Joi.string().custom(objectId).optional(),
     issue_status: issueStatusField.optional(),
     return_status: returnStatusField.optional(),
     storage_id: Joi.string().trim().optional(),

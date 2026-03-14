@@ -18,6 +18,8 @@ export const getYarnCones = catchAsync(async (req, res) => {
   const filters = pick(req.query, [
     'po_number',
     'box_id',
+    'order_id',
+    'article_id',
     'issue_status',
     'return_status',
     'storage_id',
