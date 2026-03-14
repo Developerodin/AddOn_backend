@@ -1,6 +1,7 @@
 import express from 'express';
 import authRoute from './auth.route.js';
 import userRoute from './user.route.js';
+import userActivityLogRoute from './userActivityLog.route.js';
 import docsRoute from './docs.route.js';
 import productAttributeRoute from './productAttribute.route.js';
 import rawMaterialRoute from './rawMaterial.route.js';
@@ -41,8 +42,12 @@ import teamMasterRoute from './teamMaster.route.js';
 import containersMasterRoute from './containersMaster.route.js';
 import whmsRoute from './whms/index.js';
 import config from '../../config/config.js';
+import userActivityLog from '../../middlewares/userActivityLog.js';
 
 const router = express.Router();
+
+// User activity logging - captures API calls when req.user exists (optionalAuth runs at app level)
+router.use(userActivityLog);
 
 const defaultRoutes = [
   {
@@ -52,6 +57,10 @@ const defaultRoutes = [
   {
     path: '/users',
     route: userRoute,
+  },
+  {
+    path: '/user-activity-logs',
+    route: userActivityLogRoute,
   },
   {
     path: '/product-attributes',

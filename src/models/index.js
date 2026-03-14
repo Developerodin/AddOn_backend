@@ -1,5 +1,6 @@
 import Token from './token.model.js';
 import User from './user.model.js';
+import UserActivityLog from './userActivityLog.model.js';
 import ProductAttribute from './productAttribute.model.js';
 import RawMaterial from './rawMaterial.model.js';
 import Category from './category.model.js';
@@ -32,6 +33,7 @@ import Vendor from './vendor.model.js';
 export {
   Token,
   User,
+  UserActivityLog,
   ProductAttribute,
   RawMaterial,
   Category,

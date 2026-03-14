@@ -28,6 +28,7 @@
     "seed:machine-order-assignments": "node src/scripts/seed-machine-order-assignments.js",
     "report:yarn-inventory": "cross-env NODE_ENV=development node src/scripts/report-yarn-inventory.js",
     "report:storage-inventory": "node src/scripts/compare-storage-inventory-apis.js",
+    "test:activity-logs": "cross-env NODE_ENV=development node scripts/test-user-activity-logs.js",
     "prepare": "husky install"
   },
   "keywords": [

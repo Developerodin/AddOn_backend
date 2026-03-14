@@ -4,6 +4,7 @@ import { createUser } from '../services/user.service.js';
 import { generateAuthTokens,generateResetPasswordToken,generateVerifyEmailToken } from '../services/token.service.js';
 import { loginUserWithEmailAndPassword,logout as logout2,refreshAuth,resetPassword as resetPassword2,verifyEmail as verifyEmail2  } from '../services/auth.service.js';
 import { sendResetPasswordEmail,sendVerificationEmail as sendVerificationEmail2  } from '../services/email.service.js';
+import { logAuthEvent } from '../services/userActivityLog.service.js';
 // import { authService, userService, tokenService, emailService } from '../services/index.js';
 // import { authService, userService, tokenService, emailService } from '../services';
 
@@ -11,6 +12,7 @@ import { sendResetPasswordEmail,sendVerificationEmail as sendVerificationEmail2 
 const register = catchAsync(async (req, res) => {
   const user = await createUser(req.body);
   const tokens = await generateAuthTokens(user);
+  logAuthEvent({ userId: user._id, action: 'register', req });
   res.status(httpStatus.CREATED).send({ user, tokens });
 });
 
@@ -20,6 +22,7 @@ const login = catchAsync(async (req, res) => {
   const emailOrUsername = username || email;
   const user = await loginUserWithEmailAndPassword(emailOrUsername, password);
   const tokens = await generateAuthTokens(user);
+  logAuthEvent({ userId: user._id, action: 'login', req });
   res.send({ user, tokens });
 });
 

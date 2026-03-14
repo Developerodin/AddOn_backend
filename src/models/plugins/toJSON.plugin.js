@@ -47,6 +47,7 @@ const toJSON = (schema) => {
         'Blend',
         'YarnCatalog',
         'YarnOrder',
+        'UserActivityLog',
       ];
       // Get model name from document constructor or schema
       const modelName = doc?.constructor?.modelName || schema.modelName;

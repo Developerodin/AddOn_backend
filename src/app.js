@@ -13,6 +13,7 @@ import { authLimiter } from './middlewares/rateLimiter.js';
 import routes from './routes/v1/index.js';
 import { errorConverter, errorHandler } from './middlewares/error.js';
 import ApiError from './utils/ApiError.js';
+import optionalAuth from './middlewares/optionalAuth.js';
 
 const app = express();
 
@@ -53,6 +54,10 @@ app.options('*', cors());
 // jwt authentication
 app.use(passport.initialize());
 passport.use('jwt', jwtStrategy);
+
+// Optional auth - populates req.user from JWT when present (for activity logging on all /v1 calls)
+// Must run for ALL requests so req.user is set before any route handler
+app.use(optionalAuth);
 
 // limit repeated failed requests to auth endpoints
 if (config.env === 'production') {
