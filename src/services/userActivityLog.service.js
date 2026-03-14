@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import UserActivityLog from '../models/userActivityLog.model.js';
 
 /**
@@ -61,12 +62,15 @@ const buildLogsQuery = (filter, baseQuery = {}) => {
   return query;
 };
 
+/** Ensure userId is ObjectId for MongoDB queries */
+const toObjectId = (id) => (mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id);
+
 /**
  * Get activity logs for a user with filters and pagination
  */
 export const getUserActivityLogs = async (userId, filter = {}) => {
   const { page = 1, limit = 50, sortBy = 'createdAt', sortOrder = 'desc' } = filter;
-  const query = buildLogsQuery(filter, { userId });
+  const query = buildLogsQuery(filter, { userId: toObjectId(userId) });
 
   const sort = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
 
@@ -85,7 +89,7 @@ export const getUserActivityLogs = async (userId, filter = {}) => {
  */
 export const getAllActivityLogs = async (filter = {}) => {
   const { userId, page = 1, limit = 50, sortBy = 'createdAt', sortOrder = 'desc' } = filter;
-  const baseQuery = userId ? { userId } : {};
+  const baseQuery = userId ? { userId: toObjectId(userId) } : {};
   const query = buildLogsQuery(filter, baseQuery);
 
   const sort = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
@@ -105,7 +109,7 @@ export const getAllActivityLogs = async (filter = {}) => {
  */
 export const getUserActivityStats = async (userId, filter = {}) => {
   const { dateFrom, dateTo, resource, action, method } = filter;
-  const match = { userId };
+  const match = { userId: toObjectId(userId) };
 
   if (dateFrom || dateTo) {
     match.createdAt = {};

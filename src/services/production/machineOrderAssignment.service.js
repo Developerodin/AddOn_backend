@@ -564,6 +564,52 @@ export const updateProductionOrderItemPrioritiesById = async (assignmentId, item
 };
 
 /**
+ * Delete a single productionOrderItem from the assignment by its subdocument _id.
+ * @param {ObjectId} assignmentId
+ * @param {ObjectId} itemId - _id of the item in productionOrderItems
+ * @param {ObjectId} [userId]
+ * @returns {Promise<MachineOrderAssignment>}
+ */
+export const deleteProductionOrderItemById = async (assignmentId, itemId, userId) => {
+  const assignment = await MachineOrderAssignment.findById(assignmentId);
+  if (!assignment) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Machine order assignment not found');
+  }
+  const item = assignment.productionOrderItems?.id(itemId);
+  if (!item) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Production order item not found in this assignment');
+  }
+  const removedItem = {
+    productionOrder: item.productionOrder,
+    article: item.article,
+    priority: item.priority,
+  };
+  assignment.productionOrderItems.pull(itemId);
+  assignment.markModified('productionOrderItems');
+  await assignment.save();
+
+  if (userId) {
+    await MachineOrderAssignmentLog.createLogEntry({
+      assignmentId: assignment._id,
+      userId,
+      action: LogAction.ASSIGNMENT_ITEMS_UPDATED,
+      changes: [
+        {
+          field: 'productionOrderItems.removed',
+          previousValue: removedItem,
+          newValue: null,
+        },
+      ],
+      remarks: 'Production order item removed from assignment',
+    });
+  }
+  return MachineOrderAssignment.findById(assignmentId)
+    .populate('machine')
+    .populate('productionOrderItems.productionOrder')
+    .populate('productionOrderItems.article');
+};
+
+/**
  * Reset assignment queue: set productionOrderItems to empty array.
  * @param {ObjectId} assignmentId
  * @param {ObjectId} [userId]

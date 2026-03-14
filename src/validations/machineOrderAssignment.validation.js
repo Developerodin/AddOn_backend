@@ -106,6 +106,14 @@ const updateProductionOrderItemYarnIssueStatus = {
     .min(1),
 };
 
+/** Delete single production order item: params assignmentId, itemId */
+const deleteProductionOrderItem = {
+  params: Joi.object().keys({
+    assignmentId: Joi.string().custom(objectId).required(),
+    itemId: Joi.string().custom(objectId).required(),
+  }),
+};
+
 /** Single item yarn return status: body { yarnReturnStatus } */
 const updateProductionOrderItemYarnReturnStatus = {
   params: Joi.object().keys({
@@ -192,6 +200,7 @@ export {
   updateProductionOrderItemStatus,
   updateProductionOrderItemYarnIssueStatus,
   updateProductionOrderItemYarnReturnStatus,
+  deleteProductionOrderItem,
   resetMachineOrderAssignment,
   deleteMachineOrderAssignment,
   getAssignmentLogs,

@@ -42,6 +42,10 @@ router
   .patch(
     validate(machineOrderAssignmentValidation.updateProductionOrderItemPriority),
     productionController.updateMachineOrderItemPriority
+  )
+  .delete(
+    validate(machineOrderAssignmentValidation.deleteProductionOrderItem),
+    productionController.deleteMachineOrderItem
   );
 
 router
