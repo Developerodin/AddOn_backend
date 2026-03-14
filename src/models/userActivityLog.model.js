@@ -80,7 +80,11 @@ const userActivityLogSchema = mongoose.Schema(
 // Compound index for user + time range queries
 userActivityLogSchema.index({ userId: 1, createdAt: -1 });
 userActivityLogSchema.index({ userId: 1, resource: 1, createdAt: -1 });
-userActivityLogSchema.index({ createdAt: -1 }); // for cleanup/retention
+userActivityLogSchema.index({ createdAt: -1 }); // for queries
+
+// TTL: auto-delete logs older than 30 days (keeps DB from growing indefinitely)
+const RETENTION_DAYS = 30;
+userActivityLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: RETENTION_DAYS * 24 * 60 * 60 });
 
 userActivityLogSchema.plugin(toJSON);
 userActivityLogSchema.plugin(paginate);
