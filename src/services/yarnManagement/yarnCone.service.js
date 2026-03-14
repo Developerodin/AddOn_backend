@@ -160,6 +160,14 @@ export const queryYarnCones = async (filters = {}) => {
     mongooseFilter.boxId = filters.box_id;
   }
 
+  if (filters.order_id) {
+    mongooseFilter.orderId = filters.order_id;
+  }
+
+  if (filters.article_id) {
+    mongooseFilter.articleId = filters.article_id;
+  }
+
   if (filters.issue_status) {
     mongooseFilter.issueStatus = filters.issue_status;
   }

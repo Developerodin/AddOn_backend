@@ -68,6 +68,18 @@ const yarnConeSchema = mongoose.Schema(
       type: String,
       trim: true,
     },
+    // Optional reference to production order for which this cone is issued
+    orderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ProductionOrder',
+      required: false,
+    },
+    // Optional reference to article for which this cone is issued
+    articleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Article',
+      required: false,
+    },
     issueStatus: {
       type: String,
       enum: yarnConeIssueStatuses,
@@ -117,6 +129,9 @@ yarnConeSchema.pre('save', function (next) {
   if (this.returnStatus === 'returned') {
     this.issueStatus = 'not_issued';
     this.returnStatus = 'not_returned';
+    // Clear linkage to order/article so cone can be issued again
+    this.orderId = undefined;
+    this.articleId = undefined;
   }
   if (this.coneWeight === 0 || this.coneWeight == null) {
     this.coneStorageId = undefined;
