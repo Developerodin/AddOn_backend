@@ -38,6 +38,11 @@ const updateContainerByBarcode = catchAsync(async (req, res) => {
   res.send(doc);
 });
 
+const acceptContainerByBarcode = catchAsync(async (req, res) => {
+  const result = await containersMasterService.acceptContainerByBarcode(req.params.barcode);
+  res.send(result);
+});
+
 const clearActiveByBarcode = catchAsync(async (req, res) => {
   const doc = await containersMasterService.clearActiveByBarcode(req.params.barcode);
   res.send(doc);
@@ -60,6 +65,7 @@ export {
   getContainerByBarcode,
   updateContainersMaster,
   updateContainerByBarcode,
+  acceptContainerByBarcode,
   clearActiveByBarcode,
   resetAllActive,
   deleteContainersMaster,

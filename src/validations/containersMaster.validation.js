@@ -56,6 +56,13 @@ export const updateContainerByBarcode = {
     .min(1),
 };
 
+/** Accept container on receiving floor - updates article floor received from container data */
+export const acceptContainerByBarcode = {
+  params: Joi.object().keys({
+    barcode: Joi.string().trim().required(),
+  }),
+};
+
 /** Clear activeArticle and activeFloor for container by barcode */
 export const clearActiveByBarcode = {
   params: Joi.object().keys({

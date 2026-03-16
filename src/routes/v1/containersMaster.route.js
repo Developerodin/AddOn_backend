@@ -20,6 +20,10 @@ router
   .patch(auth(), validate(containersMasterValidation.clearActiveByBarcode), containersMasterController.clearActiveByBarcode);
 
 router
+  .route('/barcode/:barcode/accept')
+  .post(auth(), validate(containersMasterValidation.acceptContainerByBarcode), containersMasterController.acceptContainerByBarcode);
+
+router
   .route('/barcode/:barcode')
   .get(auth(), validate(containersMasterValidation.getContainerByBarcode), containersMasterController.getContainerByBarcode)
   .patch(auth(), validate(containersMasterValidation.updateContainerByBarcode), containersMasterController.updateContainerByBarcode);

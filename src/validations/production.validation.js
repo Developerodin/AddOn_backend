@@ -111,7 +111,9 @@ const getFloorOrders = {
 
 const updateArticleProgress = {
   params: Joi.object().keys({
-    floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse').required(),
+    floor: Joi.string()
+      .valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'FinalChecking', 'Warehouse')
+      .required(),
     orderId: Joi.string().custom(objectId).required(),
     articleId: Joi.string().custom(objectId).required(),
   }),
@@ -130,7 +132,23 @@ const updateArticleProgress = {
     userId: Joi.string().custom(objectId).required(),
     floorSupervisorId: Joi.string().custom(objectId).required(),
     machineId: Joi.string().custom(objectId).optional(),
-    shiftId: Joi.string().optional()
+    shiftId: Joi.string().optional(),
+    // For Branding/Final Checking transfer: breakdown by styleCode/brand (used when PATCH triggers transfer)
+    // transferItems = canonical; transferredData = alias (frontend may send either)
+    transferItems: Joi.array().items(
+      Joi.object().keys({
+        transferred: Joi.number().integer().min(1).required(),
+        styleCode: Joi.string().trim().allow('').optional(),
+        brand: Joi.string().trim().allow('').optional()
+      })
+    ).optional(),
+    transferredData: Joi.array().items(
+      Joi.object().keys({
+        transferred: Joi.number().integer().min(1).required(),
+        styleCode: Joi.string().trim().allow('').optional(),
+        brand: Joi.string().trim().allow('').optional()
+      })
+    ).optional()
   }),
 };
 
@@ -145,7 +163,23 @@ const transferArticle = {
     userId: Joi.string().custom(objectId).required(),
     floorSupervisorId: Joi.string().custom(objectId).required(),
     batchNumber: Joi.string().optional(),
-    machineId: Joi.string().custom(objectId).optional()
+    machineId: Joi.string().custom(objectId).optional(),
+    quantity: Joi.number().integer().min(0).optional(),
+    // For Branding/Final Checking: breakdown by styleCode/brand. Sum of transferred must equal total quantity.
+    transferItems: Joi.array().items(
+      Joi.object().keys({
+        transferred: Joi.number().integer().min(1).required(),
+        styleCode: Joi.string().trim().allow('').optional(),
+        brand: Joi.string().trim().allow('').optional()
+      })
+    ).optional(),
+    transferredData: Joi.array().items(
+      Joi.object().keys({
+        transferred: Joi.number().integer().min(1).required(),
+        styleCode: Joi.string().trim().allow('').optional(),
+        brand: Joi.string().trim().allow('').optional()
+      })
+    ).optional()
   }),
 };
 
@@ -262,7 +296,15 @@ const qualityInspection = {
     userId: Joi.string().custom(objectId).optional(),
     floorSupervisorId: Joi.string().custom(objectId).optional(),
     machineId: Joi.string().optional(),
-    shiftId: Joi.string().optional()
+    shiftId: Joi.string().optional(),
+    // For Final Checking: brand-wise transfer breakdown when M1 transfers to Warehouse
+    transferItems: Joi.array().items(
+      Joi.object().keys({
+        transferred: Joi.number().integer().min(1).required(),
+        styleCode: Joi.string().trim().allow('').optional(),
+        brand: Joi.string().trim().allow('').optional()
+      })
+    ).optional()
   }).custom((value, helpers) => {
     const { inspectedQuantity, m1Quantity, m2Quantity, m3Quantity, m4Quantity } = value;
     const totalQualityQuantities = m1Quantity + m2Quantity + m3Quantity + m4Quantity;
@@ -348,9 +390,20 @@ const updateArticleFloorReceivedData = {
         receivedStatusFromPreviousFloor: Joi.string().trim().allow('', null),
         receivedInContainerId: Joi.string().custom(objectId).allow(null),
         receivedTimestamp: Joi.date().allow(null),
+        transferred: Joi.number().integer().min(0).optional(),
+        styleCode: Joi.string().trim().allow('', null).optional(),
+        brand: Joi.string().trim().allow('', null).optional(),
       })
-      .required(),
+      .optional(),
     quantity: Joi.number().integer().min(0).optional(),
+    // For Branding/Final Checking: breakdown by styleCode/brand. Sum of transferred = total quantity.
+    receivedTransferItems: Joi.array().items(
+      Joi.object().keys({
+        transferred: Joi.number().integer().min(1).required(),
+        styleCode: Joi.string().trim().allow('').optional(),
+        brand: Joi.string().trim().allow('').optional()
+      })
+    ).optional()
   }),
 };
 

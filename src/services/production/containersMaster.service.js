@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import httpStatus from 'http-status';
 import ContainersMaster from '../../models/production/containersMaster.model.js';
 import ApiError from '../../utils/ApiError.js';
+import * as articleService from './article.service.js';
 
 /**
  * Create a container. Barcode is set from _id in model pre-save.
@@ -85,6 +86,34 @@ export const updateContainersMasterByBarcode = async (barcode, body) => {
   if (body.hasOwnProperty('quantity') && typeof body.quantity === 'number') doc.quantity = Math.max(0, Math.floor(body.quantity));
   await doc.save();
   return getContainerByBarcode(barcode);
+};
+
+/**
+ * Accept container on receiving floor - updates article floor received from container data.
+ * Auto-populates receivedTransferItems from previous floor's transferredData (Branding/Final Checking).
+ * @param {string} barcode - Container barcode
+ * @returns {Promise<{ container: ContainersMaster, article: Article }>}
+ */
+export const acceptContainerByBarcode = async (barcode) => {
+  const doc = await getContainerByBarcode(barcode);
+  if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Container not found for this barcode');
+  const article = doc.activeArticle;
+  const floor = doc.activeFloor;
+  const quantity = doc.quantity || 0;
+  if (!article || !floor || quantity <= 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Container has no active article, floor, or quantity to accept');
+  }
+  const articleId = typeof article === 'object' ? article._id : article;
+  const updatedArticle = await articleService.updateArticleFloorReceivedData(articleId.toString(), {
+    floor,
+    quantity,
+    receivedData: {
+      receivedStatusFromPreviousFloor: 'Completed',
+      receivedInContainerId: doc._id,
+      receivedTimestamp: new Date()
+    }
+  });
+  return { container: doc, article: updatedArticle };
 };
 
 /**

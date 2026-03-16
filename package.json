@@ -29,6 +29,10 @@
     "report:yarn-inventory": "cross-env NODE_ENV=development node src/scripts/report-yarn-inventory.js",
     "report:storage-inventory": "node src/scripts/compare-storage-inventory-apis.js",
     "test:activity-logs": "cross-env NODE_ENV=development node scripts/test-user-activity-logs.js",
+    "test:production-flow": "cross-env NODE_ENV=development node scripts/test-production-flow-branding-finalchecking.js",
+    "test:partial-transfer": "cross-env NODE_ENV=development node scripts/test-partial-transfer-branding-finalchecking.js",
+    "test:full-flow-20-80": "cross-env NODE_ENV=development node scripts/test-full-flow-branding-20-80-finalchecking.js",
+    "seed:order-to-branding": "cross-env NODE_ENV=development node scripts/seed-order-to-branding.js",
     "prepare": "husky install"
   },
   "keywords": [

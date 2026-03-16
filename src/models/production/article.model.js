@@ -268,17 +268,29 @@ const articleSchema = new mongoose.Schema({
       // M2 repair transfer tracking
       m2Transferred: { type: Number, default: 0, min: 0 },
       m2Remaining: { type: Number, default: 0, min: 0 },
-      repairStatus: { 
-        type: String, 
-        enum: Object.values(RepairStatus), 
-        default: RepairStatus.NOT_REQUIRED 
+      repairStatus: {
+        type: String,
+        enum: Object.values(RepairStatus),
+        default: RepairStatus.NOT_REQUIRED
       },
       repairRemarks: { type: String, default: '' },
+      // Transfer breakdown by styleCode/brand when transferring to warehouse
+      transferredData: {
+        type: [{
+          transferred: { type: Number, required: true, min: 0 },
+          styleCode: { type: String, default: '' },
+          brand: { type: String, default: '' }
+        }],
+        default: []
+      },
       receivedData: {
         type: [{
           receivedStatusFromPreviousFloor: { type: String, default: '' },
           receivedInContainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'ContainersMaster', default: null },
-          receivedTimestamp: { type: Date, default: null }
+          receivedTimestamp: { type: Date, default: null },
+          transferred: { type: Number, default: 0 },
+          styleCode: { type: String, default: '' },
+          brand: { type: String, default: '' }
         }],
         default: []
       }
@@ -290,11 +302,23 @@ const articleSchema = new mongoose.Schema({
       transferred: { type: Number, default: 0 },
       // Track repair items received from checking floors
       repairReceived: { type: Number, default: 0, min: 0 },
+      // Transfer breakdown by styleCode/brand when transferring to final checking
+      transferredData: {
+        type: [{
+          transferred: { type: Number, required: true, min: 0 },
+          styleCode: { type: String, default: '' },
+          brand: { type: String, default: '' }
+        }],
+        default: []
+      },
       receivedData: {
         type: [{
           receivedStatusFromPreviousFloor: { type: String, default: '' },
           receivedInContainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'ContainersMaster', default: null },
-          receivedTimestamp: { type: Date, default: null }
+          receivedTimestamp: { type: Date, default: null },
+          transferred: { type: Number, default: 0 },
+          styleCode: { type: String, default: '' },
+          brand: { type: String, default: '' }
         }],
         default: []
       }
@@ -632,12 +656,22 @@ articleSchema.pre('save', async function(next) {
   next();
 });
 
-// Pre-save middleware to initialize floor quantities for new articles
+// Pre-save middleware to initialize floor quantities for new articles and sync knitting.received when plannedQuantity changes
 articleSchema.pre('save', function(next) {
   if (this.isNew) {
     // Initialize floor quantities if not already set
     if (!this.floorQuantities.knitting.received && this.plannedQuantity > 0) {
       this.initializeWithPlannedQuantity();
+    }
+  } else if (this.isModified('plannedQuantity') && this.plannedQuantity > 0) {
+    // Order/article update: sync knitting.received to match new plannedQuantity
+    const knittingData = this.floorQuantities?.knitting;
+    if (knittingData) {
+      knittingData.received = this.plannedQuantity;
+      knittingData.remaining = Math.max(
+        0,
+        (knittingData.received || 0) - (knittingData.completed || 0) - (knittingData.m4Quantity || 0)
+      );
     }
   }
   next();

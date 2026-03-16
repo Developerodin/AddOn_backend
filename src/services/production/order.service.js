@@ -332,7 +332,7 @@ export const updateProductionOrderById = async (orderId, updateBody) => {
             if (articleData.remarks !== undefined) updateFields.remarks = articleData.remarks;
             if (articleData.machineId !== undefined) updateFields.machineId = articleData.machineId;
             
-            // Apply updates
+            // Apply updates (article pre-save will sync knitting.received when plannedQuantity changes)
             Object.assign(articleDoc, updateFields);
             await articleDoc.save();
           }
