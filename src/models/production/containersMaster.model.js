@@ -30,23 +30,21 @@ const containersMasterSchema = new mongoose.Schema(
       default: ContainerStatus.ACTIVE,
       index: true,
     },
-    /** Currently active article (ObjectId ref for populate) */
-    activeArticle: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Article',
-      default: null,
-    },
-    /** Active floor identifier */
+    /** Active floor identifier (all items in container go to this floor when accepted) */
     activeFloor: {
       type: String,
       trim: true,
       default: '',
     },
-    /** Quantity (e.g. pieces in container) */
-    quantity: {
-      type: Number,
-      default: 0,
-      min: 0,
+    /** Multiple articles in container: { article, quantity } per item */
+    activeItems: {
+      type: [
+        {
+          article: { type: mongoose.Schema.Types.ObjectId, ref: 'Article', required: true },
+          quantity: { type: Number, required: true, min: 1 },
+        },
+      ],
+      default: [],
     },
     /** Type: bag (1–300), bigContainer (301–500), container (501+) */
     type: {
@@ -65,6 +63,8 @@ const containersMasterSchema = new mongoose.Schema(
   {
     timestamps: true,
     collection: 'containers_masters',
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
 
@@ -78,6 +78,12 @@ containersMasterSchema.pre('save', function (next) {
 
 containersMasterSchema.index({ status: 1 });
 containersMasterSchema.index({ containerName: 1 });
+containersMasterSchema.index({ 'activeItems.article': 1 });
 containersMasterSchema.plugin(paginate);
+
+/** Virtual: total quantity across all active items */
+containersMasterSchema.virtual('quantity').get(function () {
+  return (this.activeItems || []).reduce((sum, item) => sum + (item.quantity || 0), 0);
+});
 
 export default mongoose.model('ContainersMaster', containersMasterSchema);

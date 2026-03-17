@@ -5,15 +5,19 @@ import { ContainerStatus, ContainerType } from '../models/production/enums.js';
 const statusValues = Object.values(ContainerStatus);
 const typeValues = Object.values(ContainerType);
 
+const activeItemSchema = Joi.object().keys({
+  article: Joi.string().custom(objectId).required(),
+  quantity: Joi.number().integer().min(1).required(),
+});
+
 export const createContainersMaster = {
   body: Joi.object().keys({
     containerName: Joi.string().trim().allow('', null),
     status: Joi.string()
       .valid(...statusValues)
       .default(ContainerStatus.ACTIVE),
-    activeArticle: Joi.string().trim().allow('', null),
     activeFloor: Joi.string().trim().allow('', null),
-    quantity: Joi.number().integer().min(0),
+    activeItems: Joi.array().items(activeItemSchema),
     type: Joi.string().valid(...typeValues),
     tearWeight: Joi.number().min(0),
   }),
@@ -26,7 +30,6 @@ export const getContainersMasters = {
     type: Joi.string().valid(...typeValues),
     activeArticle: Joi.string().trim(),
     activeFloor: Joi.string().trim(),
-    quantity: Joi.number().integer().min(0),
     search: Joi.string().trim(),
     sortBy: Joi.string(),
     limit: Joi.number().integer().min(1),
@@ -46,16 +49,19 @@ export const getContainerByBarcode = {
   }),
 };
 
-/** Update container's activeArticle, activeFloor, quantity, type, tearWeight by barcode */
+/** Update container's activeFloor, activeItems, addItem, type, tearWeight by barcode */
 export const updateContainerByBarcode = {
   params: Joi.object().keys({
     barcode: Joi.string().trim().required(),
   }),
   body: Joi.object()
     .keys({
-      activeArticle: Joi.string().custom(objectId).allow('', null),
       activeFloor: Joi.string().trim().allow('', null),
-      quantity: Joi.number().integer().min(0),
+      activeItems: Joi.array().items(activeItemSchema),
+      addItem: Joi.object().keys({
+        article: Joi.string().custom(objectId).required(),
+        quantity: Joi.number().integer().min(1).required(),
+      }),
       type: Joi.string().valid(...typeValues),
       tearWeight: Joi.number().min(0),
     })
@@ -89,9 +95,8 @@ export const updateContainersMaster = {
       status: Joi.string().valid(...statusValues),
       type: Joi.string().valid(...typeValues),
       tearWeight: Joi.number().min(0),
-      activeArticle: Joi.string().trim().allow('', null),
       activeFloor: Joi.string().trim().allow('', null),
-      quantity: Joi.number().integer().min(0),
+      activeItems: Joi.array().items(activeItemSchema),
     })
     .min(1),
 };
