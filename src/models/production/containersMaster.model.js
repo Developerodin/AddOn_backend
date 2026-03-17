@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { paginate } from '../plugins/index.js';
-import { ContainerStatus } from './enums.js';
+import { ContainerStatus, ContainerType } from './enums.js';
 
 /**
  * Containers Master Model
@@ -44,6 +44,19 @@ const containersMasterSchema = new mongoose.Schema(
     },
     /** Quantity (e.g. pieces in container) */
     quantity: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    /** Type: bag (1–300), bigContainer (301–500), container (501+) */
+    type: {
+      type: String,
+      enum: Object.values(ContainerType),
+      default: ContainerType.CONTAINER,
+      index: true,
+    },
+    /** Tear weight in grams (for bags); default 0 */
+    tearWeight: {
       type: Number,
       default: 0,
       min: 0,

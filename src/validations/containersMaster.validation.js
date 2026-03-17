@@ -1,8 +1,9 @@
 import Joi from 'joi';
 import { objectId } from './custom.validation.js';
-import { ContainerStatus } from '../models/production/enums.js';
+import { ContainerStatus, ContainerType } from '../models/production/enums.js';
 
 const statusValues = Object.values(ContainerStatus);
+const typeValues = Object.values(ContainerType);
 
 export const createContainersMaster = {
   body: Joi.object().keys({
@@ -13,6 +14,8 @@ export const createContainersMaster = {
     activeArticle: Joi.string().trim().allow('', null),
     activeFloor: Joi.string().trim().allow('', null),
     quantity: Joi.number().integer().min(0),
+    type: Joi.string().valid(...typeValues),
+    tearWeight: Joi.number().min(0),
   }),
 };
 
@@ -20,6 +23,7 @@ export const getContainersMasters = {
   query: Joi.object().keys({
     containerName: Joi.string().trim(),
     status: Joi.string().valid(...statusValues),
+    type: Joi.string().valid(...typeValues),
     activeArticle: Joi.string().trim(),
     activeFloor: Joi.string().trim(),
     quantity: Joi.number().integer().min(0),
@@ -42,7 +46,7 @@ export const getContainerByBarcode = {
   }),
 };
 
-/** Update container's activeArticle, activeFloor, quantity by barcode */
+/** Update container's activeArticle, activeFloor, quantity, type, tearWeight by barcode */
 export const updateContainerByBarcode = {
   params: Joi.object().keys({
     barcode: Joi.string().trim().required(),
@@ -52,6 +56,8 @@ export const updateContainerByBarcode = {
       activeArticle: Joi.string().custom(objectId).allow('', null),
       activeFloor: Joi.string().trim().allow('', null),
       quantity: Joi.number().integer().min(0),
+      type: Joi.string().valid(...typeValues),
+      tearWeight: Joi.number().min(0),
     })
     .min(1),
 };
@@ -81,6 +87,8 @@ export const updateContainersMaster = {
     .keys({
       containerName: Joi.string().trim().allow('', null),
       status: Joi.string().valid(...statusValues),
+      type: Joi.string().valid(...typeValues),
+      tearWeight: Joi.number().min(0),
       activeArticle: Joi.string().trim().allow('', null),
       activeFloor: Joi.string().trim().allow('', null),
       quantity: Joi.number().integer().min(0),

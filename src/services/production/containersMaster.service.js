@@ -25,10 +25,11 @@ export const createContainersMaster = async (body) => {
  * @returns {Promise<QueryResult>}
  */
 export const queryContainersMasters = async (filter, options = {}) => {
-  const { containerName, status, activeArticle, activeFloor, quantity, search, ...rest } = filter || {};
+  const { containerName, status, type, activeArticle, activeFloor, quantity, search, ...rest } = filter || {};
   const query = { ...rest };
   if (containerName) query.containerName = { $regex: containerName, $options: 'i' };
   if (status) query.status = status;
+  if (type) query.type = type;
   if (activeArticle != null && activeArticle !== '') {
     query.activeArticle = mongoose.Types.ObjectId.isValid(activeArticle) && String(activeArticle).length === 24 ? activeArticle : null;
     if (query.activeArticle === null) delete query.activeArticle;
