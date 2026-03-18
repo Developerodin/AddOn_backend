@@ -90,6 +90,13 @@ const ContainerStatus = {
   INACTIVE: 'Inactive'
 };
 
+// Containers Master – type: bag (1–300), bigContainer (301–500), container (501+)
+const ContainerType = {
+  BAG: 'bag',
+  BIG_CONTAINER: 'bigContainer',
+  CONTAINER: 'container'
+};
+
 // Complete list of all loggable actions
 const LogAction = {
   // Order Management
@@ -193,5 +200,6 @@ export {
   LogAction,
   TeamRole,
   TeamMemberStatus,
-  ContainerStatus
+  ContainerStatus,
+  ContainerType
 };

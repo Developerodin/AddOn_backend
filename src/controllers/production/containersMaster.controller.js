@@ -10,7 +10,7 @@ const createContainersMaster = catchAsync(async (req, res) => {
 });
 
 const getContainersMasters = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['containerName', 'status', 'activeArticle', 'activeFloor', 'quantity', 'search']);
+  const filter = pick(req.query, ['containerName', 'status', 'type', 'activeArticle', 'activeFloor', 'search']);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
   const result = await containersMasterService.queryContainersMasters(filter, options);
   res.send(result);
@@ -38,6 +38,11 @@ const updateContainerByBarcode = catchAsync(async (req, res) => {
   res.send(doc);
 });
 
+const acceptContainerByBarcode = catchAsync(async (req, res) => {
+  const result = await containersMasterService.acceptContainerByBarcode(req.params.barcode);
+  res.send(result);
+});
+
 const clearActiveByBarcode = catchAsync(async (req, res) => {
   const doc = await containersMasterService.clearActiveByBarcode(req.params.barcode);
   res.send(doc);
@@ -60,6 +65,7 @@ export {
   getContainerByBarcode,
   updateContainersMaster,
   updateContainerByBarcode,
+  acceptContainerByBarcode,
   clearActiveByBarcode,
   resetAllActive,
   deleteContainersMaster,

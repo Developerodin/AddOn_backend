@@ -332,7 +332,7 @@ export const updateProductionOrderById = async (orderId, updateBody) => {
             if (articleData.remarks !== undefined) updateFields.remarks = articleData.remarks;
             if (articleData.machineId !== undefined) updateFields.machineId = articleData.machineId;
             
-            // Apply updates
+            // Apply updates (article pre-save will sync knitting.received when plannedQuantity changes)
             Object.assign(articleDoc, updateFields);
             await articleDoc.save();
           }
@@ -516,7 +516,13 @@ export const getOrdersByFloor = async (floor, filter, options) => {
     machineFilter = { 'articles.machineId': filter.machineId };
     delete filter.machineId; // Remove from main filter to avoid conflicts
   }
-  
+
+  // Orders with articles that have received > 0 on this floor (articles are refs, so we must query Article first)
+  const orderIdsWithWorkOnFloor = await Article.find({
+    [`floorQuantities.${floorKey}.received`]: { $gt: 0 }
+  })
+    .distinct('orderId');
+
   const floorFilter = {
     ...filter,
     ...machineFilter,
@@ -528,10 +534,8 @@ export const getOrdersByFloor = async (floor, filter, options) => {
         currentFloor: { $in: floorOrder.slice(0, requestedFloorIndex) },
         status: { $ne: 'Completed' }
       },
-      // 3. Orders that have work on this floor (received quantity > 0)
-      {
-        [`articles.floorQuantities.${floorKey}.received`]: { $gt: 0 }
-      }
+      // 3. Orders that have articles with work on this floor (received quantity > 0)
+      ...(orderIdsWithWorkOnFloor.length > 0 ? [{ _id: { $in: orderIdsWithWorkOnFloor } }] : [])
     ]
   };
 

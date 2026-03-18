@@ -56,6 +56,8 @@ export const createPurchaseOrder = {
       gst: Joi.number().min(0).required(),
       total: Joi.number().min(0).required(),
       currentStatus: statusCodeField.default('submitted_to_supplier'),
+      creditDays: Joi.number().min(0).allow(null),
+      estimatedOrderDeliveryDate: Joi.date().iso().allow(null),
       statusLogs: Joi.array()
         .items(
           Joi.object().keys({
@@ -126,6 +128,8 @@ export const updatePurchaseOrder = {
         })
       ),
       goodsReceivedDate: Joi.date().iso().allow(null),
+      creditDays: Joi.number().min(0).allow(null),
+      estimatedOrderDeliveryDate: Joi.date().iso().allow(null),
       // Optional; when omitted, existing DB values are preserved (no .default so body won't overwrite with [])
       receivedLotDetails: Joi.array()
         .items(

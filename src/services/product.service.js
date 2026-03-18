@@ -338,6 +338,7 @@ export const getProductByCode = async (factoryCode, internalCode) => {
   
   const product = await Product.findOne(filter)
     .populate('category', 'name')
+    .populate('styleCodes')
     .populate('bom.yarnCatalogId', 'yarnName yarnType countSize blend colorFamily')
     .populate('processes.processId', 'name type');
   

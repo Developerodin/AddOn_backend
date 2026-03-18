@@ -109,7 +109,8 @@ router
 
 router
   .route('/floors/:floor/orders/:orderId/articles/:articleId')
-  .patch(validate(productionValidation.updateArticleProgress), productionController.updateArticleProgress);
+  .patch(validate(productionValidation.updateArticleProgress), productionController.updateArticleProgress)
+  .post(validate(productionValidation.transferArticle), productionController.transferArticle);
 
 router
   .route('/floors/:floor/transfer')
