@@ -291,6 +291,13 @@ const yarnPurchaseOrderSchema = mongoose.Schema(
     goodsReceivedDate: {
       type: Date,
     },
+    creditDays: {
+      type: Number,
+      min: 0,
+    },
+    estimatedOrderDeliveryDate: {
+      type: Date,
+    },
     currentStatus: {
       type: String,
       enum: yarnPurchaseOrderStatuses,
