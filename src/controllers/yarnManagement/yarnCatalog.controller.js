@@ -3,6 +3,7 @@ import pick from '../../utils/pick.js';
 import ApiError from '../../utils/ApiError.js';
 import catchAsync from '../../utils/catchAsync.js';
 import * as yarnCatalogService from '../../services/yarnManagement/yarnCatalog.service.js';
+import * as yarnMergeService from '../../services/yarnManagement/yarnMerge.service.js';
 
 export const createYarnCatalog = catchAsync(async (req, res) => {
   const yarnCatalog = await yarnCatalogService.createYarnCatalog(req.body);
@@ -32,6 +33,39 @@ export const updateYarnCatalog = catchAsync(async (req, res) => {
 export const deleteYarnCatalog = catchAsync(async (req, res) => {
   await yarnCatalogService.deleteYarnCatalogById(req.params.yarnCatalogId);
   res.status(httpStatus.NO_CONTENT).send();
+});
+
+export const findDuplicateYarns = catchAsync(async (req, res) => {
+  const groups = await yarnMergeService.findDuplicateYarns();
+  res.send({
+    message: `Found ${groups.length} group(s) of potential duplicates`,
+    totalGroups: groups.length,
+    totalDuplicateEntries: groups.reduce((sum, g) => sum + g.count, 0),
+    groups,
+  });
+});
+
+export const mergeYarns = catchAsync(async (req, res) => {
+  const { canonicalId, canonicalName, duplicateIds, duplicateNames, dryRun } = req.body;
+  const report = await yarnMergeService.mergeYarns(
+    { canonicalId, canonicalName, duplicateIds, duplicateNames },
+    { dryRun }
+  );
+  res.send({
+    message: dryRun ? 'Dry-run complete — no changes were made' : 'Yarn merge completed successfully',
+    report,
+  });
+});
+
+export const bulkMergeYarns = catchAsync(async (req, res) => {
+  const { merges, dryRun } = req.body;
+  const result = await yarnMergeService.bulkMergeYarns(merges, { dryRun });
+  res.send({
+    message: dryRun
+      ? `Dry-run complete — ${result.succeeded} of ${result.total} previewed, ${result.failed} failed`
+      : `Bulk merge complete — ${result.succeeded} of ${result.total} merged, ${result.failed} failed`,
+    ...result,
+  });
 });
 
 export const bulkImportYarnCatalogs = catchAsync(async (req, res) => {
