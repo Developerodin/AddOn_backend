@@ -70,6 +70,46 @@ export const deleteYarnCatalog = {
   }),
 };
 
+export const findDuplicateYarns = {
+  query: Joi.object().keys({}),
+};
+
+export const mergeYarns = {
+  body: Joi.object()
+    .keys({
+      canonicalId: Joi.string().custom(objectId),
+      canonicalName: Joi.string().trim(),
+      duplicateIds: Joi.array().items(Joi.string().custom(objectId)).min(1).max(100),
+      duplicateNames: Joi.array().items(Joi.string().trim()).min(1).max(100),
+      dryRun: Joi.boolean().default(false),
+    })
+    .or('canonicalId', 'canonicalName')
+    .or('duplicateIds', 'duplicateNames')
+    .messages({
+      'object.missing': 'Provide either canonicalId or canonicalName, and either duplicateIds or duplicateNames',
+    }),
+};
+
+const mergeItemSchema = Joi.object()
+  .keys({
+    canonicalId: Joi.string().custom(objectId),
+    canonicalName: Joi.string().trim(),
+    duplicateIds: Joi.array().items(Joi.string().custom(objectId)).min(1).max(100),
+    duplicateNames: Joi.array().items(Joi.string().trim()).min(1).max(100),
+  })
+  .or('canonicalId', 'canonicalName')
+  .or('duplicateIds', 'duplicateNames');
+
+export const bulkMergeYarns = {
+  body: Joi.object().keys({
+    merges: Joi.array().items(mergeItemSchema).min(1).max(200).required().messages({
+      'array.min': 'At least one merge entry is required',
+      'array.max': 'Maximum 200 merge entries allowed per request',
+    }),
+    dryRun: Joi.boolean().default(false),
+  }),
+};
+
 export const bulkImportYarnCatalogs = {
   body: Joi.object().keys({
     yarnCatalogs: Joi.array().items(

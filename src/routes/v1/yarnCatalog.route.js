@@ -11,6 +11,12 @@ router
   .post(validate(yarnCatalogValidation.createYarnCatalog), yarnCatalogController.createYarnCatalog)
   .get(validate(yarnCatalogValidation.getYarnCatalogs), yarnCatalogController.getYarnCatalogs);
 
+router.route('/duplicates').get(validate(yarnCatalogValidation.findDuplicateYarns), yarnCatalogController.findDuplicateYarns);
+
+router.route('/merge').post(validate(yarnCatalogValidation.mergeYarns), yarnCatalogController.mergeYarns);
+
+router.route('/bulk-merge').post(validate(yarnCatalogValidation.bulkMergeYarns), yarnCatalogController.bulkMergeYarns);
+
 router
   .route('/bulk-import')
   .post(
