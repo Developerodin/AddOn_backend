@@ -72,12 +72,10 @@ export const getUserActivityLogs = async (userId, filter = {}) => {
   const { page = 1, limit = 50, sortBy = 'createdAt', sortOrder = 'desc' } = filter;
   const query = buildLogsQuery(filter, { userId: toObjectId(userId) });
 
-  const sort = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
-
   const logs = await UserActivityLog.paginate(query, {
     page,
     limit,
-    sort,
+    sortBy: `${sortBy}:${sortOrder}`,
     populate: { path: 'userId', select: 'name email' },
   });
 
@@ -92,12 +90,10 @@ export const getAllActivityLogs = async (filter = {}) => {
   const baseQuery = userId ? { userId: toObjectId(userId) } : {};
   const query = buildLogsQuery(filter, baseQuery);
 
-  const sort = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
-
   const logs = await UserActivityLog.paginate(query, {
     page,
     limit,
-    sort,
+    sortBy: `${sortBy}:${sortOrder}`,
     populate: { path: 'userId', select: 'name email' },
   });
 

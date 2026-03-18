@@ -24,9 +24,17 @@ router
   .post(auth(), validate(containersMasterValidation.acceptContainerByBarcode), containersMasterController.acceptContainerByBarcode);
 
 router
+  .route('/barcode/:barcode/with-articles')
+  .get(auth(), validate(containersMasterValidation.getContainerByBarcode), containersMasterController.getContainerWithArticlesByBarcode);
+
+router
   .route('/barcode/:barcode')
   .get(auth(), validate(containersMasterValidation.getContainerByBarcode), containersMasterController.getContainerByBarcode)
   .patch(auth(), validate(containersMasterValidation.updateContainerByBarcode), containersMasterController.updateContainerByBarcode);
+
+router
+  .route('/:containerId/with-articles')
+  .get(auth(), validate(containersMasterValidation.getContainersMaster), containersMasterController.getContainerWithArticles);
 
 router
   .route('/:containerId')

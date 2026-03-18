@@ -15,8 +15,8 @@ const logsQuerySchema = Joi.object().keys({
   statusCode: Joi.number().integer().min(100).max(599),
   errorsOnly: Joi.boolean(), // true = statusCode >= 400 (spicy/error logs)
   pathSearch: Joi.string().max(200), // partial match in path
-  dateFrom: Joi.date().iso(),
-  dateTo: Joi.date().iso(),
+  dateFrom: Joi.alternatives().try(Joi.date(), Joi.string().isoDate()),
+  dateTo: Joi.alternatives().try(Joi.date(), Joi.string().isoDate()),
   sortBy: Joi.string().valid(...sortByValues).default('createdAt'),
   sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
 });
@@ -27,8 +27,8 @@ const getActivityLogs = {
 
 const getActivityStats = {
   query: Joi.object().keys({
-    dateFrom: Joi.date().iso(),
-    dateTo: Joi.date().iso(),
+    dateFrom: Joi.alternatives().try(Joi.date(), Joi.string().isoDate()),
+    dateTo: Joi.alternatives().try(Joi.date(), Joi.string().isoDate()),
     resource: Joi.string(),
     action: Joi.string().valid(...actionValues),
     method: Joi.string().valid(...methodValues),
@@ -47,8 +47,8 @@ const getUserStats = {
     userId: Joi.string().required().custom(objectId),
   }),
   query: Joi.object().keys({
-    dateFrom: Joi.date().iso(),
-    dateTo: Joi.date().iso(),
+    dateFrom: Joi.alternatives().try(Joi.date(), Joi.string().isoDate()),
+    dateTo: Joi.alternatives().try(Joi.date(), Joi.string().isoDate()),
     resource: Joi.string(),
     action: Joi.string().valid(...actionValues),
     method: Joi.string().valid(...methodValues),

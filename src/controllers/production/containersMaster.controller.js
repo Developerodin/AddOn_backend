@@ -28,6 +28,18 @@ const getContainerByBarcode = catchAsync(async (req, res) => {
   res.send(doc);
 });
 
+const getContainerWithArticlesByBarcode = catchAsync(async (req, res) => {
+  const doc = await containersMasterService.getContainerWithArticlesByBarcode(req.params.barcode);
+  if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Container not found for this barcode');
+  res.send(doc);
+});
+
+const getContainerWithArticles = catchAsync(async (req, res) => {
+  const doc = await containersMasterService.getContainerWithArticlesById(req.params.containerId);
+  if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Container not found');
+  res.send(doc);
+});
+
 const updateContainersMaster = catchAsync(async (req, res) => {
   const doc = await containersMasterService.updateContainersMasterById(req.params.containerId, req.body);
   res.send(doc);
@@ -63,6 +75,8 @@ export {
   getContainersMasters,
   getContainersMaster,
   getContainerByBarcode,
+  getContainerWithArticlesByBarcode,
+  getContainerWithArticles,
   updateContainersMaster,
   updateContainerByBarcode,
   acceptContainerByBarcode,

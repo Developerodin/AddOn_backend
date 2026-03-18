@@ -1,8 +1,12 @@
 import mongoose from 'mongoose';
 import httpStatus from 'http-status';
 import ContainersMaster from '../../models/production/containersMaster.model.js';
+import { Article } from '../../models/production/index.js';
 import ApiError from '../../utils/ApiError.js';
 import * as articleService from './article.service.js';
+
+/** Article fields to populate when fetching container with articles */
+const ARTICLE_POPULATE_SELECT = 'id articleNumber knittingCode plannedQuantity status priority linkingType orderId';
 
 /**
  * Create a container. Barcode is set from _id in model pre-save.
@@ -53,6 +57,63 @@ export const getContainersMasterById = async (id) => {
 };
 
 /**
+ * Populate activeItems.article with lean data; preserves articleId when article not found.
+ * Handles legacy: when activeItems empty but activeArticle exists, use that.
+ * @param {Object} doc - Container document (plain or mongoose doc)
+ * @returns {Promise<Object>}
+ */
+const enrichContainerWithArticles = async (doc) => {
+  if (!doc) return null;
+  let items = doc.activeItems || [];
+  // Legacy: activeItems empty but activeArticle exists
+  if (items.length === 0 && doc.activeArticle) {
+    const aid = doc.activeArticle?.toString?.() || doc.activeArticle;
+    const qty = doc.quantity ?? 0;
+    if (aid) items = [{ article: aid, quantity: qty }];
+  }
+  if (items.length === 0) return doc.toJSON ? doc.toJSON() : doc;
+
+  const getArticleId = (art) => {
+    if (!art) return null;
+    if (typeof art === 'string') return art;
+    return art._id ? art._id.toString() : art.toString?.() || null;
+  };
+  const articleIds = items.map((i) => getArticleId(i.article)).filter(Boolean);
+  const ids = [...new Set(articleIds)];
+  const articles = ids.length
+    ? await Article.find({ _id: { $in: ids } })
+        .select(ARTICLE_POPULATE_SELECT)
+        .populate('orderId', 'orderNumber')
+        .lean()
+    : [];
+  const articleMap = new Map(articles.map((a) => [a._id.toString(), a]));
+  const plain = doc.toJSON ? doc.toJSON() : { ...doc };
+  plain.activeItems = items.map((item, idx) => {
+    const raw = item?.toObject ? item.toObject() : { ...item };
+    const articleId = getArticleId(raw.article);
+    return {
+      _id: raw._id || null,
+      quantity: raw.quantity ?? 0,
+      articleId: articleId || null,
+      article: articleId ? articleMap.get(articleId) || null : null
+    };
+  });
+  return plain;
+};
+
+/**
+ * Get container by id with articles populated (lean article data + orderNumber).
+ * Preserves articleId when referenced article is deleted.
+ * @param {string} id
+ * @returns {Promise<Object|null>}
+ */
+export const getContainerWithArticlesById = async (id) => {
+  const doc = await ContainersMaster.findById(id);
+  if (!doc) return null;
+  return enrichContainerWithArticles(doc);
+};
+
+/**
  * Get container by barcode (barcode stores the _id string).
  * @param {string} barcode
  * @returns {Promise<ContainersMaster|null>}
@@ -65,6 +126,23 @@ export const getContainerByBarcode = async (barcode) => {
     doc = await ContainersMaster.findById(trimmed).populate('activeItems.article');
   }
   return doc || null;
+};
+
+/**
+ * Get container by barcode with articles populated (lean article data + orderNumber).
+ * Preserves articleId when referenced article is deleted.
+ * @param {string} barcode
+ * @returns {Promise<Object|null>}
+ */
+export const getContainerWithArticlesByBarcode = async (barcode) => {
+  if (!barcode || !String(barcode).trim()) return null;
+  const trimmed = String(barcode).trim();
+  let doc = await ContainersMaster.findOne({ barcode: trimmed });
+  if (!doc && /^[0-9a-fA-F]{24}$/.test(trimmed)) {
+    doc = await ContainersMaster.findById(trimmed);
+  }
+  if (!doc) return null;
+  return enrichContainerWithArticles(doc);
 };
 
 /**

@@ -6,6 +6,7 @@ import * as userActivityLogService from '../services/userActivityLog.service.js'
  */
 const getMyLogs = catchAsync(async (req, res) => {
   const logs = await userActivityLogService.getUserActivityLogs(req.user._id, req.query);
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.send(logs);
 });
 
@@ -23,6 +24,7 @@ const getMyStats = catchAsync(async (req, res) => {
 const getUserLogs = catchAsync(async (req, res) => {
   const { userId } = req.params;
   const logs = await userActivityLogService.getUserActivityLogs(userId, req.query);
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.send(logs);
 });
 
@@ -40,6 +42,7 @@ const getUserStats = catchAsync(async (req, res) => {
  */
 const getAllLogs = catchAsync(async (req, res) => {
   const logs = await userActivityLogService.getAllActivityLogs(req.query);
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.send(logs);
 });
 
