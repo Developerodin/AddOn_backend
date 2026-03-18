@@ -7,7 +7,7 @@ const typeValues = Object.values(ContainerType);
 
 const activeItemSchema = Joi.object().keys({
   article: Joi.string().custom(objectId).required(),
-  quantity: Joi.number().integer().min(1).required(),
+  quantity: Joi.number().min(0.0001).required(),
 });
 
 export const createContainersMaster = {
@@ -60,7 +60,7 @@ export const updateContainerByBarcode = {
       activeItems: Joi.array().items(activeItemSchema),
       addItem: Joi.object().keys({
         article: Joi.string().custom(objectId).required(),
-        quantity: Joi.number().integer().min(1).required(),
+        quantity: Joi.number().min(0.0001).required(),
       }),
       type: Joi.string().valid(...typeValues),
       tearWeight: Joi.number().min(0),

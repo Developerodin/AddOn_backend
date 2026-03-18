@@ -80,14 +80,14 @@ export const updateContainersMasterByBarcode = async (barcode, body) => {
   if (body.hasOwnProperty('activeFloor')) doc.activeFloor = body.activeFloor || '';
   if (body.hasOwnProperty('activeItems') && Array.isArray(body.activeItems)) {
     doc.activeItems = body.activeItems
-      .filter((i) => i && i.article && typeof i.quantity === 'number' && i.quantity >= 1)
-      .map((i) => ({ article: i.article, quantity: Math.floor(i.quantity) }));
+      .filter((i) => i && i.article && typeof i.quantity === 'number' && i.quantity >= 0.0001)
+      .map((i) => ({ article: i.article, quantity: Number(i.quantity) }));
   }
-  if (body.addItem && body.addItem.article && typeof body.addItem.quantity === 'number' && body.addItem.quantity >= 1) {
+  if (body.addItem && body.addItem.article && typeof body.addItem.quantity === 'number' && body.addItem.quantity >= 0.0001) {
     if (!doc.activeItems) doc.activeItems = [];
     doc.activeItems.push({
       article: body.addItem.article,
-      quantity: Math.floor(body.addItem.quantity),
+      quantity: Number(body.addItem.quantity),
     });
   }
   await doc.save();

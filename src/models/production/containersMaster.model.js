@@ -41,7 +41,7 @@ const containersMasterSchema = new mongoose.Schema(
       type: [
         {
           article: { type: mongoose.Schema.Types.ObjectId, ref: 'Article', required: true },
-          quantity: { type: Number, required: true, min: 1 },
+          quantity: { type: Number, required: true, min: 0.0001 },
         },
       ],
       default: [],
