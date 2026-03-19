@@ -35,6 +35,7 @@ import yarnBoxRoute from './yarn/yarnBox.route.js';
 import yarnConeRoute from './yarn/yarnCone.route.js';
 import yarnTransactionRoute from './yarn/yarnTransaction.route.js';
 import yarnInventoryRoute from './yarn/yarnInventory.route.js';
+import yarnReportRoute from './yarn/yarnReport.route.js';
 import storageRoute from './storage.route.js';
 import yarnReqRoute from './yarn/yarnReq.route.js';
 import vendorRoute from './vendor.route.js';
@@ -189,6 +190,10 @@ const defaultRoutes = [
   {
     path: '/yarn-management/yarn-inventories',
     route: yarnInventoryRoute,
+  },
+  {
+    path: '/yarn-management/yarn-report',
+    route: yarnReportRoute,
   },
    {
     path: '/yarn-management/yarn-receiving',

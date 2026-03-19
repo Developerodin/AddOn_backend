@@ -27,6 +27,8 @@
     "seed:storage-slots": "node src/scripts/seed-storage-slots.js",
     "seed:machine-order-assignments": "node src/scripts/seed-machine-order-assignments.js",
     "report:yarn-inventory": "cross-env NODE_ENV=development node src/scripts/report-yarn-inventory.js",
+    "report:yarn-stocked": "cross-env NODE_ENV=development node src/scripts/report-yarn-stocked.js",
+    "report:yarn-storage-opening": "cross-env NODE_ENV=development node src/scripts/report-yarn-storage-opening.js",
     "report:storage-inventory": "node src/scripts/compare-storage-inventory-apis.js",
     "test:activity-logs": "cross-env NODE_ENV=development node scripts/test-user-activity-logs.js",
     "test:production-flow": "cross-env NODE_ENV=development node scripts/test-production-flow-branding-finalchecking.js",
