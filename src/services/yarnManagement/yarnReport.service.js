@@ -137,11 +137,10 @@ const getYarnIdsWithPhysicalStock = async () => {
 };
 
 /**
- * Opening from ALL physical stock: stored boxes + unstored boxes + cones.
- * No date filter - uses current stock as opening (what we have in warehouse).
+ * Opening balance = physical inventory only (YarnBox + YarnCone).
+ * What's actually in the warehouse. Issue/return come from YarnTransaction only.
  *
- * Stored: YarnBox in LT, qc approved.
- * Unstored: YarnBox NOT in LT (received but not yet put in LT).
+ * Boxes: YarnBox with boxWeight > 0 (net = boxWeight - tearweight).
  * Cones: YarnCone in ST (coneStorageId set), not issued.
  */
 const getOpeningFromPhysicalStorage = async (yarnIds, catalogMap) => {
@@ -181,60 +180,6 @@ const getOpeningFromPhysicalStorage = async (yarnIds, catalogMap) => {
   }
 
   return map;
-};
-
-/**
- * Compute opening balance (net weight) per yarn at a given date.
- * Primary: sum(yarn_stocked) - sum(yarn_issued) + sum(yarn_returned) for txns before date.
- * Fallback: physical storage (YarnBox + YarnCone) when transaction opening is 0.
- *
- * @param {Date} beforeDate - All transactions before this date
- * @returns {Promise<Map<string, number>>} yarnId -> opening net weight (kg)
- */
-const getOpeningBalanceByYarn = async (beforeDate) => {
-  const pipeline = [
-    { $match: { transactionDate: { $lt: beforeDate } } },
-    {
-      $group: {
-        _id: '$yarn',
-        stocked: { $sum: { $cond: [{ $eq: ['$transactionType', 'yarn_stocked'] }, '$transactionNetWeight', 0] } },
-        issued: { $sum: { $cond: [{ $eq: ['$transactionType', 'yarn_issued'] }, '$transactionNetWeight', 0] } },
-        returned: { $sum: { $cond: [{ $eq: ['$transactionType', 'yarn_returned'] }, '$transactionNetWeight', 0] } },
-      },
-    },
-    {
-      $project: {
-        opening: { $subtract: [{ $add: ['$stocked', '$returned'] }, '$issued'] },
-      },
-    },
-  ];
-
-  const result = await YarnTransaction.aggregate(pipeline);
-  const map = new Map();
-  result.forEach((r) => {
-    const id = r._id?.toString?.();
-    if (id) map.set(id, toNum(r.opening));
-  });
-  return map;
-};
-
-/**
- * Get opening balance: transaction-based, with physical storage fallback for yarns with 0.
- * Prefer txn when > 0 (stock at start_date); physical is current snapshot, use only when no txn history.
- */
-const getOpeningWithPhysicalFallback = async (beforeDate, yarnIds, catalogMap) => {
-  const [txnMap, physicalMap] = await Promise.all([
-    getOpeningBalanceByYarn(beforeDate),
-    getOpeningFromPhysicalStorage(yarnIds, catalogMap),
-  ]);
-  const merged = new Map();
-  const allIds = new Set([...txnMap.keys(), ...physicalMap.keys(), ...yarnIds]);
-  for (const id of allIds) {
-    const txn = txnMap.get(id) ?? 0;
-    const phys = physicalMap.get(id) ?? 0;
-    merged.set(id, txn > 0 ? txn : phys);
-  }
-  return merged;
 };
 
 /**
@@ -421,7 +366,7 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
   const catalogMap = new Map();
   catalogs.forEach((c) => catalogMap.set(c._id.toString(), c));
 
-  const openingMap = await getOpeningWithPhysicalFallback(start, yarnIds, catalogMap);
+  const openingMap = await getOpeningFromPhysicalStorage(yarnIds, catalogMap);
 
   // Include yarns with physical stock but no PO/transactions in range
   const yarnIdsWithOpening = [...openingMap.keys()].filter((id) => openingMap.get(id) > 0);
@@ -446,10 +391,10 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
 
     const pur = row.pur;
     const purRet = row.purRet;
-    const store = txn.store;
     const issued = txn.issued;
     const returned = txn.returned;
-    const balance = opening + pur - purRet + store + returned - issued;
+    // Opening = physical (boxes+cones). Don't add store - physical already includes yarn_stocked.
+    const balance = opening + pur - purRet + returned - issued;
 
     const yarnType = catalog?.yarnType;
     const yarnSubtype = catalog?.yarnSubtype;
@@ -490,7 +435,8 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
     const catalog = catalogMap.get(yarnId);
     const txn = txnMap.get(yarnId) || { store: 0, issued: 0, returned: 0 };
     const opening = openingMap.get(yarnId) ?? 0;
-    const balance = opening + txn.store - 0 + txn.returned - txn.issued;
+    // Opening = physical. Don't add store - physical already includes yarn_stocked.
+    const balance = opening + txn.returned - txn.issued;
     const brandShade = brandShadeMap.get(yarnId) || { brand: '', shadeNumber: '', rate: 0, gstRate: 0 };
     const rate = brandShade.rate ?? 0;
     const gstPercent = (brandShade.gstRate ?? catalog?.gst) ?? 0;
