@@ -220,6 +220,7 @@ const getOpeningBalanceByYarn = async (beforeDate) => {
 
 /**
  * Get opening balance: transaction-based, with physical storage fallback for yarns with 0.
+ * Prefer txn when > 0 (stock at start_date); physical is current snapshot, use only when no txn history.
  */
 const getOpeningWithPhysicalFallback = async (beforeDate, yarnIds, catalogMap) => {
   const [txnMap, physicalMap] = await Promise.all([
@@ -231,7 +232,7 @@ const getOpeningWithPhysicalFallback = async (beforeDate, yarnIds, catalogMap) =
   for (const id of allIds) {
     const txn = txnMap.get(id) ?? 0;
     const phys = physicalMap.get(id) ?? 0;
-    merged.set(id, phys > 0 ? phys : txn);
+    merged.set(id, txn > 0 ? txn : phys);
   }
   return merged;
 };
@@ -455,6 +456,9 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
     const countSize = catalog?.countSize;
     const colorFamily = catalog?.colorFamily;
 
+    const gstPercent = (row.gstRate || catalog?.gst) ?? 0;
+    const amount = row.rate * balance * (1 + gstPercent / 100);
+
     results.push({
       store: 'yarn',
       hsnCode: catalog?.hsnCode ?? '',
@@ -474,8 +478,8 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
       balance: Math.round(balance * 1000) / 1000,
       rate: row.rate,
       unit: 'kg',
-      gstPercent: (row.gstRate || catalog?.gst) ?? 0,
-      amount: Math.round(row.amount * 100) / 100,
+      gstPercent,
+      amount: Math.round(amount * 100) / 100,
     });
   }
 
@@ -487,7 +491,10 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
     const txn = txnMap.get(yarnId) || { store: 0, issued: 0, returned: 0 };
     const opening = openingMap.get(yarnId) ?? 0;
     const balance = opening + txn.store - 0 + txn.returned - txn.issued;
-    const brandShade = brandShadeMap.get(yarnId) || { brand: '', shadeNumber: '', rate: 0, gstRate: 0, amount: 0 };
+    const brandShade = brandShadeMap.get(yarnId) || { brand: '', shadeNumber: '', rate: 0, gstRate: 0 };
+    const rate = brandShade.rate ?? 0;
+    const gstPercent = (brandShade.gstRate ?? catalog?.gst) ?? 0;
+    const amount = rate * balance * (1 + gstPercent / 100);
 
     results.push({
       store: 'yarn',
@@ -506,10 +513,10 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
       yarnIssueToKnitting: Math.round(txn.issued * 1000) / 1000,
       yarnReturnedFromKnitting: Math.round(txn.returned * 1000) / 1000,
       balance: Math.round(balance * 1000) / 1000,
-      rate: brandShade.rate ?? 0,
+      rate,
       unit: 'kg',
-      gstPercent: (brandShade.gstRate ?? catalog?.gst) ?? 0,
-      amount: Math.round((brandShade.amount ?? 0) * 100) / 100,
+      gstPercent,
+      amount: Math.round(amount * 100) / 100,
     });
   }
 
@@ -517,7 +524,10 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
   for (const yarnId of missingIds) {
     const catalog = catalogMap.get(yarnId);
     const opening = openingMap.get(yarnId) ?? 0;
-    const brandShade = brandShadeMap.get(yarnId) || { brand: '', shadeNumber: '', rate: 0, gstRate: 0, amount: 0 };
+    const brandShade = brandShadeMap.get(yarnId) || { brand: '', shadeNumber: '', rate: 0, gstRate: 0 };
+    const rate = brandShade.rate ?? 0;
+    const gstPercent = (brandShade.gstRate ?? catalog?.gst) ?? 0;
+    const amount = rate * opening * (1 + gstPercent / 100);
 
     results.push({
       store: 'yarn',
@@ -536,10 +546,10 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
       yarnIssueToKnitting: 0,
       yarnReturnedFromKnitting: 0,
       balance: Math.round(opening * 1000) / 1000,
-      rate: brandShade.rate ?? 0,
+      rate,
       unit: 'kg',
-      gstPercent: (brandShade.gstRate ?? catalog?.gst) ?? 0,
-      amount: Math.round((brandShade.amount ?? 0) * 100) / 100,
+      gstPercent,
+      amount: Math.round(amount * 100) / 100,
     });
   }
 
