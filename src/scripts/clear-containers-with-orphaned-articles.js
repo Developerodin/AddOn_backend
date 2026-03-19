@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 /**
- * Remove orphaned article refs from containers (articles that don't exist).
- * Keeps valid articles; removes only invalid refs. Clears container if all refs are orphaned.
+ * Clean container article refs:
+ * 1. Remove orphaned refs from activeItems (articles that don't exist).
+ * 2. Remove legacy activeArticle when activeItems is empty (activeItems is source of truth).
  * Run: node src/scripts/clear-containers-with-orphaned-articles.js
  * Options:
  *   --dry-run  Preview only, don't update
@@ -53,7 +54,7 @@ const run = async () => {
       }
     }
 
-    // 2. Legacy: activeItems empty but activeArticle set - remove if orphaned (use raw collection; activeArticle not in schema)
+    // 2. Legacy: activeItems empty but activeArticle set - always remove (activeItems is source of truth)
     const containersLegacy = await mongoose.connection.db
       .collection('containers_masters')
       .find({
@@ -65,16 +66,13 @@ const run = async () => {
     for (const c of containersLegacy) {
       const aid = c.activeArticle?.toString?.() || c.activeArticle;
       if (!aid) continue;
-      const exists = await Article.findById(aid);
-      if (!exists) {
-        fixed++;
-        logger.info(`Container ${c._id} (${c.containerName}) - removing orphaned activeArticle: ${aid}`);
-        if (!DRY_RUN) {
-          await mongoose.connection.db.collection('containers_masters').updateOne(
-            { _id: c._id },
-            { $unset: { activeArticle: '', quantity: '' }, $set: { activeFloor: '' } }
-          );
-        }
+      fixed++;
+      logger.info(`Container ${c._id} (${c.containerName}) - removing legacy activeArticle: ${aid}`);
+      if (!DRY_RUN) {
+        await mongoose.connection.db.collection('containers_masters').updateOne(
+          { _id: c._id },
+          { $unset: { activeArticle: '', quantity: '' }, $set: { activeFloor: '' } }
+        );
       }
     }
 
