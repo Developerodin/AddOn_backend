@@ -88,7 +88,7 @@ const checkDataMatch = (purchaseOrder, lots) => {
 /**
  * Build payload for updating a yarn box. Only includes yarnName/shadeCode when explicitly set on update
  * or when overrides are provided (e.g. PO-derived so we don't overwrite with wrong frontend value).
- * @param {Object} update - { yarnName?, shadeCode?, boxWeight?, numberOfCones? }
+ * @param {Object} update - { yarnName?, shadeCode?, boxWeight?, grossWeight?, numberOfCones? }
  * @param {Object} box - existing box (for fallback weight/cones)
  * @param {{ yarnName?: string | null, shadeCode?: string | null }} [overrides] - PO-derived yarnName/shadeCode (take precedence over update)
  * @returns {Object} - payload for updateYarnBoxById
@@ -96,6 +96,7 @@ const checkDataMatch = (purchaseOrder, lots) => {
 const buildBoxUpdatePayload = (update, box, overrides = {}) => {
   const payload = {
     boxWeight: update.boxWeight != null ? Number(update.boxWeight) : box.boxWeight,
+    grossWeight: update.grossWeight != null ? Number(update.grossWeight) : box.grossWeight,
     numberOfCones: update.numberOfCones != null ? Number(update.numberOfCones) : box.numberOfCones,
   };
   const yarnVal = overrides.yarnName != null && String(overrides.yarnName).trim() !== ''

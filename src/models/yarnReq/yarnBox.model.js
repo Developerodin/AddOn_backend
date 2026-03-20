@@ -110,6 +110,10 @@ const yarnBoxSchema = mongoose.Schema(
       type: Number,
       min: 0,
     },
+    grossWeight: {
+      type: Number,
+      min: 0,
+    },
     barcode: {
       type: String,
       trim: true,

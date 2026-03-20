@@ -21,6 +21,7 @@ const boxUpdateSchema = Joi.object().keys({
   yarnName: Joi.string().trim().allow('', null),
   shadeCode: Joi.string().trim().allow('', null),
   boxWeight: Joi.number().min(0).allow(null),
+  grossWeight: Joi.number().min(0).allow(null),
   numberOfCones: Joi.number().min(0).allow(null),
 });
 
