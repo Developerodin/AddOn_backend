@@ -82,6 +82,7 @@ const userSchema = mongoose.Schema(
           Processes: false,
           Attributes: false,
           'Style Codes': false,
+          'Style Code Pairs': false,
           Machines: false,
           'Needle Configuration': false,
           'Team Master': false,

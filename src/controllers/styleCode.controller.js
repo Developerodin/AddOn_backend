@@ -43,3 +43,12 @@ export const bulkImportStyleCodes = catchAsync(async (req, res) => {
     ...results,
   });
 });
+
+export const bulkImportBom = catchAsync(async (req, res) => {
+  const { items, batchSize = 50 } = req.body;
+  const results = await styleCodeService.bulkImportBom(items, batchSize);
+  res.status(httpStatus.OK).send({
+    message: 'Bulk BOM import completed',
+    ...results,
+  });
+});

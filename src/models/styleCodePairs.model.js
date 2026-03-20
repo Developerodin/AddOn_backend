@@ -1,9 +1,9 @@
 import mongoose from 'mongoose';
 import { toJSON, paginate } from './plugins/index.js';
 
-const styleCodeSchema = mongoose.Schema(
+const styleCodePairsSchema = mongoose.Schema(
   {
-    styleCode: {
+    pairStyleCode: {
       type: String,
       required: true,
       trim: true,
@@ -19,19 +19,18 @@ const styleCodeSchema = mongoose.Schema(
       required: true,
       min: 0,
     },
-    brand: {
-      type: String,
-      trim: true,
-    },
     pack: {
-      type: String,
-      trim: true,
+      type: Number,
+      required: true,
+      integer: true,
+      min: 1,
     },
     status: {
       type: String,
       enum: ['active', 'inactive'],
       default: 'active',
     },
+    styleCodes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'StyleCode' }],
     bom: [
       {
         rawMaterial: { type: mongoose.Schema.Types.ObjectId, ref: 'RawMaterial', required: false },
@@ -44,9 +43,9 @@ const styleCodeSchema = mongoose.Schema(
   }
 );
 
-styleCodeSchema.plugin(toJSON);
-styleCodeSchema.plugin(paginate);
+styleCodePairsSchema.plugin(toJSON);
+styleCodePairsSchema.plugin(paginate);
 
-const StyleCode = mongoose.model('StyleCode', styleCodeSchema);
+const StyleCodePairs = mongoose.model('StyleCodePairs', styleCodePairsSchema);
 
-export default StyleCode;
+export default StyleCodePairs;

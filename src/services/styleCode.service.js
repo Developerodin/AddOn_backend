@@ -1,5 +1,7 @@
 import httpStatus from 'http-status';
+import mongoose from 'mongoose';
 import StyleCode from '../models/styleCode.model.js';
+import RawMaterial from '../models/rawMaterial.model.js';
 import ApiError from '../utils/ApiError.js';
 
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -62,7 +64,8 @@ export const queryStyleCodes = async (filter, options, search) => {
  * @param {ObjectId} id
  * @returns {Promise<StyleCode>}
  */
-export const getStyleCodeById = async (id) => StyleCode.findById(id);
+export const getStyleCodeById = async (id) =>
+  StyleCode.findById(id).populate('bom.rawMaterial');
 
 /**
  * Update style code by id
@@ -156,6 +159,65 @@ export const bulkImportStyleCodes = async (styleCodes, batchSize = 50) => {
         results.errors.push({
           index: globalIndex,
           styleCode: item.styleCode,
+          error: error.message,
+        });
+      }
+    });
+
+    await Promise.all(operations);
+  }
+
+  results.processingTime = Date.now() - startTime;
+  return results;
+};
+
+/**
+ * Bulk import BOM for style codes
+ * @param {Array} items - [{ styleCodeId, bom: [{ rawMaterial, quantity }] }]
+ * @param {number} batchSize
+ * @returns {Promise<Object>}
+ */
+export const bulkImportBom = async (items, batchSize = 50) => {
+  const results = {
+    total: items.length,
+    updated: 0,
+    failed: 0,
+    errors: [],
+    processingTime: 0,
+  };
+
+  const startTime = Date.now();
+
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const operations = batch.map(async (item, idx) => {
+      const globalIndex = i + idx;
+      try {
+        const styleCode = await StyleCode.findById(item.styleCodeId);
+        if (!styleCode) {
+          throw new Error('Style code not found');
+        }
+
+        const rawMaterialIds = item.bom.map((b) => b.rawMaterial);
+        const existingRawMaterials = await RawMaterial.find({ _id: { $in: rawMaterialIds } }).select('_id').lean();
+        const validIds = new Set(existingRawMaterials.map((r) => String(r._id)));
+        const invalidIds = rawMaterialIds.filter((id) => !validIds.has(String(id)));
+        if (invalidIds.length > 0) {
+          throw new Error(`Invalid raw material IDs: ${invalidIds.join(', ')}`);
+        }
+
+        const bomPayload = item.bom.map((b) => ({
+          rawMaterial: new mongoose.Types.ObjectId(b.rawMaterial),
+          quantity: Number(b.quantity),
+        }));
+
+        await StyleCode.updateOne({ _id: item.styleCodeId }, { $set: { bom: bomPayload } });
+        results.updated += 1;
+      } catch (error) {
+        results.failed += 1;
+        results.errors.push({
+          index: globalIndex,
+          styleCodeId: item.styleCodeId,
           error: error.message,
         });
       }

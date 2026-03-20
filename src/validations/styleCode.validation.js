@@ -76,6 +76,30 @@ const bulkImportStyleCodes = {
   }),
 };
 
+const bulkImportBom = {
+  body: Joi.object().keys({
+    items: Joi.array()
+      .items(
+        Joi.object().keys({
+          styleCodeId: Joi.string().custom(objectId).required(),
+          bom: Joi.array()
+            .items(
+              Joi.object().keys({
+                rawMaterial: Joi.string().custom(objectId).required(),
+                quantity: Joi.number().min(0).required(),
+              })
+            )
+            .min(1)
+            .required(),
+        })
+      )
+      .min(1)
+      .max(1000)
+      .required(),
+    batchSize: Joi.number().integer().min(1).max(100).default(50),
+  }),
+};
+
 export default {
   createStyleCode,
   getStyleCodes,
@@ -83,4 +107,5 @@ export default {
   updateStyleCode,
   deleteStyleCode,
   bulkImportStyleCodes,
+  bulkImportBom,
 };
