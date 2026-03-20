@@ -287,52 +287,33 @@ export const mergeYarns = async (
 
   // --- Live merge ---
 
-  // 1. Product BOM: repoint yarnCatalogId + yarnName via aggregation pipeline
-  const productResult = await Product.updateMany({ 'bom.yarnCatalogId': { $in: duplicateOids } }, [
+  // 1. Product BOM: only update yarnCatalogId + yarnName on matching items (arrayFilters)
+  const productResult = await Product.updateMany(
+    { 'bom.yarnCatalogId': { $in: duplicateOids } },
     {
       $set: {
-        bom: {
-          $map: {
-            input: '$bom',
-            as: 'b',
-            in: {
-              $cond: {
-                if: { $in: ['$$b.yarnCatalogId', duplicateOids] },
-                then: { $mergeObjects: ['$$b', { yarnCatalogId: canonicalOid, yarnName: resolvedCanonicalName }] },
-                else: '$$b',
-              },
-            },
-          },
-        },
+        'bom.$[b].yarnCatalogId': canonicalOid,
+        'bom.$[b].yarnName': resolvedCanonicalName,
       },
     },
-  ]);
+    { arrayFilters: [{ 'b.yarnCatalogId': { $in: duplicateOids } }] }
+  );
   report.updates.products = productResult.modifiedCount;
 
-  // 2. YarnPurchaseOrder: poItems[].yarn + poItems[].yarnName
+  // 2. YarnPurchaseOrder: only update poItems[].yarn + poItems[].yarnName (arrayFilters)
   const poResult = await YarnPurchaseOrder.updateMany(
     { $or: [{ 'poItems.yarn': { $in: duplicateOids } }, { 'poItems.yarnName': { $in: duplicateYarnNames } }] },
-    [
-      {
-        $set: {
-          poItems: {
-            $map: {
-              input: '$poItems',
-              as: 'p',
-              in: {
-                $cond: {
-                  if: {
-                    $or: [{ $in: ['$$p.yarn', duplicateOids] }, { $in: ['$$p.yarnName', duplicateYarnNames] }],
-                  },
-                  then: { $mergeObjects: ['$$p', { yarn: canonicalOid, yarnName: resolvedCanonicalName }] },
-                  else: '$$p',
-                },
-              },
-            },
-          },
-        },
+    {
+      $set: {
+        'poItems.$[p].yarn': canonicalOid,
+        'poItems.$[p].yarnName': resolvedCanonicalName,
       },
-    ]
+    },
+    {
+      arrayFilters: [
+        { $or: [{ 'p.yarn': { $in: duplicateOids } }, { 'p.yarnName': { $in: duplicateYarnNames } }] },
+      ],
+    }
   );
   report.updates.purchaseOrders = poResult.modifiedCount;
 
@@ -365,7 +346,7 @@ export const mergeYarns = async (
   const invResult = await mergeInventories(canonicalOid, resolvedCanonicalName, duplicateOids);
   report.updates.yarnInventories = invResult;
 
-  // 8. Supplier: yarnDetails[].yarnCatalogId + yarnDetails[].yarnName
+  // 8. Supplier: only update yarnDetails[].yarnCatalogId + yarnDetails[].yarnName (arrayFilters)
   const supplierResult = await Supplier.updateMany(
     {
       $or: [
@@ -373,27 +354,17 @@ export const mergeYarns = async (
         { 'yarnDetails.yarnName': { $in: duplicateYarnNames } },
       ],
     },
-    [
-      {
-        $set: {
-          yarnDetails: {
-            $map: {
-              input: '$yarnDetails',
-              as: 'd',
-              in: {
-                $cond: {
-                  if: {
-                    $or: [{ $in: ['$$d.yarnCatalogId', duplicateOids] }, { $in: ['$$d.yarnName', duplicateYarnNames] }],
-                  },
-                  then: { $mergeObjects: ['$$d', { yarnCatalogId: canonicalOid, yarnName: resolvedCanonicalName }] },
-                  else: '$$d',
-                },
-              },
-            },
-          },
-        },
+    {
+      $set: {
+        'yarnDetails.$[d].yarnCatalogId': canonicalOid,
+        'yarnDetails.$[d].yarnName': resolvedCanonicalName,
       },
-    ]
+    },
+    {
+      arrayFilters: [
+        { $or: [{ 'd.yarnCatalogId': { $in: duplicateOids } }, { 'd.yarnName': { $in: duplicateYarnNames } }] },
+      ],
+    }
   );
   report.updates.suppliers = supplierResult.modifiedCount;
 
