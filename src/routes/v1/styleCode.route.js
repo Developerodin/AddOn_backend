@@ -15,6 +15,10 @@ router
   .post(validate(styleCodeValidation.bulkImportStyleCodes), styleCodeController.bulkImportStyleCodes);
 
 router
+  .route('/bulk-sync')
+  .post(validate(styleCodeValidation.bulkSyncStyleCodes), styleCodeController.bulkSyncStyleCodes);
+
+router
   .route('/bulk-import-bom')
   .post(validate(styleCodeValidation.bulkImportBom), styleCodeController.bulkImportBom);
 

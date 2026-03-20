@@ -76,6 +76,10 @@ const bulkImportStyleCodes = {
   }),
 };
 
+const bulkSyncStyleCodes = {
+  body: bulkImportStyleCodes.body,
+};
+
 const bulkImportBom = {
   body: Joi.object().keys({
     items: Joi.array()
@@ -107,5 +111,6 @@ export default {
   updateStyleCode,
   deleteStyleCode,
   bulkImportStyleCodes,
+  bulkSyncStyleCodes,
   bulkImportBom,
 };

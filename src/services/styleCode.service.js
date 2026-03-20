@@ -172,6 +172,83 @@ export const bulkImportStyleCodes = async (styleCodes, batchSize = 50) => {
 };
 
 /**
+ * Bulk sync style codes from import: upsert rows like bulk import, then remove any document
+ * whose styleCode is not among successfully imported rows (Excel is the source of truth).
+ * Deletion runs only if at least one row imported successfully (avoids wiping DB on total failure).
+ * @param {Array} styleCodes
+ * @param {number} batchSize
+ * @returns {Promise<Object>}
+ */
+export const bulkSyncStyleCodes = async (styleCodes, batchSize = 50) => {
+  const results = {
+    total: styleCodes.length,
+    created: 0,
+    updated: 0,
+    failed: 0,
+    deleted: 0,
+    errors: [],
+    processingTime: 0,
+  };
+
+  const startTime = Date.now();
+  const keptStyleCodes = new Set();
+
+  if (!Array.isArray(styleCodes) || styleCodes.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'styleCodes array is required');
+  }
+
+  for (let i = 0; i < styleCodes.length; i += batchSize) {
+    const batch = styleCodes.slice(i, i + batchSize);
+    const operations = batch.map(async (item, idx) => {
+      const globalIndex = i + idx;
+      try {
+        const payload = {
+          styleCode: item.styleCode?.trim(),
+          eanCode: item.eanCode?.trim(),
+          mrp: Number(item.mrp),
+          brand: item.brand?.trim() || undefined,
+          pack: item.pack?.trim() || undefined,
+          status: item.status === 'inactive' ? 'inactive' : 'active',
+        };
+
+        if (!payload.styleCode || !payload.eanCode || Number.isNaN(payload.mrp)) {
+          throw new Error('styleCode, eanCode, and mrp are required');
+        }
+
+        const existing = await StyleCode.findOne({ styleCode: payload.styleCode }).lean();
+        if (existing) {
+          await StyleCode.updateOne({ _id: existing._id }, { $set: payload });
+          results.updated += 1;
+        } else {
+          await StyleCode.create(payload);
+          results.created += 1;
+        }
+        keptStyleCodes.add(payload.styleCode);
+      } catch (error) {
+        results.failed += 1;
+        results.errors.push({
+          index: globalIndex,
+          styleCode: item.styleCode,
+          error: error.message,
+        });
+      }
+    });
+
+    await Promise.all(operations);
+  }
+
+  if (keptStyleCodes.size > 0) {
+    const deleteResult = await StyleCode.deleteMany({
+      styleCode: { $nin: [...keptStyleCodes] },
+    });
+    results.deleted = deleteResult.deletedCount ?? 0;
+  }
+
+  results.processingTime = Date.now() - startTime;
+  return results;
+};
+
+/**
  * Bulk import BOM for style codes
  * @param {Array} items - [{ styleCodeId, bom: [{ rawMaterial, quantity }] }]
  * @param {number} batchSize
