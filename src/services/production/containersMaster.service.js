@@ -206,25 +206,34 @@ export const acceptContainerByBarcode = async (barcode) => {
 };
 
 /**
- * Clear activeItems and activeFloor for container by barcode.
+ * Clear activeItems, activeFloor, and legacy activeArticle for container by barcode.
  * @param {string} barcode
  * @returns {Promise<ContainersMaster>}
  */
 export const clearActiveByBarcode = async (barcode) => {
-  const doc = await getContainerByBarcode(barcode);
+  if (!barcode || !String(barcode).trim()) throw new ApiError(httpStatus.NOT_FOUND, 'Container not found for this barcode');
+  const trimmed = String(barcode).trim();
+  const query = /^[0-9a-fA-F]{24}$/.test(trimmed)
+    ? { $or: [{ barcode: trimmed }, { _id: trimmed }] }
+    : { barcode: trimmed };
+  const doc = await ContainersMaster.findOneAndUpdate(
+    query,
+    { $set: { activeItems: [], activeFloor: '' }, $unset: { activeArticle: '', quantity: '' } },
+    { new: true }
+  ).populate('activeItems.article');
   if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Container not found for this barcode');
-  doc.activeItems = [];
-  doc.activeFloor = '';
-  await doc.save();
-  return getContainerByBarcode(barcode);
+  return doc;
 };
 
 /**
- * Reset activeItems and activeFloor for all containers.
+ * Reset activeItems, activeFloor, and legacy activeArticle for all containers.
  * @returns {Promise<{ modifiedCount: number }>}
  */
 export const resetAllActive = async () => {
-  const result = await ContainersMaster.updateMany({}, { $set: { activeItems: [], activeFloor: '' } });
+  const result = await ContainersMaster.updateMany(
+    {},
+    { $set: { activeItems: [], activeFloor: '' }, $unset: { activeArticle: '', quantity: '' } }
+  );
   return { modifiedCount: result.modifiedCount };
 };
 

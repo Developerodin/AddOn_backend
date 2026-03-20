@@ -63,7 +63,13 @@ const containersMasterSchema = new mongoose.Schema(
   {
     timestamps: true,
     collection: 'containers_masters',
-    toJSON: { virtuals: true },
+    toJSON: {
+      virtuals: true,
+      transform(doc, ret) {
+        delete ret.activeArticle;
+        return ret;
+      },
+    },
     toObject: { virtuals: true },
   }
 );

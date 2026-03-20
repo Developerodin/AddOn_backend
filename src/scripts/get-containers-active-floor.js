@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Get activeFloor for specific containers.
+ * Clear activeItems and activeFloor for specific containers.
  * Run: node src/scripts/get-containers-active-floor.js
  */
 
@@ -35,8 +35,10 @@ const run = async () => {
 
     const containers = await ContainersMaster.find(query).lean();
 
-    const updateResult = await ContainersMaster.updateMany(query, { $set: { activeFloor: 'Linking' } });
-    logger.info(`Updated activeFloor to "Linking" for ${updateResult.modifiedCount} container(s).\n`);
+    const updateResult = await ContainersMaster.updateMany(query, {
+      $set: { activeItems: [], activeFloor: '' },
+    });
+    logger.info(`Cleared activeItems and activeFloor for ${updateResult.modifiedCount} container(s).\n`);
 
     const updated = await ContainersMaster.find(query).lean();
     const result = updated.map((c) => ({
@@ -44,9 +46,10 @@ const run = async () => {
       barcode: c.barcode,
       containerName: c.containerName,
       activeFloor: c.activeFloor || '',
+      activeItemsCount: (c.activeItems || []).length,
     }));
 
-    logger.info('Containers and their active floors:\n');
+    logger.info('Containers after clear:\n');
     console.log(JSON.stringify(result, null, 2));
 
     const foundIds = new Set();
