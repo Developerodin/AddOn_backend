@@ -5,6 +5,14 @@ import { ContainerStatus, ContainerType } from '../models/production/enums.js';
 const statusValues = Object.values(ContainerStatus);
 const typeValues = Object.values(ContainerType);
 
+/** Query: Active, ACTIVE, inactive, etc. → canonical Active | Inactive (Joi 17: no .transform after .valid) */
+const containerStatusFlexible = Joi.string().trim().custom((value, helpers) => {
+  const v = String(value).toLowerCase();
+  if (v === 'active') return ContainerStatus.ACTIVE;
+  if (v === 'inactive') return ContainerStatus.INACTIVE;
+  return helpers.error('any.only', { valids: [...statusValues, 'ACTIVE', 'INACTIVE'] });
+});
+
 const activeItemSchema = Joi.object().keys({
   article: Joi.string().custom(objectId).required(),
   quantity: Joi.number().min(0.0001).required(),
@@ -26,7 +34,7 @@ export const createContainersMaster = {
 export const getContainersMasters = {
   query: Joi.object().keys({
     containerName: Joi.string().trim(),
-    status: Joi.string().valid(...statusValues),
+    status: containerStatusFlexible,
     type: Joi.string().valid(...typeValues),
     activeArticle: Joi.string().trim(),
     activeFloor: Joi.string().trim(),
@@ -46,6 +54,16 @@ export const getContainersMaster = {
 export const getContainerByBarcode = {
   params: Joi.object().keys({
     barcode: Joi.string().trim().required(),
+  }),
+};
+
+/** List containers on a floor (activeFloor) with populated articles */
+export const getContainersByFloorWithArticles = {
+  params: Joi.object().keys({
+    activeFloor: Joi.string().trim().required().min(1),
+  }),
+  query: Joi.object().keys({
+    status: containerStatusFlexible,
   }),
 };
 

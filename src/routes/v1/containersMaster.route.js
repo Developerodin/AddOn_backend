@@ -32,6 +32,15 @@ router
   .get(auth(), validate(containersMasterValidation.getContainerByBarcode), containersMasterController.getContainerByBarcode)
   .patch(auth(), validate(containersMasterValidation.updateContainerByBarcode), containersMasterController.updateContainerByBarcode);
 
+/** All containers for a floor (activeFloor / linking) with articles + quantities per container */
+router
+  .route('/by-floor/:activeFloor/with-articles')
+  .get(
+    auth(),
+    validate(containersMasterValidation.getContainersByFloorWithArticles),
+    containersMasterController.getContainersByFloorWithArticles
+  );
+
 router
   .route('/:containerId/with-articles')
   .get(auth(), validate(containersMasterValidation.getContainersMaster), containersMasterController.getContainerWithArticles);

@@ -146,6 +146,27 @@ export const getContainerWithArticlesByBarcode = async (barcode) => {
 };
 
 /**
+ * All containers whose activeFloor matches this floor (case-insensitive, full string),
+ * each with activeItems enriched with article documents and quantities.
+ * @param {string} activeFloor - Floor linking string (same as container.activeFloor)
+ * @param {{ status?: string }} [opts]
+ * @returns {Promise<Object[]>}
+ */
+export const getContainersWithArticlesByFloor = async (activeFloor, opts = {}) => {
+  const floor = String(activeFloor || '').trim();
+  if (!floor) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'activeFloor is required');
+  }
+  const escaped = floor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const query = {
+    activeFloor: { $regex: `^${escaped}$`, $options: 'i' },
+  };
+  if (opts.status) query.status = opts.status;
+  const docs = await ContainersMaster.find(query).sort({ updatedAt: -1 });
+  return Promise.all(docs.map((d) => enrichContainerWithArticles(d)));
+};
+
+/**
  * Update container by barcode (activeFloor, activeItems).
  * activeItems: [{ article: ObjectId, quantity: number }]. Use addItem to append one item.
  * @param {string} barcode

@@ -40,6 +40,14 @@ const getContainerWithArticles = catchAsync(async (req, res) => {
   res.send(doc);
 });
 
+/** Containers on this floor (activeFloor) with article + qty per container */
+const getContainersByFloorWithArticles = catchAsync(async (req, res) => {
+  const { activeFloor } = req.params;
+  const options = pick(req.query, ['status']);
+  const list = await containersMasterService.getContainersWithArticlesByFloor(activeFloor, options);
+  res.send({ floor: String(activeFloor || '').trim(), count: list.length, containers: list });
+});
+
 const updateContainersMaster = catchAsync(async (req, res) => {
   const doc = await containersMasterService.updateContainersMasterById(req.params.containerId, req.body);
   res.send(doc);
@@ -77,6 +85,7 @@ export {
   getContainerByBarcode,
   getContainerWithArticlesByBarcode,
   getContainerWithArticles,
+  getContainersByFloorWithArticles,
   updateContainersMaster,
   updateContainerByBarcode,
   acceptContainerByBarcode,
