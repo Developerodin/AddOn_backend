@@ -22,6 +22,7 @@ export const createYarnCone = {
       coneWeight: Joi.number().min(0).allow(null),
       tearWeight: Joi.number().min(0).allow(null),
       yarnName: Joi.string().trim().allow('', null),
+      yarnCatalogId: Joi.string().custom(objectId).allow(null),
       yarn: Joi.string().custom(objectId).allow(null),
       shadeCode: Joi.string().trim().allow('', null),
       issueStatus: issueStatusField.default('not_issued'),
@@ -34,6 +35,10 @@ export const createYarnCone = {
       returnBy: userRefSchema,
       coneStorageId: Joi.string().trim().allow('', null),
       barcode: Joi.string().trim().required(),
+    })
+    .custom((v) => {
+      const id = v.yarnCatalogId || v.yarn;
+      return id ? { ...v, yarnCatalogId: id } : v;
     })
     .required(),
 };
@@ -51,6 +56,7 @@ export const updateYarnCone = {
       coneWeight: Joi.number().min(0).allow(null),
       tearWeight: Joi.number().min(0).allow(null),
       yarnName: Joi.string().trim().allow('', null),
+      yarnCatalogId: Joi.string().custom(objectId).allow(null),
       yarn: Joi.string().custom(objectId).allow(null),
       shadeCode: Joi.string().trim().allow('', null),
       issueStatus: issueStatusField,
@@ -64,7 +70,11 @@ export const updateYarnCone = {
       coneStorageId: Joi.string().trim().allow('', null),
       barcode: Joi.string().trim(),
     })
-    .min(1),
+    .min(1)
+    .custom((v) => {
+      if (v.yarnCatalogId == null && v.yarn != null) return { ...v, yarnCatalogId: v.yarn };
+      return v;
+    }),
 };
 
 export const getConesByStorageLocation = {
@@ -114,6 +124,7 @@ export const generateConesByBox = {
       coneWeight: Joi.number().min(0).allow(null),
       tearWeight: Joi.number().min(0).allow(null),
       yarnName: Joi.string().trim().allow('', null),
+      yarnCatalogId: Joi.string().custom(objectId).allow(null),
       yarn: Joi.string().custom(objectId).allow(null),
       shadeCode: Joi.string().trim().allow('', null),
       coneStorageId: Joi.string().trim().allow('', null),
@@ -128,6 +139,10 @@ export const generateConesByBox = {
       coneIssueDate: Joi.date().iso().allow(null),
       coneIssueBy: userRefSchema,
       force: Joi.boolean().default(false),
+    })
+    .custom((v) => {
+      const id = v.yarnCatalogId || v.yarn;
+      return id ? { ...v, yarnCatalogId: id } : v;
     })
     .optional(),
 };

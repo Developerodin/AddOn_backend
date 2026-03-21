@@ -70,7 +70,7 @@ async function run() {
   console.log(`  Box total net: ${boxTotal.toFixed(3)} kg`);
 
   const cones = await YarnCone.find({
-    yarn: catalog._id,
+    yarnCatalogId: catalog._id,
     coneStorageId: { $exists: true, $nin: [null, ''] },
     issueStatus: { $ne: 'issued' },
   })
@@ -92,7 +92,7 @@ async function run() {
 
   // 2. YarnTransaction in date range - store, issued, returned
   const txns = await YarnTransaction.find({
-    yarn: catalog._id,
+    yarnCatalogId: catalog._id,
     transactionDate: { $gte: start, $lte: end },
   })
     .sort({ transactionDate: 1 })

@@ -139,7 +139,7 @@ export const transferBoxes = async (transferData) => {
       
       // LT→ST: Update inventory (moves from longTermInventory to shortTermInventory)
       transaction = await yarnTransactionService.createYarnTransaction({
-        yarn: yarnCatalog._id.toString(),
+        yarnCatalogId: yarnCatalog._id.toString(),
         yarnName: yarnCatalog.yarnName,
         transactionType: 'internal_transfer',
         transactionDate: transferDate || new Date(),
@@ -182,7 +182,7 @@ export const transferBoxes = async (transferData) => {
       // LT→LT or ST→ST: Location change only, no inventory update
       // Create transaction record directly without updating inventory
       transaction = await YarnTransaction.create({
-        yarn: yarnCatalog._id,
+        yarnCatalogId: yarnCatalog._id,
         yarnName: yarnCatalog.yarnName,
         transactionType: 'internal_transfer', // Use same type but won't affect inventory
         transactionDate: transferDate || new Date(),

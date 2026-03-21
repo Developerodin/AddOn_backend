@@ -1,12 +1,13 @@
 import mongoose from 'mongoose';
 import toJSON from '../plugins/toJSON.plugin.js';
 import paginate from '../plugins/paginate.plugin.js';
+import YarnCatalog from '../yarnManagement/yarnCatalog.model.js';
 
 export const yarnTransactionTypes = ['yarn_issued', 'yarn_blocked', 'yarn_stocked', 'internal_transfer', 'yarn_returned'];
 
 const yarnTransactionSchema = mongoose.Schema(
   {
-    yarn: {
+    yarnCatalogId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'YarnCatalog',
       required: true,
@@ -86,6 +87,18 @@ const yarnTransactionSchema = mongoose.Schema(
     timestamps: true,
   }
 );
+
+yarnTransactionSchema.pre('save', async function (next) {
+  if (this.yarnCatalogId && (this.isModified('yarnCatalogId') || !this.yarnName)) {
+    try {
+      const cat = await YarnCatalog.findById(this.yarnCatalogId).select('yarnName').lean();
+      if (cat?.yarnName) this.yarnName = cat.yarnName;
+    } catch (e) {
+      console.error('[YarnTransaction] yarnName sync:', e.message);
+    }
+  }
+  next();
+});
 
 yarnTransactionSchema.plugin(toJSON);
 yarnTransactionSchema.plugin(paginate);

@@ -7,7 +7,8 @@ const transactionTypeField = Joi.string().valid(...yarnTransactionTypes);
 export const createYarnTransaction = {
   body: Joi.object()
     .keys({
-      yarn: Joi.string().custom(objectId).required(),
+      yarnCatalogId: Joi.string().custom(objectId),
+      yarn: Joi.string().custom(objectId),
       yarnName: Joi.string().trim().required(),
       transactionType: transactionTypeField.required(),
       transactionDate: Joi.date().iso().required(),
@@ -29,14 +30,19 @@ export const createYarnTransaction = {
       conesIdsArray: Joi.array().items(Joi.string().custom(objectId)).optional(),
     })
     .custom((value, helpers) => {
-      const type = value.transactionType;
+      const catalogId = value.yarnCatalogId || value.yarn;
+      if (!catalogId) {
+        return helpers.error('any.custom', { message: 'yarnCatalogId (or legacy yarn) is required' });
+      }
+      const valueWithId = { ...value, yarnCatalogId: catalogId };
+      const type = valueWithId.transactionType;
       const isBlocked = type === 'yarn_blocked';
 
       if (isBlocked) {
-        if (value.totalBlockedWeight === undefined && value.transactionNetWeight === undefined) {
+        if (valueWithId.totalBlockedWeight === undefined && valueWithId.transactionNetWeight === undefined) {
           return helpers.error('any.custom', { message: 'totalBlockedWeight is required when transactionType is yarn_blocked' });
         }
-        return value;
+        return valueWithId;
       }
 
       const requiredFields = [
@@ -48,7 +54,7 @@ export const createYarnTransaction = {
 
       const missing = requiredFields.filter(
         ([primary, fallback]) =>
-          value[primary] === undefined && value[fallback] === undefined
+          valueWithId[primary] === undefined && valueWithId[fallback] === undefined
       );
 
       if (missing.length) {
@@ -59,7 +65,7 @@ export const createYarnTransaction = {
         });
       }
 
-      return value;
+      return valueWithId;
     }, 'transaction payload completeness validation')
     .required(),
 };

@@ -36,6 +36,8 @@
     "test:full-flow-20-80": "cross-env NODE_ENV=development node scripts/test-full-flow-branding-20-80-finalchecking.js",
     "seed:order-to-branding": "cross-env NODE_ENV=development API_URL=http://localhost:8000 node scripts/seed-order-to-branding.js",
     "migrate:containers-type-tearweight": "node src/scripts/update-containers-type-tearweight.js",
+    "migrate:yarn-catalog-id": "cross-env NODE_ENV=development node src/scripts/migrate-yarn-to-yarnCatalogId.js",
+    "sync:yarn-labels-from-catalog": "cross-env NODE_ENV=development node src/scripts/sync-yarn-labels-from-catalog.js",
     "prepare": "husky install"
   },
   "keywords": [

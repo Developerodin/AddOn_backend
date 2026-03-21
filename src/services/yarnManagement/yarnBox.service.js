@@ -139,7 +139,7 @@ export const queryYarnBoxes = async (filters = {}) => {
 /**
  * Resolve yarnName and shadeCode for a lot from PO when the lot has exactly one poItem.
  * Uses PO's poItems (with populated yarn) and receivedLotDetails. Returns nulls when lot has multiple poItems.
- * @param {Object} po - Purchase order (lean) with poItems.yarn populated and receivedLotDetails
+ * @param {Object} po - Purchase order (lean) with poItems.yarnCatalogId populated and receivedLotDetails
  * @param {string} lotNumber - Lot number
  * @returns {{ yarnName: string | null, shadeCode: string | null }}
  */
@@ -152,8 +152,9 @@ const getYarnAndShadeForLotFromPo = (po, lotNumber) => {
   if (!poItemId) return { yarnName: null, shadeCode: null };
   const poItems = po?.poItems || [];
   const item = poItems.find((i) => i._id && i._id.toString() === poItemId);
-  const yarnName = (item?.yarn?.yarnName || item?.yarnName || '').trim() || null;
-  const shadeCode = (item?.shadeCode || item?.shade || item?.yarn?.colorFamily?.colorCode || '')?.trim?.() || null;
+  const yarnName = (item?.yarnCatalogId?.yarnName || item?.yarnName || '').trim() || null;
+  const shadeCode =
+    (item?.shadeCode || item?.shade || item?.yarnCatalogId?.colorFamily?.colorCode || '')?.trim?.() || null;
   return { yarnName, shadeCode };
 };
 
@@ -168,7 +169,7 @@ export const bulkCreateYarnBoxes = async (bulkData) => {
   let purchaseOrder = null;
   try {
     purchaseOrder = await YarnPurchaseOrder.findOne({ poNumber })
-      .populate({ path: 'poItems.yarn', select: '_id yarnName colorFamily' })
+      .populate({ path: 'poItems.yarnCatalogId', select: '_id yarnName colorFamily' })
       .select('poItems receivedLotDetails')
       .lean();
   } catch {

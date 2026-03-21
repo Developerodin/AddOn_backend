@@ -91,11 +91,11 @@ const run = async () => {
 
   for (const c of conesInST) {
     const net = toNum(c.coneWeight) - toNum(c.tearWeight);
-    const key = (c.yarnName || '').trim() || (c.yarn ? c.yarn.toString() : '_unknown_');
+    const key = (c.yarnName || '').trim() || (c.yarnCatalogId ? c.yarnCatalogId.toString() : '_unknown_');
     if (!byYarn.has(key)) {
       byYarn.set(key, {
         yarnName: key,
-        yarnId: c.yarn?.toString?.(),
+        yarnId: c.yarnCatalogId?.toString?.(),
         storedBoxes: { netKg: 0, count: 0 },
         unstoredBoxes: { netKg: 0, count: 0 },
         cones: { netKg: 0, count: 0 },

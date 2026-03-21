@@ -35,7 +35,7 @@ const inventoryBucketSchema = mongoose.Schema(
 
 const yarnInventorySchema = mongoose.Schema(
   {
-    yarn: {
+    yarnCatalogId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'YarnCatalog',
       required: true,
@@ -81,8 +81,8 @@ yarnInventorySchema.plugin(toJSON);
 yarnInventorySchema.plugin(paginate);
 
 yarnInventorySchema.pre('save', async function (next) {
-  if (this.isModified('yarn') || !this.yarnName) {
-    const yarn = await YarnCatalog.findById(this.yarn);
+  if (this.isModified('yarnCatalogId') || !this.yarnName) {
+    const yarn = await YarnCatalog.findById(this.yarnCatalogId);
     if (yarn) {
       this.yarnName = yarn.yarnName || this.yarnName;
     }

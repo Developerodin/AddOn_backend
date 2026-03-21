@@ -84,13 +84,13 @@ const countAffectedDocuments = async (allOldIds, allOldNames) => {
     await Promise.all([
       Product.countDocuments({ 'bom.yarnCatalogId': { $in: allOldIds } }),
       YarnPurchaseOrder.countDocuments({
-        $or: [{ 'poItems.yarn': { $in: allOldIds } }, { 'poItems.yarnName': { $in: allOldNames } }],
+        $or: [{ 'poItems.yarnCatalogId': { $in: allOldIds } }, { 'poItems.yarnName': { $in: allOldNames } }],
       }),
       YarnBox.countDocuments({ yarnName: { $in: allOldNames } }),
-      YarnCone.countDocuments({ $or: [{ yarn: { $in: allOldIds } }, { yarnName: { $in: allOldNames } }] }),
-      YarnTransaction.countDocuments({ $or: [{ yarn: { $in: allOldIds } }, { yarnName: { $in: allOldNames } }] }),
-      YarnRequisition.countDocuments({ yarn: { $in: allOldIds } }),
-      YarnInventory.countDocuments({ yarn: { $in: allOldIds } }),
+      YarnCone.countDocuments({ $or: [{ yarnCatalogId: { $in: allOldIds } }, { yarnName: { $in: allOldNames } }] }),
+      YarnTransaction.countDocuments({ $or: [{ yarnCatalogId: { $in: allOldIds } }, { yarnName: { $in: allOldNames } }] }),
+      YarnRequisition.countDocuments({ yarnCatalogId: { $in: allOldIds } }),
+      YarnInventory.countDocuments({ yarnCatalogId: { $in: allOldIds } }),
       Supplier.countDocuments({
         $or: [{ 'yarnDetails.yarnCatalogId': { $in: allOldIds } }, { 'yarnDetails.yarnName': { $in: allOldNames } }],
       }),
@@ -101,11 +101,11 @@ const countAffectedDocuments = async (allOldIds, allOldNames) => {
 
 /**
  * Merge inventory rows from duplicate yarns into the canonical yarn's inventory.
- * Handles the unique constraint on YarnInventory.yarn.
+ * Handles the unique constraint on YarnInventory.yarnCatalogId.
  */
 const mergeInventories = async (canonicalOid, canonicalName, allOldIds) => {
-  const canonicalInv = await YarnInventory.findOne({ yarn: canonicalOid });
-  const duplicateInvs = await YarnInventory.find({ yarn: { $in: allOldIds } });
+  const canonicalInv = await YarnInventory.findOne({ yarnCatalogId: canonicalOid });
+  const duplicateInvs = await YarnInventory.find({ yarnCatalogId: { $in: allOldIds } });
 
   if (duplicateInvs.length === 0) {
     return { merged: 0, deleted: 0 };
@@ -133,7 +133,7 @@ const mergeInventories = async (canonicalOid, canonicalName, allOldIds) => {
   } else {
     // No canonical inventory yet; re-point the first duplicate's row
     const firstInv = duplicateInvs[0];
-    firstInv.yarn = canonicalOid;
+    firstInv.yarnCatalogId = canonicalOid;
     firstInv.yarnName = canonicalName;
 
     for (let i = 1; i < duplicateInvs.length; i++) {
@@ -153,7 +153,7 @@ const mergeInventories = async (canonicalOid, canonicalName, allOldIds) => {
     await firstInv.save();
   }
 
-  const deleteResult = await YarnInventory.deleteMany({ yarn: { $in: allOldIds } });
+  const deleteResult = await YarnInventory.deleteMany({ yarnCatalogId: { $in: allOldIds } });
   return { merged: duplicateInvs.length, deleted: deleteResult.deletedCount };
 };
 
@@ -162,23 +162,23 @@ const mergeInventories = async (canonicalOid, canonicalName, allOldIds) => {
  * If canonical has no requisition, re-point the first duplicate's.
  */
 const mergeRequisitions = async (canonicalOid, canonicalName, allOldIds) => {
-  const canonicalReq = await YarnRequisition.findOne({ yarn: canonicalOid });
+  const canonicalReq = await YarnRequisition.findOne({ yarnCatalogId: canonicalOid });
 
   if (canonicalReq) {
-    const deleteResult = await YarnRequisition.deleteMany({ yarn: { $in: allOldIds } });
+    const deleteResult = await YarnRequisition.deleteMany({ yarnCatalogId: { $in: allOldIds } });
     return { migrated: 0, deleted: deleteResult.deletedCount };
   }
 
-  const firstDupReq = await YarnRequisition.findOne({ yarn: { $in: allOldIds } });
+  const firstDupReq = await YarnRequisition.findOne({ yarnCatalogId: { $in: allOldIds } });
   if (!firstDupReq) {
     return { migrated: 0, deleted: 0 };
   }
 
-  firstDupReq.yarn = canonicalOid;
+  firstDupReq.yarnCatalogId = canonicalOid;
   firstDupReq.yarnName = canonicalName;
   await firstDupReq.save();
 
-  const deleteResult = await YarnRequisition.deleteMany({ yarn: { $in: allOldIds } });
+  const deleteResult = await YarnRequisition.deleteMany({ yarnCatalogId: { $in: allOldIds } });
   return { migrated: 1, deleted: deleteResult.deletedCount };
 };
 
@@ -300,41 +300,41 @@ export const mergeYarns = async (
   );
   report.updates.products = productResult.modifiedCount;
 
-  // 2. YarnPurchaseOrder: only update poItems[].yarn + poItems[].yarnName (arrayFilters)
+  // 2. YarnPurchaseOrder: poItems[].yarnCatalogId + yarnName
   const poResult = await YarnPurchaseOrder.updateMany(
-    { $or: [{ 'poItems.yarn': { $in: duplicateOids } }, { 'poItems.yarnName': { $in: duplicateYarnNames } }] },
+    { $or: [{ 'poItems.yarnCatalogId': { $in: duplicateOids } }, { 'poItems.yarnName': { $in: duplicateYarnNames } }] },
     {
       $set: {
-        'poItems.$[p].yarn': canonicalOid,
+        'poItems.$[p].yarnCatalogId': canonicalOid,
         'poItems.$[p].yarnName': resolvedCanonicalName,
       },
     },
     {
       arrayFilters: [
-        { $or: [{ 'p.yarn': { $in: duplicateOids } }, { 'p.yarnName': { $in: duplicateYarnNames } }] },
+        { $or: [{ 'p.yarnCatalogId': { $in: duplicateOids } }, { 'p.yarnName': { $in: duplicateYarnNames } }] },
       ],
     }
   );
   report.updates.purchaseOrders = poResult.modifiedCount;
 
-  // 3. YarnBox: name-only field
+  // 3. YarnBox: yarnName + yarnCatalogId when matched by duplicate names
   const boxResult = await YarnBox.updateMany(
     { yarnName: { $in: duplicateYarnNames } },
-    { $set: { yarnName: resolvedCanonicalName } }
+    { $set: { yarnName: resolvedCanonicalName, yarnCatalogId: canonicalOid } }
   );
   report.updates.yarnBoxes = boxResult.modifiedCount;
 
-  // 4. YarnCone: yarn (ObjectId) + yarnName
+  // 4. YarnCone
   const coneResult = await YarnCone.updateMany(
-    { $or: [{ yarn: { $in: duplicateOids } }, { yarnName: { $in: duplicateYarnNames } }] },
-    { $set: { yarn: canonicalOid, yarnName: resolvedCanonicalName } }
+    { $or: [{ yarnCatalogId: { $in: duplicateOids } }, { yarnName: { $in: duplicateYarnNames } }] },
+    { $set: { yarnCatalogId: canonicalOid, yarnName: resolvedCanonicalName } }
   );
   report.updates.yarnCones = coneResult.modifiedCount;
 
-  // 5. YarnTransaction: yarn + yarnName
+  // 5. YarnTransaction
   const txResult = await YarnTransaction.updateMany(
-    { $or: [{ yarn: { $in: duplicateOids } }, { yarnName: { $in: duplicateYarnNames } }] },
-    { $set: { yarn: canonicalOid, yarnName: resolvedCanonicalName } }
+    { $or: [{ yarnCatalogId: { $in: duplicateOids } }, { yarnName: { $in: duplicateYarnNames } }] },
+    { $set: { yarnCatalogId: canonicalOid, yarnName: resolvedCanonicalName } }
   );
   report.updates.yarnTransactions = txResult.modifiedCount;
 
@@ -342,7 +342,7 @@ export const mergeYarns = async (
   const reqResult = await mergeRequisitions(canonicalOid, resolvedCanonicalName, duplicateOids);
   report.updates.yarnRequisitions = reqResult;
 
-  // 7. YarnInventory: merge inventory rows (unique constraint on yarn)
+  // 7. YarnInventory: merge inventory rows (unique yarnCatalogId)
   const invResult = await mergeInventories(canonicalOid, resolvedCanonicalName, duplicateOids);
   report.updates.yarnInventories = invResult;
 

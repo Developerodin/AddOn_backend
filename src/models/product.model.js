@@ -120,19 +120,18 @@ const productSchema = mongoose.Schema(
   }
 );
 
-// Pre-save hook: Auto-populate yarnName from yarnCatalogId if not provided
+// Pre-save: keep BOM yarnName aligned with catalog when yarnCatalogId is set
 productSchema.pre('save', async function (next) {
   if (this.bom && Array.isArray(this.bom)) {
     for (const bomItem of this.bom) {
-      if (bomItem.yarnCatalogId && !bomItem.yarnName) {
-        try {
-          const yarnCatalog = await YarnCatalog.findById(bomItem.yarnCatalogId);
-          if (yarnCatalog && yarnCatalog.yarnName) {
-            bomItem.yarnName = yarnCatalog.yarnName;
-          }
-        } catch (error) {
-          console.error('Error populating yarnName from yarnCatalogId:', error);
+      if (!bomItem.yarnCatalogId) continue;
+      try {
+        const yarnCatalog = await YarnCatalog.findById(bomItem.yarnCatalogId).select('yarnName').lean();
+        if (yarnCatalog?.yarnName) {
+          bomItem.yarnName = yarnCatalog.yarnName;
         }
+      } catch (error) {
+        console.error('Error syncing yarnName from yarnCatalogId:', error);
       }
     }
   }

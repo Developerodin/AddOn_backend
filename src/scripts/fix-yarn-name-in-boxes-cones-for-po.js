@@ -40,7 +40,7 @@ function getYarnNameForLot(po, lotNumber) {
     (i) => i._id && i._id.toString() === poItemId
   );
   if (!item) return null;
-  return (item.yarn?.yarnName || item.yarnName || '').trim() || null;
+  return (item.yarnCatalogId?.yarnName || item.yarnName || '').trim() || null;
 }
 
 async function run() {
@@ -51,7 +51,7 @@ async function run() {
     logger.info(`Processing PO: ${PO_NUMBER}`);
 
     const po = await YarnPurchaseOrder.findOne({ poNumber: PO_NUMBER })
-      .populate({ path: 'poItems.yarn', select: 'yarnName' })
+      .populate({ path: 'poItems.yarnCatalogId', select: 'yarnName' })
       .select('poNumber poItems receivedLotDetails')
       .lean();
 

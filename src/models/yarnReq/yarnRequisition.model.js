@@ -10,7 +10,7 @@ const yarnRequisitionSchema = mongoose.Schema(
       required: true,
       trim: true,
     },
-    yarn: {
+    yarnCatalogId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'YarnCatalog',
       required: true,
@@ -50,8 +50,8 @@ yarnRequisitionSchema.plugin(toJSON);
 yarnRequisitionSchema.plugin(paginate);
 
 yarnRequisitionSchema.pre('save', async function (next) {
-  if (this.isModified('yarn')) {
-    const yarn = await YarnCatalog.findById(this.yarn);
+  if (this.isModified('yarnCatalogId')) {
+    const yarn = await YarnCatalog.findById(this.yarnCatalogId);
     if (yarn) {
       this.yarnName = yarn.yarnName || this.yarnName;
     }

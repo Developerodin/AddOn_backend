@@ -154,7 +154,7 @@ async function run() {
     const existingKeyToRate = new Map();
     if (existingPo?.poItems?.length) {
       for (const pi of existingPo.poItems) {
-        const name = (pi.yarnName || pi.yarn?.yarnName || '').trim();
+        const name = (pi.yarnName || pi.yarnCatalogId?.yarnName || '').trim();
         const shade = (pi.shadeCode || '').trim();
         existingKeyToRate.set(poItemKey(name, shade), {
           rate: toNum(pi.rate),
@@ -174,7 +174,7 @@ async function run() {
       poItems.push({
         _id: poItemId,
         yarnName: item.yarnName,
-        yarn: new mongoose.Types.ObjectId(item.yarnId),
+        yarnCatalogId: new mongoose.Types.ObjectId(item.yarnId),
         sizeCount: item.sizeCount,
         shadeCode: item.shadeCode,
         pantoneName: '',
@@ -225,7 +225,7 @@ async function run() {
         // Match receivedLotDetails to existing poItem _ids by (yarnName, shadeCode)
         const existingKeyToId = new Map();
         for (const pi of existingPo.poItems) {
-          const name = (pi.yarnName || pi.yarn?.yarnName || '').trim();
+          const name = (pi.yarnName || pi.yarnCatalogId?.yarnName || '').trim();
           const shade = (pi.shadeCode || '').trim();
           existingKeyToId.set(poItemKey(name, shade), pi._id);
         }
@@ -239,14 +239,14 @@ async function run() {
         }
         // Build updated poItems: preserve existing _id, rate, gstRate; update quantity from received
         updatedPoItems = existingPo.poItems.map((pi) => {
-          const name = (pi.yarnName || pi.yarn?.yarnName || '').trim();
+          const name = (pi.yarnName || pi.yarnCatalogId?.yarnName || '').trim();
           const shade = (pi.shadeCode || '').trim();
           const key = poItemKey(name, shade);
           const qty = Math.round((receivedQtyByKey.get(key) ?? pi.quantity ?? 0) * 100) / 100;
           return {
             _id: pi._id,
             yarnName: pi.yarnName,
-            yarn: pi.yarn,
+            yarnCatalogId: pi.yarnCatalogId ?? pi.yarn,
             sizeCount: pi.sizeCount || 'N/A',
             shadeCode: pi.shadeCode,
             pantoneName: pi.pantoneName || '',

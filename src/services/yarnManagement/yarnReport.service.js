@@ -25,7 +25,7 @@ const getBrandAndShadeForYarns = async (yarnIds, catalogMap) => {
   const objectIds = yarnIds.map((id) => new mongoose.Types.ObjectId(id));
 
   // 1. From YarnPurchaseOrder - most recent PO per yarn (brand + shade)
-  const pos = await YarnPurchaseOrder.find({ 'poItems.yarn': { $in: objectIds } })
+  const pos = await YarnPurchaseOrder.find({ 'poItems.yarnCatalogId': { $in: objectIds } })
     .populate('supplier', 'brandName')
     .sort({ createDate: -1 })
     .lean();
@@ -42,7 +42,7 @@ const getBrandAndShadeForYarns = async (yarnIds, catalogMap) => {
     const supplierId = po.supplier?._id?.toString?.() ?? po.supplier?.toString?.() ?? '';
     const brand = supplierBrandMap.get(supplierId) ?? po.supplier?.brandName ?? po.supplierName ?? '';
     for (const item of po.poItems || []) {
-      const yarnId = item.yarn?.toString?.();
+      const yarnId = item.yarnCatalogId?.toString?.();
       if (!yarnId || map.has(yarnId)) continue;
       const rate = toNum(item.rate);
       const qty = toNum(item.quantity);
@@ -60,9 +60,9 @@ const getBrandAndShadeForYarns = async (yarnIds, catalogMap) => {
   const missingForShade = yarnIds.filter((id) => !map.has(id) || !map.get(id).shadeNumber);
   if (missingForShade.length) {
     const cones = await YarnCone.aggregate([
-      { $match: { yarn: { $in: missingForShade.map((id) => new mongoose.Types.ObjectId(id)) } } },
+      { $match: { yarnCatalogId: { $in: missingForShade.map((id) => new mongoose.Types.ObjectId(id)) } } },
       { $sort: { createdAt: -1 } },
-      { $group: { _id: '$yarn', shadeCode: { $first: '$shadeCode' } } },
+      { $group: { _id: '$yarnCatalogId', shadeCode: { $first: '$shadeCode' } } },
     ]);
     for (const c of cones) {
       const yarnId = c._id?.toString?.();
@@ -116,15 +116,17 @@ const getBrandAndShadeForYarns = async (yarnIds, catalogMap) => {
  */
 const getYarnIdsWithPhysicalStock = async () => {
   const ids = new Set();
-  const [boxNames, coneYarns, catalogAll] = await Promise.all([
+  const [boxNames, boxCatalogIds, coneYarns, catalogAll] = await Promise.all([
     YarnBox.distinct('yarnName', { boxWeight: { $gt: 0 } }),
-    YarnCone.distinct('yarn', {
+    YarnBox.distinct('yarnCatalogId', { boxWeight: { $gt: 0 }, yarnCatalogId: { $exists: true, $ne: null } }),
+    YarnCone.distinct('yarnCatalogId', {
       coneStorageId: { $exists: true, $nin: [null, ''] },
       issueStatus: { $ne: 'issued' },
     }),
     YarnCatalog.find({}).select('_id yarnName').lean(),
   ]);
   coneYarns.forEach((id) => id && ids.add(id.toString()));
+  (boxCatalogIds || []).forEach((id) => id && ids.add(id.toString()));
   const nameToId = new Map();
   catalogAll.forEach((c) => {
     if (c?.yarnName) nameToId.set(c.yarnName.trim().toLowerCase(), c._id.toString());
@@ -165,15 +167,15 @@ const getOpeningFromPhysicalStorage = async (yarnIds, catalogMap) => {
   // 2. Cones in ST (not issued) - no date filter
   const objectIds = yarnIds.map((id) => new mongoose.Types.ObjectId(id));
   const cones = await YarnCone.find({
-    yarn: { $in: objectIds },
+    yarnCatalogId: { $in: objectIds },
     coneStorageId: { $exists: true, $nin: [null, ''] },
     issueStatus: { $ne: 'issued' },
   })
-    .select('yarn coneWeight tearWeight')
+    .select('yarnCatalogId coneWeight tearWeight')
     .lean();
 
   for (const c of cones) {
-    const yarnId = c.yarn?.toString?.();
+    const yarnId = c.yarnCatalogId?.toString?.();
     if (!yarnId) continue;
     const net = Math.max(0, toNum(c.coneWeight) - toNum(c.tearWeight));
     if (net > 0) map.set(yarnId, (map.get(yarnId) || 0) + net);
@@ -194,7 +196,7 @@ const getTransactionTotalsInRange = async (startDate, endDate) => {
     { $match: { transactionDate: { $gte: startDate, $lte: endDate } } },
     {
       $group: {
-        _id: '$yarn',
+        _id: '$yarnCatalogId',
         store: { $sum: { $cond: [{ $eq: ['$transactionType', 'yarn_stocked'] }, '$transactionNetWeight', 0] } },
         issued: { $sum: { $cond: [{ $eq: ['$transactionType', 'yarn_issued'] }, '$transactionNetWeight', 0] } },
         returned: { $sum: { $cond: [{ $eq: ['$transactionType', 'yarn_returned'] }, '$transactionNetWeight', 0] } },
@@ -259,7 +261,7 @@ const getPurchaseDataByYarnShadeSupplier = async (startDate, endDate) => {
     const rejectionInRange = po.lastUpdateDate >= startDate && po.lastUpdateDate <= endDate;
 
     for (const item of po.poItems || []) {
-      const yarnId = item.yarn?.toString?.() ?? '';
+      const yarnId = item.yarnCatalogId?.toString?.() ?? '';
       const shadeCode = (item.shadeCode || '').trim();
       const key = `${yarnId}|${shadeCode}|${supplierId}`;
       if (!yarnId) continue;

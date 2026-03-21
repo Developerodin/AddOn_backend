@@ -77,7 +77,7 @@ const run = async () => {
     }
 
     for (const c of stCones) {
-      const yarnId = c.yarn?.toString?.() || c.yarn;
+      const yarnId = c.yarnCatalogId?.toString?.() || c.yarnCatalogId;
       const key = (c.yarnName || '').trim() || (yarnId || '_unknown_');
       if (!byYarn.has(key)) {
         byYarn.set(key, {

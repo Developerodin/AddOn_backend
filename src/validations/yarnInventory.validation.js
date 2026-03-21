@@ -24,7 +24,8 @@ export const getYarnInventories = {
 export const createYarnInventory = {
   body: Joi.object()
     .keys({
-      yarn: Joi.string().custom(objectId).required(),
+      yarnCatalogId: Joi.string().custom(objectId),
+      yarn: Joi.string().custom(objectId),
       yarnName: Joi.string().trim().required(),
       totalInventory: inventoryBucketSchema.optional(),
       longTermInventory: inventoryBucketSchema.optional(),
@@ -32,6 +33,13 @@ export const createYarnInventory = {
       blockedNetWeight: Joi.number().min(0).default(0),
       inventoryStatus: Joi.string().valid(...yarnInventoryStatuses).default('in_stock'),
       overbooked: Joi.boolean().default(false),
+    })
+    .custom((value, helpers) => {
+      const id = value.yarnCatalogId || value.yarn;
+      if (!id) {
+        return helpers.error('any.custom', { message: 'yarnCatalogId (or legacy yarn) is required' });
+      }
+      return { ...value, yarnCatalogId: id };
     })
     .required(),
 };

@@ -23,12 +23,20 @@ export const createYarnRequisition = {
   body: Joi.object()
     .keys({
       yarnName: Joi.string().trim().required(),
-      yarn: Joi.string().custom(objectId).required(),
+      yarnCatalogId: Joi.string().custom(objectId),
+      yarn: Joi.string().custom(objectId),
       minQty: Joi.number().min(0).required(),
       availableQty: Joi.number().min(0).required(),
       blockedQty: Joi.number().min(0).required(),
       alertStatus: Joi.string().valid('below_minimum', 'overbooked').optional(),
       poSent: Joi.boolean().default(false),
+    })
+    .custom((value, helpers) => {
+      const id = value.yarnCatalogId || value.yarn;
+      if (!id) {
+        return helpers.error('any.custom', { message: 'yarnCatalogId (or legacy yarn) is required' });
+      }
+      return { ...value, yarnCatalogId: id };
     })
     .required(),
 };

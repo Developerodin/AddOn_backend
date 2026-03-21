@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 import { Supplier, YarnType, Color, YarnCatalog } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import { runSyncForSupplier } from './supplierYarnCatalogSync.js';
+import { syncAllDenormalizedYarnLabelsFromCatalog } from './yarnLabelSyncFromCatalog.service.js';
+import { backfillYarnBoxCatalogIdsFromPurchaseOrders } from './yarnBoxCatalogIdBackfill.service.js';
 
 /**
  * Convert yarnDetails IDs to embedded objects
@@ -758,12 +760,20 @@ export const syncAllSuppliersYarnDetailsWithCatalog = async () => {
     catalogNotFound += result.catalogNotFound;
   }
 
+  /** Boxes missing yarnCatalogId: copy from matching PO line (poNumber + yarnName + shadeCode). */
+  const boxPoBackfill = await backfillYarnBoxCatalogIdsFromPurchaseOrders({ dryRun: false });
+
+  /** PO / boxes / cones / txs / BOM / inventory yarnName from catalog (same yarnCatalogId). */
+  const labelSync = await syncAllDenormalizedYarnLabelsFromCatalog({ dryRun: false });
+
   return {
     suppliersUpdated,
     detailsLinked,
     detailsSynced,
     noMatch,
     catalogNotFound,
+    boxPoBackfill,
+    labelSync,
   };
 };
 
@@ -781,12 +791,18 @@ export const syncSupplierYarnDetailsWithCatalog = async (supplierId) => {
   const result = await runSyncForSupplier(plain);
   supplier.yarnDetails = result.updatedDetails;
   await supplier.save();
+
+  const boxPoBackfill = await backfillYarnBoxCatalogIdsFromPurchaseOrders({ dryRun: false });
+  const labelSync = await syncAllDenormalizedYarnLabelsFromCatalog({ dryRun: false });
+
   return {
     supplier,
     detailsLinked: result.detailsLinked,
     detailsSynced: result.detailsSynced,
     noMatch: result.noMatch,
     catalogNotFound: result.catalogNotFound,
+    boxPoBackfill,
+    labelSync,
   };
 };
 

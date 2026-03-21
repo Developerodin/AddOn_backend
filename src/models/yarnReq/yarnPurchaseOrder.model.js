@@ -60,7 +60,8 @@ const poItemSchema = mongoose.Schema(
       required: true,
       trim: true,
     },
-    yarn: {
+    /** Canonical link to YarnCatalog (sync yarnName via script or pre-save). */
+    yarnCatalogId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'YarnCatalog',
       required: true,
@@ -335,8 +336,8 @@ yarnPurchaseOrderSchema.pre('save', async function (next) {
 
   if (this.isModified('poItems')) {
     for (const item of this.poItems) {
-      if (item.yarn) {
-        const yarn = await YarnCatalog.findById(item.yarn);
+      if (item.yarnCatalogId) {
+        const yarn = await YarnCatalog.findById(item.yarnCatalogId);
         if (yarn) {
           item.yarnName = yarn.yarnName || item.yarnName;
         }

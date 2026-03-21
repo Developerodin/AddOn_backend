@@ -2,6 +2,7 @@ import httpStatus from 'http-status';
 import { YarnRequisition, YarnCatalog } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import * as yarnInventoryService from './yarnInventory.service.js';
+import { pickYarnCatalogId } from '../../utils/yarnCatalogRef.js';
 
 const computeAlertStatus = (minQty, availableQty, blockedQty) => {
   if (availableQty < minQty) {
@@ -19,7 +20,7 @@ const computeAlertStatus = (minQty, availableQty, blockedQty) => {
  */
 const recalculateRequisitionFromInventory = async (requisition) => {
   const toNumber = (value) => Math.max(0, Number(value ?? 0));
-  const yarnId = requisition.yarn?._id || requisition.yarn;
+  const yarnId = requisition.yarnCatalogId?._id || requisition.yarnCatalogId;
 
   const { totalNetWeight, blockedNetWeight } = await yarnInventoryService.computeInventoryFromStorage(yarnId);
   const availableNet = Math.max(totalNetWeight - blockedNetWeight, 0);
@@ -63,7 +64,7 @@ export const getYarnRequisitionList = async ({ startDate, endDate, poSent }) => 
 
   const yarnRequisitions = await YarnRequisition.find(filter)
     .populate({
-      path: 'yarn',
+      path: 'yarnCatalogId',
       select: '_id yarnName yarnType status',
     })
     .sort({ created: -1 })
@@ -86,10 +87,12 @@ export const getYarnRequisitionList = async ({ startDate, endDate, poSent }) => 
 };
 
 export const createYarnRequisition = async (yarnRequisitionBody) => {
+  const catalogId = pickYarnCatalogId(yarnRequisitionBody);
   const payload = {
     ...yarnRequisitionBody,
     poSent: yarnRequisitionBody.poSent ?? false,
   };
+  if (catalogId) payload.yarnCatalogId = catalogId;
 
   payload.alertStatus = computeAlertStatus(payload.minQty, payload.availableQty, payload.blockedQty);
 

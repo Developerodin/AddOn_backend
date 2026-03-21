@@ -35,7 +35,8 @@ export const getYarnTransactions = catchAsync(async (req, res) => {
         if (!groupedByYarn[yarnKey]) {
           groupedByYarn[yarnKey] = {
             yarnName: transaction.yarnName,
-            yarn: transaction.yarn,
+            yarnCatalogId: transaction.yarnCatalogId,
+            yarn: transaction.yarnCatalogId,
             transactions: [],
             totals: {
               transactionNetWeight: 0,

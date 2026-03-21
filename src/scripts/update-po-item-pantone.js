@@ -57,7 +57,9 @@ async function run() {
 
       let modified = false;
       const updatedItems = items.map((item) => {
-        const yarnId = item.yarn?._id?.toString() ?? (item.yarn && mongoose.Types.ObjectId.isValid(item.yarn) ? String(item.yarn) : null);
+        const yarnId =
+          item.yarnCatalogId?._id?.toString() ??
+          (item.yarnCatalogId && mongoose.Types.ObjectId.isValid(item.yarnCatalogId) ? String(item.yarnCatalogId) : null);
         if (!yarnId) return item;
 
         const pantone = catalogToPantone.get(yarnId);

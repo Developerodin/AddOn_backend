@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { YarnInventory, YarnCatalog, YarnBox, YarnCone, StorageSlot } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import pick from '../../utils/pick.js';
+import { pickYarnCatalogId } from '../../utils/yarnCatalogRef.js';
 import { STORAGE_ZONES, ST_SECTION_CODE, LT_SECTION_CODES } from '../../models/storageManagement/storageSlot.model.js';
 
 /** LT: legacy LT-* OR slot barcodes B7-02-, B7-03-, B7-04-, B7-05- (from StorageSlot) */
@@ -26,9 +27,13 @@ const transformInventoryForResponse = (inventory) => {
   // Short-term storage: Weight and cones
   // Blocked weight applies to short-term (where yarn is issued from)
   
+  const catalogRef = inventory.yarnCatalogId ?? inventory.yarn;
+  const yarnId = catalogRef?._id || catalogRef || inventory.yarnId;
   return {
-    yarn: inventory.yarn,
-    yarnId: inventory.yarn?._id || inventory.yarn,
+    yarnCatalogId: catalogRef,
+    /** @deprecated API alias — same as yarnCatalogId */
+    yarn: catalogRef,
+    yarnId,
     yarnName: inventory.yarnName,
     longTermStorage: {
       totalWeight: Math.max(0, lt.totalWeight || 0), // Ensure non-negative
@@ -82,13 +87,13 @@ const recalculateInventoryFromStorage = async (inventory) => {
 
   // Short-term: cones only (cones data is source of truth; boxes in ST are transition state)
   // Avoid double-count: when cones exist from a box, box weight is zeroed on full transfer
-  const yarnId = inventory.yarn?._id || inventory.yarn;
+  const yarnId = inventory.yarnCatalogId?._id || inventory.yarnCatalogId;
   const stConeQuery = {
     coneStorageId: { $exists: true, $nin: [null, ''] },
     issueStatus: { $ne: 'issued' },
   };
   if (yarnId) {
-    stConeQuery.$or = [{ yarn: yarnId }, { yarnName: inventory.yarnName }];
+    stConeQuery.$or = [{ yarnCatalogId: yarnId }, { yarnName: inventory.yarnName }];
   } else {
     stConeQuery.yarnName = inventory.yarnName;
   }
@@ -154,7 +159,7 @@ const recalculateInventoryFromStorage = async (inventory) => {
   total.numberOfCones = toNumber(lt.numberOfCones) + toNumber(st.numberOfCones);
 
   // Update status if yarn catalog exists
-  const yarnCatalog = await YarnCatalog.findById(inventory.yarn);
+  const yarnCatalog = await YarnCatalog.findById(inventory.yarnCatalogId);
   if (yarnCatalog) {
     const totalNet = toNumber(total.totalNetWeight);
     const minQty = toNumber(yarnCatalog?.minQuantity);
@@ -202,7 +207,7 @@ export const computeInventoryFromStorage = async (yarnId) => {
 
   // ST: cones only
   const stCones = await YarnCone.find({
-    $or: [{ yarn: yarnId }, { yarnName }],
+    $or: [{ yarnCatalogId: yarnId }, { yarnName }],
     coneStorageId: { $exists: true, $nin: [null, ''] },
     issueStatus: { $ne: 'issued' },
   }).lean();
@@ -225,7 +230,7 @@ export const computeInventoryFromStorage = async (yarnId) => {
   }
 
   const totalNetWeight = ltNet + stNet;
-  const inventory = await YarnInventory.findOne({ yarn: yarnId }).lean();
+  const inventory = await YarnInventory.findOne({ yarnCatalogId: yarnId }).lean();
   const blockedNetWeight = Math.max(0, Number(inventory?.blockedNetWeight ?? 0));
 
   return { totalNetWeight, blockedNetWeight };
@@ -359,7 +364,7 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
       if (totalNet <= minQty) inventoryStatus = 'low_stock';
       else if (totalNet <= minQty * 1.2) inventoryStatus = 'soon_to_be_low';
     }
-    const inventory = await YarnInventory.findOne({ yarn: catalog?._id }).lean();
+    const inventory = await YarnInventory.findOne({ yarnCatalogId: catalog?._id }).lean();
     const blocked = toNum(inventory?.blockedNetWeight ?? 0);
 
     inventoryMap.set(yarnName, {
@@ -457,28 +462,30 @@ export const queryYarnInventories = async (filters = {}, options = {}) => {
  * @returns {Promise<YarnInventory>}
  */
 export const createYarnInventory = async (inventoryBody) => {
-  // Verify yarn catalog exists
-  const yarnCatalog = await YarnCatalog.findById(inventoryBody.yarn);
+  const catalogId = pickYarnCatalogId(inventoryBody);
+  if (!catalogId) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'yarnCatalogId (or legacy yarn) is required');
+  }
+  const body = { ...inventoryBody, yarnCatalogId: catalogId };
+  const yarnCatalog = await YarnCatalog.findById(body.yarnCatalogId);
   if (!yarnCatalog) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Referenced yarn catalog entry does not exist');
   }
 
-  // Check if inventory already exists for this yarn
-  const existingInventory = await YarnInventory.findOne({ yarn: inventoryBody.yarn });
+  const existingInventory = await YarnInventory.findOne({ yarnCatalogId: body.yarnCatalogId });
   if (existingInventory) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Inventory already exists for this yarn. Use update instead.');
   }
 
   // Ensure yarnName matches catalog
-  if (!inventoryBody.yarnName || inventoryBody.yarnName !== yarnCatalog.yarnName) {
-    inventoryBody.yarnName = yarnCatalog.yarnName;
+  if (!body.yarnName || body.yarnName !== yarnCatalog.yarnName) {
+    body.yarnName = yarnCatalog.yarnName;
   }
 
-  // Recalculate total inventory from long-term and short-term if not provided
-  if (!inventoryBody.totalInventory) {
-    const lt = inventoryBody.longTermInventory || {};
-    const st = inventoryBody.shortTermInventory || {};
-    inventoryBody.totalInventory = {
+  if (!body.totalInventory) {
+    const lt = body.longTermInventory || {};
+    const st = body.shortTermInventory || {};
+    body.totalInventory = {
       totalWeight: (lt.totalWeight || 0) + (st.totalWeight || 0),
       totalTearWeight: (lt.totalTearWeight || 0) + (st.totalTearWeight || 0),
       totalNetWeight: (lt.totalNetWeight || 0) + (st.totalNetWeight || 0),
@@ -486,7 +493,7 @@ export const createYarnInventory = async (inventoryBody) => {
     };
   }
 
-  const inventory = await YarnInventory.create(inventoryBody);
+  const inventory = await YarnInventory.create(body);
   return transformInventoryForResponse(inventory);
 };
 
@@ -497,7 +504,7 @@ export const createYarnInventory = async (inventoryBody) => {
  */
 export const getYarnInventoryById = async (inventoryId) => {
   const inventory = await YarnInventory.findById(inventoryId).populate({
-    path: 'yarn',
+    path: 'yarnCatalogId',
     select: '_id yarnName yarnType status',
   });
 
@@ -516,8 +523,8 @@ export const getYarnInventoryById = async (inventoryId) => {
  * @returns {Promise<YarnInventory>}
  */
 export const getYarnInventoryByYarnId = async (yarnId) => {
-  const inventory = await YarnInventory.findOne({ yarn: yarnId }).populate({
-    path: 'yarn',
+  const inventory = await YarnInventory.findOne({ yarnCatalogId: yarnId }).populate({
+    path: 'yarnCatalogId',
     select: '_id yarnName yarnType status',
   });
 

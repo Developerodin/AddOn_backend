@@ -51,7 +51,7 @@ export const updateYarnConeById = async (yarnConeId, updateBody) => {
 export const getYarnConeByBarcode = async (barcode) => {
   const yarnCone = await YarnCone.findOne({ barcode })
     .populate({
-      path: 'yarn',
+      path: 'yarnCatalogId',
       select: '_id yarnName yarnType status',
     })
     .lean();
@@ -73,7 +73,7 @@ export const getConesByStorageLocation = async (storageLocation) => {
   const cones = await YarnCone.find({
     coneStorageId: { $regex: new RegExp(`^${escaped}$`, 'i') },
   })
-    .populate({ path: 'yarn', select: '_id yarnName yarnType status' })
+    .populate({ path: 'yarnCatalogId', select: '_id yarnName yarnType status' })
     .sort({ createdAt: -1 })
     .lean();
   return cones;
@@ -92,7 +92,7 @@ export const getConesWithoutStorageLocation = async () => {
       { coneStorageId: '' },
     ],
   })
-    .populate({ path: 'yarn', select: '_id yarnName yarnType status' })
+    .populate({ path: 'yarnCatalogId', select: '_id yarnName yarnType status' })
     .sort({ createdAt: -1 })
     .lean();
   return cones;
@@ -140,7 +140,7 @@ export const bulkSetConeStorageLocation = async (payload) => {
   const result = await YarnCone.updateMany(filter, { $set: { coneStorageId: String(coneStorageId).trim() } });
 
   const updatedCones = await YarnCone.find({ $or: idFilter })
-    .populate({ path: 'yarn', select: '_id yarnName yarnType status' })
+    .populate({ path: 'yarnCatalogId', select: '_id yarnName yarnType status' })
     .lean();
   return {
     message: `Updated storage location for ${result.modifiedCount} cone(s)`,
@@ -185,7 +185,7 @@ export const queryYarnCones = async (filters = {}) => {
   }
 
   if (filters.yarn_id) {
-    mongooseFilter.yarn = filters.yarn_id;
+    mongooseFilter.yarnCatalogId = filters.yarn_id;
   }
 
   if (filters.shade_code) {
@@ -198,7 +198,7 @@ export const queryYarnCones = async (filters = {}) => {
 
   const yarnCones = await YarnCone.find(mongooseFilter)
     .populate({
-      path: 'yarn',
+      path: 'yarnCatalogId',
       select: '_id yarnName yarnType status',
     })
     .sort({ createdAt: -1 })
@@ -303,8 +303,10 @@ export const generateConesByBox = async (boxId, options = {}) => {
     basePayload.returnDate = toDate(options.returnDate);
   }
 
-  if (options.yarn) {
-    basePayload.yarn = options.yarn;
+  if (options.yarnCatalogId ?? options.yarn) {
+    basePayload.yarnCatalogId = options.yarnCatalogId ?? options.yarn;
+  } else if (yarnBox.yarnCatalogId) {
+    basePayload.yarnCatalogId = yarnBox.yarnCatalogId;
   }
 
   const conesToCreate = Array.from({ length: numberOfCones }, () => ({
@@ -413,7 +415,7 @@ export const returnYarnCone = async (barcode, returnData = {}) => {
 
   // Populate yarn info before returning
   await yarnCone.populate({
-    path: 'yarn',
+    path: 'yarnCatalogId',
     select: '_id yarnName yarnType status',
   });
 

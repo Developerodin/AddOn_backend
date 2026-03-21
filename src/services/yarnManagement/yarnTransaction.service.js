@@ -4,6 +4,7 @@ import { YarnTransaction, YarnInventory, YarnCatalog, YarnRequisition } from '..
 import { ProductionOrder, Article } from '../../models/production/index.js';
 import Product from '../../models/product.model.js';
 import ApiError from '../../utils/ApiError.js';
+import { pickYarnCatalogId } from '../../utils/yarnCatalogRef.js';
 
 /**
  * Produces an inventory bucket with all numeric values initialised to zero.
@@ -78,8 +79,9 @@ const normaliseTransactionPayload = (inputBody) => {
       : undefined);
   const numberOfCones = body.numberOfCones ?? body.transactionConeCount;
 
+  const catalogId = pickYarnCatalogId(body);
   const payload = {
-    yarn: body.yarn,
+    yarnCatalogId: catalogId,
     yarnName: body.yarnName,
     transactionType: body.transactionType,
     transactionDate: body.transactionDate,
@@ -120,13 +122,13 @@ const normaliseTransactionPayload = (inputBody) => {
  * @param {mongoose.ClientSession | null} session - Optional session for transaction support.
  */
 const ensureInventoryDocument = async (session, transactionPayload) => {
-  let query = YarnInventory.findOne({ yarn: transactionPayload.yarn });
+  let query = YarnInventory.findOne({ yarnCatalogId: transactionPayload.yarnCatalogId });
   if (session) query = query.session(session);
   let inventory = await query;
 
   if (!inventory) {
     inventory = new YarnInventory({
-      yarn: transactionPayload.yarn,
+      yarnCatalogId: transactionPayload.yarnCatalogId,
       yarnName: transactionPayload.yarnName,
       totalInventory: ZERO_BUCKET(),
       longTermInventory: ZERO_BUCKET(),
@@ -268,9 +270,9 @@ const updateInventoryStatusAndMaybeRaiseRequisition = async (
   if (session) updateOptions.session = session;
 
   await YarnRequisition.findOneAndUpdate(
-    { yarn: inventory.yarn, poSent: false },
+    { yarnCatalogId: inventory.yarnCatalogId, poSent: false },
     {
-      yarn: inventory.yarn,
+      yarnCatalogId: inventory.yarnCatalogId,
       yarnName: inventory.yarnName,
       minQty,
       availableQty: availableNet,
@@ -307,7 +309,7 @@ const runCreateTransactionLogic = async (session, normalisedPayload) => {
   const opts = session ? { session } : {};
   const withSession = (q) => (session ? q.session(session) : q);
 
-  const yarnDoc = await withSession(YarnCatalog.findById(normalisedPayload.yarn)).exec();
+  const yarnDoc = await withSession(YarnCatalog.findById(normalisedPayload.yarnCatalogId)).exec();
   if (!yarnDoc) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Referenced yarn catalog entry does not exist');
   }
@@ -338,6 +340,9 @@ const runCreateTransactionLogic = async (session, normalisedPayload) => {
  */
 export const createYarnTransaction = async (transactionBody) => {
   const normalisedPayload = normaliseTransactionPayload(transactionBody);
+  if (!normalisedPayload.yarnCatalogId) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'yarnCatalogId (or legacy yarn) is required');
+  }
 
   const session = await mongoose.startSession();
   let transactionRecord;
@@ -370,7 +375,7 @@ export const queryYarnTransactions = async (filters = {}) => {
   }
 
   if (filters.yarn_id) {
-    mongooseFilter.yarn = filters.yarn_id;
+    mongooseFilter.yarnCatalogId = filters.yarn_id;
   }
 
   if (filters.yarn_name) {
@@ -409,7 +414,7 @@ export const queryYarnTransactions = async (filters = {}) => {
 
   const transactions = await YarnTransaction.find(mongooseFilter)
     .populate({
-      path: 'yarn',
+      path: 'yarnCatalogId',
       select: '_id yarnName yarnType status',
     })
     .populate({ path: 'orderId', select: 'orderNumber' })
@@ -627,7 +632,7 @@ export const getYarnIssuedByOrder = async (orderno, groupByArticle = false) => {
     transactionType: 'yarn_issued',
   })
     .populate({
-      path: 'yarn',
+      path: 'yarnCatalogId',
       select: '_id yarnName yarnType status',
     })
     .sort({ transactionDate: -1 })
@@ -673,7 +678,7 @@ export const getYarnIssuedByOrder = async (orderno, groupByArticle = false) => {
     if (!groupedByYarn[yarnKey]) {
       groupedByYarn[yarnKey] = {
         yarnName: transaction.yarnName,
-        yarn: transaction.yarn,
+        yarnCatalogId: transaction.yarnCatalogId,
         transactions: [],
         totals: {
           transactionNetWeight: 0,
@@ -720,7 +725,7 @@ export const getAllYarnIssued = async (filters = {}) => {
 
   const transactions = await YarnTransaction.find(mongooseFilter)
     .populate({
-      path: 'yarn',
+      path: 'yarnCatalogId',
       select: '_id yarnName yarnType status',
     })
     .sort({ transactionDate: -1 })

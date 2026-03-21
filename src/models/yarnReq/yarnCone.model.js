@@ -60,7 +60,8 @@ const yarnConeSchema = mongoose.Schema(
       type: String,
       trim: true,
     },
-    yarn: {
+    /** Canonical YarnCatalog reference. */
+    yarnCatalogId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'YarnCatalog',
     },
@@ -125,7 +126,15 @@ const yarnConeSchema = mongoose.Schema(
  * Pre-save hook: When a yarn cone is returned (returnStatus set to 'returned'), set issueStatus to not_issued
  * and returnStatus to not_returned so the cone is back in pool / available again.
  */
-yarnConeSchema.pre('save', function (next) {
+yarnConeSchema.pre('save', async function (next) {
+  if (this.yarnCatalogId && (this.isModified('yarnCatalogId') || !this.yarnName)) {
+    try {
+      const cat = await YarnCatalog.findById(this.yarnCatalogId).select('yarnName').lean();
+      if (cat?.yarnName) this.yarnName = cat.yarnName;
+    } catch (e) {
+      console.error('[YarnCone] yarnName sync from catalog:', e.message);
+    }
+  }
   if (this.returnStatus === 'returned') {
     this.issueStatus = 'not_issued';
     this.returnStatus = 'not_returned';
@@ -161,8 +170,8 @@ yarnConeSchema.post('save', async function (doc) {
   try {
     // Find matching yarn catalog
     let yarnCatalog = null;
-    if (doc.yarn) {
-      yarnCatalog = await YarnCatalog.findById(doc.yarn);
+    if (doc.yarnCatalogId) {
+      yarnCatalog = await YarnCatalog.findById(doc.yarnCatalogId);
     } else if (doc.yarnName) {
       // Try exact match first
       yarnCatalog = await YarnCatalog.findOne({
@@ -193,11 +202,11 @@ yarnConeSchema.post('save', async function (doc) {
     // Update inventory directly (cones in ST storage)
     const toNumber = (value) => Math.max(0, Number(value ?? 0));
     
-    let inventory = await YarnInventory.findOne({ yarn: yarnCatalog._id });
+    let inventory = await YarnInventory.findOne({ yarnCatalogId: yarnCatalog._id });
     
     if (!inventory) {
       inventory = new YarnInventory({
-        yarn: yarnCatalog._id,
+        yarnCatalogId: yarnCatalog._id,
         yarnName: yarnCatalog.yarnName,
         totalInventory: { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, numberOfCones: 0 },
         longTermInventory: { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, numberOfCones: 0 },
@@ -224,7 +233,7 @@ yarnConeSchema.post('save', async function (doc) {
     const allSTCones = await mongoose.model('YarnCone').find({
       coneStorageId: { $exists: true, $nin: [null, ''] },
       issueStatus: { $ne: 'issued' },
-      yarn: yarnCatalog._id,
+      yarnCatalogId: yarnCatalog._id,
     }).lean();
 
     let stTotalWeight = 0;

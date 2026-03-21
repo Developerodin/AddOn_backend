@@ -7,23 +7,23 @@ import * as supplierService from './supplier.service.js';
 
 /**
  * Enriches each PO line item with yarn subtype and colour for Excel/API consumers.
- * Sets item.yarnSubtype, item.colour, and item.yarn.subtype, item.yarn.colour.
+ * Sets item.yarnSubtype, item.colour, and item.yarnCatalogId.subtype, item.yarnCatalogId.colour.
  * @param {Object} po - Purchase order (plain object or doc with poItems)
  */
 const enrichPoItemsWithSubtypeAndColour = (po) => {
   if (!po?.poItems?.length) return;
   po.poItems.forEach((item) => {
-    const yarn = item.yarn;
+    const catalog = item.yarnCatalogId;
     const subtype =
-      yarn?.yarnSubtype && typeof yarn.yarnSubtype === 'object'
-        ? yarn.yarnSubtype.subtype
-        : yarn?.yarnSubtype ?? null;
-    const colour = yarn?.colorFamily?.name ?? yarn?.colorFamily?.colorCode ?? null;
+      catalog?.yarnSubtype && typeof catalog.yarnSubtype === 'object'
+        ? catalog.yarnSubtype.subtype
+        : catalog?.yarnSubtype ?? null;
+    const colour = catalog?.colorFamily?.name ?? catalog?.colorFamily?.colorCode ?? null;
     item.yarnSubtype = subtype ?? null;
     item.colour = colour ?? null;
-    if (yarn && typeof yarn === 'object') {
-      yarn.subtype = subtype ?? null;
-      yarn.colour = colour ?? null;
+    if (catalog && typeof catalog === 'object') {
+      catalog.subtype = subtype ?? null;
+      catalog.colour = colour ?? null;
     }
   });
 };
@@ -51,7 +51,7 @@ export const getPurchaseOrders = async ({ startDate, endDate, statusCode }) => {
     select: '_id brandName contactPersonName contactNumber email address city state pincode country gstNo',
   })
     .populate({
-      path: 'poItems.yarn',
+      path: 'poItems.yarnCatalogId',
       select: '_id yarnName yarnType status yarnSubtype colorFamily',
     })
     .sort({ createDate: -1 })
@@ -68,7 +68,7 @@ export const getPurchaseOrderById = async (purchaseOrderId) => {
       select: '_id brandName contactPersonName contactNumber email address city state gstNo',
     })
     .populate({
-      path: 'poItems.yarn',
+      path: 'poItems.yarnCatalogId',
       select: '_id yarnName yarnType status yarnSubtype colorFamily',
     })
     .lean();
@@ -89,7 +89,7 @@ export const getPurchaseOrderByPoNumber = async (poNumber) => {
       select: '_id brandName contactPersonName contactNumber email address city state gstNo',
     })
     .populate({
-      path: 'poItems.yarn',
+      path: 'poItems.yarnCatalogId',
       select: '_id yarnName yarnType status yarnSubtype colorFamily',
     })
     .lean();
@@ -205,6 +205,7 @@ export const updatePurchaseOrderById = async (purchaseOrderId, updateBody) => {
     );
     const poItemFields = [
       'yarnName',
+      'yarnCatalogId',
       'yarn',
       'sizeCount',
       'shadeCode',
@@ -225,6 +226,9 @@ export const updatePurchaseOrderById = async (purchaseOrderId, updateBody) => {
       poItemFields.forEach((key) => {
         if (inc[key] !== undefined) base[key] = inc[key];
       });
+      if (base.yarnCatalogId === undefined && inc.yarn != null) {
+        base.yarnCatalogId = inc.yarn;
+      }
       return base;
     });
     purchaseOrder.poItems = newPoItems;
@@ -474,7 +478,7 @@ export const deleteLotByPoAndLotNumber = async (poNumber, lotNumber) => {
   );
   const updatedPo = await YarnPurchaseOrder.findOne({ poNumber: po })
     .populate({ path: 'supplier', select: '_id brandName' })
-    .populate({ path: 'poItems.yarn', select: '_id yarnName' })
+    .populate({ path: 'poItems.yarnCatalogId', select: '_id yarnName' })
     .lean();
 
   return {
@@ -529,7 +533,7 @@ export const qcApproveAllLotsForPo = async (purchaseOrderId, updatedBy, notes = 
 
   const updatedPo = await YarnPurchaseOrder.findById(purchaseOrderId)
     .populate({ path: 'supplier', select: '_id brandName' })
-    .populate({ path: 'poItems.yarn', select: '_id yarnName' })
+    .populate({ path: 'poItems.yarnCatalogId', select: '_id yarnName' })
     .lean();
 
   return {

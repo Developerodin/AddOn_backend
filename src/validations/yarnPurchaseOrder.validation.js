@@ -5,18 +5,27 @@ import { yarnPurchaseOrderStatuses, lotStatuses } from '../models/yarnReq/yarnPu
 const statusCodeField = Joi.string().valid(...yarnPurchaseOrderStatuses);
 const lotStatusField = Joi.string().valid(...lotStatuses);
 
-const poItemSchema = Joi.object().keys({
+const poItemSchema = Joi.object()
+  .keys({
   _id: Joi.string().custom(objectId).optional(),
   id: Joi.string().custom(objectId).optional(),
   yarnName: Joi.string().trim(),
-  yarn: Joi.string().custom(objectId).required(),
+  yarnCatalogId: Joi.string().custom(objectId),
+  yarn: Joi.string().custom(objectId),
   sizeCount: Joi.string().trim().required(),
   shadeCode: Joi.string().trim().allow('', null),
   rate: Joi.number().min(0).required(),
   quantity: Joi.number().min(0).required(),
   estimatedDeliveryDate: Joi.date().iso().allow(null),
   gstRate: Joi.number().min(0).allow(null),
-});
+})
+  .custom((value, helpers) => {
+    const id = value.yarnCatalogId || value.yarn;
+    if (!id) {
+      return helpers.error('any.custom', { message: 'Each PO line needs yarnCatalogId (or legacy yarn)' });
+    }
+    return { ...value, yarnCatalogId: id };
+  });
 
 export const getPurchaseOrders = {
   query: Joi.object()

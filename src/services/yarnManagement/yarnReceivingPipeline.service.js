@@ -130,8 +130,9 @@ const getYarnAndShadeForLotFromPo = (po, lotNumber) => {
   if (!poItemId) return { yarnName: null, shadeCode: null };
   const poItems = po?.poItems || [];
   const item = poItems.find((i) => i._id && i._id.toString() === poItemId);
-  const yarnName = (item?.yarn?.yarnName || item?.yarnName || '').trim() || null;
-  const shadeCode = (item?.shadeCode || item?.shade || item?.yarn?.colorFamily?.colorCode || '')?.trim?.() || null;
+  const yarnName = (item?.yarnCatalogId?.yarnName || item?.yarnName || '').trim() || null;
+  const shadeCode =
+    (item?.shadeCode || item?.shade || item?.yarnCatalogId?.colorFamily?.colorCode || '')?.trim?.() || null;
   return { yarnName, shadeCode };
 };
 
@@ -686,8 +687,8 @@ export const processFromExistingPo = async ({
     if (!firstRef) return { yarnName: null, shadeCode: null };
     const id = typeof firstRef === 'string' ? firstRef : firstRef?.toString?.();
     const item = poItems.find((i) => i._id && i._id.toString() === id);
-    const yarnName = (item?.yarn?.yarnName || item?.yarnName || '').trim() || null;
-    const shadeCode = (item?.shadeCode || item?.shade || item?.yarn?.shadeCode || '')?.trim?.() || null;
+    const yarnName = (item?.yarnCatalogId?.yarnName || item?.yarnName || '').trim() || null;
+    const shadeCode = (item?.shadeCode || item?.shade || item?.yarnCatalogId?.shadeCode || '')?.trim?.() || null;
     return { yarnName, shadeCode };
   };
 

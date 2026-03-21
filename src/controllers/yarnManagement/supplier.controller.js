@@ -51,13 +51,16 @@ export const deleteSupplier = catchAsync(async (req, res) => {
 export const syncAllSuppliersYarnCatalog = catchAsync(async (req, res) => {
   const result = await supplierService.syncAllSuppliersYarnDetailsWithCatalog();
   res.status(httpStatus.OK).send({
-    message: 'All supplier yarn details synced with catalog',
+    message:
+      'Supplier yarn details and all denormalized yarn names (PO, inventory, boxes, cones, transactions, requisitions, product BOM) synced from catalog',
     summary: {
       suppliersUpdated: result.suppliersUpdated,
       detailsLinked: result.detailsLinked,
       detailsSynced: result.detailsSynced,
       noMatch: result.noMatch,
       catalogNotFound: result.catalogNotFound,
+      boxPoBackfill: result.boxPoBackfill,
+      labelSync: result.labelSync,
     },
   });
 });
@@ -68,13 +71,16 @@ export const syncAllSuppliersYarnCatalog = catchAsync(async (req, res) => {
 export const syncSupplierYarnCatalog = catchAsync(async (req, res) => {
   const result = await supplierService.syncSupplierYarnDetailsWithCatalog(req.params.supplierId);
   res.status(httpStatus.OK).send({
-    message: 'Supplier yarn details synced with catalog',
+    message:
+      'Supplier yarn details synced; global denormalized yarn names (PO, inventory, boxes, cones, transactions, requisitions, product BOM) refreshed from catalog',
     supplier: result.supplier,
     summary: {
       detailsLinked: result.detailsLinked,
       detailsSynced: result.detailsSynced,
       noMatch: result.noMatch,
       catalogNotFound: result.catalogNotFound,
+      boxPoBackfill: result.boxPoBackfill,
+      labelSync: result.labelSync,
     },
   });
 });
