@@ -38,6 +38,7 @@
     "migrate:containers-type-tearweight": "node src/scripts/update-containers-type-tearweight.js",
     "migrate:yarn-catalog-id": "cross-env NODE_ENV=development node src/scripts/migrate-yarn-to-yarnCatalogId.js",
     "sync:yarn-labels-from-catalog": "cross-env NODE_ENV=development node src/scripts/sync-yarn-labels-from-catalog.js",
+    "verify:yarn-catalog-names": "cross-env NODE_ENV=development node src/scripts/verify-yarn-catalog-yarn-names.js",
     "prepare": "husky install"
   },
   "keywords": [

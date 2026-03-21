@@ -8,6 +8,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 // Load environment variables FIRST
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
@@ -19,6 +20,7 @@ if (!process.env.NODE_ENV) {
 
 import YarnCatalog from './src/models/yarnManagement/yarnCatalog.model.js';
 import config from './src/config/config.js';
+import { buildYarnCatalogYarnName } from './src/utils/yarnCatalogYarnName.util.js';
 
 // Connect to MongoDB
 const connectDB = async () => {
@@ -29,47 +31,6 @@ const connectDB = async () => {
     console.error('❌ MongoDB connection error:', error);
     process.exit(1);
   }
-};
-
-/**
- * Generate yarnName based on the new format
- */
-const generateYarnName = (doc) => {
-  const parts = [];
-  
-  // Get countSize name
-  if (doc.countSize && doc.countSize.name) {
-    parts.push(doc.countSize.name);
-  }
-  
-  // Get colorFamily name (optional)
-  if (doc.colorFamily && doc.colorFamily.name) {
-    parts.push(doc.colorFamily.name);
-  }
-  
-  // Get pantonName (optional)
-  if (doc.pantonName && doc.pantonName.trim()) {
-    parts.push(doc.pantonName.trim());
-  }
-  
-  // Get yarnType name
-  if (doc.yarnType && doc.yarnType.name) {
-    let typePart = doc.yarnType.name;
-    
-    // Handle yarnSubtype
-    if (doc.yarnSubtype && doc.yarnSubtype.subtype) {
-      typePart += `/${doc.yarnSubtype.subtype}`;
-    }
-    
-    parts.push(typePart);
-  }
-  
-  // Generate yarnName: countSize-colorFamily-pantonName-yarnType/subtype
-  if (parts.length > 0) {
-    return parts.join('-');
-  }
-  
-  return null;
 };
 
 /**
@@ -89,7 +50,7 @@ const migrateYarnCatalogs = async () => {
     for (const catalog of yarnCatalogs) {
       try {
         // Generate new yarnName
-        const newYarnName = generateYarnName(catalog);
+        const newYarnName = buildYarnCatalogYarnName(catalog);
         
         if (!newYarnName) {
           console.log(`  ⚠️  Skipping catalog ${catalog._id} - cannot generate yarnName (missing required fields)`);
@@ -147,8 +108,10 @@ const runMigration = async () => {
   }
 };
 
-// Run if executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Run if executed directly (argv path vs file URL differ on POSIX)
+const isMain =
+  process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+if (isMain) {
   runMigration();
 }
 

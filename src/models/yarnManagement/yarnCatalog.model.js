@@ -5,6 +5,7 @@ import CountSize from './countSize.model.js';
 import Color from './color.model.js';
 import YarnType from './yarnType.model.js';
 import Blend from './blend.model.js';
+import { buildYarnCatalogYarnName } from '../../utils/yarnCatalogYarnName.util.js';
 
 // Embedded CountSize schema
 const embeddedCountSizeSchema = mongoose.Schema(
@@ -571,20 +572,6 @@ yarnCatalogSchema.pre('save', async function (next) {
     }
   }
   
-  // Build system-generated yarnName from embedded fields
-  const buildYarnNameFromParts = () => {
-    const parts = [];
-    if (this.countSize && this.countSize.name) parts.push(this.countSize.name);
-    if (this.colorFamily && this.colorFamily.name) parts.push(this.colorFamily.name);
-    if (this.pantonName && this.pantonName.trim()) parts.push(this.pantonName.trim());
-    if (this.yarnType && this.yarnType.name) {
-      let typePart = this.yarnType.name;
-      if (this.yarnSubtype && this.yarnSubtype.subtype) typePart += `/${this.yarnSubtype.subtype}`;
-      parts.push(typePart);
-    }
-    return parts.length > 0 ? parts.join('-') : null;
-  };
-
   // Regenerate yarnName when: (1) not set (create), or (2) on update, any field that composes it was modified
   const nameComponentFields = ['countSize', 'colorFamily', 'pantonName', 'yarnType', 'yarnSubtype'];
   const nameComponentChanged = nameComponentFields.some((f) => this.isModified(f));
@@ -592,7 +579,7 @@ yarnCatalogSchema.pre('save', async function (next) {
 
   if (shouldRegenerateYarnName) {
     try {
-      const generated = buildYarnNameFromParts();
+      const generated = buildYarnCatalogYarnName(this);
       if (generated) this.yarnName = generated;
     } catch (error) {
       return next(error);
