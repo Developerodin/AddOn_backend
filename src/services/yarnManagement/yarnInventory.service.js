@@ -352,6 +352,14 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
   const catalogs = await YarnCatalog.find({ yarnName: { $in: Array.from(allYarnNames) } }).lean();
   const catalogByName = new Map(catalogs.map((c) => [c.yarnName, c]));
 
+  const catalogIds = catalogs.map((c) => c._id).filter(Boolean);
+  const inventoryRows =
+    catalogIds.length > 0
+      ? await YarnInventory.find({ yarnCatalogId: { $in: catalogIds } }).lean()
+      : [];
+  /** One lookup per catalog — avoids N sequential findOne calls (major latency on large yarn sets). */
+  const inventoryByCatalogId = new Map(inventoryRows.map((inv) => [String(inv.yarnCatalogId), inv]));
+
   const inventoryMap = new Map();
   for (const yarnName of allYarnNames) {
     const lt = ltByYarn.get(yarnName) || { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0 };
@@ -364,7 +372,7 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
       if (totalNet <= minQty) inventoryStatus = 'low_stock';
       else if (totalNet <= minQty * 1.2) inventoryStatus = 'soon_to_be_low';
     }
-    const inventory = await YarnInventory.findOne({ yarnCatalogId: catalog?._id }).lean();
+    const inventory = catalog?._id ? inventoryByCatalogId.get(String(catalog._id)) : undefined;
     const blocked = toNum(inventory?.blockedNetWeight ?? 0);
 
     inventoryMap.set(yarnName, {
