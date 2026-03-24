@@ -75,11 +75,13 @@ export const DEFAULT_NAVIGATION = {
     'Vendor List': false,
     'Vendor PO Raise': false,
     'Vendor PO Receive': false,
-    'Checking': false,
-    'GRN': false,
+    'Secondary Checking': false,
+    'Washing': false,
+    'Boarding': false,
     'Branding': false,
     'Final Checking': false,
-    'Counting & Dispatch': false
+    'Counting & Dispatch': false,
+    'GRN': false
   }
 };
 
@@ -155,11 +157,13 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Vendor List': true,
       'Vendor PO Raise': true,
       'Vendor PO Receive': true,
-      'Checking': true,
-      'GRN': true,
+      'Secondary Checking': true,
+      'Washing': true,
+      'Boarding': true,
       'Branding': true,
       'Final Checking': true,
-      'Counting & Dispatch': true
+      'Counting & Dispatch': true,
+      'GRN': true
     }
   },
   user: {
@@ -230,11 +234,13 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Vendor List': false,
       'Vendor PO Raise': false,
       'Vendor PO Receive': false,
-      'Checking': false,
-      'GRN': false,
+      'Secondary Checking': false,
+      'Washing': false,
+      'Boarding': false,
       'Branding': false,
       'Final Checking': false,
-      'Counting & Dispatch': false
+      'Counting & Dispatch': false,
+      'GRN': false
     }
   }
 };
@@ -400,7 +406,7 @@ export const validateNavigationStructure = (navigation) => {
     console.error('Validation failed: Vendor PO is not an object');
     return false;
   }
-  const vendorPOKeys = ['Vendor List', 'Vendor PO Raise', 'Vendor PO Receive', 'Checking', 'GRN', 'Branding', 'Final Checking', 'Counting & Dispatch'];
+  const vendorPOKeys = ['Vendor List', 'Vendor PO Raise', 'Vendor PO Receive', 'Secondary Checking', 'Washing', 'Boarding', 'Branding', 'Final Checking', 'Counting & Dispatch', 'GRN'];
   for (const key of vendorPOKeys) {
     if (!(key in navigation['Vendor PO']) || typeof navigation['Vendor PO'][key] !== 'boolean') {
       console.error(`Validation failed: Vendor PO.${key} is missing or not a boolean`);

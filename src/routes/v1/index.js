@@ -40,6 +40,7 @@ import yarnReportRoute from './yarn/yarnReport.route.js';
 import storageRoute from './storage.route.js';
 import yarnReqRoute from './yarn/yarnReq.route.js';
 import vendorRoute from './vendor.route.js';
+import vendorManagementRoute from './vendorManagement.route.js';
 import teamMasterRoute from './teamMaster.route.js';
 import containersMasterRoute from './containersMaster.route.js';
 import whmsRoute from './whms/index.js';
@@ -207,6 +208,10 @@ const defaultRoutes = [
   {
     path: '/storage',
     route: storageRoute,
+  },
+  {
+    path: '/vendor-management',
+    route: vendorManagementRoute,
   },
   {
     path: '/vendors',

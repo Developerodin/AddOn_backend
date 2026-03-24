@@ -11,4 +11,7 @@ export * as salesService from './sales.service.js';
 export * as analyticsService from './analytics.service.js';
 export * as faqService from './faq.service.js';
 export * as vendorService from './vendor.service.js';
+export * as vendorManagementService from './vendorManagement/vendorManagement.service.js';
+export * as vendorPurchaseOrderService from './vendorManagement/vendorPurchaseOrder.service.js';
+export * as vendorBoxService from './vendorManagement/vendorBox.service.js';
 

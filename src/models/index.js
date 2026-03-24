@@ -29,6 +29,10 @@ import YarnTransaction from './yarnReq/yarnTransaction.model.js';
 import YarnInventory from './yarnReq/yarnInventory.model.js';
 import StorageSlot from './storageManagement/storageSlot.model.js';
 import Vendor from './vendor.model.js';
+import VendorManagement from './vendorManagement/vendorManagement.model.js';
+import VendorPurchaseOrder from './vendorManagement/vendorPurchaseOrder.model.js';
+import VendorBox from './vendorManagement/vendorBox.model.js';
+import VendorProductionFlow from './vendorManagement/vendorProductionFlow.model.js';
 
 export {
   Token,
@@ -62,4 +66,8 @@ export {
   YarnInventory,
   StorageSlot,
   Vendor,
+  VendorManagement,
+  VendorPurchaseOrder,
+  VendorBox,
+  VendorProductionFlow,
 };

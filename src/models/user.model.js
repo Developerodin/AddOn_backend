@@ -64,7 +64,7 @@ const userSchema = mongoose.Schema(
       type: String,
       default: 'UTC',
     },
-   
+
     role: {
       type: String,
       enum: roles,
@@ -115,7 +115,7 @@ const userSchema = mongoose.Schema(
           'Dashboard': false,
           'Inventory': false,
           'Cataloguing': false,
-          'Purchase Management':{
+          'Purchase Management': {
             'Requisition list': false,
             'Purchase Order': false,
             'Purchase Order Recevied': false,
@@ -144,15 +144,18 @@ const userSchema = mongoose.Schema(
           'Vendor List': false,
           'Vendor PO Raise': false,
           'Vendor PO Receive': false,
-          'Checking': false,
-          'GRN': false,
+          'Secondary Checking': false,
+          'Washing': false,
+          'Boarding': false,
           'Branding': false,
           'Final Checking': false,
-          'Counting & Dispatch': false
+          'Counting & Dispatch': false,
+          'GRN': false
+
         }
       }
     }
-    
+
   },
   { timestamps: true }
 );
