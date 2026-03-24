@@ -85,6 +85,7 @@ const createUser = {
         'Boarding': Joi.boolean(),
         'Branding': Joi.boolean(),
         'Final Checking': Joi.boolean(),
+        'Dispatch': Joi.boolean(),
         'Counting & Dispatch': Joi.boolean(),
         'GRN': Joi.boolean()
       })
@@ -199,6 +200,7 @@ const updateUser = {
           'Boarding': Joi.boolean(),
           'Branding': Joi.boolean(),
           'Final Checking': Joi.boolean(),
+          'Dispatch': Joi.boolean(),
           'Counting & Dispatch': Joi.boolean(),
           'GRN': Joi.boolean()
         })
@@ -284,6 +286,7 @@ const updateUserNavigation = {
           'Boarding': Joi.boolean(),
           'Branding': Joi.boolean(),
           'Final Checking': Joi.boolean(),
+          'Dispatch': Joi.boolean(),
           'Counting & Dispatch': Joi.boolean(),
           'GRN': Joi.boolean()
         }).unknown(true)

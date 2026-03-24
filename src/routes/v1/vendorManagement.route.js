@@ -36,6 +36,18 @@ router.route('/production-flow/:vendorProductionFlowId/transfer').patch(
   vendorManagementController.transferVendorProductionFlow
 );
 
+router.route('/production-flow/:vendorProductionFlowId/confirm').post(
+  auth(),
+  validate(vendorManagementValidation.confirmVendorProductionFlow),
+  vendorManagementController.confirmVendorProductionFlow
+);
+
+router.route('/production-flow/:vendorProductionFlowId/final-checking/m2-transfer').patch(
+  auth(),
+  validate(vendorManagementValidation.transferFinalCheckingM2ForRework),
+  vendorManagementController.transferFinalCheckingM2ForRework
+);
+
 router
   .route('/:vendorManagementId/products')
   .post(auth(), validate(vendorManagementValidation.addVendorProducts), vendorManagementController.addVendorProducts)

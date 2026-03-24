@@ -149,6 +149,7 @@ const userSchema = mongoose.Schema(
           'Boarding': false,
           'Branding': false,
           'Final Checking': false,
+          'Dispatch': false,
           'Counting & Dispatch': false,
           'GRN': false
 

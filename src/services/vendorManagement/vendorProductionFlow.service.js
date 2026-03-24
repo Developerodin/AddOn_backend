@@ -35,7 +35,7 @@ export const syncBoxToProductionFlow = async (box, quantityChange) => {
   await VendorProductionFlow.findOneAndUpdate(filter, update, { upsert: true, new: true, setDefaultsOnInsert: true });
 };
 
-const allowedFloorKeys = new Set(['secondaryChecking', 'washing', 'boarding', 'branding', 'finalChecking']);
+const allowedFloorKeys = new Set(['secondaryChecking', 'washing', 'boarding', 'branding', 'finalChecking', 'dispatch']);
 
 /**
  * Patch update for one vendor production floor.
@@ -172,6 +172,104 @@ export const transferVendorProductionFlowQuantity = async (flowId, fromFloorKey,
   toFloor.received = Number(toFloor.received || 0) + qty;
   toFloor.remaining = Number(toFloor.remaining || 0) + qty;
 
+  flow.currentFloorKey = toFloorKey;
+  if (!flow.startedAt) {
+    flow.startedAt = new Date();
+  }
+
+  await flow.save();
+  return flow;
+};
+
+/**
+ * Final confirm: move pending final-checking qty to dispatch and mark order completed.
+ * @param {string} flowId
+ * @param {string} [remarks]
+ */
+export const confirmVendorProductionFlowById = async (flowId, remarks) => {
+  const flow = await VendorProductionFlow.findById(flowId);
+  if (!flow) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Vendor production flow not found');
+  }
+
+  const finalChecking = flow.floorQuantities?.finalChecking || {};
+  const dispatch = flow.floorQuantities?.dispatch || {};
+
+  const pendingToDispatch = Math.max(0, Number(finalChecking.completed || 0) - Number(finalChecking.transferred || 0));
+  if (pendingToDispatch > 0) {
+    finalChecking.transferred = Number(finalChecking.transferred || 0) + pendingToDispatch;
+    finalChecking.remaining = Math.max(
+      0,
+      Number(finalChecking.received || 0) - Number(finalChecking.completed || 0) - Number(finalChecking.transferred || 0)
+    );
+    finalChecking.m1Transferred = Number(finalChecking.m1Transferred || 0) + pendingToDispatch;
+    finalChecking.m1Remaining = Math.max(0, Number(finalChecking.m1Quantity || 0) - Number(finalChecking.m1Transferred || 0));
+
+    dispatch.received = Number(dispatch.received || 0) + pendingToDispatch;
+    dispatch.remaining = Number(dispatch.remaining || 0) + pendingToDispatch;
+  }
+
+  dispatch.completed = Number(dispatch.received || 0);
+  dispatch.remaining = Math.max(
+    0,
+    Number(dispatch.received || 0) - Number(dispatch.completed || 0) - Number(dispatch.transferred || 0)
+  );
+
+  flow.floorQuantities.finalChecking = finalChecking;
+  flow.floorQuantities.dispatch = dispatch;
+  flow.currentFloorKey = 'dispatch';
+  flow.finalQualityConfirmed = true;
+  flow.completedAt = new Date();
+  if (!flow.startedAt) {
+    flow.startedAt = new Date();
+  }
+  if (remarks !== undefined) {
+    flow.remarks = remarks;
+  }
+
+  await flow.save();
+  return flow;
+};
+
+/**
+ * Send M2 quantity from finalChecking to a rework floor.
+ * @param {string} flowId
+ * @param {'washing'|'boarding'|'branding'} toFloorKey
+ * @param {number} quantity
+ */
+export const transferFinalCheckingM2ForRework = async (flowId, toFloorKey, quantity) => {
+  const allowedReworkFloors = new Set(['washing', 'boarding', 'branding']);
+  if (!allowedReworkFloors.has(toFloorKey)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'M2 can be transferred only to washing, boarding, or branding');
+  }
+
+  const qty = Number(quantity);
+  if (!Number.isFinite(qty) || qty <= 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Transfer quantity must be greater than 0');
+  }
+
+  const flow = await VendorProductionFlow.findById(flowId);
+  if (!flow) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Vendor production flow not found');
+  }
+
+  const finalChecking = flow.floorQuantities?.finalChecking || {};
+  const target = flow.floorQuantities?.[toFloorKey] || {};
+
+  const availableM2 = Math.max(0, Number(finalChecking.m2Quantity || 0) - Number(finalChecking.m2Transferred || 0));
+  if (qty > availableM2) {
+    throw new ApiError(httpStatus.BAD_REQUEST, `Only ${availableM2} M2 quantity is available for transfer`);
+  }
+
+  finalChecking.m2Transferred = Number(finalChecking.m2Transferred || 0) + qty;
+  finalChecking.m2Remaining = Math.max(0, Number(finalChecking.m2Quantity || 0) - Number(finalChecking.m2Transferred || 0));
+
+  // Rework quantity arrives as repair workload on selected floor.
+  target.repairReceived = Number(target.repairReceived || 0) + qty;
+  target.remaining = Number(target.remaining || 0) + qty;
+
+  flow.floorQuantities.finalChecking = finalChecking;
+  flow.floorQuantities[toFloorKey] = target;
   flow.currentFloorKey = toFloorKey;
   if (!flow.startedAt) {
     flow.startedAt = new Date();

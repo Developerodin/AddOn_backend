@@ -48,6 +48,24 @@ export const transferVendorProductionFlow = catchAsync(async (req, res) => {
   res.send(result);
 });
 
+export const confirmVendorProductionFlow = catchAsync(async (req, res) => {
+  const { vendorProductionFlowId } = req.params;
+  const { remarks } = req.body || {};
+  const result = await vendorProductionFlowService.confirmVendorProductionFlowById(vendorProductionFlowId, remarks);
+  res.send(result);
+});
+
+export const transferFinalCheckingM2ForRework = catchAsync(async (req, res) => {
+  const { vendorProductionFlowId } = req.params;
+  const { toFloorKey, quantity } = req.body;
+  const result = await vendorProductionFlowService.transferFinalCheckingM2ForRework(
+    vendorProductionFlowId,
+    toFloorKey,
+    quantity
+  );
+  res.send(result);
+});
+
 export const getVendorManagement = catchAsync(async (req, res) => {
   const populateProducts = req.query.populate === 'products';
   const doc = await vendorManagementService.getVendorManagementById(req.params.vendorManagementId, {

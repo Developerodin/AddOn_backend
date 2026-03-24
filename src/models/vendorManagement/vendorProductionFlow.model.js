@@ -10,7 +10,7 @@ import {
 
 /**
  * Fixed vendor production pipeline (only order that exists for this module):
- * secondaryChecking → washing → boarding → branding → finalChecking
+ * secondaryChecking → washing → boarding → branding → finalChecking → dispatch
  */
 export const vendorProductionFlowSequence = [
   'secondaryChecking',
@@ -18,6 +18,7 @@ export const vendorProductionFlowSequence = [
   'boarding',
   'branding',
   'finalChecking',
+  'dispatch',
 ];
 
 /** Same as {@link vendorProductionFlowSequence} — all floor keys on the document */
@@ -30,6 +31,7 @@ const floorQuantitiesSchema = new mongoose.Schema(
     boarding: { type: vendorStandardFloorSchema, default: () => ({}) },
     branding: { type: vendorBrandingFloorSchema, default: () => ({}) },
     finalChecking: { type: vendorFinalCheckingFloorSchema, default: () => ({}) },
+    dispatch: { type: vendorStandardFloorSchema, default: () => ({}) },
   },
   { _id: false }
 );

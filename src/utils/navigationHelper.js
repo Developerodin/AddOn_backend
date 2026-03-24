@@ -80,6 +80,7 @@ export const DEFAULT_NAVIGATION = {
     'Boarding': false,
     'Branding': false,
     'Final Checking': false,
+    'Dispatch': false,
     'Counting & Dispatch': false,
     'GRN': false
   }
@@ -162,6 +163,7 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Boarding': true,
       'Branding': true,
       'Final Checking': true,
+      'Dispatch': true,
       'Counting & Dispatch': true,
       'GRN': true
     }
@@ -239,6 +241,7 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Boarding': false,
       'Branding': false,
       'Final Checking': false,
+      'Dispatch': false,
       'Counting & Dispatch': false,
       'GRN': false
     }
@@ -406,7 +409,7 @@ export const validateNavigationStructure = (navigation) => {
     console.error('Validation failed: Vendor PO is not an object');
     return false;
   }
-  const vendorPOKeys = ['Vendor List', 'Vendor PO Raise', 'Vendor PO Receive', 'Secondary Checking', 'Washing', 'Boarding', 'Branding', 'Final Checking', 'Counting & Dispatch', 'GRN'];
+  const vendorPOKeys = ['Vendor List', 'Vendor PO Raise', 'Vendor PO Receive', 'Secondary Checking', 'Washing', 'Boarding', 'Branding', 'Final Checking', 'Dispatch', 'Counting & Dispatch', 'GRN'];
   for (const key of vendorPOKeys) {
     if (!(key in navigation['Vendor PO']) || typeof navigation['Vendor PO'][key] !== 'boolean') {
       console.error(`Validation failed: Vendor PO.${key} is missing or not a boolean`);

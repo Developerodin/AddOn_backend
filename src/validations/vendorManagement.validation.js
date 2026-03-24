@@ -78,7 +78,7 @@ export const getVendorProductionFlows = {
     vendor: Joi.string().custom(objectId),
     vendorPurchaseOrder: Joi.string().custom(objectId),
     product: Joi.string().custom(objectId),
-    currentFloorKey: Joi.string().valid('secondaryChecking', 'washing', 'boarding', 'branding', 'finalChecking'),
+    currentFloorKey: Joi.string().valid('secondaryChecking', 'washing', 'boarding', 'branding', 'finalChecking', 'dispatch'),
     search: Joi.string(),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
@@ -89,7 +89,7 @@ export const getVendorProductionFlows = {
 export const updateVendorProductionFlowFloor = {
   params: Joi.object().keys({
     vendorProductionFlowId: Joi.string().custom(objectId).required(),
-    floorKey: Joi.string().valid('secondaryChecking', 'washing', 'boarding', 'branding', 'finalChecking').required(),
+    floorKey: Joi.string().valid('secondaryChecking', 'washing', 'boarding', 'branding', 'finalChecking', 'dispatch').required(),
   }),
   body: Joi.object()
     .keys({
@@ -108,7 +108,8 @@ export const updateVendorProductionFlowFloor = {
       repairRemarks: Joi.string().allow('', null),
       autoTransferToNextFloor: Joi.boolean(),
     })
-    .min(1),
+    .min(1)
+    .unknown(true),
 };
 
 export const transferVendorProductionFlow = {
@@ -117,8 +118,30 @@ export const transferVendorProductionFlow = {
   }),
   body: Joi.object().keys({
     fromFloorKey: Joi.string().valid('secondaryChecking', 'washing', 'boarding', 'branding', 'finalChecking').required(),
-    toFloorKey: Joi.string().valid('washing', 'boarding', 'branding', 'finalChecking').required(),
+    toFloorKey: Joi.string().valid('washing', 'boarding', 'branding', 'finalChecking', 'dispatch').required(),
     quantity: Joi.number().min(1).required(),
+  }),
+};
+
+export const confirmVendorProductionFlow = {
+  params: Joi.object().keys({
+    vendorProductionFlowId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object()
+    .keys({
+      remarks: Joi.string().allow('', null),
+    })
+    .unknown(true),
+};
+
+export const transferFinalCheckingM2ForRework = {
+  params: Joi.object().keys({
+    vendorProductionFlowId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object().keys({
+    toFloorKey: Joi.string().valid('washing', 'boarding', 'branding').required(),
+    quantity: Joi.number().min(1).required(),
+    remarks: Joi.string().allow('', null),
   }),
 };
 
