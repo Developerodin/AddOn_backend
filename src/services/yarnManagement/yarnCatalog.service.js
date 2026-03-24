@@ -198,12 +198,7 @@ const convertIdsToEmbedded = async (yarnCatalogBody) => {
 export const createYarnCatalog = async (yarnCatalogBody) => {
   // Convert IDs to embedded objects
   const processedBody = await convertIdsToEmbedded(yarnCatalogBody);
-  
-  // Check if yarnName is taken (if provided)
-  if (processedBody.yarnName && await YarnCatalog.isYarnNameTaken(processedBody.yarnName)) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Yarn catalog name already taken');
-  }
-  
+
   return YarnCatalog.create(processedBody);
 };
 
@@ -303,12 +298,7 @@ export const updateYarnCatalogById = async (yarnCatalogId, updateBody) => {
   
   // Convert IDs to embedded objects
   const processedBody = await convertIdsToEmbedded(updateBody);
-  
-  // Check if yarnName is taken (if being updated)
-  if (processedBody.yarnName && (await YarnCatalog.isYarnNameTaken(processedBody.yarnName, yarnCatalogId))) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Yarn catalog name already taken');
-  }
-  
+
   Object.assign(yarnCatalog, processedBody);
   await yarnCatalog.save();
   return yarnCatalog;
@@ -412,25 +402,13 @@ export const bulkImportYarnCatalogs = async (yarnCatalogs, batchSize = 50) => {
               if (!existingYarnCatalog) {
                 throw new Error(`Yarn catalog with ID ${yarnCatalogData.id} not found`);
               }
-              
-              // Check for yarnName conflicts (if provided)
-              if (processedData.yarnName && processedData.yarnName !== existingYarnCatalog.yarnName) {
-                if (await YarnCatalog.isYarnNameTaken(processedData.yarnName, yarnCatalogData.id)) {
-                  throw new Error(`Yarn catalog name "${processedData.yarnName}" already taken`);
-                }
-              }
-              
+
               await YarnCatalog.updateOne(
                 { _id: yarnCatalogData.id },
                 { $set: processedData }
               );
               results.updated++;
             } else {
-              // Check for yarnName conflicts (if provided)
-              if (processedData.yarnName && await YarnCatalog.isYarnNameTaken(processedData.yarnName)) {
-                throw new Error(`Yarn catalog name "${processedData.yarnName}" already taken`);
-              }
-              
               await YarnCatalog.create(processedData);
               results.created++;
             }

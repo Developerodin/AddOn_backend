@@ -30,6 +30,13 @@ router
     yarnTransactionController.getAllYarnIssued
   );
 
+router
+  .route('/:transactionId')
+  .get(
+    validate(yarnTransactionValidation.getYarnTransactionById),
+    yarnTransactionController.getYarnTransactionById
+  );
+
 export default router;
 
 

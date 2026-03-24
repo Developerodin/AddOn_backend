@@ -659,17 +659,6 @@ if (originalToJSON && originalToJSON.transform) {
 }
 
 /**
- * Check if yarn name is taken
- * @param {string} yarnName - The yarn catalog name
- * @param {ObjectId} [excludeYarnCatalogId] - The id of the yarn catalog to be excluded
- * @returns {Promise<boolean>}
- */
-yarnCatalogSchema.statics.isYarnNameTaken = async function (yarnName, excludeYarnCatalogId) {
-  const yarnCatalog = await this.findOne({ yarnName, _id: { $ne: excludeYarnCatalogId } });
-  return !!yarnCatalog;
-};
-
-/**
  * @typedef YarnCatalog
  */
 const YarnCatalog = mongoose.model('YarnCatalog', yarnCatalogSchema);

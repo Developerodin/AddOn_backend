@@ -98,4 +98,10 @@ export const getAllYarnIssued = {
   }),
 };
 
+export const getYarnTransactionById = {
+  params: Joi.object().keys({
+    transactionId: Joi.string().custom(objectId).required(),
+  }),
+};
+
 
