@@ -367,6 +367,31 @@ export const createYarnTransaction = async (transactionBody) => {
   return transactionRecord;
 };
 
+/**
+ * Loads a single yarn transaction by MongoDB _id with populated refs (same shape as list endpoints).
+ */
+export const getYarnTransactionById = async (transactionId) => {
+  if (!mongoose.Types.ObjectId.isValid(transactionId)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid yarn transaction id');
+  }
+
+  const transaction = await YarnTransaction.findById(transactionId)
+    .populate({
+      path: 'yarnCatalogId',
+      select: '_id yarnName yarnType status',
+    })
+    .populate({ path: 'orderId', select: 'orderNumber' })
+    .populate({ path: 'articleId', select: 'articleNumber orderId machineId' })
+    .populate({ path: 'machineId', select: 'machineCode machineNumber model floor' })
+    .lean();
+
+  if (!transaction) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Yarn transaction not found');
+  }
+
+  return transaction;
+};
+
 export const queryYarnTransactions = async (filters = {}) => {
   const mongooseFilter = {};
 

@@ -74,4 +74,10 @@ export const getAllYarnIssued = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(transactions);
 });
 
+export const getYarnTransactionById = catchAsync(async (req, res) => {
+  const { transactionId } = req.params;
+  const transaction = await yarnTransactionService.getYarnTransactionById(transactionId);
+  res.status(httpStatus.OK).send(transaction);
+});
+
 
