@@ -11,6 +11,8 @@ import { RepairStatus } from '../production/enums.js';
 export const receivedDataEntrySchema = new mongoose.Schema(
   {
     receivedStatusFromPreviousFloor: { type: String, default: '' },
+    lotNumber: { type: String, default: '', trim: true },
+    boxId: { type: String, default: '', trim: true },
     receivedInContainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'ContainersMaster', default: null },
     receivedTimestamp: { type: Date, default: null },
   },

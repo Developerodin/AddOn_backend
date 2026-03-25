@@ -19,20 +19,62 @@ export const syncBoxToProductionFlow = async (box, quantityChange) => {
     product: box.productId,
   };
 
-  const update = {
-    $inc: {
-      plannedQuantity: quantityChange,
-      'floorQuantities.secondaryChecking.received': quantityChange,
-      'floorQuantities.secondaryChecking.remaining': quantityChange,
-    },
-    $setOnInsert: {
-      currentFloorKey: 'secondaryChecking',
-      referenceCode: box.lotNumber || box.vpoNumber,
-    },
+  const qty = Number(quantityChange) || 0;
+  if (qty <= 0) return;
+
+  let flow = await VendorProductionFlow.findOne(filter);
+  const lotNumber = box.lotNumber ? String(box.lotNumber) : '';
+  const lotMarker = lotNumber ? `lot:${lotNumber}` : '';
+  const lotEntry = {
+    receivedStatusFromPreviousFloor: lotMarker || `box:${box.boxId || ''}`,
+    lotNumber,
+    boxId: box.boxId || '',
+    receivedTimestamp: new Date(),
   };
 
-  // Upsert the production flow document
-  await VendorProductionFlow.findOneAndUpdate(filter, update, { upsert: true, new: true, setDefaultsOnInsert: true });
+  if (!flow) {
+    flow = await VendorProductionFlow.create({
+      ...filter,
+      currentFloorKey: 'secondaryChecking',
+      referenceCode: box.lotNumber || box.vpoNumber,
+      plannedQuantity: qty,
+      floorQuantities: {
+        secondaryChecking: {
+          received: qty,
+          remaining: qty,
+          receivedData: [lotEntry],
+        },
+      },
+      startedAt: new Date(),
+    });
+    return flow;
+  }
+
+  flow.plannedQuantity = Number(flow.plannedQuantity || 0) + qty;
+  const sc = flow.floorQuantities?.secondaryChecking || {};
+  sc.received = Number(sc.received || 0) + qty;
+  sc.remaining = Number(sc.remaining || 0) + qty;
+  sc.receivedData = Array.isArray(sc.receivedData) ? sc.receivedData : [];
+
+  const hasLotEntry = lotMarker
+    ? sc.receivedData.some((entry) => String(entry?.lotNumber || '') === lotNumber)
+    : false;
+  if (!hasLotEntry) {
+    sc.receivedData.push(lotEntry);
+  }
+
+  flow.floorQuantities.secondaryChecking = sc;
+  if (!flow.currentFloorKey) {
+    flow.currentFloorKey = 'secondaryChecking';
+  }
+  if (!flow.referenceCode) {
+    flow.referenceCode = box.lotNumber || box.vpoNumber;
+  }
+  if (!flow.startedAt) {
+    flow.startedAt = new Date();
+  }
+  await flow.save();
+  return flow;
 };
 
 const allowedFloorKeys = new Set(['secondaryChecking', 'washing', 'boarding', 'branding', 'finalChecking', 'dispatch']);

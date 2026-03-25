@@ -1,6 +1,6 @@
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
-import { VendorPurchaseOrder, VendorManagement, VendorBox } from '../../models/index.js';
+import { VendorPurchaseOrder, VendorManagement, VendorBox, VendorProductionFlow } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import { vendorPurchaseOrderStatuses } from '../../models/vendorManagement/vendorPurchaseOrder.model.js';
 import getNextVendorPoNumberForYear from '../../utils/vendorPoNumber.util.js';
@@ -123,6 +123,7 @@ export const deleteVendorPurchaseOrderById = async (purchaseOrderId) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Vendor purchase order not found');
   }
   await VendorBox.deleteMany({ vendorPurchaseOrderId: purchaseOrderId });
+  await VendorProductionFlow.deleteMany({ vendorPurchaseOrder: purchaseOrderId });
   await purchaseOrder.deleteOne();
   return purchaseOrder;
 };
