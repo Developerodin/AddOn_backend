@@ -26,6 +26,11 @@ export const getVendorProductionFlows = catchAsync(async (req, res) => {
   res.send(result);
 });
 
+export const getVendorProductionFlow = catchAsync(async (req, res) => {
+  const doc = await vendorManagementService.getVendorProductionFlowById(req.params.vendorProductionFlowId);
+  res.send(doc);
+});
+
 export const updateVendorProductionFlowFloor = catchAsync(async (req, res) => {
   const { vendorProductionFlowId, floorKey } = req.params;
   const result = await vendorProductionFlowService.updateVendorProductionFlowFloorById(

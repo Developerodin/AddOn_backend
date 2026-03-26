@@ -973,4 +973,63 @@ export const bulkExportProducts = async (filter, options = {}, search) => {
   });
 
   return { products: exportRows, total };
+};
+
+/**
+ * All distinct StyleCode docs referenced by active products with this `vendorCode` (case-insensitive match on product.vendorCode).
+ * @param {string} vendorCode
+ * @returns {Promise<{ vendorCode: string, productCount: number, styleCodes: Array<{ id: string, styleCode: string, eanCode: string, brand: string, pack: string, mrp: number, status: string }> }>}
+ */
+export const getStyleCodesByVendorCode = async (vendorCode) => {
+  const raw = String(vendorCode ?? '').trim();
+  if (!raw) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'vendorCode is required');
+  }
+
+  const rx = new RegExp(`^${escapeRegex(raw)}$`, 'i');
+  const products = await Product.find({
+    vendorCode: rx,
+    status: 'active',
+  })
+    .select('styleCodes')
+    .lean();
+
+  const idSet = new Set();
+  for (const p of products) {
+    (p.styleCodes || []).forEach((id) => {
+      if (id) idSet.add(String(id));
+    });
+  }
+
+  const ids = [...idSet].filter((id) => mongoose.Types.ObjectId.isValid(id));
+  if (ids.length === 0) {
+    return {
+      vendorCode: raw,
+      productCount: products.length,
+      styleCodes: [],
+    };
+  }
+
+  const styleDocs = await StyleCode.find({
+    _id: { $in: ids.map((id) => new mongoose.Types.ObjectId(id)) },
+  })
+    .select('styleCode eanCode brand pack mrp status')
+    .sort({ styleCode: 1 })
+    .lean();
+
+  const styleCodes = styleDocs.map((s) => ({
+    id: String(s._id),
+    styleCode: s.styleCode,
+    eanCode: s.eanCode,
+    brand: s.brand ?? '',
+    pack: s.pack ?? '',
+    mrp: s.mrp,
+    status: s.status,
+  }));
+
+  return {
+    vendorCode: raw,
+    productCount: products.length,
+    styleCodes,
+  };
 }; 

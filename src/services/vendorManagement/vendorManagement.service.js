@@ -215,3 +215,18 @@ export const queryVendorProductionFlows = async (filter, options, search) => {
 
   return VendorProductionFlow.paginate(mongoFilter, paginateOptions);
 };
+
+/**
+ * Single vendor production flow by id (same populate shape as list rows).
+ * @param {import('mongoose').Types.ObjectId|string} flowId
+ */
+export const getVendorProductionFlowById = async (flowId) => {
+  const doc = await VendorProductionFlow.findById(flowId)
+    .populate('vendor', 'header.vendorName header.vendorCode')
+    .populate('vendorPurchaseOrder', 'vpoNumber vendorName currentStatus')
+    .populate('product', 'name softwareCode internalCode status');
+  if (!doc) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Vendor production flow not found');
+  }
+  return doc;
+};

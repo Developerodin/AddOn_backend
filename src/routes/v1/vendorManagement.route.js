@@ -24,6 +24,10 @@ router
     vendorManagementController.getVendorProductionFlows
   );
 
+router
+  .route('/production-flow/:vendorProductionFlowId')
+  .get(auth(), validate(vendorManagementValidation.getVendorProductionFlow), vendorManagementController.getVendorProductionFlow);
+
 router.route('/production-flow/:vendorProductionFlowId/floors/:floorKey').patch(
   auth(),
   validate(vendorManagementValidation.updateVendorProductionFlowFloor),

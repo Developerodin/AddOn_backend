@@ -31,6 +31,17 @@ export const receivedDataBrandingEntrySchema = new mongoose.Schema(
   { _id: false }
 );
 
+/**
+ * Per–style/brand line for **outbound** from branding or final checking.
+ *
+ * **`transferred`** here is the **same** quantity for three ideas at once:
+ * 1) units **completed** on this floor for this line (attributed to `styleCode` / `brand`),
+ * 2) units **counted in** this floor’s outbound handoff,
+ * 3) units **sent to the next floor** (final checking from branding; dispatch path from final checking).
+ *
+ * Sum of all `transferredData[].transferred` should match floor **`transferred`** when the breakdown is complete.
+ * When everything completed is forwarded, floor **`completed`** should align with floor **`transferred`** as well.
+ */
 export const transferredDataEntrySchema = new mongoose.Schema(
   {
     transferred: { type: Number, required: true, min: 0 },
@@ -53,6 +64,13 @@ export const vendorStandardFloorSchema = new mongoose.Schema(
   { _id: false }
 );
 
+/**
+ * Mirrors {@link ../production/article.model.js} `floorQuantities.branding` (counters + styleCode/brand breakdown).
+ *
+ * - **`transferredData`**: breakdown of **completed + forwarded** qty by style/brand (each row’s `transferred` = qty to next floor for that line).
+ * - Floor **`transferred`**: total qty moved to **final checking**; should equal **sum(`transferredData[].transferred`)** when fully attributed.
+ * - Floor **`completed`**: total finished on branding; should match **`transferred`** when all completed work is sent forward.
+ */
 export const vendorBrandingFloorSchema = new mongoose.Schema(
   {
     received: { type: Number, default: 0 },
@@ -66,6 +84,7 @@ export const vendorBrandingFloorSchema = new mongoose.Schema(
   { _id: false }
 );
 
+/** Uses {@link transferredDataEntrySchema}: each row’s `transferred` = completed + forwarded for that line (next: dispatch path). */
 export const vendorFinalCheckingFloorSchema = new mongoose.Schema(
   {
     received: { type: Number, default: 0 },
@@ -85,23 +104,10 @@ export const vendorFinalCheckingFloorSchema = new mongoose.Schema(
       default: RepairStatus.NOT_REQUIRED,
     },
     repairRemarks: { type: String, default: '' },
+    /** Same shape as {@link article.model.js} `floorQuantities.finalChecking.transferredData` (styleCode / brand). */
     transferredData: { type: [transferredDataEntrySchema], default: [] },
-    receivedData: {
-      type: [
-        new mongoose.Schema(
-          {
-            receivedStatusFromPreviousFloor: { type: String, default: '' },
-            receivedInContainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'ContainersMaster', default: null },
-            receivedTimestamp: { type: Date, default: null },
-            transferred: { type: Number, default: 0 },
-            styleCode: { type: String, default: '' },
-            brand: { type: String, default: '' },
-          },
-          { _id: false }
-        ),
-      ],
-      default: [],
-    },
+    /** Same shape as branding + article `finalChecking.receivedData` (styleCode / brand). Vendor has no M3. */
+    receivedData: { type: [receivedDataBrandingEntrySchema], default: [] },
   },
   { _id: false }
 );

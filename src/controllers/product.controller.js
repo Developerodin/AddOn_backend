@@ -129,4 +129,10 @@ export const getProductsByFactoryCodes = catchAsync(async (req, res) => {
   const { factoryCodes } = req.body;
   const products = await productService.getProductsByFactoryCodes(factoryCodes);
   res.send(products);
+});
+
+export const getStyleCodesByVendorCode = catchAsync(async (req, res) => {
+  const { vendorCode } = req.query;
+  const result = await productService.getStyleCodesByVendorCode(vendorCode);
+  res.send(result);
 }); 

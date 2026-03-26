@@ -86,6 +86,12 @@ export const getVendorProductionFlows = {
   }),
 };
 
+export const getVendorProductionFlow = {
+  params: Joi.object().keys({
+    vendorProductionFlowId: Joi.string().custom(objectId).required(),
+  }),
+};
+
 export const updateVendorProductionFlowFloor = {
   params: Joi.object().keys({
     vendorProductionFlowId: Joi.string().custom(objectId).required(),
@@ -93,6 +99,17 @@ export const updateVendorProductionFlowFloor = {
   }),
   body: Joi.object()
     .keys({
+      mode: Joi.string().valid('increment', 'replace'),
+
+      // Increment mode (idempotent cumulative semantics)
+      receivedDelta: Joi.number().min(0),
+      completedDelta: Joi.number().min(0),
+      transferredDelta: Joi.number().min(0),
+      m1Delta: Joi.number().min(0),
+      m2Delta: Joi.number().min(0),
+      m4Delta: Joi.number().min(0),
+
+      // Backward compatibility (replace semantics)
       received: Joi.number().min(0),
       completed: Joi.number().min(0),
       remaining: Joi.number().min(0),
@@ -107,6 +124,8 @@ export const updateVendorProductionFlowFloor = {
       repairStatus: Joi.string().valid(...Object.values(RepairStatus)),
       repairRemarks: Joi.string().allow('', null),
       autoTransferToNextFloor: Joi.boolean(),
+      /** Clears M1–M4, transfers, completed, repair fields on secondary checking; keeps `received`. */
+      resetSecondaryChecking: Joi.boolean(),
     })
     .min(1)
     .unknown(true),
@@ -116,11 +135,21 @@ export const transferVendorProductionFlow = {
   params: Joi.object().keys({
     vendorProductionFlowId: Joi.string().custom(objectId).required(),
   }),
-  body: Joi.object().keys({
-    fromFloorKey: Joi.string().valid('secondaryChecking', 'washing', 'boarding', 'branding', 'finalChecking').required(),
-    toFloorKey: Joi.string().valid('washing', 'boarding', 'branding', 'finalChecking', 'dispatch').required(),
-    quantity: Joi.number().min(1).required(),
-  }),
+  body: Joi.object()
+    .keys({
+      mode: Joi.string().valid('increment', 'replace'),
+      fromFloorKey: Joi.string()
+        .valid('secondaryChecking', 'washing', 'boarding', 'branding', 'finalChecking')
+        .required(),
+      toFloorKey: Joi.string().valid('washing', 'boarding', 'branding', 'finalChecking', 'dispatch').required(),
+
+      // Backward compatible
+      quantity: Joi.number().min(1),
+
+      // Increment mode (recommended)
+      quantityDelta: Joi.number().min(1),
+    })
+    .min(3),
 };
 
 export const confirmVendorProductionFlow = {

@@ -49,6 +49,10 @@ router
   .post(validate(productValidation.getProductsByFactoryCodes), productController.getProductsByFactoryCodes);
 
 router
+  .route('/style-codes-by-vendor-code')
+  .get(validate(productValidation.getStyleCodesByVendorCode), productController.getStyleCodesByVendorCode);
+
+router
   .route('/:productId')
   .get(validate(productValidation.getProduct), productController.getProduct)
   .patch(validate(productValidation.updateProduct), productController.updateProduct)

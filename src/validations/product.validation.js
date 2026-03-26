@@ -210,6 +210,12 @@ const getProductsByFactoryCodes = {
   }),
 };
 
+const getStyleCodesByVendorCode = {
+  query: Joi.object().keys({
+    vendorCode: Joi.string().trim().required(),
+  }),
+};
+
 export default {
   createProduct,
   getProducts,
@@ -221,4 +227,5 @@ export default {
   bulkExportProducts,
   getProductByCode,
   getProductsByFactoryCodes,
+  getStyleCodesByVendorCode,
 }; 
