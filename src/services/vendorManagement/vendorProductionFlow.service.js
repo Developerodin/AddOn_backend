@@ -142,261 +142,281 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
 
   const normalizedBody = normalizeCheckingFloorSplitBody(floorKey, body);
 
+  const applyPatchUpdates = async (session = null) => {
+    const sessionOptions = session ? { session } : undefined;
+    let updatedFlow;
+    const flowQuery = VendorProductionFlow.findById(flowId);
+    const flow = session ? await flowQuery.session(session) : await flowQuery;
+    if (!flow) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'Vendor production flow not found');
+    }
+
+    const before = pickFloorSnapshot(flow, floorKey);
+
+    const bodyForPatch = { ...normalizedBody };
+    const hasTransferredBreakdown =
+      (floorKey === 'branding' || floorKey === 'finalChecking') && Array.isArray(bodyForPatch?.transferredData);
+    if (
+      hasTransferredBreakdown &&
+      bodyForPatch.completed === undefined &&
+      bodyForPatch.completedDelta === undefined
+    ) {
+      const transferredDataTotal = bodyForPatch.transferredData.reduce(
+        (sum, row) => sum + Math.max(0, Number(row?.transferred || 0)),
+        0
+      );
+      if (resolveMode(bodyForPatch) === 'increment') {
+        bodyForPatch.completedDelta = Math.max(0, transferredDataTotal - Number(before.completed || 0));
+      } else {
+        bodyForPatch.completed = transferredDataTotal;
+      }
+    }
+
+    const mode = resolveMode(bodyForPatch);
+    const shouldAutoTransfer = bodyForPatch?.autoTransferToNextFloor === true;
+
+    if (bodyForPatch?.resetSecondaryChecking === true && floorKey === 'secondaryChecking') {
+      const resetAfter = {
+        ...before,
+        received: before.received,
+        completed: 0,
+        transferred: 0,
+        m1Quantity: 0,
+        m2Quantity: 0,
+        m4Quantity: 0,
+        m1Transferred: 0,
+        m2Transferred: 0,
+        repairStatus: RepairStatus.NOT_REQUIRED,
+        repairRemarks: '',
+      };
+      assertValidFloorState(floorKey, resetAfter);
+      const derived = computeDerivedForFloor(floorKey, resetAfter);
+      await VendorProductionFlow.updateOne(
+        { _id: flowId },
+        {
+          $set: {
+            [floorPath(floorKey, 'completed')]: 0,
+            [floorPath(floorKey, 'transferred')]: 0,
+            [floorPath(floorKey, 'm1Quantity')]: 0,
+            [floorPath(floorKey, 'm2Quantity')]: 0,
+            [floorPath(floorKey, 'm4Quantity')]: 0,
+            [floorPath(floorKey, 'm1Transferred')]: 0,
+            [floorPath(floorKey, 'm2Transferred')]: 0,
+            [floorPath(floorKey, 'repairStatus')]: RepairStatus.NOT_REQUIRED,
+            [floorPath(floorKey, 'repairRemarks')]: '',
+            [floorPath(floorKey, 'receivedData')]: [],
+            ...Object.fromEntries(Object.entries(derived).map(([k, v]) => [floorPath(floorKey, k), v])),
+            currentFloorKey: flow.currentFloorKey || 'secondaryChecking',
+            startedAt: flow.startedAt || new Date(),
+          },
+        },
+        sessionOptions
+      );
+    } else if (mode === 'increment') {
+      const ops = buildIncrementOps(floorKey, bodyForPatch);
+
+      // Guard: reject negative deltas early (Joi should already enforce this, but keep it defensive).
+      Object.values(ops.$inc || {}).forEach((v) => {
+        if (Number(v) < 0) {
+          throw new ApiError(httpStatus.BAD_REQUEST, 'Delta cannot be negative');
+        }
+      });
+
+      const after = {
+        ...before,
+        received: before.received + (ops.$inc?.[floorPath(floorKey, 'received')] || 0),
+        completed: before.completed + (ops.$inc?.[floorPath(floorKey, 'completed')] || 0),
+        transferred: before.transferred + (ops.$inc?.[floorPath(floorKey, 'transferred')] || 0),
+        m1Quantity: before.m1Quantity + (ops.$inc?.[floorPath(floorKey, 'm1Quantity')] || 0),
+        m2Quantity: before.m2Quantity + (ops.$inc?.[floorPath(floorKey, 'm2Quantity')] || 0),
+        m4Quantity: before.m4Quantity + (ops.$inc?.[floorPath(floorKey, 'm4Quantity')] || 0),
+        repairStatus: ops.$set?.[floorPath(floorKey, 'repairStatus')] ?? before.repairStatus,
+        repairRemarks: ops.$set?.[floorPath(floorKey, 'repairRemarks')] ?? before.repairRemarks,
+      };
+
+      assertValidFloorState(floorKey, after);
+      const derived = computeDerivedForFloor(floorKey, after);
+
+      await VendorProductionFlow.updateOne({ _id: flowId }, ops, sessionOptions);
+      await VendorProductionFlow.updateOne(
+        { _id: flowId },
+        {
+          $set: {
+            ...Object.fromEntries(Object.entries(derived).map(([k, v]) => [floorPath(floorKey, k), v])),
+            currentFloorKey: flow.currentFloorKey || 'secondaryChecking',
+            startedAt: flow.startedAt || new Date(),
+          },
+        },
+        sessionOptions
+      );
+
+      // Auto-transfer to next floor (uses updated "after" quantities)
+      const nextFloorKey = getNextFloorKey(floorKey);
+      const autoTransferTriggered =
+        shouldAutoTransfer ||
+        bodyForPatch?.completedDelta !== undefined ||
+        bodyForPatch?.completed !== undefined;
+
+      if (nextFloorKey && autoTransferTriggered) {
+        const transferable = Math.max(0, after.completed - after.transferred);
+        if (transferable > 0) {
+          const nextBefore = pickFloorSnapshot(flow, nextFloorKey);
+          const nextAfter = {
+            ...nextBefore,
+            received: nextBefore.received + transferable,
+          };
+
+          // transferred increments on current floor, received increments on next floor
+          const nextDerived = computeDerivedForFloor(nextFloorKey, nextAfter);
+          const curAfterTransfer = {
+            ...after,
+            transferred: after.transferred + transferable,
+          };
+          assertValidFloorState(floorKey, curAfterTransfer);
+          assertValidFloorState(nextFloorKey, { ...nextAfter, ...nextDerived });
+
+          await VendorProductionFlow.updateOne(
+            { _id: flowId },
+            {
+              $inc: {
+                [floorPath(floorKey, 'transferred')]: transferable,
+                [floorPath(nextFloorKey, 'received')]: transferable,
+              },
+              $set: {
+                [floorPath(floorKey, 'remaining')]: computeRemainingForFloor(floorKey, {
+                  ...after,
+                  transferred: after.transferred + transferable,
+                }),
+                [floorPath(nextFloorKey, 'remaining')]: nextDerived.remaining,
+                currentFloorKey: nextFloorKey,
+              },
+            },
+            sessionOptions
+          );
+
+          if (floorKey === 'branding' && nextFloorKey === 'finalChecking') {
+            const receiptRows = normalizeTransferBreakdownForReceipt(
+              bodyForPatch?.transferredData,
+              transferable,
+              floorKey
+            );
+            if (receiptRows.length > 0) {
+              await VendorProductionFlow.updateOne(
+                { _id: flowId },
+                { $push: { [floorPath(nextFloorKey, 'receivedData')]: { $each: receiptRows } } },
+                sessionOptions
+              );
+            }
+          }
+        }
+      }
+    } else {
+      // Replace mode (backward compatible): apply explicit fields then recompute derived server-side.
+      const ops = buildReplaceOps(floorKey, bodyForPatch);
+
+      const after = {
+        ...before,
+        ...Object.fromEntries(
+          Object.entries(ops.$set || {})
+            .filter(([k]) => k.startsWith(`floorQuantities.${floorKey}.`))
+            .map(([k, v]) => [k.split('.').slice(-1)[0], v])
+        ),
+      };
+
+      assertValidFloorState(floorKey, after);
+      const derived = computeDerivedForFloor(floorKey, after);
+
+      await VendorProductionFlow.updateOne(
+        { _id: flowId },
+        {
+          ...ops,
+          $set: {
+            ...(ops.$set || {}),
+            ...Object.fromEntries(
+              Object.entries(derived).map(([k, v]) => [floorPath(floorKey, k), v])
+            ),
+            currentFloorKey: flow.currentFloorKey || 'secondaryChecking',
+            startedAt: flow.startedAt || new Date(),
+          },
+        },
+        sessionOptions
+      );
+
+      const nextFloorKey = getNextFloorKey(floorKey);
+      const autoTransferTriggered =
+        nextFloorKey && (shouldAutoTransfer || bodyForPatch?.completed !== undefined);
+      if (autoTransferTriggered) {
+        const transferable = Math.max(0, Number(after.completed || 0) - Number(after.transferred || 0));
+        if (transferable > 0) {
+          const nextBefore = pickFloorSnapshot(flow, nextFloorKey);
+          const nextAfter = {
+            ...nextBefore,
+            received: nextBefore.received + transferable,
+          };
+          assertValidFloorState(nextFloorKey, nextAfter);
+          const nextDerived = computeDerivedForFloor(nextFloorKey, nextAfter);
+
+          await VendorProductionFlow.updateOne(
+            { _id: flowId },
+            {
+              $inc: {
+                [floorPath(floorKey, 'transferred')]: transferable,
+                [floorPath(nextFloorKey, 'received')]: transferable,
+              },
+              $set: {
+                [floorPath(floorKey, 'remaining')]: computeRemainingForFloor(floorKey, {
+                  ...after,
+                  transferred: Number(after.transferred || 0) + transferable,
+                }),
+                [floorPath(nextFloorKey, 'remaining')]: nextDerived.remaining,
+                currentFloorKey: nextFloorKey,
+              },
+            },
+            sessionOptions
+          );
+
+          if (floorKey === 'branding' && nextFloorKey === 'finalChecking') {
+            const receiptRows = normalizeTransferBreakdownForReceipt(
+              bodyForPatch?.transferredData,
+              transferable,
+              floorKey
+            );
+            if (receiptRows.length > 0) {
+              await VendorProductionFlow.updateOne(
+                { _id: flowId },
+                { $push: { [floorPath(nextFloorKey, 'receivedData')]: { $each: receiptRows } } },
+                sessionOptions
+              );
+            }
+          }
+        }
+      }
+    }
+
+    const updatedQuery = VendorProductionFlow.findById(flowId);
+    updatedFlow = session ? await updatedQuery.session(session) : await updatedQuery;
+    return updatedFlow;
+  };
+
   const session = await VendorProductionFlow.startSession();
   try {
     let updatedFlow;
-    await session.withTransaction(async () => {
-      const flow = await VendorProductionFlow.findById(flowId).session(session);
-      if (!flow) {
-        throw new ApiError(httpStatus.NOT_FOUND, 'Vendor production flow not found');
+    try {
+      await session.withTransaction(async () => {
+        updatedFlow = await applyPatchUpdates(session);
+      });
+      return updatedFlow;
+    } catch (error) {
+      const message = String(error?.message || '');
+      const isReplicaSetError =
+        message.includes('Transaction numbers are only allowed on a replica set member or mongos');
+      if (!isReplicaSetError) {
+        throw error;
       }
 
-      const before = pickFloorSnapshot(flow, floorKey);
-
-      const bodyForPatch = { ...normalizedBody };
-      const hasTransferredBreakdown =
-        (floorKey === 'branding' || floorKey === 'finalChecking') && Array.isArray(bodyForPatch?.transferredData);
-      if (
-        hasTransferredBreakdown &&
-        bodyForPatch.completed === undefined &&
-        bodyForPatch.completedDelta === undefined
-      ) {
-        const transferredDataTotal = bodyForPatch.transferredData.reduce(
-          (sum, row) => sum + Math.max(0, Number(row?.transferred || 0)),
-          0
-        );
-        if (resolveMode(bodyForPatch) === 'increment') {
-          bodyForPatch.completedDelta = Math.max(0, transferredDataTotal - Number(before.completed || 0));
-        } else {
-          bodyForPatch.completed = transferredDataTotal;
-        }
-      }
-
-      const mode = resolveMode(bodyForPatch);
-      const shouldAutoTransfer = bodyForPatch?.autoTransferToNextFloor === true;
-
-      if (bodyForPatch?.resetSecondaryChecking === true && floorKey === 'secondaryChecking') {
-        const resetAfter = {
-          ...before,
-          received: before.received,
-          completed: 0,
-          transferred: 0,
-          m1Quantity: 0,
-          m2Quantity: 0,
-          m4Quantity: 0,
-          m1Transferred: 0,
-          m2Transferred: 0,
-          repairStatus: RepairStatus.NOT_REQUIRED,
-          repairRemarks: '',
-        };
-        assertValidFloorState(floorKey, resetAfter);
-        const derived = computeDerivedForFloor(floorKey, resetAfter);
-        await VendorProductionFlow.updateOne(
-          { _id: flowId },
-          {
-            $set: {
-              [floorPath(floorKey, 'completed')]: 0,
-              [floorPath(floorKey, 'transferred')]: 0,
-              [floorPath(floorKey, 'm1Quantity')]: 0,
-              [floorPath(floorKey, 'm2Quantity')]: 0,
-              [floorPath(floorKey, 'm4Quantity')]: 0,
-              [floorPath(floorKey, 'm1Transferred')]: 0,
-              [floorPath(floorKey, 'm2Transferred')]: 0,
-              [floorPath(floorKey, 'repairStatus')]: RepairStatus.NOT_REQUIRED,
-              [floorPath(floorKey, 'repairRemarks')]: '',
-              [floorPath(floorKey, 'receivedData')]: [],
-              ...Object.fromEntries(Object.entries(derived).map(([k, v]) => [floorPath(floorKey, k), v])),
-              currentFloorKey: flow.currentFloorKey || 'secondaryChecking',
-              startedAt: flow.startedAt || new Date(),
-            },
-          },
-          { session }
-        );
-      } else if (mode === 'increment') {
-        const ops = buildIncrementOps(floorKey, bodyForPatch);
-
-        // Guard: reject negative deltas early (Joi should already enforce this, but keep it defensive).
-        Object.values(ops.$inc || {}).forEach((v) => {
-          if (Number(v) < 0) {
-            throw new ApiError(httpStatus.BAD_REQUEST, 'Delta cannot be negative');
-          }
-        });
-
-        const after = {
-          ...before,
-          received: before.received + (ops.$inc?.[floorPath(floorKey, 'received')] || 0),
-          completed: before.completed + (ops.$inc?.[floorPath(floorKey, 'completed')] || 0),
-          transferred: before.transferred + (ops.$inc?.[floorPath(floorKey, 'transferred')] || 0),
-          m1Quantity: before.m1Quantity + (ops.$inc?.[floorPath(floorKey, 'm1Quantity')] || 0),
-          m2Quantity: before.m2Quantity + (ops.$inc?.[floorPath(floorKey, 'm2Quantity')] || 0),
-          m4Quantity: before.m4Quantity + (ops.$inc?.[floorPath(floorKey, 'm4Quantity')] || 0),
-          repairStatus: ops.$set?.[floorPath(floorKey, 'repairStatus')] ?? before.repairStatus,
-          repairRemarks: ops.$set?.[floorPath(floorKey, 'repairRemarks')] ?? before.repairRemarks,
-        };
-
-        assertValidFloorState(floorKey, after);
-        const derived = computeDerivedForFloor(floorKey, after);
-
-        await VendorProductionFlow.updateOne({ _id: flowId }, ops, { session });
-        await VendorProductionFlow.updateOne(
-          { _id: flowId },
-          {
-            $set: {
-              ...Object.fromEntries(Object.entries(derived).map(([k, v]) => [floorPath(floorKey, k), v])),
-              currentFloorKey: flow.currentFloorKey || 'secondaryChecking',
-              startedAt: flow.startedAt || new Date(),
-            },
-          },
-          { session }
-        );
-
-        // Auto-transfer to next floor (uses updated "after" quantities)
-        const nextFloorKey = getNextFloorKey(floorKey);
-        const autoTransferTriggered =
-          shouldAutoTransfer ||
-          bodyForPatch?.completedDelta !== undefined ||
-          bodyForPatch?.completed !== undefined;
-
-        if (nextFloorKey && autoTransferTriggered) {
-          const transferable = Math.max(0, after.completed - after.transferred);
-          if (transferable > 0) {
-            const nextBefore = pickFloorSnapshot(flow, nextFloorKey);
-            const nextAfter = {
-              ...nextBefore,
-              received: nextBefore.received + transferable,
-            };
-
-            // transferred increments on current floor, received increments on next floor
-            const nextDerived = computeDerivedForFloor(nextFloorKey, nextAfter);
-            const curAfterTransfer = {
-              ...after,
-              transferred: after.transferred + transferable,
-            };
-            assertValidFloorState(floorKey, curAfterTransfer);
-            assertValidFloorState(nextFloorKey, { ...nextAfter, ...nextDerived });
-
-            await VendorProductionFlow.updateOne(
-              { _id: flowId },
-              {
-                $inc: {
-                  [floorPath(floorKey, 'transferred')]: transferable,
-                  [floorPath(nextFloorKey, 'received')]: transferable,
-                },
-                $set: {
-                  [floorPath(floorKey, 'remaining')]: computeRemainingForFloor(floorKey, {
-                    ...after,
-                    transferred: after.transferred + transferable,
-                  }),
-                  [floorPath(nextFloorKey, 'remaining')]: nextDerived.remaining,
-                  currentFloorKey: nextFloorKey,
-                },
-              },
-              { session }
-            );
-
-            if (floorKey === 'branding' && nextFloorKey === 'finalChecking') {
-              const receiptRows = normalizeTransferBreakdownForReceipt(
-                bodyForPatch?.transferredData,
-                transferable,
-                floorKey
-              );
-              if (receiptRows.length > 0) {
-                await VendorProductionFlow.updateOne(
-                  { _id: flowId },
-                  { $push: { [floorPath(nextFloorKey, 'receivedData')]: { $each: receiptRows } } },
-                  { session }
-                );
-              }
-            }
-          }
-        }
-      } else {
-        // Replace mode (backward compatible): apply explicit fields then recompute derived server-side.
-        const ops = buildReplaceOps(floorKey, bodyForPatch);
-
-        const after = {
-          ...before,
-          ...Object.fromEntries(
-            Object.entries(ops.$set || {})
-              .filter(([k]) => k.startsWith(`floorQuantities.${floorKey}.`))
-              .map(([k, v]) => [k.split('.').slice(-1)[0], v])
-          ),
-        };
-
-        assertValidFloorState(floorKey, after);
-        const derived = computeDerivedForFloor(floorKey, after);
-
-        await VendorProductionFlow.updateOne(
-          { _id: flowId },
-          {
-            ...ops,
-            $set: {
-              ...(ops.$set || {}),
-              ...Object.fromEntries(
-                Object.entries(derived).map(([k, v]) => [floorPath(floorKey, k), v])
-              ),
-              currentFloorKey: flow.currentFloorKey || 'secondaryChecking',
-              startedAt: flow.startedAt || new Date(),
-            },
-          },
-          { session }
-        );
-
-        const nextFloorKey = getNextFloorKey(floorKey);
-        const autoTransferTriggered =
-          nextFloorKey && (shouldAutoTransfer || bodyForPatch?.completed !== undefined);
-        if (autoTransferTriggered) {
-          const transferable = Math.max(0, Number(after.completed || 0) - Number(after.transferred || 0));
-          if (transferable > 0) {
-            const nextBefore = pickFloorSnapshot(flow, nextFloorKey);
-            const nextAfter = {
-              ...nextBefore,
-              received: nextBefore.received + transferable,
-            };
-            assertValidFloorState(nextFloorKey, nextAfter);
-            const nextDerived = computeDerivedForFloor(nextFloorKey, nextAfter);
-
-            await VendorProductionFlow.updateOne(
-              { _id: flowId },
-              {
-                $inc: {
-                  [floorPath(floorKey, 'transferred')]: transferable,
-                  [floorPath(nextFloorKey, 'received')]: transferable,
-                },
-                $set: {
-                  [floorPath(floorKey, 'remaining')]: computeRemainingForFloor(floorKey, {
-                    ...after,
-                    transferred: Number(after.transferred || 0) + transferable,
-                  }),
-                  [floorPath(nextFloorKey, 'remaining')]: nextDerived.remaining,
-                  currentFloorKey: nextFloorKey,
-                },
-              },
-              { session }
-            );
-
-            if (floorKey === 'branding' && nextFloorKey === 'finalChecking') {
-              const receiptRows = normalizeTransferBreakdownForReceipt(
-                bodyForPatch?.transferredData,
-                transferable,
-                floorKey
-              );
-              if (receiptRows.length > 0) {
-                await VendorProductionFlow.updateOne(
-                  { _id: flowId },
-                  { $push: { [floorPath(nextFloorKey, 'receivedData')]: { $each: receiptRows } } },
-                  { session }
-                );
-              }
-            }
-          }
-        }
-      }
-
-      updatedFlow = await VendorProductionFlow.findById(flowId).session(session);
-    });
-
-    return updatedFlow;
+      // Fallback for standalone MongoDB deployments that do not support transactions.
+      return applyPatchUpdates(null);
+    }
   } finally {
     session.endSession();
   }
