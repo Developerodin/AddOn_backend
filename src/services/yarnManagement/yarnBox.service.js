@@ -5,6 +5,14 @@ import ApiError from '../../utils/ApiError.js';
 import { LT_SECTION_CODES } from '../../models/storageManagement/storageSlot.model.js';
 
 const LT_STORAGE_PATTERN = new RegExp(`^(LT-|${LT_SECTION_CODES.map((s) => `${s}-`).join('|')})`, 'i');
+// Hide only boxes that are explicitly consumed (fully converted to cones and emptied).
+// Freshly created placeholders can still have 0/missing boxWeight and should remain visible.
+const ACTIVE_BOX_FILTER = {
+  $or: [
+    { 'coneData.conesIssued': { $ne: true } },
+    { boxWeight: { $gt: 0 } },
+  ],
+};
 
 export const createYarnBox = async (yarnBoxBody) => {
   if (!yarnBoxBody.boxId) {
@@ -30,7 +38,7 @@ export const createYarnBox = async (yarnBoxBody) => {
 };
 
 export const getYarnBoxById = async (yarnBoxId) => {
-  const yarnBox = await YarnBox.findById(yarnBoxId);
+  const yarnBox = await YarnBox.findOne({ _id: yarnBoxId, ...ACTIVE_BOX_FILTER });
   if (!yarnBox) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Yarn box not found');
   }
@@ -38,7 +46,7 @@ export const getYarnBoxById = async (yarnBoxId) => {
 };
 
 export const getYarnBoxByBarcode = async (barcode) => {
-  const yarnBox = await YarnBox.findOne({ barcode }).lean();
+  const yarnBox = await YarnBox.findOne({ barcode, ...ACTIVE_BOX_FILTER }).lean();
   if (!yarnBox) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Yarn box not found with this barcode');
   }
@@ -98,7 +106,7 @@ export const updateYarnBoxById = async (yarnBoxId, updateBody) => {
 };
 
 export const queryYarnBoxes = async (filters = {}) => {
-  const mongooseFilter = {};
+  const mongooseFilter = { ...ACTIVE_BOX_FILTER };
 
   if (filters.po_number) {
     mongooseFilter.poNumber = filters.po_number;
@@ -358,6 +366,7 @@ export const getBoxesByStorageLocation = async (storageLocation) => {
   const escaped = String(storageLocation).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const boxes = await YarnBox.find({
     storageLocation: { $regex: new RegExp(`^${escaped}$`, 'i') },
+    ...ACTIVE_BOX_FILTER,
   })
     .sort({ createdAt: -1 })
     .lean();
@@ -371,10 +380,15 @@ export const getBoxesByStorageLocation = async (storageLocation) => {
  */
 export const getBoxesWithoutStorageLocation = async () => {
   const boxes = await YarnBox.find({
-    $or: [
-      { storageLocation: { $exists: false } },
-      { storageLocation: null },
-      { storageLocation: '' },
+    $and: [
+      ACTIVE_BOX_FILTER,
+      {
+        $or: [
+          { storageLocation: { $exists: false } },
+          { storageLocation: null },
+          { storageLocation: '' },
+        ],
+      },
     ],
   })
     .sort({ createdAt: -1 })
