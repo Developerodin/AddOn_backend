@@ -1,9 +1,14 @@
 import httpStatus from 'http-status';
 import ApiError from '../../utils/ApiError.js';
 import Machine from '../../models/machine.model.js';
-import MachineOrderAssignment from '../../models/production/machineOrderAssignment.model.js';
+import MachineOrderAssignment, { isItemFullyCompleted } from '../../models/production/machineOrderAssignment.model.js';
 import MachineOrderAssignmentLog from '../../models/production/machineOrderAssignmentLog.model.js';
 import { LogAction, OrderStatus, YarnIssueStatus, YarnReturnStatus } from '../../models/production/enums.js';
+import {
+  snapshotAssignment,
+  writeAssignmentAuditLog,
+  pushItemFieldChanges,
+} from './machineOrderAssignmentAudit.helper.js';
 
 /**
  * Create a machine order assignment. Logs ASSIGNMENT_CREATED with userId.
@@ -17,19 +22,20 @@ export const createMachineOrderAssignment = async (body, userId) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Machine not found');
   }
   const assignment = await MachineOrderAssignment.create(body);
-  if (userId) {
-    await MachineOrderAssignmentLog.createLogEntry({
-      assignmentId: assignment._id,
-      userId,
-      action: LogAction.ASSIGNMENT_CREATED,
-      changes: [
-        { field: 'machine', previousValue: null, newValue: body.machine },
-        { field: 'activeNeedle', previousValue: null, newValue: body.activeNeedle },
-        { field: 'productionOrderItems', previousValue: null, newValue: body.productionOrderItems?.length ?? 0 },
-      ],
-      remarks: 'Assignment created',
-    });
-  }
+  await writeAssignmentAuditLog({
+    assignmentId: assignment._id,
+    userId,
+    action: LogAction.ASSIGNMENT_CREATED,
+    changes: [
+      { field: 'machine', previousValue: null, newValue: body.machine },
+      { field: 'activeNeedle', previousValue: null, newValue: body.activeNeedle },
+      { field: 'productionOrderItems', previousValue: null, newValue: body.productionOrderItems?.length ?? 0 },
+    ],
+    remarks: 'Assignment created',
+    snapshotBefore: null,
+    snapshotAfter: snapshotAssignment(assignment),
+    auditSource: userId ? 'user' : 'system',
+  });
   return assignment;
 };
 
@@ -158,6 +164,7 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
     throw new ApiError(httpStatus.NOT_FOUND, 'Machine order assignment not found');
   }
   const previous = assignment.toObject();
+  const snapshotBeforeUpdate = snapshotAssignment(assignment);
   const changes = [];
 
   /** Dedupe key for productionOrderItems: same (productionOrder, article) = same queue entry */
@@ -168,13 +175,15 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
   if (toAssign.addProductionOrderItems != null) {
     const toAdd = Array.isArray(toAssign.addProductionOrderItems) ? toAssign.addProductionOrderItems : [];
     await removeItemsFromOtherAssignments(assignmentId, toAdd);
+    for (const row of toAdd) {
+      changes.push({
+        field: 'productionOrderItems.added',
+        previousValue: null,
+        newValue: snapshotAssignment(row),
+      });
+    }
     assignment.productionOrderItems.push(...toAdd);
     assignment.markModified('productionOrderItems');
-    changes.push({
-      field: 'productionOrderItems',
-      previousValue: previous.productionOrderItems?.length ?? 0,
-      newValue: assignment.productionOrderItems.length,
-    });
     delete toAssign.addProductionOrderItems;
     delete toAssign.productionOrderItems;
   } else if (toAssign.productionOrderItems !== undefined && Array.isArray(toAssign.productionOrderItems)) {
@@ -190,7 +199,6 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
       const k = itemKey(item);
       const existingIdx = keyToIndex.get(k);
       if (existingIdx !== undefined) {
-        // Same item: update only fields that are sent (status, priority, yarnIssueStatus, yarnReturnStatus)
         const existing = current[existingIdx];
         if (item.status !== undefined && String(existing.status) !== String(item.status)) {
           const newStatusVal = String(item.status);
@@ -202,6 +210,9 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
               );
             }
           }
+        }
+        pushItemFieldChanges(changes, existing, item, String(existing._id));
+        if (item.status !== undefined && String(existing.status) !== String(item.status)) {
           existing.status = item.status;
           didChange = true;
         }
@@ -219,6 +230,11 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
         }
       } else {
         newlyAddedItems.push(item);
+        changes.push({
+          field: 'productionOrderItems.added',
+          previousValue: null,
+          newValue: { ...snapshotAssignment(item), queueKey: k },
+        });
         current.push(item);
         keyToIndex.set(k, current.length - 1);
         didChange = true;
@@ -230,11 +246,6 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
     if (didChange) {
       assignment.productionOrderItems = current;
       assignment.markModified('productionOrderItems');
-      changes.push({
-        field: 'productionOrderItems',
-        previousValue: previous.productionOrderItems?.length ?? 0,
-        newValue: assignment.productionOrderItems.length,
-      });
     }
     delete toAssign.productionOrderItems;
   }
@@ -249,59 +260,64 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
       newValue: toAssign.activeNeedle,
     });
   }
-  if (toAssign.productionOrderItems !== undefined) {
-    changes.push({
-      field: 'productionOrderItems',
-      previousValue: previous.productionOrderItems?.length ?? 0,
-      newValue: toAssign.productionOrderItems.length,
-    });
-  }
   if (toAssign.isActive !== undefined && toAssign.isActive !== previous.isActive) {
     changes.push({ field: 'isActive', previousValue: previous.isActive, newValue: toAssign.isActive });
   }
 
   Object.assign(assignment, toAssign);
 
-  // Log completed items before save (pre-save will remove them and recompact priorities).
-  const completedItems = (assignment.productionOrderItems || []).filter(
-    (i) => String(i.status) === OrderStatus.COMPLETED
-  );
-  if (completedItems.length > 0 && userId) {
-    await MachineOrderAssignmentLog.createLogEntry({
-      assignmentId: assignment._id,
-      userId,
-      action: LogAction.ASSIGNMENT_ITEM_COMPLETED_REMOVED,
-      changes: completedItems.map((i) => ({
-        field: 'productionOrderItems.removed',
-        previousValue: {
-          productionOrder: i.productionOrder,
-          article: i.article,
-          priority: i.priority,
-        },
-        newValue: 'completed_and_removed',
-      })),
-      remarks: 'Completed item(s) removed; priorities recompacted to 1,2,3...',
+  // Pre-save removes rows when order + yarn issue + yarn return are all Completed — log removal with full item snapshot.
+  const itemsPendingFullRemoval = (assignment.productionOrderItems || []).filter(isItemFullyCompleted);
+  for (const i of itemsPendingFullRemoval) {
+    changes.push({
+      field: 'productionOrderItems.removed',
+      previousValue: snapshotAssignment(i),
+      newValue: {
+        reason: 'fully_completed',
+        status: OrderStatus.COMPLETED,
+        yarnIssueStatus: YarnIssueStatus.COMPLETED,
+        yarnReturnStatus: YarnReturnStatus.COMPLETED,
+        removedAt: new Date().toISOString(),
+      },
     });
   }
 
   await assignment.save();
 
-  if (userId && changes.length > 0) {
-    const action =
-      changes.some((c) => c.field === 'activeNeedle') && changes.length === 1
-        ? LogAction.ASSIGNMENT_ACTIVE_NEEDLE_CHANGED
-        : changes.some((c) => c.field === 'productionOrderItems')
-          ? LogAction.ASSIGNMENT_ITEMS_UPDATED
-          : LogAction.ASSIGNMENT_UPDATED;
-    await MachineOrderAssignmentLog.createLogEntry({
+  const fresh = await MachineOrderAssignment.findById(assignmentId);
+  const snapshotAfterUpdate = snapshotAssignment(fresh);
+
+  if (changes.length > 0) {
+    const itemFieldPrefixes = (c) =>
+      typeof c.field === 'string' &&
+      (c.field.startsWith('productionOrderItems[') ||
+        c.field.startsWith('productionOrderItems.added') ||
+        c.field === 'productionOrderItems.removed');
+    const onlyActiveNeedle =
+      changes.length === 1 && changes[0].field === 'activeNeedle';
+    const onlyCompletedRemovals =
+      changes.length > 0 &&
+      changes.every((c) => c.field === 'productionOrderItems.removed' && c.newValue?.reason === 'fully_completed');
+    let action = LogAction.ASSIGNMENT_UPDATED;
+    if (onlyActiveNeedle) {
+      action = LogAction.ASSIGNMENT_ACTIVE_NEEDLE_CHANGED;
+    } else if (onlyCompletedRemovals) {
+      action = LogAction.ASSIGNMENT_ITEM_COMPLETED_REMOVED;
+    } else if (changes.some(itemFieldPrefixes)) {
+      action = LogAction.ASSIGNMENT_ITEMS_UPDATED;
+    }
+    await writeAssignmentAuditLog({
       assignmentId: assignment._id,
       userId,
       action,
       changes,
       remarks: updateBody.remarks || '',
+      snapshotBefore: snapshotBeforeUpdate,
+      snapshotAfter: snapshotAfterUpdate,
+      auditSource: userId ? 'user' : 'system',
     });
   }
-  return assignment;
+  return fresh || assignment;
 };
 
 /**
@@ -321,26 +337,29 @@ export const updateProductionOrderItemPriorityById = async (assignmentId, itemId
   if (!item) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Production order item not found in this assignment');
   }
+  const snapshotBefore = snapshotAssignment(assignment);
   const previousPriority = item.priority;
   if (body.priority !== undefined && body.priority !== previousPriority) {
     item.priority = body.priority;
     assignment.markModified('productionOrderItems');
     await assignment.save();
-    if (userId) {
-      await MachineOrderAssignmentLog.createLogEntry({
-        assignmentId: assignment._id,
-        userId,
-        action: LogAction.ASSIGNMENT_ITEMS_UPDATED,
-        changes: [
-          {
-            field: 'productionOrderItems.priority',
-            previousValue: previousPriority,
-            newValue: body.priority,
-          },
-        ],
-        remarks: 'Item priority updated',
-      });
-    }
+    const fresh = await MachineOrderAssignment.findById(assignmentId);
+    await writeAssignmentAuditLog({
+      assignmentId: assignment._id,
+      userId,
+      action: LogAction.ASSIGNMENT_ITEMS_UPDATED,
+      changes: [
+        {
+          field: `productionOrderItems[${itemId}].priority`,
+          previousValue: previousPriority,
+          newValue: body.priority,
+        },
+      ],
+      remarks: 'Item priority updated',
+      snapshotBefore,
+      snapshotAfter: snapshotAssignment(fresh),
+      auditSource: userId ? 'user' : 'system',
+    });
   }
   return MachineOrderAssignment.findById(assignmentId)
     .populate('machine')
@@ -367,6 +386,8 @@ export const updateProductionOrderItemStatusById = async (assignmentId, itemId, 
   if (!item) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Production order item not found in this assignment');
   }
+  const snapshotBefore = snapshotAssignment(assignment);
+  const itemBefore = snapshotAssignment(item);
   const newStatus = body.status;
   if (!newStatus || !Object.values(OrderStatus).includes(String(newStatus))) {
     throw new ApiError(httpStatus.BAD_REQUEST, `status must be one of: ${Object.values(OrderStatus).join(', ')}`);
@@ -407,23 +428,42 @@ export const updateProductionOrderItemStatusById = async (assignmentId, itemId, 
   assignment.markModified('productionOrderItems');
   await assignment.save();
 
-  if (userId) {
-    const changes = [{ field: 'productionOrderItems.status', previousValue: previousStatus, newValue: newStatus }];
-    if (body.yarnIssueStatus !== undefined && String(previousYarnIssueStatus) !== String(body.yarnIssueStatus)) {
-      changes.push({
-        field: 'productionOrderItems.yarnIssueStatus',
-        previousValue: previousYarnIssueStatus,
-        newValue: body.yarnIssueStatus,
-      });
-    }
-    await MachineOrderAssignmentLog.createLogEntry({
-      assignmentId: assignment._id,
-      userId,
-      action: LogAction.ASSIGNMENT_ITEM_STATUS_CHANGED,
-      changes,
-      remarks: `Item status updated to ${newStatus}`,
+  const fresh = await MachineOrderAssignment.findById(assignmentId);
+  const removedByPreSave = fresh && !fresh.productionOrderItems?.id(itemId);
+  const changes = [
+    { field: `productionOrderItems[${itemId}].status`, previousValue: previousStatus, newValue: newStatus },
+  ];
+  if (body.yarnIssueStatus !== undefined && String(previousYarnIssueStatus) !== String(body.yarnIssueStatus)) {
+    changes.push({
+      field: `productionOrderItems[${itemId}].yarnIssueStatus`,
+      previousValue: previousYarnIssueStatus,
+      newValue: body.yarnIssueStatus,
     });
   }
+  if (removedByPreSave) {
+    changes.push({
+      field: 'productionOrderItems.removed',
+      previousValue: itemBefore,
+      newValue: {
+        reason: 'fully_completed',
+        note: 'Removed by pre-save after all three statuses reached Completed',
+        removedAt: new Date().toISOString(),
+      },
+    });
+  }
+  const action = removedByPreSave ? LogAction.ASSIGNMENT_ITEM_COMPLETED_REMOVED : LogAction.ASSIGNMENT_ITEM_STATUS_CHANGED;
+  await writeAssignmentAuditLog({
+    assignmentId: assignment._id,
+    userId,
+    action,
+    changes,
+    remarks: removedByPreSave
+      ? 'Item fully completed and removed from machine queue'
+      : `Item status updated to ${newStatus}`,
+    snapshotBefore,
+    snapshotAfter: snapshotAssignment(fresh),
+    auditSource: userId ? 'user' : 'system',
+  });
 
   return MachineOrderAssignment.findById(assignmentId)
     .populate('machine')
@@ -448,6 +488,8 @@ export const updateProductionOrderItemYarnIssueStatusById = async (assignmentId,
   if (!item) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Production order item not found in this assignment');
   }
+  const snapshotBefore = snapshotAssignment(assignment);
+  const itemBefore = snapshotAssignment(item);
   const newStatus = body.yarnIssueStatus;
   if (!newStatus || !Object.values(YarnIssueStatus).includes(String(newStatus))) {
     throw new ApiError(httpStatus.BAD_REQUEST, `yarnIssueStatus must be one of: ${Object.values(YarnIssueStatus).join(', ')}`);
@@ -456,17 +498,31 @@ export const updateProductionOrderItemYarnIssueStatusById = async (assignmentId,
   item.yarnIssueStatus = newStatus;
   assignment.markModified('productionOrderItems');
   await assignment.save();
-  if (userId) {
-    await MachineOrderAssignmentLog.createLogEntry({
-      assignmentId: assignment._id,
-      userId,
-      action: LogAction.ASSIGNMENT_ITEMS_UPDATED,
-      changes: [
-        { field: 'productionOrderItems.yarnIssueStatus', previousValue: previous, newValue: newStatus },
-      ],
-      remarks: `Item yarn issue status updated to ${newStatus}`,
+  const fresh = await MachineOrderAssignment.findById(assignmentId);
+  const removedByPreSave = fresh && !fresh.productionOrderItems?.id(itemId);
+  const changes = [
+    { field: `productionOrderItems[${itemId}].yarnIssueStatus`, previousValue: previous, newValue: newStatus },
+  ];
+  if (removedByPreSave) {
+    changes.push({
+      field: 'productionOrderItems.removed',
+      previousValue: itemBefore,
+      newValue: {
+        reason: 'fully_completed',
+        removedAt: new Date().toISOString(),
+      },
     });
   }
+  await writeAssignmentAuditLog({
+    assignmentId: assignment._id,
+    userId,
+    action: removedByPreSave ? LogAction.ASSIGNMENT_ITEM_COMPLETED_REMOVED : LogAction.ASSIGNMENT_ITEMS_UPDATED,
+    changes,
+    remarks: `Item yarn issue status updated to ${newStatus}`,
+    snapshotBefore,
+    snapshotAfter: snapshotAssignment(fresh),
+    auditSource: userId ? 'user' : 'system',
+  });
   return MachineOrderAssignment.findById(assignmentId)
     .populate('machine')
     .populate('productionOrderItems.productionOrder')
@@ -490,6 +546,8 @@ export const updateProductionOrderItemYarnReturnStatusById = async (assignmentId
   if (!item) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Production order item not found in this assignment');
   }
+  const snapshotBefore = snapshotAssignment(assignment);
+  const itemBefore = snapshotAssignment(item);
   const newStatus = body.yarnReturnStatus;
   if (!newStatus || !Object.values(YarnReturnStatus).includes(String(newStatus))) {
     throw new ApiError(httpStatus.BAD_REQUEST, `yarnReturnStatus must be one of: ${Object.values(YarnReturnStatus).join(', ')}`);
@@ -498,17 +556,31 @@ export const updateProductionOrderItemYarnReturnStatusById = async (assignmentId
   item.yarnReturnStatus = newStatus;
   assignment.markModified('productionOrderItems');
   await assignment.save();
-  if (userId) {
-    await MachineOrderAssignmentLog.createLogEntry({
-      assignmentId: assignment._id,
-      userId,
-      action: LogAction.ASSIGNMENT_ITEMS_UPDATED,
-      changes: [
-        { field: 'productionOrderItems.yarnReturnStatus', previousValue: previous, newValue: newStatus },
-      ],
-      remarks: `Item yarn return status updated to ${newStatus}`,
+  const fresh = await MachineOrderAssignment.findById(assignmentId);
+  const removedByPreSave = fresh && !fresh.productionOrderItems?.id(itemId);
+  const changes = [
+    { field: `productionOrderItems[${itemId}].yarnReturnStatus`, previousValue: previous, newValue: newStatus },
+  ];
+  if (removedByPreSave) {
+    changes.push({
+      field: 'productionOrderItems.removed',
+      previousValue: itemBefore,
+      newValue: {
+        reason: 'fully_completed',
+        removedAt: new Date().toISOString(),
+      },
     });
   }
+  await writeAssignmentAuditLog({
+    assignmentId: assignment._id,
+    userId,
+    action: removedByPreSave ? LogAction.ASSIGNMENT_ITEM_COMPLETED_REMOVED : LogAction.ASSIGNMENT_ITEMS_UPDATED,
+    changes,
+    remarks: `Item yarn return status updated to ${newStatus}`,
+    snapshotBefore,
+    snapshotAfter: snapshotAssignment(fresh),
+    auditSource: userId ? 'user' : 'system',
+  });
   return MachineOrderAssignment.findById(assignmentId)
     .populate('machine')
     .populate('productionOrderItems.productionOrder')
@@ -527,6 +599,7 @@ export const updateProductionOrderItemPrioritiesById = async (assignmentId, item
   if (!assignment) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Machine order assignment not found');
   }
+  const snapshotBefore = snapshotAssignment(assignment);
   const changes = [];
   let didChange = false;
   for (const { itemId, priority } of items) {
@@ -547,13 +620,17 @@ export const updateProductionOrderItemPrioritiesById = async (assignmentId, item
   if (didChange) {
     assignment.markModified('productionOrderItems');
     await assignment.save();
-    if (userId && changes.length > 0) {
-      await MachineOrderAssignmentLog.createLogEntry({
+    const fresh = await MachineOrderAssignment.findById(assignmentId);
+    if (changes.length > 0) {
+      await writeAssignmentAuditLog({
         assignmentId: assignment._id,
         userId,
         action: LogAction.ASSIGNMENT_ITEMS_UPDATED,
         changes,
         remarks: 'Item priorities updated',
+        snapshotBefore,
+        snapshotAfter: snapshotAssignment(fresh),
+        auditSource: userId ? 'user' : 'system',
       });
     }
   }
@@ -579,30 +656,28 @@ export const deleteProductionOrderItemById = async (assignmentId, itemId, userId
   if (!item) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Production order item not found in this assignment');
   }
-  const removedItem = {
-    productionOrder: item.productionOrder,
-    article: item.article,
-    priority: item.priority,
-  };
+  const snapshotBefore = snapshotAssignment(assignment);
+  const removedItem = snapshotAssignment(item);
   assignment.productionOrderItems.pull(itemId);
   assignment.markModified('productionOrderItems');
   await assignment.save();
-
-  if (userId) {
-    await MachineOrderAssignmentLog.createLogEntry({
-      assignmentId: assignment._id,
-      userId,
-      action: LogAction.ASSIGNMENT_ITEMS_UPDATED,
-      changes: [
-        {
-          field: 'productionOrderItems.removed',
-          previousValue: removedItem,
-          newValue: null,
-        },
-      ],
-      remarks: 'Production order item removed from assignment',
-    });
-  }
+  const fresh = await MachineOrderAssignment.findById(assignmentId);
+  await writeAssignmentAuditLog({
+    assignmentId: assignment._id,
+    userId,
+    action: LogAction.ASSIGNMENT_ITEMS_UPDATED,
+    changes: [
+      {
+        field: 'productionOrderItems.removed',
+        previousValue: removedItem,
+        newValue: { reason: 'manual_delete', deletedAt: new Date().toISOString() },
+      },
+    ],
+    remarks: 'Production order item removed from assignment',
+    snapshotBefore,
+    snapshotAfter: snapshotAssignment(fresh),
+    auditSource: userId ? 'user' : 'system',
+  });
   return MachineOrderAssignment.findById(assignmentId)
     .populate('machine')
     .populate('productionOrderItems.productionOrder')
@@ -616,21 +691,77 @@ export const deleteProductionOrderItemById = async (assignmentId, itemId, userId
  * @returns {Promise<MachineOrderAssignment>}
  */
 export const resetMachineOrderAssignmentById = async (assignmentId, userId) => {
-  return updateMachineOrderAssignmentById(assignmentId, { productionOrderItems: [] }, userId);
+  const assignment = await MachineOrderAssignment.findById(assignmentId);
+  if (!assignment) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Machine order assignment not found');
+  }
+  const snapshotBefore = snapshotAssignment(assignment);
+  const prevLen = assignment.productionOrderItems?.length ?? 0;
+  assignment.productionOrderItems = [];
+  assignment.markModified('productionOrderItems');
+  await assignment.save();
+  const fresh = await MachineOrderAssignment.findById(assignmentId);
+  await writeAssignmentAuditLog({
+    assignmentId,
+    userId,
+    action: LogAction.ASSIGNMENT_ITEMS_UPDATED,
+    changes: [
+      {
+        field: 'productionOrderItems',
+        previousValue: prevLen,
+        newValue: 0,
+        detail: 'queue_cleared',
+      },
+    ],
+    remarks: 'Machine assignment queue reset',
+    snapshotBefore,
+    snapshotAfter: snapshotAssignment(fresh),
+    auditSource: userId ? 'user' : 'system',
+  });
+  return fresh;
 };
 
 /**
  * Remove all productionOrderItems that reference a given production order.
  * Call this when a production order is deleted so machine queues stay in sync.
  * @param {ObjectId} orderId - Deleted production order id
+ * @param {ObjectId} [userId] - When set, auditSource=user; otherwise order_sync
  * @returns {Promise<{ modifiedCount: number }>}
  */
-export const removeProductionOrderFromAssignments = async (orderId) => {
-  const result = await MachineOrderAssignment.updateMany(
-    { 'productionOrderItems.productionOrder': orderId },
-    { $pull: { productionOrderItems: { productionOrder: orderId } } }
-  );
-  return { modifiedCount: result.modifiedCount ?? 0 };
+export const removeProductionOrderFromAssignments = async (orderId, userId) => {
+  const orderObjectId = orderId?.toString?.() || orderId;
+  const assignments = await MachineOrderAssignment.find({
+    'productionOrderItems.productionOrder': orderObjectId,
+  });
+  let modifiedCount = 0;
+  for (const assignment of assignments) {
+    const snapshotBefore = snapshotAssignment(assignment);
+    const removed = (assignment.productionOrderItems || []).filter(
+      (i) => String(i.productionOrder) === String(orderObjectId)
+    );
+    if (removed.length === 0) continue;
+    const result = await MachineOrderAssignment.updateOne(
+      { _id: assignment._id },
+      { $pull: { productionOrderItems: { productionOrder: orderObjectId } } }
+    );
+    modifiedCount += result.modifiedCount ?? 0;
+    const after = await MachineOrderAssignment.findById(assignment._id);
+    await writeAssignmentAuditLog({
+      assignmentId: assignment._id,
+      userId,
+      action: LogAction.ASSIGNMENT_SYNC_ORDER_REMOVED_FROM_QUEUE,
+      changes: removed.map((row) => ({
+        field: 'productionOrderItems.removed',
+        previousValue: snapshotAssignment(row),
+        newValue: { reason: 'production_order_deleted_or_sync', orderId: String(orderObjectId) },
+      })),
+      remarks: 'Production order removed from machine queue (order deleted or sync)',
+      snapshotBefore,
+      snapshotAfter: snapshotAssignment(after),
+      auditSource: userId ? 'user' : 'order_sync',
+    });
+  }
+  return { modifiedCount };
 };
 
 /**
@@ -638,17 +769,50 @@ export const removeProductionOrderFromAssignments = async (orderId) => {
  * Call this when an article is removed from a production order so machine queues stay in sync.
  * @param {ObjectId} orderId - Production order id
  * @param {ObjectId} articleId - Article id removed from the order
+ * @param {ObjectId} [userId]
  * @returns {Promise<{ modifiedCount: number }>}
  */
-export const removeArticleFromAssignments = async (orderId, articleId) => {
+export const removeArticleFromAssignments = async (orderId, articleId, userId) => {
   const poId = orderId?.toString?.() || orderId;
   const artId = articleId?.toString?.() || articleId;
   if (!poId || !artId) return { modifiedCount: 0 };
-  const result = await MachineOrderAssignment.updateMany(
-    { productionOrderItems: { $elemMatch: { productionOrder: poId, article: artId } } },
-    { $pull: { productionOrderItems: { productionOrder: poId, article: artId } } }
-  );
-  return { modifiedCount: result.modifiedCount ?? 0 };
+  const assignments = await MachineOrderAssignment.find({
+    productionOrderItems: { $elemMatch: { productionOrder: poId, article: artId } },
+  });
+  let modifiedCount = 0;
+  for (const assignment of assignments) {
+    const snapshotBefore = snapshotAssignment(assignment);
+    const row = (assignment.productionOrderItems || []).find(
+      (i) => String(i.productionOrder) === String(poId) && String(i.article) === String(artId)
+    );
+    const result = await MachineOrderAssignment.updateOne(
+      { _id: assignment._id },
+      { $pull: { productionOrderItems: { productionOrder: poId, article: artId } } }
+    );
+    modifiedCount += result.modifiedCount ?? 0;
+    const after = await MachineOrderAssignment.findById(assignment._id);
+    await writeAssignmentAuditLog({
+      assignmentId: assignment._id,
+      userId,
+      action: LogAction.ASSIGNMENT_SYNC_ARTICLE_REMOVED_FROM_QUEUE,
+      changes: [
+        {
+          field: 'productionOrderItems.removed',
+          previousValue: row ? snapshotAssignment(row) : null,
+          newValue: {
+            reason: 'article_removed_from_production_order',
+            orderId: String(poId),
+            articleId: String(artId),
+          },
+        },
+      ],
+      remarks: 'Article removed from machine queue (article dropped from order)',
+      snapshotBefore,
+      snapshotAfter: snapshotAssignment(after),
+      auditSource: userId ? 'user' : 'order_sync',
+    });
+  }
+  return { modifiedCount };
 };
 
 /**
@@ -661,16 +825,18 @@ export const deleteMachineOrderAssignmentById = async (assignmentId, userId) => 
   if (!assignment) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Machine order assignment not found');
   }
+  const snapshotBefore = snapshotAssignment(assignment);
   await MachineOrderAssignment.deleteOne({ _id: assignmentId });
-  if (userId) {
-    await MachineOrderAssignmentLog.createLogEntry({
-      assignmentId,
-      userId,
-      action: LogAction.ASSIGNMENT_DEACTIVATED,
-      changes: [{ field: 'deleted', previousValue: false, newValue: true }],
-      remarks: 'Assignment deleted',
-    });
-  }
+  await writeAssignmentAuditLog({
+    assignmentId,
+    userId,
+    action: LogAction.ASSIGNMENT_DEACTIVATED,
+    changes: [{ field: 'deleted', previousValue: false, newValue: true }],
+    remarks: 'Assignment deleted',
+    snapshotBefore,
+    snapshotAfter: null,
+    auditSource: userId ? 'user' : 'system',
+  });
 };
 
 /**

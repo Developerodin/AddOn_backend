@@ -215,9 +215,10 @@ export const getProductionOrderById = async (id) => {
  * Update production order by id
  * @param {ObjectId} orderId
  * @param {Object} updateBody
+ * @param {{ _id?: ObjectId, id?: string }|null} [user] - Authenticated user for machine-assignment audit logs
  * @returns {Promise<ProductionOrder>}
  */
-export const updateProductionOrderById = async (orderId, updateBody) => {
+export const updateProductionOrderById = async (orderId, updateBody, user = null) => {
   const order = await getProductionOrderById(orderId);
   if (!order) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Production order not found');
@@ -399,8 +400,9 @@ export const updateProductionOrderById = async (orderId, updateBody) => {
     const previousArticleIds = (order.articles || []).map((a) => (a?._id || a)?.toString?.() || a);
     const newArticleIdsStr = articleIds.map((id) => id?.toString?.() || id);
     const removedArticleIds = previousArticleIds.filter((id) => id && !newArticleIdsStr.includes(id));
+    const auditUserId = user?._id || user?.id || null;
     for (const removedArtId of removedArticleIds) {
-      await removeArticleFromAssignments(order._id, removedArtId);
+      await removeArticleFromAssignments(order._id, removedArtId, auditUserId);
     }
 
     // Update the order's articles array with the processed article IDs
@@ -444,7 +446,7 @@ export const updateProductionOrderById = async (orderId, updateBody) => {
  * @param {ObjectId} orderId
  * @returns {Promise<ProductionOrder>}
  */
-export const deleteProductionOrderById = async (orderId) => {
+export const deleteProductionOrderById = async (orderId, userId) => {
   const order = await getProductionOrderById(orderId);
   if (!order) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Production order not found');
@@ -463,7 +465,7 @@ export const deleteProductionOrderById = async (orderId) => {
   await ArticleLog.deleteMany({ orderId: orderId.toString() });
 
   // Remove this PO from all machine order assignment queues
-  await removeProductionOrderFromAssignments(order._id);
+  await removeProductionOrderFromAssignments(order._id, userId);
 
   // Delete the order
   await order.deleteOne();

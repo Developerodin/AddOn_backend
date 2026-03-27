@@ -12,6 +12,14 @@ async function assertVendorExists(vendorId) {
   }
 }
 
+function normalizePurchaseOrderUpdateBody(updateBody = {}) {
+  const wrapper = updateBody.payload || updateBody.paylode || updateBody.data;
+  if (wrapper && typeof wrapper === 'object') {
+    return wrapper;
+  }
+  return updateBody;
+}
+
 /**
  * @param {number} [year]
  */
@@ -91,14 +99,15 @@ export const getVendorPurchaseOrderByVpoNumber = async (vpoNumber) =>
     .exec();
 
 export const updateVendorPurchaseOrderById = async (purchaseOrderId, updateBody) => {
+  const normalizedBody = normalizePurchaseOrderUpdateBody(updateBody);
   const purchaseOrder = await VendorPurchaseOrder.findById(purchaseOrderId);
   if (!purchaseOrder) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Vendor purchase order not found');
   }
 
-  if (updateBody.vpoNumber && updateBody.vpoNumber !== purchaseOrder.vpoNumber) {
+  if (normalizedBody.vpoNumber && normalizedBody.vpoNumber !== purchaseOrder.vpoNumber) {
     const exists = await VendorPurchaseOrder.findOne({
-      vpoNumber: updateBody.vpoNumber,
+      vpoNumber: normalizedBody.vpoNumber,
       _id: { $ne: purchaseOrderId },
     });
     if (exists) {
@@ -106,10 +115,10 @@ export const updateVendorPurchaseOrderById = async (purchaseOrderId, updateBody)
     }
   }
 
-  const safeUpdate = Object.fromEntries(Object.entries(updateBody).filter(([, value]) => value !== undefined));
+  const safeUpdate = Object.fromEntries(Object.entries(normalizedBody).filter(([, value]) => value !== undefined));
 
-  if (updateBody.vendor) {
-    await assertVendorExists(updateBody.vendor);
+  if (normalizedBody.vendor) {
+    await assertVendorExists(normalizedBody.vendor);
   }
 
   Object.assign(purchaseOrder, safeUpdate);

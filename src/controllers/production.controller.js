@@ -40,12 +40,12 @@ export const getProductionOrder = catchAsync(async (req, res) => {
 });
 
 export const updateProductionOrder = catchAsync(async (req, res) => {
-  const order = await productionService.updateProductionOrderById(req.params.orderId, req.body);
+  const order = await productionService.updateProductionOrderById(req.params.orderId, req.body, req.user);
   res.send(order);
 });
 
 export const deleteProductionOrder = catchAsync(async (req, res) => {
-  await productionService.deleteProductionOrderById(req.params.orderId);
+  await productionService.deleteProductionOrderById(req.params.orderId, req.user?._id);
   res.status(httpStatus.OK).json({
     success: true,
     message: 'Production order deleted successfully'

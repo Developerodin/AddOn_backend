@@ -24,6 +24,28 @@ function normalizeHeader(header) {
   return h;
 }
 
+function normalizeVendorUpdateBody(updateBody = {}) {
+  const wrapper = updateBody.payload || updateBody.paylode || updateBody.data;
+  const src = wrapper && typeof wrapper === 'object' ? wrapper : updateBody;
+
+  const headerFields = ['vendorCode', 'vendorName', 'status', 'city', 'state', 'notes', 'address', 'gstin'];
+  const flatHeader = {};
+  headerFields.forEach((key) => {
+    if (src[key] !== undefined) flatHeader[key] = src[key];
+  });
+
+  const normalized = {};
+  if (src.header && typeof src.header === 'object') {
+    normalized.header = src.header;
+  } else if (Object.keys(flatHeader).length) {
+    normalized.header = flatHeader;
+  }
+
+  if (src.contactPersons !== undefined) normalized.contactPersons = src.contactPersons;
+  if (src.products !== undefined) normalized.products = src.products;
+  return normalized;
+}
+
 /**
  * @param {Object} body
  * @returns {Promise<import('mongoose').Document>}
@@ -112,13 +134,14 @@ export const getVendorManagementById = async (id, opts = {}) => {
  * @param {Object} updateBody
  */
 export const updateVendorManagementById = async (vendorId, updateBody) => {
+  const normalizedBody = normalizeVendorUpdateBody(updateBody);
   const vendor = await VendorManagement.findById(vendorId);
   if (!vendor) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Vendor management record not found');
   }
 
-  if (updateBody.header) {
-    const nextHeader = normalizeHeader({ ...vendor.get('header'), ...updateBody.header });
+  if (normalizedBody.header) {
+    const nextHeader = normalizeHeader({ ...vendor.get('header'), ...normalizedBody.header });
     if (nextHeader.vendorCode && (await VendorManagement.isVendorCodeTaken(nextHeader.vendorCode, vendorId))) {
       throw new ApiError(httpStatus.BAD_REQUEST, 'Vendor code already taken');
     }
@@ -128,13 +151,13 @@ export const updateVendorManagementById = async (vendorId, updateBody) => {
     vendor.set('header', nextHeader);
   }
 
-  if (updateBody.contactPersons !== undefined) {
-    vendor.contactPersons = updateBody.contactPersons;
+  if (normalizedBody.contactPersons !== undefined) {
+    vendor.set('contactPersons', normalizedBody.contactPersons);
   }
 
-  if (updateBody.products !== undefined) {
-    await assertProductIdsExist(updateBody.products);
-    vendor.products = updateBody.products;
+  if (normalizedBody.products !== undefined) {
+    await assertProductIdsExist(normalizedBody.products);
+    vendor.set('products', normalizedBody.products);
   }
 
   await vendor.save();
