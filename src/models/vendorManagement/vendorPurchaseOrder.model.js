@@ -60,6 +60,19 @@ const poItemSchema = mongoose.Schema(
     estimatedDeliveryDate: {
       type: Date,
     },
+    /** Free-text line fields; set by client (not synced from Product / ProductAttribute) */
+    type: {
+      type: String,
+      trim: true,
+    },
+    color: {
+      type: String,
+      trim: true,
+    },
+    pattern: {
+      type: String,
+      trim: true,
+    },
   },
   { _id: true }
 );
@@ -68,7 +81,7 @@ const receivedLotDetailsSchema = mongoose.Schema(
   {
     lotNumber: { type: String, required: true, trim: true },
     numberOfBoxes: { type: Number, min: 0 },
-    totalWeight: { type: Number, min: 0 },
+    totalUnits: { type: Number, min: 0 },
     poItems: {
       type: [
         {
@@ -99,7 +112,7 @@ const packListDetailsSchema = mongoose.Schema(
     estimatedDeliveryDate: { type: Date },
     notes: { type: String, trim: true },
     numberOfBoxes: { type: Number, min: 0 },
-    totalWeight: { type: Number, min: 0 },
+    totalUnits: { type: Number, min: 0 },
     files: {
       type: [
         {
@@ -206,10 +219,19 @@ vendorPurchaseOrderSchema.pre('save', async function syncVendorPurchaseOrder(nex
   }
 
   if (this.isModified('poItems')) {
+    const productCache = new Map();
+    const loadProduct = async (productId) => {
+      const key = String(productId);
+      if (productCache.has(key)) return productCache.get(key);
+      const p = await Product.findById(productId).select('name').lean();
+      productCache.set(key, p);
+      return p;
+    };
+
     await Promise.all(
       this.poItems.map(async (item) => {
         if (!item.productId) return;
-        const product = await Product.findById(item.productId).select('name').lean();
+        const product = await loadProduct(item.productId);
         if (product?.name) {
           // Mongoose subdocument: sync denormalized name from Product
           // eslint-disable-next-line no-param-reassign -- intentional subdoc field update

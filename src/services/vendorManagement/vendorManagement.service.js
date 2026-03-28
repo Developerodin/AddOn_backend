@@ -3,6 +3,10 @@ import mongoose from 'mongoose';
 import { VendorManagement, Product, VendorProductionFlow } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 
+/** Fields loaded when `populate=products` on vendor management */
+const VENDOR_PRODUCT_POPULATE_SELECT =
+  'name softwareCode internalCode vendorCode status category attributes';
+
 /**
  * Ensure every id exists in Product collection.
  * @param {string[]|mongoose.Types.ObjectId[]} productIds
@@ -88,12 +92,48 @@ export const queryVendorManagements = async (filter, options, search) => {
   }
 
   const paginateOptions = { ...options };
+  let populateProductsForList = false;
   if (paginateOptions.populate === 'products') {
-    paginateOptions.populate = { path: 'products', select: 'name softwareCode internalCode status' };
+    populateProductsForList = true;
+    paginateOptions.populate = {
+      path: 'products',
+      select: VENDOR_PRODUCT_POPULATE_SELECT,
+    };
   }
 
-  return VendorManagement.paginate(mongoFilter, paginateOptions);
+  const result = await VendorManagement.paginate(mongoFilter, paginateOptions);
+
+  if (populateProductsForList && result.results?.length) {
+    result.results = result.results.map((row) => {
+      const json = row.toJSON();
+      json.products = mergeProductAttributesFromSubdocs(row.products, json.products);
+      return json;
+    });
+  }
+
+  return result;
 };
+
+/**
+ * Merge JSON product rows with raw `attributes` Map from populated subdocs (toJSON can mangle Maps).
+ * @param {unknown[]|undefined} subdocs
+ * @param {object[]} jsonProducts
+ */
+function mergeProductAttributesFromSubdocs(subdocs, jsonProducts) {
+  if (!Array.isArray(jsonProducts) || !subdocs?.length) return jsonProducts;
+  return jsonProducts.map((jp, i) => {
+    const sub = subdocs[i];
+    if (!sub) return jp;
+    const attrs = sub.get ? sub.get('attributes') : sub.attributes;
+    const obj =
+      attrs instanceof Map
+        ? Object.fromEntries(attrs)
+        : attrs && typeof attrs === 'object'
+          ? { ...attrs }
+          : {};
+    return { ...jp, attributes: obj };
+  });
+}
 
 /**
  * @param {import('mongoose').Types.ObjectId|string} id
@@ -102,9 +142,19 @@ export const queryVendorManagements = async (filter, options, search) => {
 export const getVendorManagementById = async (id, opts = {}) => {
   let q = VendorManagement.findById(id);
   if (opts.populateProducts) {
-    q = q.populate({ path: 'products', select: 'name softwareCode internalCode status category' });
+    q = q.populate({
+      path: 'products',
+      select: VENDOR_PRODUCT_POPULATE_SELECT,
+    });
   }
-  return q.exec();
+  const doc = await q.exec();
+  if (!doc) return null;
+  if (opts.populateProducts) {
+    const json = doc.toJSON();
+    json.products = mergeProductAttributesFromSubdocs(doc.products, json.products);
+    return json;
+  }
+  return doc;
 };
 
 /**

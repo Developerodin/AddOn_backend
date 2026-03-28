@@ -9,6 +9,9 @@ const poItemSchema = Joi.object().keys({
   rate: Joi.number().min(0).required(),
   gstRate: Joi.number().min(0),
   estimatedDeliveryDate: Joi.date(),
+  type: Joi.string().trim().allow('', null),
+  color: Joi.string().trim().allow('', null),
+  pattern: Joi.string().trim().allow('', null),
 });
 
 const statusLogSchema = Joi.object().keys({
@@ -27,7 +30,7 @@ const statusLogSchema = Joi.object().keys({
 const receivedLotSchema = Joi.object().keys({
   lotNumber: Joi.string().required().trim(),
   numberOfBoxes: Joi.number().min(0),
-  totalWeight: Joi.number().min(0),
+  totalUnits: Joi.number().min(0),
   poItems: Joi.array().items(
     Joi.object().keys({
       poItem: Joi.string().custom(objectId).required(),
@@ -56,7 +59,7 @@ const packListSchema = Joi.object().keys({
   estimatedDeliveryDate: Joi.date(),
   notes: Joi.string().trim().allow('', null),
   numberOfBoxes: Joi.number().min(0),
-  totalWeight: Joi.number().min(0),
+  totalUnits: Joi.number().min(0),
   files: Joi.array().items(packListFileSchema).default([]),
 });
 
