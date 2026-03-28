@@ -126,7 +126,8 @@ function assignMissingPriorities(items) {
  * True when item is fully done: order status, yarn issue, and yarn return all Completed.
  * Only then do we remove the item from the array.
  */
-function isItemFullyCompleted(item) {
+/** Exported for services that must mirror pre-save removal / audit (same rule as pre-save hook). */
+export function isItemFullyCompleted(item) {
   return (
     String(item?.status) === OrderStatus.COMPLETED &&
     String(item?.yarnIssueStatus) === YarnIssueStatus.COMPLETED &&

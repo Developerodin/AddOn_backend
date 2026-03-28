@@ -3,6 +3,7 @@ import { objectId } from './custom.validation.js';
 import { vendorPurchaseOrderStatuses, vendorLotStatuses } from '../models/vendorManagement/vendorPurchaseOrder.model.js';
 
 const poItemSchema = Joi.object().keys({
+  _id: Joi.string().custom(objectId),
   productId: Joi.string().custom(objectId).required(),
   productName: Joi.string().trim(),
   quantity: Joi.number().min(0).required(),

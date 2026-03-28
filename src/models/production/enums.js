@@ -185,7 +185,10 @@ const LogAction = {
   ASSIGNMENT_ITEM_STATUS_CHANGED: 'Assignment Item Status Changed',
   ASSIGNMENT_ITEM_PRIORITY_CHANGED: 'Assignment Item Priority Changed',
   ASSIGNMENT_ITEM_COMPLETED_REMOVED: 'Assignment Item Completed And Removed',
-  ASSIGNMENT_DEACTIVATED: 'Assignment Deactivated'
+  ASSIGNMENT_DEACTIVATED: 'Assignment Deactivated',
+  /** PO/article rows removed from queue because production order was deleted or article dropped from order */
+  ASSIGNMENT_SYNC_ORDER_REMOVED_FROM_QUEUE: 'Assignment Sync — Production Order Removed From Queue',
+  ASSIGNMENT_SYNC_ARTICLE_REMOVED_FROM_QUEUE: 'Assignment Sync — Article Removed From Queue'
 };
 
 export {
