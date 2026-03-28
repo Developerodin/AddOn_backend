@@ -12,6 +12,7 @@ import {
   createQualityCategoryLog,
   createFinalQualityLog
 } from '../../utils/loggingHelper.js';
+import { createInwardReceivesForWarehouseAccept } from '../whms/inwardReceiveFromWarehouse.helper.js';
 
 /** Floors that support brand/style breakdown via transferItems / transferredData (same shape as Branding → Final Checking). */
 const FLOORS_WITH_STYLE_TRANSFER_ITEMS = ['Branding', 'Final Checking', 'Dispatch'];
@@ -1379,8 +1380,16 @@ export const updateArticleFloorReceivedData = async (articleId, payload) => {
     floorData.receivedData = [];
   }
 
+  const receivedDataLengthBefore = floorData.receivedData.length;
+
   let receivedTransferItems = payload.receivedTransferItems;
-  let quantity = payload.quantity;
+  let quantity =
+    payload.quantity !== undefined && payload.quantity !== null
+      ? Number(payload.quantity)
+      : undefined;
+  if (quantity !== undefined && Number.isNaN(quantity)) {
+    quantity = undefined;
+  }
 
   // Auto-populate receivedTransferItems from previous floor's transferredData (e.g. FC→Dispatch, Dispatch→Warehouse)
   if ((!receivedTransferItems || receivedTransferItems.length === 0) && typeof quantity === 'number' && quantity > 0) {
@@ -1454,6 +1463,17 @@ export const updateArticleFloorReceivedData = async (articleId, payload) => {
 
   article.markModified(`floorQuantities.${floorKey}`);
   await article.save();
+
+  // WHMS: one InwardReceive row per new warehouse receivedData line (container accept / receive API)
+  if (normalizedFloor === 'Warehouse' && typeof quantity === 'number' && quantity > 0) {
+    const newLines = floorData.receivedData.slice(receivedDataLengthBefore);
+    const containerId = payload.receivedData?.receivedInContainerId ?? null;
+    try {
+      await createInwardReceivesForWarehouseAccept(article, newLines, containerId);
+    } catch (err) {
+      console.error('createInwardReceivesForWarehouseAccept failed:', err?.message || err);
+    }
+  }
 
   // Update order currentFloor when article moves to receiving floor
   if (typeof quantity === 'number' && quantity > 0) {

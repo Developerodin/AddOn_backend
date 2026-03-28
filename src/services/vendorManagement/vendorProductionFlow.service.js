@@ -444,91 +444,105 @@ export const transferVendorProductionFlowQuantity = async (flowId, fromFloorKey,
     throw new ApiError(httpStatus.BAD_REQUEST, 'Transfer quantity must be greater than 0');
   }
 
+  const applyTransferUpdates = async (session = null) => {
+    const sessionOptions = session ? { session } : undefined;
+    const flowQuery = VendorProductionFlow.findById(flowId);
+    const flow = session ? await flowQuery.session(session) : await flowQuery;
+    if (!flow) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'Vendor production flow not found');
+    }
+
+    const fromBefore = pickFloorSnapshot(flow, fromFloorKey);
+    const toBefore = pickFloorSnapshot(flow, toFloorKey);
+
+    const isCheckingFloor = fromFloorKey === 'secondaryChecking' || fromFloorKey === 'finalChecking';
+    if (isCheckingFloor) {
+      const availableM1 = Math.max(0, Number(fromBefore.m1Quantity || 0) - Number(fromBefore.m1Transferred || 0));
+      if (qty > availableM1) {
+        throw new ApiError(httpStatus.BAD_REQUEST, `Only ${availableM1} M1 quantity available to transfer`);
+      }
+    } else {
+      const available = Math.max(0, Number(fromBefore.completed || 0) - Number(fromBefore.transferred || 0));
+      if (qty > available) {
+        throw new ApiError(httpStatus.BAD_REQUEST, `Only ${available} quantity available to transfer`);
+      }
+    }
+
+    const inc = {
+      [floorPath(fromFloorKey, 'transferred')]: qty,
+      [floorPath(toFloorKey, 'received')]: qty,
+    };
+    if (isCheckingFloor) {
+      inc[floorPath(fromFloorKey, 'm1Transferred')] = qty;
+    }
+
+    await VendorProductionFlow.updateOne({ _id: flowId }, { $inc: inc }, sessionOptions);
+
+    const fromAfter = {
+      ...fromBefore,
+      transferred: Number(fromBefore.transferred || 0) + qty,
+      m1Transferred: isCheckingFloor ? Number(fromBefore.m1Transferred || 0) + qty : fromBefore.m1Transferred,
+    };
+    const toAfter = {
+      ...toBefore,
+      received: Number(toBefore.received || 0) + qty,
+    };
+
+    assertValidFloorState(fromFloorKey, fromAfter);
+    assertValidFloorState(toFloorKey, toAfter);
+
+    const fromDerived = computeDerivedForFloor(fromFloorKey, fromAfter);
+    const toDerived = computeDerivedForFloor(toFloorKey, toAfter);
+
+    await VendorProductionFlow.updateOne(
+      { _id: flowId },
+      {
+        $set: {
+          ...Object.fromEntries(Object.entries(fromDerived).map(([k, v]) => [floorPath(fromFloorKey, k), v])),
+          ...Object.fromEntries(Object.entries(toDerived).map(([k, v]) => [floorPath(toFloorKey, k), v])),
+          currentFloorKey: toFloorKey,
+          startedAt: flow.startedAt || new Date(),
+        },
+      },
+      sessionOptions
+    );
+
+    if (fromFloorKey === 'branding' && toFloorKey === 'finalChecking') {
+      const receiptRows = normalizeTransferBreakdownForReceipt(
+        fromBefore?.transferredData,
+        qty,
+        fromFloorKey
+      );
+      if (receiptRows.length > 0) {
+        await VendorProductionFlow.updateOne(
+          { _id: flowId },
+          { $push: { [floorPath(toFloorKey, 'receivedData')]: { $each: receiptRows } } },
+          sessionOptions
+        );
+      }
+    }
+
+    const updatedQuery = VendorProductionFlow.findById(flowId);
+    return session ? await updatedQuery.session(session) : await updatedQuery;
+  };
+
   const session = await VendorProductionFlow.startSession();
   try {
     let updatedFlow;
-    await session.withTransaction(async () => {
-      const flow = await VendorProductionFlow.findById(flowId).session(session);
-      if (!flow) {
-        throw new ApiError(httpStatus.NOT_FOUND, 'Vendor production flow not found');
+    try {
+      await session.withTransaction(async () => {
+        updatedFlow = await applyTransferUpdates(session);
+      });
+      return updatedFlow;
+    } catch (error) {
+      const message = String(error?.message || '');
+      const isReplicaSetError =
+        message.includes('Transaction numbers are only allowed on a replica set member or mongos');
+      if (!isReplicaSetError) {
+        throw error;
       }
-
-      const fromBefore = pickFloorSnapshot(flow, fromFloorKey);
-      const toBefore = pickFloorSnapshot(flow, toFloorKey);
-
-      const isCheckingFloor = fromFloorKey === 'secondaryChecking' || fromFloorKey === 'finalChecking';
-      if (isCheckingFloor) {
-        const availableM1 = Math.max(0, Number(fromBefore.m1Quantity || 0) - Number(fromBefore.m1Transferred || 0));
-        if (qty > availableM1) {
-          throw new ApiError(httpStatus.BAD_REQUEST, `Only ${availableM1} M1 quantity available to transfer`);
-        }
-      } else {
-        const available = Math.max(0, Number(fromBefore.completed || 0) - Number(fromBefore.transferred || 0));
-        if (qty > available) {
-          throw new ApiError(httpStatus.BAD_REQUEST, `Only ${available} quantity available to transfer`);
-        }
-      }
-
-      const inc = {
-        [floorPath(fromFloorKey, 'transferred')]: qty,
-        [floorPath(toFloorKey, 'received')]: qty,
-      };
-      if (isCheckingFloor) {
-        inc[floorPath(fromFloorKey, 'm1Transferred')] = qty;
-      }
-
-      // Apply increments
-      await VendorProductionFlow.updateOne({ _id: flowId }, { $inc: inc }, { session });
-
-      // Recompute derived on both floors
-      const fromAfter = {
-        ...fromBefore,
-        transferred: Number(fromBefore.transferred || 0) + qty,
-        m1Transferred: isCheckingFloor ? Number(fromBefore.m1Transferred || 0) + qty : fromBefore.m1Transferred,
-      };
-      const toAfter = {
-        ...toBefore,
-        received: Number(toBefore.received || 0) + qty,
-      };
-
-      assertValidFloorState(fromFloorKey, fromAfter);
-      assertValidFloorState(toFloorKey, toAfter);
-
-      const fromDerived = computeDerivedForFloor(fromFloorKey, fromAfter);
-      const toDerived = computeDerivedForFloor(toFloorKey, toAfter);
-
-      await VendorProductionFlow.updateOne(
-        { _id: flowId },
-        {
-          $set: {
-            ...Object.fromEntries(Object.entries(fromDerived).map(([k, v]) => [floorPath(fromFloorKey, k), v])),
-            ...Object.fromEntries(Object.entries(toDerived).map(([k, v]) => [floorPath(toFloorKey, k), v])),
-            currentFloorKey: toFloorKey,
-            startedAt: flow.startedAt || new Date(),
-          },
-        },
-        { session }
-      );
-
-      if (fromFloorKey === 'branding' && toFloorKey === 'finalChecking') {
-        const receiptRows = normalizeTransferBreakdownForReceipt(
-          fromBefore?.transferredData,
-          qty,
-          fromFloorKey
-        );
-        if (receiptRows.length > 0) {
-          await VendorProductionFlow.updateOne(
-            { _id: flowId },
-            { $push: { [floorPath(toFloorKey, 'receivedData')]: { $each: receiptRows } } },
-            { session }
-          );
-        }
-      }
-
-      updatedFlow = await VendorProductionFlow.findById(flowId).session(session);
-    });
-
-    return updatedFlow;
+      return applyTransferUpdates(null);
+    }
   } finally {
     session.endSession();
   }
