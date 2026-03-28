@@ -17,8 +17,8 @@ export const getFloorOrderByLinkingType = (linkingType) => {
       ProductionFloor.SECONDARY_CHECKING,
       ProductionFloor.BRANDING,
       ProductionFloor.FINAL_CHECKING,
-      ProductionFloor.WAREHOUSE,
-      ProductionFloor.DISPATCH
+      ProductionFloor.DISPATCH,
+      ProductionFloor.WAREHOUSE
     ];
   } else {
     // Hand Linking and Rosso Linking: Include linking floor
@@ -32,8 +32,8 @@ export const getFloorOrderByLinkingType = (linkingType) => {
       ProductionFloor.SECONDARY_CHECKING,
       ProductionFloor.BRANDING,
       ProductionFloor.FINAL_CHECKING,
-      ProductionFloor.WAREHOUSE,
-      ProductionFloor.DISPATCH
+      ProductionFloor.DISPATCH,
+      ProductionFloor.WAREHOUSE
     ];
   }
 };
@@ -53,9 +53,36 @@ export const getAllFloorsOrder = () => {
     ProductionFloor.SECONDARY_CHECKING,
     ProductionFloor.BRANDING,
     ProductionFloor.FINAL_CHECKING,
-    ProductionFloor.WAREHOUSE,
-    ProductionFloor.DISPATCH
+    ProductionFloor.DISPATCH,
+    ProductionFloor.WAREHOUSE
   ];
+};
+
+/**
+ * Product process lists often omit Warehouse (and sometimes Dispatch) after Final Checking.
+ * Align with linking-type flow: Final Checking → Dispatch → Warehouse.
+ * @param {string[]} floorOrder - Order from product or elsewhere
+ * @returns {string[]}
+ */
+export const withLogisticsTailFloors = (floorOrder) => {
+  if (!Array.isArray(floorOrder) || floorOrder.length === 0) {
+    return floorOrder;
+  }
+  const out = [...floorOrder];
+  if (out.includes(ProductionFloor.WAREHOUSE)) {
+    return out;
+  }
+  const idxDispatch = out.indexOf(ProductionFloor.DISPATCH);
+  if (idxDispatch !== -1) {
+    out.splice(idxDispatch + 1, 0, ProductionFloor.WAREHOUSE);
+    return out;
+  }
+  const idxFc = out.indexOf(ProductionFloor.FINAL_CHECKING);
+  if (idxFc !== -1) {
+    out.splice(idxFc + 1, 0, ProductionFloor.DISPATCH, ProductionFloor.WAREHOUSE);
+    return out;
+  }
+  return out;
 };
 
 /**
@@ -86,7 +113,7 @@ export const getFloorKey = (floor) => {
  */
 export const FLOORS_USING_CONTAINER_RECEIVE = [
   'Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon',
-  'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse', 'Dispatch'
+  'Secondary Checking', 'Branding', 'Final Checking', 'Dispatch', 'Warehouse'
 ];
 
 /**

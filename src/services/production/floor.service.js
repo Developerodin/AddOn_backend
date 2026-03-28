@@ -159,7 +159,7 @@ export const getAllFloorStatistics = async (dateRange = {}) => {
 
   const floors = [
     'Knitting', 'Linking', 'Checking', 'Washing',
-    'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse'
+    'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Dispatch', 'Warehouse'
   ];
 
   const statistics = await Promise.all(
@@ -296,7 +296,7 @@ export const getFloorWorkloadDistribution = async (dateRange = {}) => {
 
   const floors = [
     'Knitting', 'Linking', 'Checking', 'Washing',
-    'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse'
+    'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Dispatch', 'Warehouse'
   ];
 
   const workload = await Promise.all(
@@ -337,7 +337,7 @@ export const getFloorBottleneckAnalysis = async (dateRange = {}) => {
 
   const floors = [
     'Knitting', 'Linking', 'Checking', 'Washing',
-    'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse'
+    'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Dispatch', 'Warehouse'
   ];
 
   const analysis = await Promise.all(

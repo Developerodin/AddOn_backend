@@ -45,6 +45,7 @@ const createUser = {
         'Boarding Floor': Joi.boolean(),
         'Final Checking Floor': Joi.boolean(),
         'Branding Floor': Joi.boolean(),
+        'Dispatch Floor': Joi.boolean(),
         'Machine Floor': Joi.boolean(),
         'Warehouse Floor': Joi.boolean()
       }),
@@ -71,6 +72,7 @@ const createUser = {
       }),
       'Warehouse Management': Joi.object().keys({
         'Orders': Joi.boolean(),
+        'Inward': Joi.boolean(),
         'Pick&Pack': Joi.boolean(),
         'Layout': Joi.boolean(),
         'Stock': Joi.boolean(),
@@ -160,6 +162,7 @@ const updateUser = {
           'Boarding Floor': Joi.boolean(),
           'Final Checking Floor': Joi.boolean(),
           'Branding Floor': Joi.boolean(),
+          'Dispatch Floor': Joi.boolean(),
           'Machine Floor': Joi.boolean(),
           'Warehouse Floor': Joi.boolean()
         }),
@@ -186,6 +189,7 @@ const updateUser = {
         }),
         'Warehouse Management': Joi.object().keys({
           'Orders': Joi.boolean(),
+          'Inward': Joi.boolean(),
           'Pick&Pack': Joi.boolean(),
           'Layout': Joi.boolean(),
           'Stock': Joi.boolean(),
@@ -246,6 +250,7 @@ const updateUserNavigation = {
           'Boarding Floor': Joi.boolean(),
           'Final Checking Floor': Joi.boolean(),
           'Branding Floor': Joi.boolean(),
+          'Dispatch Floor': Joi.boolean(),
           'Machine Floor': Joi.boolean(),
           'Warehouse Floor': Joi.boolean()
         }).unknown(true),
@@ -272,6 +277,7 @@ const updateUserNavigation = {
         }).unknown(true),
         'Warehouse Management': Joi.object().keys({
           'Orders': Joi.boolean(),
+          'Inward': Joi.boolean(),
           'Pick&Pack': Joi.boolean(),
           'Layout': Joi.boolean(),
           'Stock': Joi.boolean(),

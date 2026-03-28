@@ -301,7 +301,7 @@ export const createFinalQualityLog = async (params) => {
     changeReason: 'Final quality inspection',
     userId,
     floorSupervisorId,
-    qualityStatus: confirmed ? 'Approved for Warehouse' : 'Rejected'
+    qualityStatus: confirmed ? 'Approved for Dispatch' : 'Rejected'
   });
 };
 
@@ -319,7 +319,8 @@ const getTransferAction = (floor) => {
     'Boarding': LogAction.TRANSFERRED_TO_BOARDING,
     'Branding': LogAction.TRANSFERRED_TO_BRANDING,
     'Final Checking': LogAction.TRANSFERRED_TO_FINAL_CHECKING,
-    'Warehouse': LogAction.TRANSFERRED_TO_WAREHOUSE
+    'Warehouse': LogAction.TRANSFERRED_TO_WAREHOUSE,
+    'Dispatch': LogAction.TRANSFERRED_TO_DISPATCH
   };
   
   return transferActions[floor] || 'Transferred to Next Floor';

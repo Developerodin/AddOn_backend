@@ -13,6 +13,9 @@ import {
   createFinalQualityLog
 } from '../../utils/loggingHelper.js';
 
+/** Floors that support brand/style breakdown via transferItems / transferredData (same shape as Branding → Final Checking). */
+const FLOORS_WITH_STYLE_TRANSFER_ITEMS = ['Branding', 'Final Checking', 'Dispatch'];
+
 /**
  * Get article by id.
  * @param {string} articleId - Article _id
@@ -95,7 +98,7 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
   const received = floorDataForCheck?.received || 0;
   const remaining = received - currentCompleted;
   const transferable = currentCompleted - currentTransferred;
-  if ((normalizedFloor === 'Branding' || normalizedFloor === 'Final Checking')
+  if (FLOORS_WITH_STYLE_TRANSFER_ITEMS.includes(normalizedFloor)
       && updateData.completedQuantity === undefined
       && Array.isArray(updateData.transferItems) && updateData.transferItems.length > 0) {
     const sum = updateData.transferItems.reduce((s, i) => s + (i.transferred || 0), 0);
@@ -331,7 +334,7 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
   const maxTransferable = totalCompleted - alreadyTransferred;
 
   const hasTransferItems = Array.isArray(updateData?.transferItems) && updateData.transferItems.length > 0;
-  const isTransferFloor = normalizedFloor === 'Branding' || normalizedFloor === 'Final Checking';
+  const isTransferFloor = FLOORS_WITH_STYLE_TRANSFER_ITEMS.includes(normalizedFloor);
 
   let transferQuantity = maxTransferable;
   if (hasTransferItems && isTransferFloor) {
@@ -342,7 +345,9 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
       const received = floorData?.received || 0;
       const hint = normalizedFloor === 'Final Checking' && received === 0
         ? ' Final Checking has no received work yet. Accept containers from Branding first (scan container barcode to receive).'
-        : '';
+        : normalizedFloor === 'Dispatch' && received === 0
+          ? ' Dispatch has no received work yet; transfer from Final Checking first.'
+          : '';
       throw new ApiError(httpStatus.BAD_REQUEST, `transferItems total (${transferQuantity}) exceeds transferable (${maxTransferable}) on ${normalizedFloor}.${hint}`);
     }
   }
@@ -396,6 +401,7 @@ const checkAndTransferPreviousFloorWork = async (article, updateData, user = nul
     'Secondary Checking',
     'Branding',
     'Final Checking',
+    'Dispatch',
     'Warehouse'
   ];
 
@@ -548,8 +554,13 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
   }
   
   let nextFloor = floorOrder[floorIndex + 1];
-  // Fallback: product may not have Warehouse/Dispatch in processes
-  if (!nextFloor && (normalizedFloor === 'Final Checking' || normalizedFloor === 'Branding')) {
+  // Fallback: product processes may omit tail floors — use linking-type order
+  if (
+    !nextFloor &&
+    (normalizedFloor === 'Final Checking' ||
+      normalizedFloor === 'Branding' ||
+      normalizedFloor === 'Dispatch')
+  ) {
     floorOrder = getFloorOrderByLinkingType(article.linkingType);
     const idx = floorOrder.indexOf(normalizedFloor);
     nextFloor = idx < floorOrder.length - 1 ? floorOrder[idx + 1] : null;
@@ -563,9 +574,8 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
   const transferItems = transferData.transferItems;
 
   if (Array.isArray(transferItems) && transferItems.length > 0) {
-    // Branding/Final Checking: use transferItems breakdown
-    if (normalizedFloor !== 'Branding' && normalizedFloor !== 'Final Checking') {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'transferItems is only supported for Branding and Final Checking floors');
+    if (!FLOORS_WITH_STYLE_TRANSFER_ITEMS.includes(normalizedFloor)) {
+      throw new ApiError(httpStatus.BAD_REQUEST, `transferItems is only supported for: ${FLOORS_WITH_STYLE_TRANSFER_ITEMS.join(', ')}`);
     }
     transferQuantity = transferItems.reduce((sum, item) => sum + (item.transferred || 0), 0);
     if (transferQuantity <= 0) {
@@ -584,12 +594,32 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
 
   floorData.transferred = (floorData.transferred || 0) + transferQuantity;
 
-  // Store transferItems in transferredData for Branding/Final Checking
-  if (Array.isArray(transferItems) && transferItems.length > 0 && (normalizedFloor === 'Branding' || normalizedFloor === 'Final Checking')) {
+  let transferItemsForStore = transferItems;
+  if (normalizedFloor === 'Dispatch' && Array.isArray(transferItems) && transferItems.length > 0) {
+    const receivedData = floorData.receivedData || [];
+    const withBreakdown = receivedData.filter((r) => (r.transferred || 0) > 0 && ((r.styleCode || '').trim() || (r.brand || '').trim()));
+    if (withBreakdown.length > 0) {
+      const used = new Set();
+      transferItemsForStore = transferItems.map((item) => {
+        if ((item.styleCode || '').trim() || (item.brand || '').trim()) return item;
+        const qty = item.transferred || 0;
+        const idx = withBreakdown.findIndex((r, i) => !used.has(i) && (r.transferred || 0) === qty);
+        if (idx >= 0) {
+          used.add(idx);
+          const r = withBreakdown[idx];
+          return { transferred: qty, styleCode: r.styleCode || '', brand: r.brand || '' };
+        }
+        const fb = withBreakdown[withBreakdown.length - 1];
+        return fb ? { transferred: qty, styleCode: fb.styleCode || '', brand: fb.brand || '' } : item;
+      });
+    }
+  }
+
+  if (Array.isArray(transferItemsForStore) && transferItemsForStore.length > 0 && FLOORS_WITH_STYLE_TRANSFER_ITEMS.includes(normalizedFloor)) {
     if (!Array.isArray(floorData.transferredData)) {
       floorData.transferredData = [];
     }
-    transferItems.forEach((item) => {
+    transferItemsForStore.forEach((item) => {
       floorData.transferredData.push({
         transferred: item.transferred,
         styleCode: item.styleCode || '',
@@ -611,6 +641,24 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
   } else {
     nextFloorData.received = (nextFloorData.received || 0) + transferQuantity;
     nextFloorData.remaining = nextFloorData.received;
+    const items = transferItemsForStore || transferItems;
+    if (Array.isArray(items) && items.length > 0 && FLOORS_WITH_STYLE_TRANSFER_ITEMS.includes(normalizedFloor)) {
+      const sum = items.reduce((s, i) => s + (i.transferred || 0), 0);
+      if (sum === transferQuantity) {
+        if (!Array.isArray(nextFloorData.receivedData)) nextFloorData.receivedData = [];
+        items.forEach((item) => {
+          nextFloorData.receivedData.push({
+            receivedStatusFromPreviousFloor: '',
+            receivedInContainerId: null,
+            receivedTimestamp: new Date(),
+            transferred: item.transferred,
+            styleCode: item.styleCode || '',
+            brand: item.brand || ''
+          });
+        });
+        article.markModified(`floorQuantities.${nextFloorKey}`);
+      }
+    }
   }
   
   // Update article machineId if provided
@@ -802,7 +850,7 @@ export const transferM2ForRepair = async (floor, orderId, articleId, repairData,
  * @param {Object} updateData
  * @param {Object} user
  * @param {string} fromFloor - Floor to transfer from (optional, defaults to current floor)
- * @param {number} [overrideQuantity] - Optional override for transfer quantity (for Branding/Final Checking partial transfer)
+ * @param {number} [overrideQuantity] - Optional override for transfer quantity (for Branding/Final Checking/Dispatch partial transfer)
  */
 const transferCompletedWorkToNextFloor = async (article, updateData, user = null, fromFloor = null, overrideQuantity = null) => {
   const sourceFloor = fromFloor || article.currentFloor;
@@ -826,8 +874,7 @@ const transferCompletedWorkToNextFloor = async (article, updateData, user = null
 
   console.log(`Transferring ${newTransferQuantity} from ${sourceFloor} to ${nextFloor}: completed=${totalCompleted}, transferred=${alreadyTransferred}`);
 
-  // For Branding/Final Checking with overrideQuantity: additive/partial transfer
-  if (overrideQuantity != null && (sourceFloor === 'Branding' || sourceFloor === 'Final Checking')) {
+  if (overrideQuantity != null && FLOORS_WITH_STYLE_TRANSFER_ITEMS.includes(sourceFloor)) {
     sourceFloorData.transferred = alreadyTransferred + newTransferQuantity;
   } else {
     sourceFloorData.transferred = totalCompleted;
@@ -867,7 +914,35 @@ const transferCompletedWorkToNextFloor = async (article, updateData, user = null
       });
     }
   }
-  if (Array.isArray(transferItems) && transferItems.length > 0 && (sourceFloor === 'Branding' || sourceFloor === 'Final Checking')) {
+  if (sourceFloor === 'Dispatch' && Array.isArray(transferItems) && transferItems.length > 0) {
+    const receivedData = sourceFloorData.receivedData || [];
+    const withBreakdown = receivedData.filter((r) => (r.transferred || 0) > 0 && ((r.styleCode || '').trim() || (r.brand || '').trim()));
+    if (withBreakdown.length > 0) {
+      const used = new Set();
+      transferItems = transferItems.map((item) => {
+        if ((item.styleCode || '').trim() || (item.brand || '').trim()) return item;
+        const qty = item.transferred || 0;
+        const idx = withBreakdown.findIndex((r, i) => !used.has(i) && (r.transferred || 0) === qty);
+        if (idx >= 0) {
+          used.add(idx);
+          const r = withBreakdown[idx];
+          return { transferred: qty, styleCode: r.styleCode || '', brand: r.brand || '' };
+        }
+        const fb = withBreakdown[withBreakdown.length - 1];
+        return fb ? { transferred: qty, styleCode: fb.styleCode || '', brand: fb.brand || '' } : item;
+      });
+    } else {
+      const fromTd = (sourceFloorData.transferredData || []).filter((t) => ((t.styleCode || '').trim() || (t.brand || '').trim()));
+      const fb = fromTd.length > 0 ? fromTd[fromTd.length - 1] : null;
+      if (fb) {
+        transferItems = transferItems.map((item) => {
+          if ((item.styleCode || '').trim() || (item.brand || '').trim()) return item;
+          return { transferred: item.transferred, styleCode: fb.styleCode || '', brand: fb.brand || '' };
+        });
+      }
+    }
+  }
+  if (Array.isArray(transferItems) && transferItems.length > 0 && FLOORS_WITH_STYLE_TRANSFER_ITEMS.includes(sourceFloor)) {
     const itemsSum = transferItems.reduce((s, i) => s + (i.transferred || 0), 0);
     if (itemsSum === newTransferQuantity) {
       const newEntries = transferItems.map((item) => ({
@@ -875,8 +950,7 @@ const transferCompletedWorkToNextFloor = async (article, updateData, user = null
         styleCode: item.styleCode || '',
         brand: item.brand || ''
       }));
-      // Partial transfer: APPEND to preserve all batches. Full transfer: REPLACE.
-      const isPartial = overrideQuantity != null && (sourceFloor === 'Branding' || sourceFloor === 'Final Checking');
+      const isPartial = overrideQuantity != null && FLOORS_WITH_STYLE_TRANSFER_ITEMS.includes(sourceFloor);
       if (isPartial && Array.isArray(sourceFloorData.transferredData) && sourceFloorData.transferredData.length > 0) {
         sourceFloorData.transferredData.push(...newEntries);
       } else {
@@ -891,7 +965,6 @@ const transferCompletedWorkToNextFloor = async (article, updateData, user = null
     if (sourceFloorData.completed < sourceFloorData.transferred) {
       sourceFloorData.completed = sourceFloorData.transferred;
     }
-    // Update M1 transferred for partial transfer (Branding/Final Checking)
     if (overrideQuantity != null && (sourceFloor === 'Branding' || sourceFloor === 'Final Checking')) {
       sourceFloorData.m1Transferred = (sourceFloorData.m1Transferred || 0) + newTransferQuantity;
       sourceFloorData.m1Remaining = Math.max(0, (sourceFloorData.m1Quantity || 0) - sourceFloorData.m1Transferred);
@@ -912,6 +985,27 @@ const transferCompletedWorkToNextFloor = async (article, updateData, user = null
   
   if (!usesContainerReceive(sourceFloor)) {
     nextFloorData.remaining = nextFloorData.received - (nextFloorData.completed || 0);
+  }
+
+  if (!usesContainerReceive(sourceFloor) && FLOORS_WITH_STYLE_TRANSFER_ITEMS.includes(sourceFloor)) {
+    const items = transferItems;
+    if (Array.isArray(items) && items.length > 0) {
+      const sum = items.reduce((s, i) => s + (i.transferred || 0), 0);
+      if (sum === newTransferQuantity) {
+        if (!Array.isArray(nextFloorData.receivedData)) nextFloorData.receivedData = [];
+        items.forEach((item) => {
+          nextFloorData.receivedData.push({
+            receivedStatusFromPreviousFloor: '',
+            receivedInContainerId: null,
+            receivedTimestamp: new Date(),
+            transferred: item.transferred,
+            styleCode: item.styleCode || '',
+            brand: item.brand || ''
+          });
+        });
+        article.markModified(`floorQuantities.${nextFloorKey}`);
+      }
+    }
   }
 
   // Update article current floor to next floor (only if transferring from current floor; container flow: move on accept)
@@ -1054,8 +1148,11 @@ const getNextFloor = async (article, currentFloor) => {
     const floorOrder = await article.getFloorOrder();
     const currentIndex = floorOrder.indexOf(currentFloor);
     let next = currentIndex < floorOrder.length - 1 ? floorOrder[currentIndex + 1] : null;
-    // Fallback: product may not have Warehouse/Dispatch in processes; use linking-type flow for Final Checking
-    if (!next && (currentFloor === 'Final Checking' || currentFloor === 'Branding')) {
+    // Fallback: product may not list tail floors; use linking-type flow
+    if (
+      !next &&
+      (currentFloor === 'Final Checking' || currentFloor === 'Branding' || currentFloor === 'Dispatch')
+    ) {
       const fallback = getFloorOrderByLinkingType(article.linkingType);
       const idx = fallback.indexOf(currentFloor);
       next = idx < fallback.length - 1 ? fallback[idx + 1] : null;
@@ -1148,7 +1245,8 @@ const getTransferAction = (floor) => {
     'Boarding': 'Transferred to Boarding',
     'Branding': 'Transferred to Branding',
     'Final Checking': 'Transferred to Final Checking',
-    'Warehouse': 'Transferred to Warehouse'
+    'Warehouse': 'Transferred to Warehouse',
+    'Dispatch': 'Transferred to Dispatch'
   };
   
   return transferActions[floor] || 'Transferred to Next Floor';
@@ -1284,12 +1382,13 @@ export const updateArticleFloorReceivedData = async (articleId, payload) => {
   let receivedTransferItems = payload.receivedTransferItems;
   let quantity = payload.quantity;
 
-  // Auto-populate receivedTransferItems from previous floor's transferredData when receiving on Branding/Final Checking
+  // Auto-populate receivedTransferItems from previous floor's transferredData (e.g. FC→Dispatch, Dispatch→Warehouse)
   if ((!receivedTransferItems || receivedTransferItems.length === 0) && typeof quantity === 'number' && quantity > 0) {
     const prevFloorMap = {
       'Final Checking': 'branding',
       'Branding': 'secondaryChecking',
-      'Warehouse': 'finalChecking'
+      'Dispatch': 'finalChecking',
+      'Warehouse': 'dispatch'
     };
     const prevFloorKey = prevFloorMap[normalizedFloor];
     const prevFloorData = prevFloorKey && article.floorQuantities?.[prevFloorKey];

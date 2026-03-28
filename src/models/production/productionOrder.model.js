@@ -188,6 +188,7 @@ productionOrderSchema.pre('save', async function(next) {
       ProductionFloor.SECONDARY_CHECKING,
       ProductionFloor.BRANDING,
       ProductionFloor.FINAL_CHECKING,
+      ProductionFloor.DISPATCH,
       ProductionFloor.WAREHOUSE
     ];
     
@@ -304,7 +305,7 @@ productionOrderSchema.methods.updatePriority = function(newPriority, userId, rea
   };
 };
 
-// Method to check if order can be forwarded to warehouse
+// Method to check if order can be forwarded to dispatch (after final checking)
 productionOrderSchema.methods.canForwardToWarehouse = function() {
   if (this.currentFloor !== ProductionFloor.FINAL_CHECKING) {
     return false;
@@ -315,10 +316,10 @@ productionOrderSchema.methods.canForwardToWarehouse = function() {
   );
 };
 
-// Method to forward to warehouse
+// Method to forward to dispatch (legacy name: forwardToWarehouse)
 productionOrderSchema.methods.forwardToWarehouse = function(userId, remarks) {
   if (!this.canForwardToWarehouse()) {
-    throw new Error('Order cannot be forwarded to warehouse - quality not confirmed for all articles');
+    throw new Error('Order cannot be forwarded to dispatch - quality not confirmed for all articles');
   }
   
   this.forwardedToBranding = true;

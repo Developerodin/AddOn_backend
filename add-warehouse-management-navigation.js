@@ -20,6 +20,7 @@ dotenv.config();
 // Warehouse Management navigation structure
 const warehouseManagementNavigation = {
   'Orders': false,
+  'Inward': false,
   'Pick&Pack': false,
   'Layout': false,
   'Stock': false,

@@ -334,7 +334,7 @@ export const getAuditTrail = async (orderId, options) => {
             'Transferred to Knitting', 'Transferred to Linking',
             'Transferred to Checking', 'Transferred to Washing',
             'Transferred to Boarding', 'Transferred to Branding',
-            'Transferred to Final Checking', 'Transferred to Warehouse',
+            'Transferred to Final Checking', 'Transferred to Warehouse', 'Transferred to Dispatch',
             'Quality Check Started', 'Quality Check Completed',
             'M1 Quantity Updated', 'M2 Quantity Updated',
             'M3 Quantity Updated', 'M4 Quantity Updated',

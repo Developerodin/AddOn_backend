@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { OrderStatus, Priority, LinkingType, ProductionFloor, RepairStatus, LogAction } from './enums.js';
 import ArticleLog from './articleLog.model.js';
 import Product from '../product.model.js';
-import { validateProductProcesses, mapProcessToFloor, getFloorKey, usesContainerReceive } from '../../utils/productionHelper.js';
+import { validateProductProcesses, mapProcessToFloor, getFloorKey, usesContainerReceive, withLogisticsTailFloors } from '../../utils/productionHelper.js';
 import { 
   updateQualityCategories, 
   shiftM2Items, 
@@ -274,7 +274,7 @@ const articleSchema = new mongoose.Schema({
         default: RepairStatus.NOT_REQUIRED
       },
       repairRemarks: { type: String, default: '' },
-      // Transfer breakdown by styleCode/brand when transferring to warehouse
+      // Transfer breakdown by styleCode/brand when transferring from final checking (e.g. to dispatch)
       transferredData: {
         type: [{
           transferred: { type: Number, required: true, min: 0 },
@@ -328,13 +328,23 @@ const articleSchema = new mongoose.Schema({
       completed: { type: Number, default: 0 },
       remaining: { type: Number, default: 0 },
       transferred: { type: Number, default: 0 },
-      // Track repair items received from checking floors
       repairReceived: { type: Number, default: 0, min: 0 },
+      transferredData: {
+        type: [{
+          transferred: { type: Number, required: true, min: 0 },
+          styleCode: { type: String, default: '' },
+          brand: { type: String, default: '' }
+        }],
+        default: []
+      },
       receivedData: {
         type: [{
           receivedStatusFromPreviousFloor: { type: String, default: '' },
           receivedInContainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'ContainersMaster', default: null },
-          receivedTimestamp: { type: Date, default: null }
+          receivedTimestamp: { type: Date, default: null },
+          transferred: { type: Number, default: 0 },
+          styleCode: { type: String, default: '' },
+          brand: { type: String, default: '' }
         }],
         default: []
       }
@@ -344,13 +354,23 @@ const articleSchema = new mongoose.Schema({
       completed: { type: Number, default: 0 },
       remaining: { type: Number, default: 0 },
       transferred: { type: Number, default: 0 },
-      // Track repair items received from checking floors
       repairReceived: { type: Number, default: 0, min: 0 },
+      transferredData: {
+        type: [{
+          transferred: { type: Number, required: true, min: 0 },
+          styleCode: { type: String, default: '' },
+          brand: { type: String, default: '' }
+        }],
+        default: []
+      },
       receivedData: {
         type: [{
           receivedStatusFromPreviousFloor: { type: String, default: '' },
           receivedInContainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'ContainersMaster', default: null },
-          receivedTimestamp: { type: Date, default: null }
+          receivedTimestamp: { type: Date, default: null },
+          transferred: { type: Number, default: 0 },
+          styleCode: { type: String, default: '' },
+          brand: { type: String, default: '' }
         }],
         default: []
       }
@@ -512,6 +532,11 @@ articleSchema.pre('save', async function(next) {
           return next();
         }
 
+        // Product process JSON often ends at Final Checking; Dispatch/Warehouse are still valid logistics tail.
+        const allowedFloors = new Set(expectedFloors);
+        allowedFloors.add(ProductionFloor.DISPATCH);
+        allowedFloors.add(ProductionFloor.WAREHOUSE);
+
         // Check each floor and clear invalid ones
         const allFloors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'silicon', 'secondaryChecking', 'branding', 'finalChecking', 'warehouse', 'dispatch'];
         const floorQuantities = this.floorQuantities || {};
@@ -522,7 +547,7 @@ articleSchema.pre('save', async function(next) {
           if (floorData && (floorData.received > 0 || floorData.completed > 0 || floorData.transferred > 0)) {
             const floorEnum = getFloorFromKey(floorKey);
             
-            if (!expectedFloors.includes(floorEnum)) {
+            if (!allowedFloors.has(floorEnum)) {
               // Clear invalid floor data
               console.warn(`🚨 Article ${this.articleNumber}: Clearing invalid floor "${floorEnum}" (not in product process flow)`);
               floorData.received = 0;
@@ -733,19 +758,30 @@ articleSchema.methods.getFloorOrderFromProduct = async function() {
     throw new Error(`No valid floors found in product processes for "${this.articleNumber}"`);
   }
 
+  /** After Final Checking, go to Dispatch — drop Warehouse if present in product flow */
+  const withoutWarehouseAfterFc = (arr) =>
+    arr.filter(
+      (f, i) =>
+        !(
+          f === ProductionFloor.WAREHOUSE &&
+          i > 0 &&
+          arr[i - 1] === ProductionFloor.FINAL_CHECKING
+        )
+    );
+
   // Auto Linking: skip linking floor - transfer directly from Knitting to next floor in process
   if (this.linkingType === LinkingType.AUTO_LINKING) {
-    return floorOrder.filter((floor) => floor !== ProductionFloor.LINKING);
+    return withoutWarehouseAfterFc(floorOrder.filter((floor) => floor !== ProductionFloor.LINKING));
   }
 
-  return floorOrder;
+  return withoutWarehouseAfterFc(floorOrder);
 };
 
 // Helper method to get floor order - uses product processes if available, falls back to linking type
 articleSchema.methods.getFloorOrder = async function() {
   try {
-    // Try to get floor order from product processes
-    return await this.getFloorOrderFromProduct();
+    const fromProduct = await this.getFloorOrderFromProduct();
+    return withLogisticsTailFloors(fromProduct);
   } catch (error) {
     // Fallback to linking type if product not found or processes not available
     console.warn(`Using fallback floor order for article ${this.articleNumber}: ${error.message}`);
@@ -766,8 +802,8 @@ articleSchema.methods.getFloorOrderByLinkingType = function() {
       ProductionFloor.SECONDARY_CHECKING,
       ProductionFloor.BRANDING,
       ProductionFloor.FINAL_CHECKING,
-      ProductionFloor.WAREHOUSE,
-      ProductionFloor.DISPATCH
+      ProductionFloor.DISPATCH,
+      ProductionFloor.WAREHOUSE
     ];
   } else {
     // Hand Linking and Rosso Linking: Include linking floor
@@ -781,8 +817,8 @@ articleSchema.methods.getFloorOrderByLinkingType = function() {
       ProductionFloor.SECONDARY_CHECKING,
       ProductionFloor.BRANDING,
       ProductionFloor.FINAL_CHECKING,
-      ProductionFloor.WAREHOUSE,
-      ProductionFloor.DISPATCH
+      ProductionFloor.DISPATCH,
+      ProductionFloor.WAREHOUSE
     ];
   }
 };

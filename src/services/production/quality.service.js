@@ -305,7 +305,7 @@ export const confirmFinalQuality = async (articleId, confirmData) => {
     changeReason: 'Final quality control process',
     userId,
     floorSupervisorId,
-    qualityStatus: confirmed ? 'Approved for Warehouse' : 'Rejected'
+    qualityStatus: confirmed ? 'Approved for Dispatch' : 'Rejected'
   });
 
   return {
@@ -325,7 +325,7 @@ export const confirmFinalQuality = async (articleId, confirmData) => {
 };
 
 /**
- * Forward order to warehouse after quality confirmation
+ * Forward order to Dispatch after final quality confirmation (route name kept: forwardToWarehouse).
  * @param {ObjectId} orderId
  * @param {Object} forwardData
  * @returns {Promise<Object>}
@@ -343,19 +343,19 @@ export const forwardToWarehouse = async (orderId, forwardData) => {
   // Check if all articles are quality confirmed
   const unconfirmedArticles = order.articles.filter(article => !article.finalQualityConfirmed);
   if (unconfirmedArticles.length > 0) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'All articles must be quality confirmed before forwarding to warehouse');
+    throw new ApiError(httpStatus.BAD_REQUEST, 'All articles must be quality confirmed before forwarding to dispatch');
   }
 
   const { remarks = '', userId, floorSupervisorId } = forwardData;
 
   // Update order
-  order.currentFloor = 'Warehouse';
+  order.currentFloor = 'Dispatch';
   order.forwardedToBranding = true;
   await order.save();
 
   // Update all articles
   for (const article of order.articles) {
-    article.currentFloor = 'Warehouse';
+    article.currentFloor = 'Dispatch';
     article.status = 'Completed';
     article.progress = 100;
     article.quantityFromPreviousFloor = article.completedQuantity;
@@ -368,14 +368,14 @@ export const forwardToWarehouse = async (orderId, forwardData) => {
     await createArticleLog({
       articleId: article._id.toString(),
       orderId: article.orderId.toString(),
-      action: 'Transferred to Warehouse',
+      action: 'Transferred to Dispatch',
       quantity: article.completedQuantity,
       fromFloor: 'Final Checking',
-      toFloor: 'Warehouse',
-      remarks: `Order forwarded to warehouse. ${remarks}`,
+      toFloor: 'Dispatch',
+      remarks: `Order forwarded to dispatch. ${remarks}`,
       previousValue: 'Final Checking',
-      newValue: 'Warehouse',
-      changeReason: 'Quality confirmed - ready for dispatch',
+      newValue: 'Dispatch',
+      changeReason: 'Quality confirmed - forwarded to dispatch',
       userId,
       floorSupervisorId
     });
@@ -386,9 +386,9 @@ export const forwardToWarehouse = async (orderId, forwardData) => {
     orderId: order._id,
     action: 'Order Completed',
     quantity: 0,
-    remarks: `Order ${order.orderNumber} completed and forwarded to warehouse`,
+    remarks: `Order ${order.orderNumber} completed and forwarded to dispatch`,
     previousValue: 'Final Checking',
-    newValue: 'Warehouse',
+    newValue: 'Dispatch',
     changeReason: 'All articles quality confirmed',
     userId,
     floorSupervisorId

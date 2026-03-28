@@ -108,6 +108,7 @@ const userSchema = mongoose.Schema(
           'Secondary Checking Floor': false,
           'Branding Floor': false,
           'Final Checking Floor': false,
+          'Dispatch Floor': false,
           'Machine Floor': false,
           'Warehouse Floor': false
         },
@@ -135,6 +136,7 @@ const userSchema = mongoose.Schema(
         },
         'Warehouse Management': {
           'Orders': false,
+          'Inward': false,
           'Pick&Pack': false,
           'Layout': false,
           'Stock': false,

@@ -40,6 +40,7 @@ export const DEFAULT_NAVIGATION = {
     'Secondary Checking Floor': false,
     'Branding Floor': false,
     'Final Checking Floor': false,
+    'Dispatch Floor': false,
     'Machine Floor': false,
     'Warehouse Floor': false
   },
@@ -66,6 +67,7 @@ export const DEFAULT_NAVIGATION = {
   },
   'Warehouse Management': {
     'Orders': false,
+    'Inward': false,
     'Pick&Pack': false,
     'Layout': false,
     'Stock': false,
@@ -123,6 +125,7 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Secondary Checking Floor': true,
       'Branding Floor': true,
       'Final Checking Floor': true,
+      'Dispatch Floor': true,
       'Machine Floor': true,
       'Warehouse Floor': true
     },
@@ -149,6 +152,7 @@ export const ROLE_NAVIGATION_TEMPLATES = {
     },
     'Warehouse Management': {
       'Orders': true,
+      'Inward': true,
       'Pick&Pack': true,
       'Layout': true,
       'Stock': true,
@@ -201,6 +205,7 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Secondary Checking Floor': false,
       'Branding Floor': false,
       'Final Checking Floor': false,
+      'Dispatch Floor': false,
       'Machine Floor': false,
       'Warehouse Floor': false
     },
@@ -227,6 +232,7 @@ export const ROLE_NAVIGATION_TEMPLATES = {
     },
     'Warehouse Management': {
       'Orders': false,
+      'Inward': false,
       'Pick&Pack': false,
       'Layout': false,
       'Stock': false,
@@ -339,6 +345,7 @@ export const validateNavigationStructure = (navigation) => {
     'Secondary Checking Floor',
     'Branding Floor',
     'Final Checking Floor',
+    'Dispatch Floor',
     'Machine Floor',
     'Warehouse Floor'
   ];
@@ -396,7 +403,7 @@ export const validateNavigationStructure = (navigation) => {
     console.error('Validation failed: Warehouse Management is not an object');
     return false;
   }
-  const warehouseKeys = ['Orders', 'Pick&Pack', 'Layout', 'Stock', 'Reports'];
+  const warehouseKeys = ['Orders', 'Inward', 'Pick&Pack', 'Layout', 'Stock', 'Reports'];
   for (const key of warehouseKeys) {
     if (!(key in navigation['Warehouse Management']) || typeof navigation['Warehouse Management'][key] !== 'boolean') {
       console.error(`Validation failed: Warehouse Management.${key} is missing or not a boolean`);
