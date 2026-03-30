@@ -147,37 +147,94 @@ export const bulkCreateVendorBoxes = async (bulkData) => {
   let counter = 0;
   const poId = new mongoose.Types.ObjectId(String(po._id));
 
-  const lotRows = await Promise.all(
-    lotDetails.map(async (lot) => {
-      const {
-        lotNumber,
-        numberOfBoxes,
-        productId,
-        vendorPoItemId,
-        orderQty,
-        boxWeight,
-        grossWeight,
-        numberOfUnits,
-        tearweight,
-      } = lot;
-      if (!lotNumber || numberOfBoxes < 1) {
-        throw new ApiError(httpStatus.BAD_REQUEST, 'Each lot needs lotNumber and numberOfBoxes >= 1');
+  const lotRows = [];
+  for (const lot of lotDetails) {
+    const {
+      lotNumber,
+      numberOfBoxes,
+      productId,
+      vendorPoItemId,
+      orderQty,
+      boxWeight,
+      grossWeight,
+      numberOfUnits,
+      tearweight,
+    } = lot;
+
+    if (!lotNumber) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Each lot needs lotNumber');
+    }
+
+    const normalizedLotNumber = String(lotNumber).trim();
+    const lotFromPo = (po.receivedLotDetails || []).find((l) => String(l?.lotNumber || '').trim() === normalizedLotNumber);
+    const poItemsInLot = lotFromPo?.poItems || [];
+    const lotPoItemsWithReceivedBoxes = poItemsInLot.filter((item) => item?.poItem && item.receivedBoxes != null);
+    const totalReceivedBoxesInLot = lotPoItemsWithReceivedBoxes.reduce(
+      (sum, item) => sum + Math.max(0, Math.trunc(Number(item.receivedBoxes) || 0)),
+      0
+    );
+    const inputNumberOfBoxes = Number(numberOfBoxes);
+
+    // If lot has per-item receivedBoxes and caller did not select one item, create for all items.
+    // Also expand-all when caller passes lot total count with a single vendorPoItemId (common UI flow).
+    const shouldExpandAllPoItemsForLot =
+      lotPoItemsWithReceivedBoxes.length > 0 &&
+      (!vendorPoItemId ||
+        (Number.isFinite(inputNumberOfBoxes) && Math.trunc(inputNumberOfBoxes) === totalReceivedBoxesInLot && totalReceivedBoxesInLot > 0));
+
+    if (shouldExpandAllPoItemsForLot) {
+      for (const item of lotPoItemsWithReceivedBoxes) {
+        const resolvedPoItemId = String(item.poItem);
+        const resolvedNumberOfBoxes = Math.max(0, Math.trunc(Number(item.receivedBoxes) || 0));
+        const existingCount = await VendorBox.countDocuments({
+          vpoNumber: po.vpoNumber,
+          lotNumber: normalizedLotNumber,
+          vendorPoItemId: new mongoose.Types.ObjectId(resolvedPoItemId),
+        });
+        lotRows.push({
+          lotNumber: normalizedLotNumber,
+          numberOfBoxes: resolvedNumberOfBoxes,
+          productId,
+          vendorPoItemId: resolvedPoItemId,
+          orderQty,
+          boxWeight,
+          grossWeight,
+          numberOfUnits,
+          tearweight,
+          existingCount,
+        });
       }
-      const existingCount = await VendorBox.countDocuments({ vpoNumber: po.vpoNumber, lotNumber });
-      return {
-        lotNumber,
-        numberOfBoxes,
-        productId,
-        vendorPoItemId,
-        orderQty,
-        boxWeight,
-        grossWeight,
-        numberOfUnits,
-        tearweight,
-        existingCount,
-      };
-    })
-  );
+      continue;
+    }
+
+    const poItemFromLot = vendorPoItemId
+      ? poItemsInLot.find((item) => String(item?.poItem) === String(vendorPoItemId))
+      : null;
+    const hasReceivedBoxes = poItemFromLot && poItemFromLot.receivedBoxes != null;
+    if (!hasReceivedBoxes && (!Number.isFinite(inputNumberOfBoxes) || inputNumberOfBoxes < 1)) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Each lot needs numberOfBoxes >= 1 when receivedBoxes is not set for that PO item');
+    }
+    const resolvedNumberOfBoxes = hasReceivedBoxes
+      ? Math.max(0, Math.trunc(Number(poItemFromLot.receivedBoxes) || 0))
+      : Math.trunc(inputNumberOfBoxes);
+
+    const existingFilter = vendorPoItemId
+      ? { vpoNumber: po.vpoNumber, lotNumber: normalizedLotNumber, vendorPoItemId: new mongoose.Types.ObjectId(String(vendorPoItemId)) }
+      : { vpoNumber: po.vpoNumber, lotNumber: normalizedLotNumber };
+    const existingCount = await VendorBox.countDocuments(existingFilter);
+    lotRows.push({
+      lotNumber: normalizedLotNumber,
+      numberOfBoxes: resolvedNumberOfBoxes,
+      productId,
+      vendorPoItemId,
+      orderQty,
+      boxWeight,
+      grossWeight,
+      numberOfUnits,
+      tearweight,
+      existingCount,
+    });
+  }
 
   lotRows.forEach((row) => {
     const {
@@ -193,7 +250,20 @@ export const bulkCreateVendorBoxes = async (bulkData) => {
       existingCount,
     } = row;
     if (existingCount > 0) {
-      skippedLots.push({ lotNumber, reason: 'Boxes already exist for this lot' });
+      skippedLots.push({
+        lotNumber,
+        vendorPoItemId,
+        reason: vendorPoItemId ? 'Boxes already exist for this lot and PO item' : 'Boxes already exist for this lot',
+      });
+      return;
+    }
+
+    if (numberOfBoxes < 1) {
+      skippedLots.push({
+        lotNumber,
+        vendorPoItemId,
+        reason: 'No boxes to create (receivedBoxes is 0 for this PO item)',
+      });
       return;
     }
 
