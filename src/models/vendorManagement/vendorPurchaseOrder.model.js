@@ -87,6 +87,7 @@ const receivedLotDetailsSchema = mongoose.Schema(
         {
           poItem: { type: mongoose.Schema.Types.ObjectId, required: true },
           receivedQuantity: { type: Number, required: true, min: 0 },
+          receivedBoxes: { type: Number, min: 0, default: 0 },
         },
       ],
       default: [],

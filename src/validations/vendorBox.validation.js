@@ -38,7 +38,7 @@ export const bulkCreateVendorBoxes = {
       .items(
         Joi.object().keys({
           lotNumber: Joi.string().required().trim(),
-          numberOfBoxes: Joi.number().integer().min(1).required(),
+          numberOfBoxes: Joi.number().integer().min(0),
           productId: Joi.string().custom(objectId),
           vendorPoItemId: Joi.string().custom(objectId),
           orderQty: Joi.number().min(0),

@@ -36,6 +36,7 @@ const receivedLotSchema = Joi.object().keys({
     Joi.object().keys({
       poItem: Joi.string().custom(objectId).required(),
       receivedQuantity: Joi.number().min(0).required(),
+      receivedBoxes: Joi.number().min(0).default(0),
     })
   ),
   status: Joi.string().valid(...vendorLotStatuses),
