@@ -9,6 +9,7 @@ Use this document to wire the WHMS backend APIs in your frontend. All endpoints 
 - **Base path:** `/v1/whms` (e.g. `https://your-api.com/v1/whms`)
 - **Authentication:** Bearer JWT. Send header: `Authorization: Bearer <token>`
 - **Permissions:** Read endpoints use `getOrders`; create/update/delete use `manageOrders`
+- **Warehouse clients (CRUD + list + get by id):** [`WAREHOUSE_CLIENT_API.md`](./WAREHOUSE_CLIENT_API.md) — base path `/v1/whms/warehouse-clients`
 
 ---
 

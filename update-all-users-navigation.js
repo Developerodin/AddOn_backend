@@ -130,7 +130,7 @@ async function updateAllUsersNavigation() {
     console.log('   • Production Planning (all floors)');
     console.log('   • Yarn Management (Cataloguing, Purchase, Inventory, Yarn Issue)');
     console.log('   • Yarn Master (Brand, Yarn Type, Count/Size, Color)');
-    console.log('   • Warehouse Management (Orders, Inward, Pick&Pack, Layout, Stock, Reports)');
+    console.log('   • Warehouse Management (Orders, Inward, Clients, Pick&Pack, Layout, Stock, Reports)');
 
     if (updatedCount > 0) {
       console.log('\n🎉 Navigation update completed successfully!');

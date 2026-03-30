@@ -137,6 +137,7 @@ const userSchema = mongoose.Schema(
         'Warehouse Management': {
           'Orders': false,
           'Inward': false,
+          'Clients': false,
           'Pick&Pack': false,
           'Layout': false,
           'Stock': false,

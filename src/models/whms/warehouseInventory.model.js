@@ -3,47 +3,8 @@ import { toJSON, paginate } from '../plugins/index.js';
 
 /**
  * WHMS warehouse inventory: one document per style code (globally unique styleCode + styleCodeId).
- * - Refs: join to live Product / StyleCode when they still exist.
- * - itemData + styleCode + styleCodeData: denormalized copies if masters are removed later.
+ * Audit history lives in {@link WarehouseInventoryLog} (collection `warehouse_inventory_logs`).
  */
-
-/**
- * Single audit line for an inventory row (product + style code).
- * Append-only history. If you set totalQuantityAfter + blockedQuantityAfter + availableQuantityAfter,
- * keep: availableQuantityAfter === max(0, totalQuantityAfter - blockedQuantityAfter) (app/service layer).
- */
-const warehouseInventoryLogSchema = mongoose.Schema(
-  {
-    action: {
-      type: String,
-      trim: true,
-      default: '',
-    },
-    message: {
-      type: String,
-      trim: true,
-      default: '',
-    },
-    quantityDelta: {
-      type: Number,
-    },
-    blockedDelta: {
-      type: Number,
-    },
-    totalQuantityAfter: { type: Number, min: 0 },
-    blockedQuantityAfter: { type: Number, min: 0 },
-    availableQuantityAfter: { type: Number, min: 0 },
-    userId: {
-      type: mongoose.SchemaTypes.ObjectId,
-      ref: 'User',
-      default: null,
-    },
-    meta: {
-      type: mongoose.Schema.Types.Mixed,
-    },
-  },
-  { _id: true, timestamps: { createdAt: true, updatedAt: false } }
-);
 
 const warehouseInventorySchema = mongoose.Schema(
   {
@@ -92,26 +53,11 @@ const warehouseInventorySchema = mongoose.Schema(
       default: 0,
       min: 0,
     },
-    /** Audit trail; always an array — see pre-validate hook if missing from raw updates. */
-    logs: {
-      type: [warehouseInventoryLogSchema],
-      default() {
-        return [];
-      },
-    },
   },
   { timestamps: true }
 );
 
 warehouseInventorySchema.index({ itemId: 1, styleCodeId: 1 });
-
-/** Ensure `logs` exists so push/markModified never runs on undefined (creates / lean / legacy docs). */
-warehouseInventorySchema.pre('validate', function ensureLogsArray(next) {
-  if (!Array.isArray(this.logs)) {
-    this.logs = [];
-  }
-  next();
-});
 
 warehouseInventorySchema.pre('validate', function warehouseInventoryValidate(next) {
   const total = this.totalQuantity ?? 0;

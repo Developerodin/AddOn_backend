@@ -27,6 +27,13 @@ router.get(
   warehouseInventoryController.getWarehouseInventoryByStyleCode
 );
 
+router.get(
+  '/:inventoryId/logs',
+  auth('getOrders'),
+  validate(warehouseInventoryValidation.getWarehouseInventoryLogs),
+  warehouseInventoryController.getWarehouseInventoryLogs
+);
+
 router
   .route('/:inventoryId')
   .get(

@@ -73,6 +73,7 @@ const createUser = {
       'Warehouse Management': Joi.object().keys({
         'Orders': Joi.boolean(),
         'Inward': Joi.boolean(),
+        'Clients': Joi.boolean(),
         'Pick&Pack': Joi.boolean(),
         'Layout': Joi.boolean(),
         'Stock': Joi.boolean(),
@@ -190,6 +191,7 @@ const updateUser = {
         'Warehouse Management': Joi.object().keys({
           'Orders': Joi.boolean(),
           'Inward': Joi.boolean(),
+          'Clients': Joi.boolean(),
           'Pick&Pack': Joi.boolean(),
           'Layout': Joi.boolean(),
           'Stock': Joi.boolean(),
@@ -278,6 +280,7 @@ const updateUserNavigation = {
         'Warehouse Management': Joi.object().keys({
           'Orders': Joi.boolean(),
           'Inward': Joi.boolean(),
+          'Clients': Joi.boolean(),
           'Pick&Pack': Joi.boolean(),
           'Layout': Joi.boolean(),
           'Stock': Joi.boolean(),

@@ -4,6 +4,7 @@ import Product from '../../models/product.model.js';
 import StyleCode from '../../models/styleCode.model.js';
 import WarehouseInventory from '../../models/whms/warehouseInventory.model.js';
 import { InwardReceiveStatus } from '../../models/whms/inwardReceive.model.js';
+import { appendWarehouseInventoryLog } from './warehouseInventory.service.js';
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -135,7 +136,12 @@ async function applyWarehouseInventoryDelta({
   if (itemData !== undefined) inv.itemData = itemData;
   if (styleCodeData !== undefined) inv.styleCodeData = styleCodeData;
 
-  inv.logs.push({
+  await inv.save();
+
+  await appendWarehouseInventoryLog({
+    warehouseInventoryId: inv._id,
+    styleCodeId: inv.styleCodeId,
+    styleCode: inv.styleCode,
     action: delta >= 0 ? 'inward_accept' : 'inward_reverse',
     message: `Inward receive ${delta >= 0 ? '+' : ''}${delta} (accepted qty)`,
     quantityDelta: delta,
@@ -144,7 +150,4 @@ async function applyWarehouseInventoryDelta({
     availableQuantityAfter: Math.max(0, nextTotal - nextBlocked),
     meta: inwardReceiveId ? { inwardReceiveId: String(inwardReceiveId) } : undefined,
   });
-  inv.markModified('logs');
-
-  await inv.save();
 }

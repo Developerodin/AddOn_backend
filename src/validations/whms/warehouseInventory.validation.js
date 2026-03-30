@@ -61,3 +61,14 @@ export const deleteWarehouseInventory = {
     inventoryId: Joi.string().custom(objectId).required(),
   }),
 };
+
+export const getWarehouseInventoryLogs = {
+  params: Joi.object().keys({
+    inventoryId: Joi.string().custom(objectId).required(),
+  }),
+  query: Joi.object().keys({
+    sortBy: Joi.string(),
+    limit: Joi.number().integer(),
+    page: Joi.number().integer(),
+  }),
+};

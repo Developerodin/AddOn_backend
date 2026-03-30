@@ -9,6 +9,8 @@ import PackBatch from './packBatch.model.js';
 import DamageMissingReport from './damageMissingReport.model.js';
 import FactoryRequirement from './factoryRequirement.model.js';
 import WarehouseInventory from './warehouseInventory.model.js';
+import WarehouseInventoryLog from './warehouseInventoryLog.model.js';
+import WarehouseClient from './warehouseClient.model.js';
 
 export {
   WhmsOrder,
@@ -22,4 +24,6 @@ export {
   DamageMissingReport,
   FactoryRequirement,
   WarehouseInventory,
+  WarehouseInventoryLog,
+  WarehouseClient,
 };

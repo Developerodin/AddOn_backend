@@ -3,6 +3,7 @@ import httpStatus from 'http-status';
 import ApiError from '../../utils/ApiError.js';
 import pick from '../../utils/pick.js';
 import WarehouseInventory from '../../models/whms/warehouseInventory.model.js';
+import WarehouseInventoryLog from '../../models/whms/warehouseInventoryLog.model.js';
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -10,6 +11,33 @@ const POPULATE_DEFAULT = [
   { path: 'itemId', select: 'name factoryCode softwareCode internalCode knittingCode' },
   { path: 'styleCodeId', select: 'styleCode eanCode mrp brand pack status' },
 ];
+
+/**
+ * Insert one audit row (append-only). Call after the parent inventory row is saved.
+ * @param {Record<string, unknown>} payload
+ */
+export const appendWarehouseInventoryLog = async (payload) => {
+  return WarehouseInventoryLog.create(payload);
+};
+
+export const countWarehouseInventoryLogsByInventoryId = async (inventoryId) => {
+  if (!inventoryId) return 0;
+  return WarehouseInventoryLog.countDocuments({ warehouseInventoryId: inventoryId });
+};
+
+/**
+ * @param {string|import('mongoose').Types.ObjectId} inventoryId
+ * @param {Record<string, unknown>} options — sortBy, limit, page (paginate plugin)
+ */
+export const queryWarehouseInventoryLogsByInventoryId = async (inventoryId, options) => {
+  return WarehouseInventoryLog.paginate(
+    { warehouseInventoryId: inventoryId },
+    {
+      ...options,
+      sortBy: options.sortBy || 'createdAt:desc',
+    }
+  );
+};
 
 /**
  * @param {Record<string, unknown>} query
@@ -32,8 +60,11 @@ export const buildWarehouseInventoryFilter = (query) => {
 };
 
 export const createWarehouseInventory = async (body) => {
+  const clean = { ...body };
+  delete clean.logs;
+
   try {
-    const doc = await WarehouseInventory.create(body);
+    const doc = await WarehouseInventory.create(clean);
     return WarehouseInventory.findById(doc._id).populate(POPULATE_DEFAULT);
   } catch (err) {
     if (err?.code === 11000) {
@@ -92,8 +123,13 @@ export const updateWarehouseInventoryById = async (id, updateBody, userId = null
   const totalChanged = patch.totalQuantity !== undefined && doc.totalQuantity !== prevTotal;
   const blockedChanged = patch.blockedQuantity !== undefined && doc.blockedQuantity !== prevBlocked;
 
+  await doc.save();
+
   if (totalChanged || blockedChanged) {
-    doc.logs.push({
+    await appendWarehouseInventoryLog({
+      warehouseInventoryId: doc._id,
+      styleCodeId: doc.styleCodeId,
+      styleCode: doc.styleCode,
       action: 'manual_adjust',
       message: reason || 'Manual update via API',
       quantityDelta: totalChanged ? doc.totalQuantity - prevTotal : undefined,
@@ -103,14 +139,13 @@ export const updateWarehouseInventoryById = async (id, updateBody, userId = null
       availableQuantityAfter: Math.max(0, (doc.totalQuantity ?? 0) - (doc.blockedQuantity ?? 0)),
       userId: userId || null,
     });
-    doc.markModified('logs');
   }
 
-  await doc.save();
   return WarehouseInventory.findById(doc._id).populate(POPULATE_DEFAULT);
 };
 
 export const deleteWarehouseInventoryById = async (id) => {
+  await WarehouseInventoryLog.deleteMany({ warehouseInventoryId: id });
   const doc = await WarehouseInventory.findByIdAndDelete(id);
   if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Warehouse inventory not found');
   return doc;
