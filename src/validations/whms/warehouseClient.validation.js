@@ -46,27 +46,49 @@ const sharedFields = {
   remarks: Joi.string().allow('').trim(),
 };
 
+const { storeProfile: _storeProfileField, ...nonStoreRootFields } = sharedFields;
+
+/** Store clients: `type` + `storeProfile`; optional `status` / `remarks` / `slNo` only (no other root fields). */
 export const createWarehouseClient = {
-  body: Joi.object().keys({
-    ...sharedFields,
-    type: Joi.string()
-      .valid(...clientTypes)
-      .required(),
-  }),
+  body: Joi.alternatives().try(
+    Joi.object({
+      type: Joi.string().valid('Store').required(),
+      storeProfile: storeProfileSchema.required(),
+      status: Joi.string().valid(...statusValues),
+      remarks: Joi.string().allow('').trim(),
+      slNo: Joi.number().integer().min(0).allow(null),
+    }).unknown(false),
+    Joi.object({
+      type: Joi.string().valid('Trade', 'Departmental', 'Ecom').required(),
+      ...nonStoreRootFields,
+    }).unknown(false)
+  ),
+};
+
+const listQueryKeys = {
+  status: Joi.string().valid(...statusValues),
+  city: Joi.string().trim(),
+  state: Joi.string().trim(),
+  parentKeyCode: Joi.string().trim(),
+  search: Joi.string().trim(),
+  sortBy: Joi.string(),
+  limit: Joi.number().integer(),
+  page: Joi.number().integer(),
 };
 
 export const getWarehouseClients = {
   query: Joi.object().keys({
     type: Joi.string().valid(...clientTypes),
-    status: Joi.string().valid(...statusValues),
-    city: Joi.string().trim(),
-    state: Joi.string().trim(),
-    parentKeyCode: Joi.string().trim(),
-    search: Joi.string().trim(),
-    sortBy: Joi.string(),
-    limit: Joi.number().integer(),
-    page: Joi.number().integer(),
+    ...listQueryKeys,
   }),
+};
+
+/** `type` is required in the path; same filters as list (search, city, state, …). */
+export const getWarehouseClientsByType = {
+  params: Joi.object().keys({
+    type: Joi.string().valid(...clientTypes).required(),
+  }),
+  query: Joi.object().keys(listQueryKeys),
 };
 
 export const getWarehouseClient = {

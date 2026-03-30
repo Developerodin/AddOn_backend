@@ -20,6 +20,14 @@ router
   );
 
 router
+  .route('/by-type/:type')
+  .get(
+    auth('getOrders'),
+    validate(warehouseClientValidation.getWarehouseClientsByType),
+    warehouseClientController.getWarehouseClientsByType
+  );
+
+router
   .route('/:clientId')
   .get(
     auth('getOrders'),

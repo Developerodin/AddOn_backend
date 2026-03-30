@@ -11,6 +11,7 @@ import FactoryRequirement from './factoryRequirement.model.js';
 import WarehouseInventory from './warehouseInventory.model.js';
 import WarehouseInventoryLog from './warehouseInventoryLog.model.js';
 import WarehouseClient from './warehouseClient.model.js';
+import WarehouseOrder from './warehouseOrder.model.js';
 
 export {
   WhmsOrder,
@@ -26,4 +27,5 @@ export {
   WarehouseInventory,
   WarehouseInventoryLog,
   WarehouseClient,
+  WarehouseOrder,
 };

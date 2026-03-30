@@ -15,10 +15,10 @@ Authentication: JWT **`Authorization: Bearer <token>`**
 
 | Value | `storeProfile` |
 |--------|----------------|
-| **`Store`** | Used — extra store fields (see below) |
-| **`Trade`** | Cleared on save (do not send) |
-| **`Departmental`** | Cleared on save |
-| **`Ecom`** | Cleared on save |
+| **`Store`** | **Create:** `type` + `storeProfile`; optional `status`, `remarks`, `slNo`. **PATCH:** only `storeProfile` (unless changing type). Data lives under `storeProfile`. |
+| **`Trade`** | Do not send `storeProfile` |
+| **`Departmental`** | Do not send `storeProfile` |
+| **`Ecom`** | Do not send `storeProfile` |
 
 ---
 
@@ -39,7 +39,7 @@ Authentication: JWT **`Authorization: Bearer <token>`**
 | `city` | Case-insensitive partial match |
 | `state` | Case-insensitive partial match |
 | `parentKeyCode` | Case-insensitive partial match |
-| `search` | Matches retailerName, distributorName, parentKeyCode, gstin, contactPerson, outlet |
+| `search` | Matches retailerName, distributorName, parentKeyCode, gstin, contactPerson, outlet, plus `storeProfile` (brand, sapCode, billCode, retekCode, brandSub, classification) |
 
 **Response**
 
@@ -55,13 +55,57 @@ Authentication: JWT **`Authorization: Bearer <token>`**
 
 ---
 
+### List by client type (paginated)
+
+`GET /v1/whms/warehouse-clients/by-type/:type`
+
+**Path**
+
+| Segment | Description |
+|---------|-------------|
+| `:type` | **Required.** `Store` \| `Trade` \| `Departmental` \| `Ecom` |
+
+Returns only clients of that type. Same response shape as the general list.
+
+**Query (all optional)** — same filters as the list endpoint, **except** `type` is not passed here (it is in the path).
+
+| Param | Description |
+|--------|-------------|
+| `page`, `limit` | Pagination |
+| `sortBy` | e.g. `createdAt:desc` |
+| `status` | `active` \| `inactive` |
+| `city` | Root or `storeProfile.city` |
+| `state` | Root or `storeProfile.state` |
+| `parentKeyCode` | Case-insensitive partial match (root) |
+| `search` | Same multi-field search as list |
+
+**Examples**
+
+```http
+GET /v1/whms/warehouse-clients/by-type/Store?search=brand&page=1&limit=20
+Authorization: Bearer <token>
+```
+
+```http
+GET /v1/whms/warehouse-clients/by-type/Trade?search=mumbai&status=active
+```
+
+For types with spaces or special characters, URL-encode the segment (e.g. `Departmental` is fine as-is).
+
+---
+
 ### Create
 
 `POST /v1/whms/warehouse-clients`
 
-**Body:** JSON object; **`type`** is required. All other fields optional.
+**Body — two shapes (discriminated by `type`):**
 
-**201** — created document (same shape as GET by id).
+| `type` | Body |
+|--------|------|
+| **`Store`** | **`type`** + **`storeProfile`** (required). Optional root: **`status`**, **`remarks`**, **`slNo`**. Any other root key → `400`. |
+| **`Trade`**, **`Departmental`**, **`Ecom`** | **`type`** required; other root fields optional; do **not** send `storeProfile`. |
+
+**201** — created document. New Store rows have empty root string fields; data is under `storeProfile`.
 
 ---
 
@@ -79,7 +123,12 @@ Authentication: JWT **`Authorization: Bearer <token>`**
 
 `PATCH /v1/whms/warehouse-clients/:clientId`
 
-**Body:** at least one allowed field. Root fields and/or nested `storeProfile` (merged when `type` is `Store`).
+**Body (at least one field):**
+
+| Current `type` | Behaviour |
+|----------------|-----------|
+| **`Store`** | Only **`storeProfile`** is applied (shallow merge). Root fields in the body are **ignored**. To change to Trade/Departmental/Ecom, send **`type`** plus the root fields you need for that type. |
+| **Not Store** | Root fields as before; optional `type` change to **`Store`** requires **`storeProfile`**. |
 
 **200** — updated document.
 
@@ -97,7 +146,24 @@ Authentication: JWT **`Authorization: Bearer <token>`**
 
 Mongoose returns `id` (string) instead of `_id`. Timestamps: `createdAt`, `updatedAt`.
 
-### Root fields (all types)
+### When `type === "Store"` (list, get, create, update)
+
+Responses include **only** these keys — wholesale root fields (`distributorName`, `retailerName`, `gstin`, …) are **not** sent:
+
+| Field | Type | Notes |
+|--------|------|--------|
+| `id` | string | |
+| `type` | `"Store"` | |
+| `storeProfile` | object | See table below |
+| `status` | string | `active` \| `inactive` |
+| `remarks` | string | |
+| `slNo` | number \| null | Optional |
+| `createdAt` | string (ISO) | |
+| `updatedAt` | string (ISO) | |
+
+### When `type` is `Trade` \| `Departmental` \| `Ecom`
+
+Full root fields as stored (no `storeProfile` in the document).
 
 | Field | Type | Notes |
 |--------|------|--------|
@@ -106,7 +172,7 @@ Mongoose returns `id` (string) instead of `_id`. Timestamps: `createdAt`, `updat
 | `distributorName` | string | |
 | `parentKeyCode` | string | ParentKey - Code |
 | `retailerName` | string | |
-| `type` | string | `Store` \| `Trade` \| `Departmental` \| `Ecom` |
+| `type` | string | `Trade` \| `Departmental` \| `Ecom` |
 | `contactPerson` | string | |
 | `mobilePhone` | string | |
 | `address` | string | |
@@ -124,11 +190,10 @@ Mongoose returns `id` (string) instead of `_id`. Timestamps: `createdAt`, `updat
 | `outlet` | string | |
 | `status` | string | `active` \| `inactive` |
 | `remarks` | string | |
-| `storeProfile` | object \| omitted | Only for **Store**; see below |
 | `createdAt` | string (ISO) | |
 | `updatedAt` | string (ISO) | |
 
-### `storeProfile` (only when `type === "Store"`)
+### `storeProfile` (Store type only)
 
 | Field | Type |
 |--------|------|
@@ -151,10 +216,10 @@ Mongoose returns `id` (string) instead of `_id`. Timestamps: `createdAt`, `updat
 
 ## Frontend notes
 
-1. **Store form:** show base fields + full `storeProfile` section. On submit, send `type: "Store"` and `storeProfile: { ... }`.
-2. **Other types:** hide `storeProfile`; if user switches from Store to Trade, backend drops `storeProfile` on save.
-3. **PATCH `storeProfile`:** values are **merged** into existing `storeProfile` (shallow merge). Omit keys you do not want to change.
-4. **List filters:** combine `type=Store` with `search` for outlet search UX.
+1. **Store create:** build the form from **`storeProfile`** fields only; POST `{ "type": "Store", "storeProfile": { ... } }` — no retailer/distributor root keys.
+2. **Store edit:** PATCH only `{ "storeProfile": { ... } }` (merged). Do not send root fields for Store clients.
+3. **Trade / Departmental / Ecom:** use root fields; omit `storeProfile`.
+4. **List / search:** `city` / `state` match root **or** `storeProfile.city` / `storeProfile.state` so Store-only rows still filter correctly.
 
 ---
 
@@ -180,6 +245,25 @@ export interface WarehouseClientStoreProfile {
   storeMailId?: string;
 }
 
+/** POST body when creating a Store client */
+export interface CreateWarehouseClientStore {
+  type: 'Store';
+  storeProfile: WarehouseClientStoreProfile;
+}
+
+/** API JSON for Store rows — no wholesale root fields */
+export interface WarehouseClientStoreResponse {
+  id: string;
+  type: 'Store';
+  storeProfile: WarehouseClientStoreProfile;
+  status?: 'active' | 'inactive';
+  remarks?: string;
+  slNo?: number | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** Trade / Departmental / Ecom API document */
 export interface WarehouseClient {
   id: string;
   slNo?: number | null;
@@ -229,21 +313,16 @@ Authorization: Bearer <token>
 
 {
   "type": "Store",
-  "retailerName": "ABC Mart",
-  "parentKeyCode": "PK-1001",
-  "distributorName": "Dist Co",
-  "contactPerson": "Jane",
-  "mobilePhone": "9876543210",
-  "city": "Mumbai",
-  "state": "Maharashtra",
-  "gstin": "27AAAAA0000A1Z5",
-  "email": "store@example.com",
   "storeProfile": {
     "billCode": "BILL-1",
     "sapCode": "SAP-99",
     "brand": "MyBrand",
     "brandSub": "SubLine",
+    "city": "Mumbai",
+    "state": "Maharashtra",
     "openingDate": "2024-06-01T00:00:00.000Z",
+    "address": "Plot 12, Industrial Area",
+    "gst": "27AAAAA0000A1Z5",
     "storeMailId": "sm@store.com"
   }
 }

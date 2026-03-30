@@ -161,6 +161,36 @@ warehouseClientSchema.pre('validate', function warehouseClientStoreProfileSync(n
   next();
 });
 
+/**
+ * Store clients: API JSON omits wholesale root fields (distributor, retailer, gstin, …).
+ * Only store-relevant data is returned after the global toJSON plugin runs (id, timestamps).
+ */
+warehouseClientSchema.set('toJSON', {
+  transform(_doc, ret) {
+    if (ret.type !== WarehouseClientType.STORE) {
+      return ret;
+    }
+    const profile = ret.storeProfile;
+    const storeProfilePlain =
+      profile == null
+        ? {}
+        : typeof profile.toObject === 'function'
+          ? profile.toObject()
+          : { ...profile };
+
+    return {
+      id: ret.id,
+      type: ret.type,
+      storeProfile: storeProfilePlain,
+      status: ret.status,
+      remarks: ret.remarks,
+      slNo: ret.slNo,
+      createdAt: ret.createdAt,
+      updatedAt: ret.updatedAt,
+    };
+  },
+});
+
 warehouseClientSchema.plugin(toJSON);
 warehouseClientSchema.plugin(paginate);
 

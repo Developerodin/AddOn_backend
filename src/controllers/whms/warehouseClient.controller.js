@@ -16,6 +16,15 @@ const getWarehouseClients = catchAsync(async (req, res) => {
   res.send(result);
 });
 
+/** List clients of a single `type` (path); query supports search, city, state, pagination. */
+const getWarehouseClientsByType = catchAsync(async (req, res) => {
+  const query = { ...req.query, type: req.params.type };
+  const filter = warehouseClientService.buildWarehouseClientFilter(query);
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  const result = await warehouseClientService.queryWarehouseClients(filter, options);
+  res.send(result);
+});
+
 const getWarehouseClient = catchAsync(async (req, res) => {
   const record = await warehouseClientService.getWarehouseClientById(req.params.clientId);
   if (!record) throw new ApiError(httpStatus.NOT_FOUND, 'Warehouse client not found');
@@ -35,6 +44,7 @@ const deleteWarehouseClient = catchAsync(async (req, res) => {
 export {
   createWarehouseClient,
   getWarehouseClients,
+  getWarehouseClientsByType,
   getWarehouseClient,
   updateWarehouseClient,
   deleteWarehouseClient,
