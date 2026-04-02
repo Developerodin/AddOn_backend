@@ -9,14 +9,139 @@ import {
   buildIncrementOps,
   buildReplaceOps,
   computeDerivedForFloor,
-  computeRemainingForFloor,
   getNextFloorKey,
   pickFloorSnapshot,
   resolveMode,
   normalizeCheckingFloorSplitBody,
   assertValidFloorState,
+  computeCompletedBasedTransferableForFloor,
   floorPath,
+  toFiniteNumber,
 } from './vendorProductionFlowFloorPatch.js';
+
+const VENDOR_CHECKING_FLOORS = new Set(['secondaryChecking', 'finalChecking']);
+
+/** True when this patch increases / sets higher M1 split — then we auto-forward along the M1 lane. */
+function shouldPreferM1AutoTransferOnPatch(floorKey, mode, bodyForPatch, before, after) {
+  if (!VENDOR_CHECKING_FLOORS.has(floorKey)) return false;
+  if (mode === 'increment') return toFiniteNumber(bodyForPatch?.m1Delta, 0) > 0;
+  if (bodyForPatch?.m1Quantity === undefined) return false;
+  return after.m1Quantity > before.m1Quantity;
+}
+
+function computeM1PoolTransferableForCheckingFloor(after) {
+  const m1Avail = Math.max(0, after.m1Quantity - after.m1Transferred);
+  const aggRoom = Math.max(0, after.received - after.completed - after.transferred);
+  return Math.min(m1Avail, aggRoom);
+}
+
+/**
+ * After a floor patch, optionally push quantity to the next floor (same rules as manual transfer for M1).
+ */
+async function maybeAutoTransferVendorFloor(
+  flowId,
+  flow,
+  floorKey,
+  before,
+  after,
+  bodyForPatch,
+  mode,
+  sessionOptions
+) {
+  const nextFloorKey = getNextFloorKey(floorKey);
+  if (!nextFloorKey) return;
+
+  const shouldAutoTransfer = bodyForPatch?.autoTransferToNextFloor === true;
+  /** Saving style/brand lines should still run forward pass when completed delta is 0 (e.g. totals unchanged). */
+  const transferredDataPatch =
+    (floorKey === 'branding' || floorKey === 'finalChecking') &&
+    Array.isArray(bodyForPatch?.transferredData) &&
+    bodyForPatch.transferredData.length > 0;
+
+  const completedAuto =
+    shouldAutoTransfer ||
+    bodyForPatch?.completedDelta !== undefined ||
+    bodyForPatch?.completed !== undefined ||
+    transferredDataPatch;
+
+  const preferM1 = shouldPreferM1AutoTransferOnPatch(floorKey, mode, bodyForPatch, before, after);
+
+  let transferable = 0;
+  let bumpM1Transferred = false;
+  if (preferM1) {
+    const m1T = computeM1PoolTransferableForCheckingFloor(after);
+    if (m1T > 0) {
+      transferable = m1T;
+      bumpM1Transferred = true;
+    }
+  }
+  if (transferable === 0 && completedAuto) {
+    transferable = computeCompletedBasedTransferableForFloor(floorKey, after);
+    bumpM1Transferred = false;
+  }
+
+  if (transferable <= 0) return;
+
+  const isChecking = VENDOR_CHECKING_FLOORS.has(floorKey);
+  const nextBefore = pickFloorSnapshot(flow, nextFloorKey);
+
+  const inc = {
+    [floorPath(floorKey, 'transferred')]: transferable,
+    [floorPath(nextFloorKey, 'received')]: transferable,
+  };
+  /** Match manual transfer / confirm: final → dispatch counts against M1 transferred. */
+  const bumpM1Lane =
+    isChecking &&
+    (bumpM1Transferred || (floorKey === 'finalChecking' && nextFloorKey === 'dispatch'));
+  if (bumpM1Lane) {
+    inc[floorPath(floorKey, 'm1Transferred')] = transferable;
+  }
+
+  const curAfterTransfer = {
+    ...after,
+    transferred: after.transferred + transferable,
+    m1Transferred: bumpM1Lane ? after.m1Transferred + transferable : after.m1Transferred,
+  };
+  const nextAfter = {
+    ...nextBefore,
+    received: nextBefore.received + transferable,
+  };
+
+  assertValidFloorState(floorKey, curAfterTransfer);
+  assertValidFloorState(nextFloorKey, nextAfter);
+
+  const fromDerived = computeDerivedForFloor(floorKey, curAfterTransfer);
+  const nextDerived = computeDerivedForFloor(nextFloorKey, nextAfter);
+
+  await VendorProductionFlow.updateOne(
+    { _id: flowId },
+    {
+      $inc: inc,
+      $set: {
+        ...Object.fromEntries(Object.entries(fromDerived).map(([k, v]) => [floorPath(floorKey, k), v])),
+        ...Object.fromEntries(Object.entries(nextDerived).map(([k, v]) => [floorPath(nextFloorKey, k), v])),
+        currentFloorKey: nextFloorKey,
+        startedAt: flow.startedAt || new Date(),
+      },
+    },
+    sessionOptions
+  );
+
+  if (floorKey === 'branding' && nextFloorKey === 'finalChecking') {
+    const receiptRows = normalizeTransferBreakdownForReceipt(
+      bodyForPatch?.transferredData,
+      transferable,
+      floorKey
+    );
+    if (receiptRows.length > 0) {
+      await VendorProductionFlow.updateOne(
+        { _id: flowId },
+        { $push: { [floorPath(nextFloorKey, 'receivedData')]: { $each: receiptRows } } },
+        sessionOptions
+      );
+    }
+  }
+}
 
 export const normalizeTransferBreakdownForReceipt = (rows, expectedTotal, fromFloorKey) => {
   if (!Array.isArray(rows)) return [];
@@ -173,7 +298,6 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
     }
 
     const mode = resolveMode(bodyForPatch);
-    const shouldAutoTransfer = bodyForPatch?.autoTransferToNextFloor === true;
 
     if (bodyForPatch?.resetSecondaryChecking === true && floorKey === 'secondaryChecking') {
       const resetAfter = {
@@ -250,66 +374,16 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
         sessionOptions
       );
 
-      // Auto-transfer to next floor (uses updated "after" quantities)
-      const nextFloorKey = getNextFloorKey(floorKey);
-      const autoTransferTriggered =
-        shouldAutoTransfer ||
-        bodyForPatch?.completedDelta !== undefined ||
-        bodyForPatch?.completed !== undefined;
-
-      if (nextFloorKey && autoTransferTriggered) {
-        const transferable = Math.max(0, after.completed - after.transferred);
-        if (transferable > 0) {
-          const nextBefore = pickFloorSnapshot(flow, nextFloorKey);
-          const nextAfter = {
-            ...nextBefore,
-            received: nextBefore.received + transferable,
-          };
-
-          // transferred increments on current floor, received increments on next floor
-          const nextDerived = computeDerivedForFloor(nextFloorKey, nextAfter);
-          const curAfterTransfer = {
-            ...after,
-            transferred: after.transferred + transferable,
-          };
-          assertValidFloorState(floorKey, curAfterTransfer);
-          assertValidFloorState(nextFloorKey, { ...nextAfter, ...nextDerived });
-
-          await VendorProductionFlow.updateOne(
-            { _id: flowId },
-            {
-              $inc: {
-                [floorPath(floorKey, 'transferred')]: transferable,
-                [floorPath(nextFloorKey, 'received')]: transferable,
-              },
-              $set: {
-                [floorPath(floorKey, 'remaining')]: computeRemainingForFloor(floorKey, {
-                  ...after,
-                  transferred: after.transferred + transferable,
-                }),
-                [floorPath(nextFloorKey, 'remaining')]: nextDerived.remaining,
-                currentFloorKey: nextFloorKey,
-              },
-            },
-            sessionOptions
-          );
-
-          if (floorKey === 'branding' && nextFloorKey === 'finalChecking') {
-            const receiptRows = normalizeTransferBreakdownForReceipt(
-              bodyForPatch?.transferredData,
-              transferable,
-              floorKey
-            );
-            if (receiptRows.length > 0) {
-              await VendorProductionFlow.updateOne(
-                { _id: flowId },
-                { $push: { [floorPath(nextFloorKey, 'receivedData')]: { $each: receiptRows } } },
-                sessionOptions
-              );
-            }
-          }
-        }
-      }
+      await maybeAutoTransferVendorFloor(
+        flowId,
+        flow,
+        floorKey,
+        before,
+        after,
+        bodyForPatch,
+        mode,
+        sessionOptions
+      );
     } else {
       // Replace mode (backward compatible): apply explicit fields then recompute derived server-side.
       const ops = buildReplaceOps(floorKey, bodyForPatch);
@@ -342,55 +416,16 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
         sessionOptions
       );
 
-      const nextFloorKey = getNextFloorKey(floorKey);
-      const autoTransferTriggered =
-        nextFloorKey && (shouldAutoTransfer || bodyForPatch?.completed !== undefined);
-      if (autoTransferTriggered) {
-        const transferable = Math.max(0, Number(after.completed || 0) - Number(after.transferred || 0));
-        if (transferable > 0) {
-          const nextBefore = pickFloorSnapshot(flow, nextFloorKey);
-          const nextAfter = {
-            ...nextBefore,
-            received: nextBefore.received + transferable,
-          };
-          assertValidFloorState(nextFloorKey, nextAfter);
-          const nextDerived = computeDerivedForFloor(nextFloorKey, nextAfter);
-
-          await VendorProductionFlow.updateOne(
-            { _id: flowId },
-            {
-              $inc: {
-                [floorPath(floorKey, 'transferred')]: transferable,
-                [floorPath(nextFloorKey, 'received')]: transferable,
-              },
-              $set: {
-                [floorPath(floorKey, 'remaining')]: computeRemainingForFloor(floorKey, {
-                  ...after,
-                  transferred: Number(after.transferred || 0) + transferable,
-                }),
-                [floorPath(nextFloorKey, 'remaining')]: nextDerived.remaining,
-                currentFloorKey: nextFloorKey,
-              },
-            },
-            sessionOptions
-          );
-
-          if (floorKey === 'branding' && nextFloorKey === 'finalChecking') {
-            const receiptRows = normalizeTransferBreakdownForReceipt(
-              bodyForPatch?.transferredData,
-              transferable,
-              floorKey
-            );
-            if (receiptRows.length > 0) {
-              await VendorProductionFlow.updateOne(
-                { _id: flowId },
-                { $push: { [floorPath(nextFloorKey, 'receivedData')]: { $each: receiptRows } } },
-                sessionOptions
-              );
-            }
-          }
-        }
-      }
+      await maybeAutoTransferVendorFloor(
+        flowId,
+        flow,
+        floorKey,
+        before,
+        after,
+        bodyForPatch,
+        mode,
+        sessionOptions
+      );
     }
 
     const updatedQuery = VendorProductionFlow.findById(flowId);
@@ -601,13 +636,13 @@ export const confirmVendorProductionFlowById = async (flowId, remarks) => {
 /**
  * Send M2 quantity from finalChecking to a rework floor.
  * @param {string} flowId
- * @param {'washing'|'boarding'|'branding'} toFloorKey
+ * @param {'branding'} toFloorKey
  * @param {number} quantity
  */
 export const transferFinalCheckingM2ForRework = async (flowId, toFloorKey, quantity) => {
-  const allowedReworkFloors = new Set(['washing', 'boarding', 'branding']);
+  const allowedReworkFloors = new Set(['branding']);
   if (!allowedReworkFloors.has(toFloorKey)) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'M2 can be transferred only to washing, boarding, or branding');
+    throw new ApiError(httpStatus.BAD_REQUEST, 'M2 can be transferred only to branding');
   }
 
   const qty = Number(quantity);

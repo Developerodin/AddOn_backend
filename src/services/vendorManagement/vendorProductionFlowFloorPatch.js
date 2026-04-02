@@ -2,7 +2,7 @@ import httpStatus from 'http-status';
 import ApiError from '../../utils/ApiError.js';
 import { vendorProductionFlowSequence } from '../../models/vendorManagement/vendorProductionFlow.model.js';
 
-const allowedFloorKeys = new Set(['secondaryChecking', 'washing', 'boarding', 'branding', 'finalChecking', 'dispatch']);
+const allowedFloorKeys = new Set(vendorProductionFlowSequence);
 const checkingFloorKeys = new Set(['secondaryChecking', 'finalChecking']);
 
 const numericFloorFields = new Set([
@@ -127,10 +127,13 @@ export function pickFloorSnapshot(flow, floorKey) {
 
 /**
  * `remaining` meaning:
- * - Standard floors: received − completed − transferred (qty still on floor in the pipeline sense).
- * - Checking floors (secondary / final): received − m2 − m4 − transferred − completed — i.e. net after
- *   reserving M2/M4 buckets; aligns with “M1 lane” (e.g. received 120, m2 10 → remaining 110 before transfers).
+ * - Branding / dispatch: received − transferred (not yet sent to next floor).
+ * - Other non-checking floors: received − completed − transferred.
+ * - Checking floors (secondary / final): received − m2 − m4 − transferred − completed (M1 lane net).
  */
+/** Branding / dispatch: assert + transferable math use pipeline rules (transferred ≤ completed ≤ received). */
+const pipelineStandardFloorKeys = new Set(['branding', 'dispatch']);
+
 export function computeRemainingForFloor(floorKey, floor) {
   const received = toFiniteNumber(floor.received, 0);
   const completed = toFiniteNumber(floor.completed, 0);
@@ -139,6 +142,9 @@ export function computeRemainingForFloor(floorKey, floor) {
     const m2Quantity = toFiniteNumber(floor.m2Quantity, 0);
     const m4Quantity = toFiniteNumber(floor.m4Quantity, 0);
     return Math.max(0, received - m2Quantity - m4Quantity - transferred - completed);
+  }
+  if (pipelineStandardFloorKeys.has(floorKey)) {
+    return Math.max(0, received - transferred);
   }
   return Math.max(0, received - completed - transferred);
 }
@@ -161,6 +167,21 @@ export function computeDerivedForFloor(floorKey, floor) {
   return derived;
 }
 
+/**
+ * How many units can move to the next floor using the completed − transferred pool.
+ * Branding/dispatch use pipeline semantics (see {@link assertValidFloorState}); checking floors keep completed + transferred ≤ received.
+ */
+export function computeCompletedBasedTransferableForFloor(floorKey, floor) {
+  const received = toFiniteNumber(floor.received, 0);
+  const completed = toFiniteNumber(floor.completed, 0);
+  const transferred = toFiniteNumber(floor.transferred, 0);
+  const pending = Math.max(0, completed - transferred);
+  const aggRoom = pipelineStandardFloorKeys.has(floorKey)
+    ? Math.max(0, received - transferred)
+    : Math.max(0, received - completed - transferred);
+  return Math.min(pending, aggRoom);
+}
+
 export function assertValidFloorState(floorKey, floor) {
   const received = toFiniteNumber(floor.received, 0);
   const completed = toFiniteNumber(floor.completed, 0);
@@ -169,17 +190,28 @@ export function assertValidFloorState(floorKey, floor) {
   if (received < 0 || completed < 0 || transferred < 0) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Quantities cannot be negative');
   }
-  if (completed > received) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Completed cannot exceed received');
-  }
-  if (transferred > received) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Transferred cannot exceed received');
-  }
-  if (completed + transferred > received) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Completed + transferred cannot exceed received');
-  }
 
-  if (checkingFloorKeys.has(floorKey)) {
+  if (pipelineStandardFloorKeys.has(floorKey)) {
+    if (completed > received) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Completed cannot exceed received');
+    }
+    if (transferred > received) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Transferred cannot exceed received');
+    }
+    if (transferred > completed) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Transferred cannot exceed completed');
+    }
+  } else if (checkingFloorKeys.has(floorKey)) {
+    if (completed > received) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Completed cannot exceed received');
+    }
+    if (transferred > received) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Transferred cannot exceed received');
+    }
+    if (completed + transferred > received) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Completed + transferred cannot exceed received');
+    }
+
     const m1Quantity = toFiniteNumber(floor.m1Quantity, 0);
     const m2Quantity = toFiniteNumber(floor.m2Quantity, 0);
     const m4Quantity = toFiniteNumber(floor.m4Quantity, 0);
@@ -201,6 +233,16 @@ export function assertValidFloorState(floorKey, floor) {
     }
     if (m2Transferred > m2Quantity) {
       throw new ApiError(httpStatus.BAD_REQUEST, 'M2 transferred cannot exceed M2 quantity');
+    }
+  } else {
+    if (completed > received) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Completed cannot exceed received');
+    }
+    if (transferred > received) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Transferred cannot exceed received');
+    }
+    if (completed + transferred > received) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Completed + transferred cannot exceed received');
     }
   }
 }
@@ -270,7 +312,7 @@ export function buildReplaceOps(floorKey, body) {
   if (floorKey === 'secondaryChecking') {
     patchableKeys.push('receivedData');
   }
-  if (floorKey === 'washing' || floorKey === 'boarding' || floorKey === 'dispatch') {
+  if (floorKey === 'dispatch') {
     patchableKeys.push('repairReceived', 'receivedData');
   }
 

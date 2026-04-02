@@ -26,6 +26,7 @@
     "migrate:navigation": "cross-env NODE_ENV=development node update-user-navigation.js",
     "check:navigation": "cross-env NODE_ENV=development node check-user-navigation.js",
     "seed:storage-slots": "node src/scripts/seed-storage-slots.js",
+    "seed:vendor-secondary-checking": "node src/scripts/seed-vendor-order-to-secondary-checking.js",
     "seed:machine-order-assignments": "node src/scripts/seed-machine-order-assignments.js",
     "report:yarn-inventory": "cross-env NODE_ENV=development node src/scripts/report-yarn-inventory.js",
     "report:yarn-stocked": "cross-env NODE_ENV=development node src/scripts/report-yarn-stocked.js",

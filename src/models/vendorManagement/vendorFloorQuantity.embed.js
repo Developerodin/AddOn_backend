@@ -3,7 +3,7 @@ import { RepairStatus } from '../production/enums.js';
 
 /**
  * Embedded shapes aligned with {@link ../production/article.model.js} `floorQuantities`.
- * Vendor flow is fixed: secondaryChecking → washing → boarding → branding → finalChecking → dispatch
+ * Vendor flow is fixed: secondaryChecking → branding → finalChecking → dispatch
  * (see {@link ./vendorProductionFlow.model.js} `vendorProductionFlowSequence`).
  * Secondary + final checking floors track M1, M2, M4 only (no M3 on vendor).
  */

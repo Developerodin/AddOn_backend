@@ -269,7 +269,24 @@ export const queryVendorProductionFlows = async (filter, options, search) => {
   if (filter.vendor) mongoFilter.vendor = new mongoose.Types.ObjectId(filter.vendor);
   if (filter.vendorPurchaseOrder) mongoFilter.vendorPurchaseOrder = new mongoose.Types.ObjectId(filter.vendorPurchaseOrder);
   if (filter.product) mongoFilter.product = new mongoose.Types.ObjectId(filter.product);
-  if (filter.currentFloorKey) mongoFilter.currentFloorKey = String(filter.currentFloorKey);
+  /**
+   * `currentFloorKey` is advanced when quantity is transferred to the next floor, but work can
+   * still remain on the previous floor (e.g. M2/M4 on secondary). Listing "secondary checking"
+   * should include those rows, not only rows whose cursor is still `secondaryChecking`.
+   */
+  if (filter.currentFloorKey === 'secondaryChecking') {
+    mongoFilter.$or = [
+      { currentFloorKey: 'secondaryChecking' },
+      { 'floorQuantities.secondaryChecking.remaining': { $gt: 0 } },
+    ];
+  } else if (filter.currentFloorKey === 'finalChecking') {
+    mongoFilter.$or = [
+      { currentFloorKey: 'finalChecking' },
+      { 'floorQuantities.finalChecking.remaining': { $gt: 0 } },
+    ];
+  } else if (filter.currentFloorKey) {
+    mongoFilter.currentFloorKey = String(filter.currentFloorKey);
+  }
 
   if (search && typeof search === 'string' && search.trim()) {
     const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
