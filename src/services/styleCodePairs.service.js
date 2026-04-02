@@ -1,6 +1,7 @@
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
 import StyleCodePairs from '../models/styleCodePairs.model.js';
+import StyleCode from '../models/styleCode.model.js';
 import RawMaterial from '../models/rawMaterial.model.js';
 import ApiError from '../utils/ApiError.js';
 
@@ -160,8 +161,22 @@ export const bulkImportStyleCodePairs = async (items, batchSize = 50) => {
         }));
         payload.bom = bomPayload;
 
-        const styleCodesPayload = payload.styleCodes.map((id) => new mongoose.Types.ObjectId(id));
-        payload.styleCodes = styleCodesPayload;
+        if (payload.styleCodes.length > 0) {
+          const isObjectId = (v) => /^[a-fA-F0-9]{24}$/.test(v);
+          if (isObjectId(payload.styleCodes[0])) {
+            payload.styleCodes = payload.styleCodes.map((id) => new mongoose.Types.ObjectId(id));
+          } else {
+            const styleCodeDocs = await StyleCode.find({ styleCode: { $in: payload.styleCodes } })
+              .select('_id styleCode')
+              .lean();
+            const foundCodes = new Set(styleCodeDocs.map((d) => d.styleCode));
+            const missingCodes = payload.styleCodes.filter((code) => !foundCodes.has(code));
+            if (missingCodes.length > 0) {
+              throw new Error(`Invalid style codes not found: ${missingCodes.join(', ')}`);
+            }
+            payload.styleCodes = styleCodeDocs.map((d) => d._id);
+          }
+        }
 
         const existing = await StyleCodePairs.findOne({ pairStyleCode: payload.pairStyleCode }).lean();
         if (existing) {
