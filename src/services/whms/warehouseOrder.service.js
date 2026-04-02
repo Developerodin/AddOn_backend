@@ -3,12 +3,15 @@ import ApiError from '../../utils/ApiError.js';
 import { WarehouseClient, WarehouseOrder } from '../../models/whms/index.js';
 import StyleCode from '../../models/styleCode.model.js';
 import StyleCodePairs from '../../models/styleCodePairs.model.js';
+import { createPickListForOrder } from './pickList.service.js';
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const generateWarehouseOrderNumber = async () => {
   const last = await WarehouseOrder.findOne().sort({ createdAt: -1 }).select('orderNumber');
-  const seq = last?.orderNumber ? parseInt(String(last.orderNumber).replace(/\D/g, ''), 10) + 1 : 1;
+  // Parse only the trailing sequence from WO-YYYY-<seq> to avoid merging year digits.
+  const match = String(last?.orderNumber || '').match(/^WO-\d{4}-(\d+)$/);
+  const seq = match ? parseInt(match[1], 10) + 1 : 1;
   return `WO-${new Date().getFullYear()}-${String(seq).padStart(5, '0')}`;
 };
 
@@ -109,6 +112,8 @@ export const createWarehouseOrder = async (body) => {
     ...body,
     clientName,
   });
+
+  await createPickListForOrder(doc);
 
   return WarehouseOrder.findById(doc._id).populate('clientId');
 };
