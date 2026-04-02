@@ -3,6 +3,7 @@ import ApiError from '../../utils/ApiError.js';
 import { WarehouseClient, WarehouseOrder } from '../../models/whms/index.js';
 import StyleCode from '../../models/styleCode.model.js';
 import StyleCodePairs from '../../models/styleCodePairs.model.js';
+import { createPickListForOrder } from './pickList.service.js';
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -111,6 +112,8 @@ export const createWarehouseOrder = async (body) => {
     ...body,
     clientName,
   });
+
+  await createPickListForOrder(doc);
 
   return WarehouseOrder.findById(doc._id).populate('clientId');
 };
