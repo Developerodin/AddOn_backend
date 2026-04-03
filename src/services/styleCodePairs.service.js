@@ -166,15 +166,16 @@ export const bulkImportStyleCodePairs = async (items, batchSize = 50) => {
           if (isObjectId(payload.styleCodes[0])) {
             payload.styleCodes = payload.styleCodes.map((id) => new mongoose.Types.ObjectId(id));
           } else {
-            const styleCodeDocs = await StyleCode.find({ styleCode: { $in: payload.styleCodes } })
+            const uniqueCodes = [...new Set(payload.styleCodes)];
+            const styleCodeDocs = await StyleCode.find({ styleCode: { $in: uniqueCodes } })
               .select('_id styleCode')
               .lean();
-            const foundCodes = new Set(styleCodeDocs.map((d) => d.styleCode));
-            const missingCodes = payload.styleCodes.filter((code) => !foundCodes.has(code));
+            const codeToIdMap = new Map(styleCodeDocs.map((d) => [d.styleCode, d._id]));
+            const missingCodes = uniqueCodes.filter((code) => !codeToIdMap.has(code));
             if (missingCodes.length > 0) {
               throw new Error(`Invalid style codes not found: ${missingCodes.join(', ')}`);
             }
-            payload.styleCodes = styleCodeDocs.map((d) => d._id);
+            payload.styleCodes = payload.styleCodes.map((code) => codeToIdMap.get(code));
           }
         }
 

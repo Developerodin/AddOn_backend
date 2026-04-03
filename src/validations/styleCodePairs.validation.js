@@ -69,7 +69,7 @@ const bulkImportStyleCodePairs = {
           mrp: Joi.number().required().min(0),
           pack: Joi.number().integer().min(1).required(),
           status: Joi.string().valid('active', 'inactive'),
-          styleCodes: Joi.array().items(Joi.string().custom(objectId)),
+          styleCodes: Joi.array().items(Joi.string()),
           bom: Joi.array().items(bomItemSchema),
         })
       )
