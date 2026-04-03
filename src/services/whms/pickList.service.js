@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import httpStatus from 'http-status';
 import ApiError from '../../utils/ApiError.js';
 import PickList from '../../models/whms/pickList.model.js';
@@ -14,7 +15,8 @@ const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$
  */
 export const createPickListForOrder = async (order) => {
   const docs = [];
-  const base = { orderId: order._id, orderNumber: order.orderNumber };
+  const orderSnapshot = order.toObject ? order.toObject() : { ...order };
+  const base = { orderId: order._id, orderNumber: order.orderNumber, orderDetails: orderSnapshot };
 
   const singleItems = Array.isArray(order.styleCodeSinglePair) ? order.styleCodeSinglePair : [];
   for (const item of singleItems) {
@@ -136,4 +138,112 @@ export const deletePickListById = async (id) => {
 
 export const deletePickListsByOrderId = async (orderId) => {
   return PickList.deleteMany({ orderId });
+};
+
+/**
+ * Build a $match-safe filter for aggregation.
+ * Converts `orderId` string to ObjectId so $group works correctly.
+ */
+export const buildPickListAggFilter = (query) => {
+  const filter = buildPickListFilter(query);
+  if (filter.orderId && typeof filter.orderId === 'string') {
+    filter.orderId = new mongoose.Types.ObjectId(filter.orderId);
+  }
+  return filter;
+};
+
+/**
+ * Return pick-list data grouped by order with pagination & summary counts.
+ */
+export const queryPickListsGroupedByOrder = async (filter, options) => {
+  const page = Number(options.page) || 1;
+  const limit = Number(options.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  const basePipeline = [
+    { $match: filter },
+    {
+      $group: {
+        _id: '$orderId',
+        orderNumber: { $first: '$orderNumber' },
+        items: {
+          $push: {
+            id: '$_id',
+            size: '$size',
+            shade: '$shade',
+            skuCode: '$skuCode',
+            styleCode: '$styleCode',
+            quantity: '$quantity',
+            pickupQuantity: '$pickupQuantity',
+            status: '$status',
+          },
+        },
+        totalQuantity: { $sum: '$quantity' },
+        totalPickupQuantity: { $sum: '$pickupQuantity' },
+        totalItems: { $sum: 1 },
+        pendingCount: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
+        partialCount: { $sum: { $cond: [{ $eq: ['$status', 'partial'] }, 1, 0] } },
+        pickedCount: { $sum: { $cond: [{ $eq: ['$status', 'picked'] }, 1, 0] } },
+      },
+    },
+    {
+      $lookup: {
+        from: 'warehouseorders',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'order',
+      },
+    },
+    { $unwind: { path: '$order', preserveNullAndEmptyArrays: true } },
+    {
+      $addFields: {
+        orderId: '$_id',
+        overallStatus: {
+          $cond: [
+            { $eq: ['$pickedCount', '$totalItems'] },
+            'picked',
+            {
+              $cond: [
+                { $or: [{ $gt: ['$partialCount', 0] }, { $gt: ['$pickedCount', 0] }] },
+                'partial',
+                'pending',
+              ],
+            },
+          ],
+        },
+      },
+    },
+    { $sort: { 'order.createdAt': -1 } },
+  ];
+
+  const countPipeline = [...basePipeline, { $count: 'total' }];
+  const [countResult] = await PickList.aggregate(countPipeline);
+  const totalResults = countResult ? countResult.total : 0;
+
+  const summaryPipeline = [
+    { $match: filter },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        pending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
+        partial: { $sum: { $cond: [{ $eq: ['$status', 'partial'] }, 1, 0] } },
+        picked: { $sum: { $cond: [{ $eq: ['$status', 'picked'] }, 1, 0] } },
+      },
+    },
+    { $project: { _id: 0 } },
+  ];
+  const [summary] = await PickList.aggregate(summaryPipeline);
+
+  const resultsPipeline = [...basePipeline, { $skip: skip }, { $limit: limit }];
+  const results = await PickList.aggregate(resultsPipeline);
+
+  return {
+    results,
+    summary: summary || { total: 0, pending: 0, partial: 0, picked: 0 },
+    page,
+    limit,
+    totalPages: Math.ceil(totalResults / limit),
+    totalResults,
+  };
 };

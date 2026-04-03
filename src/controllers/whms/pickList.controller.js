@@ -39,10 +39,20 @@ const deletePickListsByOrder = catchAsync(async (req, res) => {
   res.status(httpStatus.NO_CONTENT).send();
 });
 
+const getPickListsGroupedByOrder = catchAsync(async (req, res) => {
+  const filter = pickListService.buildPickListAggFilter(
+    pick(req.query, ['orderId', 'orderNumber', 'skuCode', 'styleCode', 'status', 'q'])
+  );
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  const result = await pickListService.queryPickListsGroupedByOrder(filter, options);
+  res.send(result);
+});
+
 export {
   getPickLists,
   getPickList,
   getPickListsByOrder,
+  getPickListsGroupedByOrder,
   updatePickList,
   deletePickList,
   deletePickListsByOrder,

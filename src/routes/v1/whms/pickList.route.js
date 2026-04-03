@@ -15,6 +15,14 @@ router
   );
 
 router
+  .route('/order-wise')
+  .get(
+    auth('getOrders'),
+    validate(pickListValidation.getPickListsGroupedByOrder),
+    pickListController.getPickListsGroupedByOrder
+  );
+
+router
   .route('/order/:orderId')
   .get(
     auth('getOrders'),

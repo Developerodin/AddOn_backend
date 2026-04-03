@@ -57,3 +57,17 @@ export const deletePickListsByOrder = {
     orderId: Joi.string().custom(objectId).required(),
   }),
 };
+
+export const getPickListsGroupedByOrder = {
+  query: Joi.object().keys({
+    orderId: Joi.string().custom(objectId),
+    orderNumber: Joi.string().trim(),
+    skuCode: Joi.string().trim(),
+    styleCode: Joi.string().trim(),
+    status: Joi.string().valid(...pickListStatuses),
+    q: Joi.string().trim(),
+    sortBy: Joi.string(),
+    limit: Joi.number().integer(),
+    page: Joi.number().integer(),
+  }),
+};

@@ -18,6 +18,8 @@ const pickListSchema = mongoose.Schema(
     },
     orderNumber: { type: String, trim: true },
 
+    orderDetails: { type: mongoose.Schema.Types.Mixed, default: {} },
+
     size: { type: String, trim: true },
     steCodeNew: { type: String, trim: true },
     shade: { type: String, trim: true },
