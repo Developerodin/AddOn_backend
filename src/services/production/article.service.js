@@ -18,6 +18,56 @@ import { createInwardReceivesForWarehouseAccept } from '../whms/inwardReceiveFro
 const FLOORS_WITH_STYLE_TRANSFER_ITEMS = ['Branding', 'Final Checking', 'Dispatch'];
 
 /**
+ * Enrich transferItems that have empty styleCode/brand using receivedData entries,
+ * deducting amounts already consumed by prior transfers (transferredData).
+ * Prevents the bug where every item gets the same style code from a naive fallback.
+ */
+const enrichTransferItemsFromReceived = (transferItems, receivedData, transferredData) => {
+  const withBreakdown = (receivedData || []).filter(
+    (r) => (r.transferred || 0) > 0 && ((r.styleCode || '').trim() || (r.brand || '').trim())
+  );
+  if (withBreakdown.length === 0) return transferItems;
+
+  // Build per-style budget from receivedData, then subtract already-transferred amounts
+  const budget = withBreakdown.map((r) => ({
+    remaining: r.transferred || 0,
+    styleCode: (r.styleCode || '').trim(),
+    brand: (r.brand || '').trim(),
+  }));
+  for (const td of transferredData || []) {
+    const tdStyle = (td.styleCode || '').trim();
+    const tdBrand = (td.brand || '').trim();
+    let left = td.transferred || 0;
+    if (left <= 0 || (!tdStyle && !tdBrand)) continue;
+    for (const b of budget) {
+      if (left <= 0) break;
+      if (b.styleCode === tdStyle && b.brand === tdBrand && b.remaining > 0) {
+        const take = Math.min(b.remaining, left);
+        b.remaining -= take;
+        left -= take;
+      }
+    }
+  }
+
+  return transferItems.map((item) => {
+    if ((item.styleCode || '').trim() || (item.brand || '').trim()) return item;
+    let qty = item.transferred || 0;
+    const pieces = [];
+    for (const b of budget) {
+      if (qty <= 0) break;
+      if (b.remaining <= 0) continue;
+      const take = Math.min(b.remaining, qty);
+      b.remaining -= take;
+      qty -= take;
+      pieces.push({ transferred: take, styleCode: b.styleCode, brand: b.brand });
+    }
+    if (pieces.length === 1) return { transferred: pieces[0].transferred, styleCode: pieces[0].styleCode, brand: pieces[0].brand };
+    if (pieces.length > 1) return pieces;
+    return item;
+  }).flat();
+};
+
+/**
  * Get article by id.
  * @param {string} articleId - Article _id
  * @returns {Promise<Article|null>}
@@ -597,23 +647,9 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
 
   let transferItemsForStore = transferItems;
   if (normalizedFloor === 'Dispatch' && Array.isArray(transferItems) && transferItems.length > 0) {
-    const receivedData = floorData.receivedData || [];
-    const withBreakdown = receivedData.filter((r) => (r.transferred || 0) > 0 && ((r.styleCode || '').trim() || (r.brand || '').trim()));
-    if (withBreakdown.length > 0) {
-      const used = new Set();
-      transferItemsForStore = transferItems.map((item) => {
-        if ((item.styleCode || '').trim() || (item.brand || '').trim()) return item;
-        const qty = item.transferred || 0;
-        const idx = withBreakdown.findIndex((r, i) => !used.has(i) && (r.transferred || 0) === qty);
-        if (idx >= 0) {
-          used.add(idx);
-          const r = withBreakdown[idx];
-          return { transferred: qty, styleCode: r.styleCode || '', brand: r.brand || '' };
-        }
-        const fb = withBreakdown[withBreakdown.length - 1];
-        return fb ? { transferred: qty, styleCode: fb.styleCode || '', brand: fb.brand || '' } : item;
-      });
-    }
+    transferItemsForStore = enrichTransferItemsFromReceived(
+      transferItems, floorData.receivedData, floorData.transferredData
+    );
   }
 
   if (Array.isArray(transferItemsForStore) && transferItemsForStore.length > 0 && FLOORS_WITH_STYLE_TRANSFER_ITEMS.includes(normalizedFloor)) {
@@ -894,54 +930,11 @@ const transferCompletedWorkToNextFloor = async (article, updateData, user = null
       });
     }
   }
-  // Final Checking: enrich from receivedData when styleCode/brand empty (pass-through from Branding)
-  if (sourceFloor === 'Final Checking' && Array.isArray(transferItems) && transferItems.length > 0) {
-    const receivedData = sourceFloorData.receivedData || [];
-    const withBreakdown = receivedData.filter((r) => (r.transferred || 0) > 0 && ((r.styleCode || '').trim() || (r.brand || '').trim()));
-    if (withBreakdown.length > 0) {
-      const used = new Set();
-      transferItems = transferItems.map((item) => {
-        if ((item.styleCode || '').trim() || (item.brand || '').trim()) return item;
-        const qty = item.transferred || 0;
-        const idx = withBreakdown.findIndex((r, i) => !used.has(i) && (r.transferred || 0) === qty);
-        if (idx >= 0) {
-          used.add(idx);
-          const r = withBreakdown[idx];
-          return { transferred: qty, styleCode: r.styleCode || '', brand: r.brand || '' };
-        }
-        // Fallback: use last receivedData with breakdown (same product)
-        const fb = withBreakdown[withBreakdown.length - 1];
-        return fb ? { transferred: qty, styleCode: fb.styleCode || '', brand: fb.brand || '' } : { transferred: qty, styleCode: item.styleCode || '', brand: item.brand || '' };
-      });
-    }
-  }
-  if (sourceFloor === 'Dispatch' && Array.isArray(transferItems) && transferItems.length > 0) {
-    const receivedData = sourceFloorData.receivedData || [];
-    const withBreakdown = receivedData.filter((r) => (r.transferred || 0) > 0 && ((r.styleCode || '').trim() || (r.brand || '').trim()));
-    if (withBreakdown.length > 0) {
-      const used = new Set();
-      transferItems = transferItems.map((item) => {
-        if ((item.styleCode || '').trim() || (item.brand || '').trim()) return item;
-        const qty = item.transferred || 0;
-        const idx = withBreakdown.findIndex((r, i) => !used.has(i) && (r.transferred || 0) === qty);
-        if (idx >= 0) {
-          used.add(idx);
-          const r = withBreakdown[idx];
-          return { transferred: qty, styleCode: r.styleCode || '', brand: r.brand || '' };
-        }
-        const fb = withBreakdown[withBreakdown.length - 1];
-        return fb ? { transferred: qty, styleCode: fb.styleCode || '', brand: fb.brand || '' } : item;
-      });
-    } else {
-      const fromTd = (sourceFloorData.transferredData || []).filter((t) => ((t.styleCode || '').trim() || (t.brand || '').trim()));
-      const fb = fromTd.length > 0 ? fromTd[fromTd.length - 1] : null;
-      if (fb) {
-        transferItems = transferItems.map((item) => {
-          if ((item.styleCode || '').trim() || (item.brand || '').trim()) return item;
-          return { transferred: item.transferred, styleCode: fb.styleCode || '', brand: fb.brand || '' };
-        });
-      }
-    }
+  // Final Checking / Dispatch: enrich empty styleCode/brand from receivedData, deducting already-transferred amounts
+  if ((sourceFloor === 'Final Checking' || sourceFloor === 'Dispatch') && Array.isArray(transferItems) && transferItems.length > 0) {
+    transferItems = enrichTransferItemsFromReceived(
+      transferItems, sourceFloorData.receivedData, sourceFloorData.transferredData
+    );
   }
   if (Array.isArray(transferItems) && transferItems.length > 0 && FLOORS_WITH_STYLE_TRANSFER_ITEMS.includes(sourceFloor)) {
     const itemsSum = transferItems.reduce((s, i) => s + (i.transferred || 0), 0);
@@ -1392,6 +1385,7 @@ export const updateArticleFloorReceivedData = async (articleId, payload) => {
   }
 
   // Auto-populate receivedTransferItems from previous floor's transferredData (e.g. FC→Dispatch, Dispatch→Warehouse)
+  // FIX: subtract quantities already received (from prior container accepts) so each entry is only used once.
   if ((!receivedTransferItems || receivedTransferItems.length === 0) && typeof quantity === 'number' && quantity > 0) {
     const prevFloorMap = {
       'Final Checking': 'branding',
@@ -1405,14 +1399,39 @@ export const updateArticleFloorReceivedData = async (articleId, payload) => {
     if (Array.isArray(prevTransferredData) && prevTransferredData.length > 0) {
       const totalAvailable = prevTransferredData.reduce((s, i) => s + (i.transferred || 0), 0);
       if (totalAvailable >= quantity) {
-        // Use entries in order until we've consumed quantity (supports partial receive)
+        // Track how much of each transferredData entry has already been consumed by previous receives
+        const consumedPerEntry = new Array(prevTransferredData.length).fill(0);
+        const existingReceived = floorData.receivedData || [];
+        for (const rd of existingReceived) {
+          const rdStyle = (rd.styleCode || '').trim();
+          const rdBrand = (rd.brand || '').trim();
+          let rdRemaining = rd.transferred || 0;
+          if (rdRemaining <= 0 || (!rdStyle && !rdBrand)) continue;
+          for (let j = 0; j < prevTransferredData.length; j++) {
+            if (rdRemaining <= 0) break;
+            const td = prevTransferredData[j];
+            if ((td.styleCode || '').trim() === rdStyle && (td.brand || '').trim() === rdBrand) {
+              const available = (td.transferred || 0) - consumedPerEntry[j];
+              const take = Math.min(available, rdRemaining);
+              if (take > 0) {
+                consumedPerEntry[j] += take;
+                rdRemaining -= take;
+              }
+            }
+          }
+        }
+
+        // Now allocate from remaining (unconsumed) transferred amounts
         let remaining = quantity;
         const items = [];
-        for (const i of prevTransferredData) {
+        for (let j = 0; j < prevTransferredData.length; j++) {
           if (remaining <= 0) break;
-          const take = Math.min(i.transferred || 0, remaining);
+          const td = prevTransferredData[j];
+          const available = (td.transferred || 0) - consumedPerEntry[j];
+          if (available <= 0) continue;
+          const take = Math.min(available, remaining);
           if (take > 0) {
-            items.push({ transferred: take, styleCode: i.styleCode || '', brand: i.brand || '' });
+            items.push({ transferred: take, styleCode: td.styleCode || '', brand: td.brand || '' });
             remaining -= take;
           }
         }
