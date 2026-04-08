@@ -65,6 +65,21 @@ export const vendorStandardFloorSchema = new mongoose.Schema(
 );
 
 /**
+ * Dispatch floor: style-wise **`receivedData`** lines (from confirm), same shape as branding/final checking handoff rows.
+ */
+export const vendorDispatchFloorSchema = new mongoose.Schema(
+  {
+    received: { type: Number, default: 0 },
+    completed: { type: Number, default: 0 },
+    remaining: { type: Number, default: 0 },
+    transferred: { type: Number, default: 0 },
+    repairReceived: { type: Number, default: 0, min: 0 },
+    receivedData: { type: [receivedDataBrandingEntrySchema], default: [] },
+  },
+  { _id: false }
+);
+
+/**
  * Mirrors {@link ../production/article.model.js} `floorQuantities.branding` (counters + styleCode/brand breakdown).
  *
  * - **`transferredData`**: breakdown of **completed + forwarded** qty by style/brand (each row’s `transferred` = qty to next floor for that line).

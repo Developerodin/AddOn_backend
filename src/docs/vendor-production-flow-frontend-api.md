@@ -4,7 +4,7 @@ This doc is the implementation contract for frontend integration.
 
 - Model: `VendorProductionFlow`
 - Base route: `/v1/vendor-management/production-flow`
-- Fixed pipeline: `secondaryChecking -> washing -> boarding -> branding -> finalChecking -> dispatch`
+- Fixed pipeline: `secondaryChecking -> branding -> finalChecking -> dispatch` (container staging on secondary→branding and branding→final checking)
 - All mutation APIs return updated flow document; always re-render from response.
 
 Backend supports additive updates using `mode: "increment"` and delta fields.
@@ -39,6 +39,88 @@ Auth required. Returns one document with the same populated fields as list rows 
 ## 2) Patch one floor
 
 `PATCH /v1/vendor-management/production-flow/:vendorProductionFlowId/floors/:floorKey`
+
+---
+
+## 2.A) Container workflow (critical for vendor pipeline)
+
+Vendor pipeline uses **container-gated receive** on these legs:
+
+- **`secondaryChecking → branding`**
+- **`branding → finalChecking`** (styleCode/brand breakdown)
+
+Meaning:
+
+- A *transfer* creates/stages a **container** (`containers_masters`) with `activeFloor` = destination and an `activeItems[]` row pointing to the `vendorProductionFlow`.
+- The destination floor’s **`received` does NOT increase** until someone scans and accepts that container on the receiving floor.
+
+### 2.A.1 Which API stages quantity on a container?
+
+Containers are **already created** (same `containers_masters` as factory). For secondary→branding and branding→final checking you **reuse** a physical container and pass its barcode; the backend **does not** create a new `ContainersMaster` document for vendor staging.
+
+You have two ways to stage:
+
+1) **Auto-transfer (from floor PATCH)**  
+If you include `autoTransferToNextFloor: true` **and** `existingContainerBarcode` (the physical bag/container) and there is transferable quantity, backend will:
+- increment source `transferred` (and `m1Transferred` for checking floors)
+- append a vendor line on that container and set `activeFloor` to the next floor
+- keep `currentFloorKey` on the source until accept
+
+2) **Manual transfer endpoint**  
+`PATCH /v1/vendor-management/production-flow/:vendorProductionFlowId/transfer`  
+Send **`existingContainerBarcode`** together with `fromFloorKey`, `toFloorKey`, `quantity` (and `transferItems` when branding→final checking). Response includes **`vendorTransferContainer: { _id, barcode }`** pointing at that same container.
+
+### 2.A.2 How frontend gets the barcode to scan
+
+- You **choose** the container (existing barcode) before calling transfer or auto-transfer; that barcode is what operators scan on the next floor.
+- **Manual transfer** response still includes **`vendorTransferContainer`** (the container you passed in).
+- If you need to list containers already staged for a floor, you can still use:
+
+  - List staged containers for the receiving floor:  
+    `GET /v1/containers-masters/by-floor/:activeFloor/with-articles`  
+    where `activeFloor` is the literal string: **`Branding`** or **`Final Checking`**.
+
+  - Or if you already know barcode from scanner:  
+    `GET /v1/containers-masters/barcode/:barcode/with-articles`
+
+Container payload will include `activeItems[]` with:
+- `vendorProductionFlowId`
+- `quantity`
+- optional `transferItems` (branding → final checking only)
+
+### 2.A.3 Accepting a container (the only time destination `received` increases)
+
+On the receiving floor, scan + accept:
+
+- `POST /v1/containers-masters/barcode/:barcode/accept`
+
+Backend will:
+- add `quantity` into destination floor `received`
+- append `receivedData` rows stamped with `receivedInContainerId`
+- set `currentFloorKey` to the receiving floor
+
+Response includes:
+- `vendorProductionFlows` when container carried vendor items
+- `articles` when container carried production items
+
+### 2.A.4 Branding → Final Checking style-wise rule (no double-counting)
+
+- The container **must** carry `transferItems`: `[{ transferred, styleCode, brand }]`.
+- On accept, final checking receives **exactly** `sum(transferItems)` and pushes one `receivedData` row per line.
+- Backend validates **cumulative** final-checking receive per `(styleCode, brand)` cannot exceed **cumulative** branding `transferredData` for that key.
+  - Example (same style key): first container 10 → ok, second 20 → ok, third “repeat 10 again” would be rejected if branding total cap is only 30.
+
+### 2.A.5 Multi-container and partial transfers
+
+Supported patterns:
+
+- Multiple transfers can use **different** existing containers, or the **same** container across transfers (each transfer appends another `activeItems` line).
+- Accepting containers is additive; each accept adds to destination `received` and appends `receivedData`.
+
+Frontend guidance:
+
+- Treat each **accept scan** as a **one-time receipt** for that container’s current payload. Do not attempt to “re-accept” the same staged load.
+- If user wants to send more later for the same style key, stage another transfer on a container (or reuse a container per your ops rules) with only the **new quantity** (do not resend already-sent lines).
 
 ### 2.1 Increment mode (recommended)
 
@@ -111,8 +193,9 @@ Clears on **secondary checking only**: M1–M4, transfers, completed, repair tex
 
 ### 2.4 Auto-transfer note (important)
 
-When `completedDelta` is patched, current service auto-moves transferable quantity to next floor.
-Frontend should assume that completing a floor may also increase next floor `received` and current floor `transferred`.
+When `autoTransferToNextFloor` / `completedDelta` triggers a forward move **to `branding` or `finalChecking`**, the backend **does not** increase the next floor’s `received` immediately. You must send **`existingContainerBarcode`** on that floor PATCH; the backend stages quantity on that **`containers_masters`** document. **`received` on the destination updates only when someone scans the container barcode** on the receiving floor (`POST /v1/containers-masters/barcode/:barcode/accept`).
+
+Moves **to `dispatch`** from final checking: if you send **`existingContainerBarcode`** (and style **`transferredData`** when applicable), **`dispatch.received` does not increase** until **`POST .../containers-masters/barcode/:barcode/accept`** at **Dispatch**. If you omit the barcode, **`dispatch.received` updates in the same PATCH** (direct handoff, no scan).
 
 ---
 
@@ -120,22 +203,41 @@ Frontend should assume that completing a floor may also increase next floor `rec
 
 `PATCH /v1/vendor-management/production-flow/:vendorProductionFlowId/transfer`
 
-Use this when user chooses destination floor explicitly (for example, direct `secondaryChecking -> branding`).
+**Body (required):** `fromFloorKey`, `toFloorKey`, `quantity`.
 
-Recommended payload:
+For **secondary → branding** and **branding → final checking**, also send **`existingContainerBarcode`** (reuse a container that already exists; backend does not create a new one).
+
+**Secondary → branding:** `quantity` + **`existingContainerBarcode`**. Backend increments source `transferred` / `m1Transferred`, appends a vendor line on that container with `activeFloor: "Branding"`. **Branding `received` increases on container accept**, not on this PATCH.
+
+**Branding → final checking:** **`existingContainerBarcode`** + **`transferItems`** (style lines). Sum of `transferred` must equal `quantity`.
 
 ```json
 {
-  "mode": "increment",
   "fromFloorKey": "secondaryChecking",
   "toFloorKey": "branding",
-  "quantity": 10
+  "quantity": 10,
+  "existingContainerBarcode": "674a1b2c3d4e5f6789012345"
 }
 ```
 
-Compatibility note:
-- Validation supports `quantityDelta`, but current controller/service path reads `quantity`.
-- To avoid mismatch, send `quantity` from frontend.
+```json
+{
+  "fromFloorKey": "branding",
+  "toFloorKey": "finalChecking",
+  "quantity": 24,
+  "existingContainerBarcode": "674a1b2c3d4e5f6789012345",
+  "transferItems": [
+    { "transferred": 10, "styleCode": "S1", "brand": "B1" },
+    { "transferred": 14, "styleCode": "S2", "brand": "B2" }
+  ]
+}
+```
+
+Response includes updated `VendorProductionFlow` plus **`vendorTransferContainer: { _id, barcode }`** for the container you passed. **`currentFloorKey` stays on the sending floor** until the container is accepted on the destination.
+
+### Container accept (vendor + factory)
+
+`POST /v1/containers-masters/barcode/:barcode/accept` — same as production. Response may include **`vendorProductionFlows`** when the container carried vendor lines.
 
 ### Transfer rules
 
@@ -143,16 +245,33 @@ Compatibility note:
 - `toFloorKey` must be after `fromFloorKey`.
 - Source and destination cannot be same.
 
-Pool used for transfer:
-- From checking floor (`secondaryChecking`, `finalChecking`): transfer uses **M1** pool  
-  `available = m1Quantity - m1Transferred`
-- From normal floors (`washing`, `boarding`, `branding`): transfer uses normal pool  
-  `available = completed - transferred`
+**Pool used for transfer (source floor):**
 
-State updates:
-- `from.transferred += qty`
-- (checking floor only) `from.m1Transferred += qty`
-- `to.received += qty`
+- **Checking floors** (`secondaryChecking`, `finalChecking`):  
+  `available ≈ m1Quantity - m1Transferred` (and server rules so you cannot exceed what’s allowed on that floor).
+- **Branding:**  
+  `available = completed - transferred` (pipeline semantics).
+
+**State updates on `PATCH .../transfer`:**
+
+| Leg | `from` floor | `to` floor | What changes immediately | Destination `received` |
+|-----|----------------|------------|---------------------------|---------------------------|
+| Secondary → branding | `transferred`, `m1Transferred` | — | **No** — staged in container | **`branding.received`** only on **`POST .../containers-masters/barcode/:barcode/accept`** |
+| Branding → final checking | `transferred`, rows **`$push`** to **`branding.transferredData`** | — | **No** — staged in container ( **`transferItems`** = style/brand lines ) | **`finalChecking.received`** only on **accept**; **`receivedData`** gets **one row per line** (same `transferred` / `styleCode` / `brand`) |
+| Final checking → dispatch | (if you add a direct transfer API for this leg) | `dispatch.received` | Same request | N/A for vendor container flow |
+| Other forward legs (e.g. FC → dispatch via **confirm**) | See §5 | | | |
+
+**Branding → final checking (style-wise quantity):**
+
+- Request **`transferItems`**: `[{ transferred, styleCode, brand }, ...]` with **sum(transferred) = quantity**.
+- Container stores the same **`transferItems`** on the active line.
+- On **accept**, **`finalChecking.received`** increases by **exactly** `sum(transferItems)` (same as container line `quantity`). No extra units are applied unless you scan another container or patch the floor.
+- So **only the quantity that left branding in that transfer** (broken down by style) is what lands in **final checking `received`** for that scan.
+
+**Final checking → dispatch (not the same as `received`):**
+
+- **`POST .../confirm`** moves **`pendingToDispatch = finalChecking.completed - finalChecking.transferred`** (pending “finished” QC work) onto **dispatch**.
+- So **dispatch** gets units that are **completed** on final checking and not yet counted as transferred to dispatch — **not** “all `received`” in one click. Typical sequence: FC **`received`** (from containers) → operators set **`completed`** / M1–M4 via **`PATCH floors/finalChecking`** → **confirm** pushes the pending completed amount to **`dispatch.received`**.
 
 ---
 
@@ -169,7 +288,7 @@ State updates:
 ```
 
 Rules:
-- Allowed target floors: `washing`, `boarding`, `branding`
+- Joi may allow `washing` / `boarding` / `branding`; current service implementation only completes rework to **`branding`**. If the API rejects other targets, use **`branding`**.
 - Available M2: `finalChecking.m2Quantity - finalChecking.m2Transferred`
 - Updates:
   - `finalChecking.m2Transferred += qty`
@@ -190,45 +309,32 @@ Optional body:
 }
 ```
 
-Confirm behavior:
-- Moves pending final-checking completed qty to dispatch
-- Sets:
-  - `currentFloorKey = "dispatch"`
-  - `finalQualityConfirmed = true`
-  - `completedAt = now`
+Confirm behavior (backend):
+- **`dispatch.received +=`** `max(0, finalChecking.completed - finalChecking.transferred)` (that pending amount).
+- **`finalChecking.transferred`** and **`finalChecking.m1Transferred`** are increased by that same pending amount so the floor stays consistent.
+- **`dispatch.completed`** is set from **`dispatch.received`** after the move.
+- Sets **`currentFloorKey = "dispatch"`**, **`finalQualityConfirmed = true`**, **`completedAt = now`**.
+
+So **dispatch** reflects **QC-completed** work on final checking, not raw **`received`** unless **`completed`** has been brought in line (usually **`completed ≤ received`** after inspection).
+
+**Dispatch style-wise note (after confirm):**
+
+- Backend appends style-wise rows into **`dispatch.receivedData`** on confirm by splitting the `pendingToDispatch` quantity proportionally across the style buckets present in `finalChecking.receivedData` (fallback: one blank style row if none exist).
+- This avoids “missing style breakdown” at dispatch without requiring the operator to re-enter style lines at final checking.
 
 ---
 
-## 6) End-to-end call sequence (floor-by-floor)
+## 6) End-to-end call sequence (fixed pipeline only)
 
-### Flow A: direct branding route
+`secondaryChecking → branding → finalChecking → dispatch`
 
-1. Load flow (`GET`)
-2. Secondary checking quality split (`PATCH floors/secondaryChecking`)
-3. Transfer to branding (`PATCH transfer`, `secondaryChecking -> branding`)
-4. Complete branding (`PATCH floors/branding`)
-5. Complete final checking (`PATCH floors/finalChecking`)
-6. Confirm dispatch (`POST confirm`)
-
-### Flow B: full standard route
-
-1. Load flow
-2. Secondary checking update
-3. Transfer `secondaryChecking -> washing`
-4. Complete washing
-5. Complete boarding
-6. Complete branding
-7. Complete final checking
-8. Confirm dispatch
-
-### Flow C: mixed route
-
-1. Load flow
-2. Transfer part direct to branding
-3. Transfer part to washing
-4. Process washing -> boarding -> branding
-5. Complete final checking
-6. Confirm dispatch
+1. **`GET`** flow — render counters from server.
+2. **`PATCH .../floors/secondaryChecking`** — set **M1 / M2 / M4** (and optional **`autoTransferToNextFloor`**, which stages a **container** to branding; destination **`received`** on scan).
+3. **`PATCH .../transfer`** `secondaryChecking → branding` with **`quantity`** — or rely on step 2 auto-transfer; **scan container** at branding: **`POST .../containers-masters/barcode/:barcode/accept`** → **`branding.received`** updates.
+4. **`PATCH .../floors/branding`** — complete work on branding (**`completed`**, etc.).
+5. **`PATCH .../transfer`** `branding → finalChecking` with **`quantity`** + **`transferItems`** (style-wise); **scan** at final checking → **`finalChecking.received`** and **`finalChecking.receivedData`** lines match **`transferItems`**.
+6. **`PATCH .../floors/finalChecking`** — inspection split **M1 / M2 / M4**, **`completed`**, etc.
+7. **`POST .../confirm`** — move **`completed - transferred`** pending from final checking to **dispatch**.
 
 ---
 
@@ -282,9 +388,9 @@ UI action:
 ## 8) Minimal frontend integration checklist
 
 - Use increment mode for all floor updates.
-- Use `quantity` for transfer payload.
+- Use `quantity` for every transfer; add **`transferItems`** for **branding → final checking**.
+- After transfer, if response includes **`vendorTransferContainer`**, run **container accept** on the destination floor before expecting **`received`** to change.
 - Always render from API response document.
-- Keep transfer modal aware of M1 vs normal pool logic.
+- Transfer modal: **M1 pool** on checking floors; **`completed - transferred`** on branding.
 - Surface backend validation messages directly.
-- Support all three paths: direct branding, full route, mixed route.
 

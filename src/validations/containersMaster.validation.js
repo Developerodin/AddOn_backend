@@ -13,10 +13,21 @@ const containerStatusFlexible = Joi.string().trim().custom((value, helpers) => {
   return helpers.error('any.only', { valids: [...statusValues, 'ACTIVE', 'INACTIVE'] });
 });
 
-const activeItemSchema = Joi.object().keys({
-  article: Joi.string().custom(objectId).required(),
-  quantity: Joi.number().min(0.0001).required(),
+const transferItemRowSchema = Joi.object().keys({
+  transferred: Joi.number().min(0).required(),
+  styleCode: Joi.string().allow('', null),
+  brand: Joi.string().allow('', null),
 });
+
+/** Factory article XOR vendor production flow per row */
+const activeItemSchema = Joi.object()
+  .keys({
+    article: Joi.string().custom(objectId),
+    vendorProductionFlow: Joi.string().custom(objectId),
+    quantity: Joi.number().min(0.0001).required(),
+    transferItems: Joi.array().items(transferItemRowSchema),
+  })
+  .xor('article', 'vendorProductionFlow');
 
 export const createContainersMaster = {
   body: Joi.object().keys({
@@ -76,10 +87,14 @@ export const updateContainerByBarcode = {
     .keys({
       activeFloor: Joi.string().trim().allow('', null),
       activeItems: Joi.array().items(activeItemSchema),
-      addItem: Joi.object().keys({
-        article: Joi.string().custom(objectId).required(),
-        quantity: Joi.number().min(0.0001).required(),
-      }),
+      addItem: Joi.object()
+        .keys({
+          article: Joi.string().custom(objectId),
+          vendorProductionFlow: Joi.string().custom(objectId),
+          quantity: Joi.number().min(0.0001).required(),
+          transferItems: Joi.array().items(transferItemRowSchema),
+        })
+        .xor('article', 'vendorProductionFlow'),
       type: Joi.string().valid(...typeValues),
       tearWeight: Joi.number().min(0),
     })

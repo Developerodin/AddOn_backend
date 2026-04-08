@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import toJSON from '../plugins/toJSON.plugin.js';
 import paginate from '../plugins/paginate.plugin.js';
 import {
-  vendorStandardFloorSchema,
+  vendorDispatchFloorSchema,
   vendorBrandingFloorSchema,
   vendorFinalCheckingFloorSchema,
   vendorSecondaryCheckingFloorSchema,
@@ -27,7 +27,7 @@ const floorQuantitiesSchema = new mongoose.Schema(
     secondaryChecking: { type: vendorSecondaryCheckingFloorSchema, default: () => ({}) },
     branding: { type: vendorBrandingFloorSchema, default: () => ({}) },
     finalChecking: { type: vendorFinalCheckingFloorSchema, default: () => ({}) },
-    dispatch: { type: vendorStandardFloorSchema, default: () => ({}) },
+    dispatch: { type: vendorDispatchFloorSchema, default: () => ({}) },
   },
   { _id: false }
 );

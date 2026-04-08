@@ -124,6 +124,8 @@ export const updateVendorProductionFlowFloor = {
       repairStatus: Joi.string().valid(...Object.values(RepairStatus)),
       repairRemarks: Joi.string().allow('', null),
       autoTransferToNextFloor: Joi.boolean(),
+      /** Required when auto-transfer targets branding or final checking — physical container barcode (already exists). */
+      existingContainerBarcode: Joi.string().trim().allow('', null),
       /** Clears M1–M4, transfers, completed, repair fields on secondary checking; keeps `received`. */
       resetSecondaryChecking: Joi.boolean(),
     })
@@ -131,25 +133,46 @@ export const updateVendorProductionFlowFloor = {
     .unknown(true),
 };
 
+const vendorTransferItemSchema = Joi.object().keys({
+  transferred: Joi.number().min(0).required(),
+  styleCode: Joi.string().allow('', null),
+  brand: Joi.string().allow('', null),
+});
+
 export const transferVendorProductionFlow = {
   params: Joi.object().keys({
     vendorProductionFlowId: Joi.string().custom(objectId).required(),
   }),
   body: Joi.object()
     .keys({
-      mode: Joi.string().valid('increment', 'replace'),
       fromFloorKey: Joi.string()
-        .valid('secondaryChecking', 'washing', 'boarding', 'branding', 'finalChecking')
+        .valid('secondaryChecking', 'branding', 'finalChecking')
         .required(),
-      toFloorKey: Joi.string().valid('washing', 'boarding', 'branding', 'finalChecking', 'dispatch').required(),
-
-      // Backward compatible
-      quantity: Joi.number().min(1),
-
-      // Increment mode (recommended)
-      quantityDelta: Joi.number().min(1),
+      toFloorKey: Joi.string().valid('branding', 'finalChecking', 'dispatch').required(),
+      quantity: Joi.number().min(1).required(),
+      /** Required for secondary→branding and branding→final checking — physical container that already exists */
+      existingContainerBarcode: Joi.string().trim().allow('', null),
+      /** Required when fromFloorKey=branding and toFloorKey=finalChecking — sum must equal quantity */
+      transferItems: Joi.array().items(vendorTransferItemSchema),
     })
-    .min(3),
+    .custom((value) => {
+      const usesContainer =
+        (value.fromFloorKey === 'secondaryChecking' && value.toFloorKey === 'branding') ||
+        (value.fromFloorKey === 'branding' && value.toFloorKey === 'finalChecking');
+      if (usesContainer) {
+        if (!value.existingContainerBarcode || !String(value.existingContainerBarcode).trim()) {
+          throw new Error(
+            'existingContainerBarcode is required for this transfer (reuse an existing container; the backend does not create a new one)'
+          );
+        }
+      }
+      if (value.fromFloorKey === 'branding' && value.toFloorKey === 'finalChecking') {
+        if (!Array.isArray(value.transferItems) || value.transferItems.length === 0) {
+          throw new Error('transferItems is required when transferring from branding to final checking');
+        }
+      }
+      return value;
+    }),
 };
 
 export const confirmVendorProductionFlow = {

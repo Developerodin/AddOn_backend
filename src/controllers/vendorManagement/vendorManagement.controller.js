@@ -43,12 +43,13 @@ export const updateVendorProductionFlowFloor = catchAsync(async (req, res) => {
 
 export const transferVendorProductionFlow = catchAsync(async (req, res) => {
   const { vendorProductionFlowId } = req.params;
-  const { fromFloorKey, toFloorKey, quantity } = req.body;
+  const { fromFloorKey, toFloorKey, quantity, transferItems, existingContainerBarcode } = req.body;
   const result = await vendorProductionFlowService.transferVendorProductionFlowQuantity(
     vendorProductionFlowId,
     fromFloorKey,
     toFloorKey,
-    quantity
+    quantity,
+    { transferItems, existingContainerBarcode }
   );
   res.send(result);
 });

@@ -138,6 +138,10 @@ export function computeRemainingForFloor(floorKey, floor) {
   const received = toFiniteNumber(floor.received, 0);
   const completed = toFiniteNumber(floor.completed, 0);
   const transferred = toFiniteNumber(floor.transferred, 0);
+  /** Same idea as branding: units not yet sent to the next floor (dispatch), not “completed + transferred” disjoint pools. */
+  if (floorKey === 'finalChecking') {
+    return Math.max(0, received - transferred);
+  }
   if (checkingFloorKeys.has(floorKey)) {
     const m2Quantity = toFiniteNumber(floor.m2Quantity, 0);
     const m4Quantity = toFiniteNumber(floor.m4Quantity, 0);
@@ -176,6 +180,10 @@ export function computeCompletedBasedTransferableForFloor(floorKey, floor) {
   const completed = toFiniteNumber(floor.completed, 0);
   const transferred = toFiniteNumber(floor.transferred, 0);
   const pending = Math.max(0, completed - transferred);
+  if (floorKey === 'finalChecking') {
+    const aggRoom = Math.max(0, received - transferred);
+    return Math.min(pending, aggRoom);
+  }
   const aggRoom = pipelineStandardFloorKeys.has(floorKey)
     ? Math.max(0, received - transferred)
     : Math.max(0, received - completed - transferred);
@@ -202,14 +210,26 @@ export function assertValidFloorState(floorKey, floor) {
       throw new ApiError(httpStatus.BAD_REQUEST, 'Transferred cannot exceed completed');
     }
   } else if (checkingFloorKeys.has(floorKey)) {
-    if (completed > received) {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'Completed cannot exceed received');
-    }
-    if (transferred > received) {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'Transferred cannot exceed received');
-    }
-    if (completed + transferred > received) {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'Completed + transferred cannot exceed received');
+    if (floorKey === 'finalChecking') {
+      if (completed > received) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Completed cannot exceed received');
+      }
+      if (transferred > received) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Transferred cannot exceed received');
+      }
+      if (transferred > completed) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Transferred cannot exceed completed');
+      }
+    } else {
+      if (completed > received) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Completed cannot exceed received');
+      }
+      if (transferred > received) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Transferred cannot exceed received');
+      }
+      if (completed + transferred > received) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Completed + transferred cannot exceed received');
+      }
     }
 
     const m1Quantity = toFiniteNumber(floor.m1Quantity, 0);

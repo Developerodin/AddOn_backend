@@ -18,6 +18,12 @@ import {
   floorPath,
   toFiniteNumber,
 } from './vendorProductionFlowFloorPatch.js';
+import { stageVendorTransferOnExistingContainer } from './vendorProductionFlowReceive.service.js';
+import {
+  aggregateTransferredByStyleKey,
+  parseVendorStyleKey,
+  splitIntegerByWeights,
+} from '../../utils/vendorStyleQuantity.util.js';
 
 const VENDOR_CHECKING_FLOORS = new Set(['secondaryChecking', 'finalChecking']);
 
@@ -29,8 +35,13 @@ function shouldPreferM1AutoTransferOnPatch(floorKey, mode, bodyForPatch, before,
   return after.m1Quantity > before.m1Quantity;
 }
 
-function computeM1PoolTransferableForCheckingFloor(after) {
+function computeM1PoolTransferableForCheckingFloor(after, floorKey) {
   const m1Avail = Math.max(0, after.m1Quantity - after.m1Transferred);
+  /** Final checking: forward M1 along pipeline (transferred ≤ completed), not disjoint completed+transferred vs received. */
+  if (floorKey === 'finalChecking') {
+    const pending = Math.max(0, after.completed - after.transferred);
+    return Math.min(m1Avail, pending);
+  }
   const aggRoom = Math.max(0, after.received - after.completed - after.transferred);
   return Math.min(m1Avail, aggRoom);
 }
@@ -69,7 +80,7 @@ async function maybeAutoTransferVendorFloor(
   let transferable = 0;
   let bumpM1Transferred = false;
   if (preferM1) {
-    const m1T = computeM1PoolTransferableForCheckingFloor(after);
+    const m1T = computeM1PoolTransferableForCheckingFloor(after, floorKey);
     if (m1T > 0) {
       transferable = m1T;
       bumpM1Transferred = true;
@@ -85,10 +96,30 @@ async function maybeAutoTransferVendorFloor(
   const isChecking = VENDOR_CHECKING_FLOORS.has(floorKey);
   const nextBefore = pickFloorSnapshot(flow, nextFloorKey);
 
+  /** Container legs: SC→branding, branding→FC, optional FC→dispatch when `existingContainerBarcode` is sent. */
+  const containerLeg =
+    (floorKey === 'secondaryChecking' && nextFloorKey === 'branding') ||
+    (floorKey === 'branding' && nextFloorKey === 'finalChecking');
+  const fcDispatchStaging =
+    floorKey === 'finalChecking' && nextFloorKey === 'dispatch' && bodyForPatch?.existingContainerBarcode;
+  const usesContainer = containerLeg || fcDispatchStaging;
+
+  if (containerLeg) {
+    const bc = bodyForPatch?.existingContainerBarcode;
+    if (!bc || !String(bc).trim()) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'existingContainerBarcode is required when auto-transferring to the next floor (secondary→branding or branding→final checking). Use a container that already exists.'
+      );
+    }
+  }
+
   const inc = {
     [floorPath(floorKey, 'transferred')]: transferable,
-    [floorPath(nextFloorKey, 'received')]: transferable,
   };
+  if (!usesContainer) {
+    inc[floorPath(nextFloorKey, 'received')] = transferable;
+  }
   /** Match manual transfer / confirm: final → dispatch counts against M1 transferred. */
   const bumpM1Lane =
     isChecking &&
@@ -102,16 +133,20 @@ async function maybeAutoTransferVendorFloor(
     transferred: after.transferred + transferable,
     m1Transferred: bumpM1Lane ? after.m1Transferred + transferable : after.m1Transferred,
   };
-  const nextAfter = {
-    ...nextBefore,
-    received: nextBefore.received + transferable,
-  };
+  const nextAfter = usesContainer
+    ? { ...nextBefore }
+    : {
+        ...nextBefore,
+        received: nextBefore.received + transferable,
+      };
 
   assertValidFloorState(floorKey, curAfterTransfer);
   assertValidFloorState(nextFloorKey, nextAfter);
 
   const fromDerived = computeDerivedForFloor(floorKey, curAfterTransfer);
   const nextDerived = computeDerivedForFloor(nextFloorKey, nextAfter);
+
+  const session = sessionOptions?.session;
 
   await VendorProductionFlow.updateOne(
     { _id: flowId },
@@ -120,26 +155,48 @@ async function maybeAutoTransferVendorFloor(
       $set: {
         ...Object.fromEntries(Object.entries(fromDerived).map(([k, v]) => [floorPath(floorKey, k), v])),
         ...Object.fromEntries(Object.entries(nextDerived).map(([k, v]) => [floorPath(nextFloorKey, k), v])),
-        currentFloorKey: nextFloorKey,
+        currentFloorKey: usesContainer ? flow.currentFloorKey || floorKey : nextFloorKey,
         startedAt: flow.startedAt || new Date(),
       },
     },
     sessionOptions
   );
 
-  if (floorKey === 'branding' && nextFloorKey === 'finalChecking') {
+  if (usesContainer) {
     const receiptRows = normalizeTransferBreakdownForReceipt(
       bodyForPatch?.transferredData,
       transferable,
       floorKey
     );
-    if (receiptRows.length > 0) {
+    const transferItemsForContainer =
+      nextFloorKey === 'finalChecking' || nextFloorKey === 'dispatch'
+        ? receiptRows.map((r) => ({
+            transferred: r.transferred,
+            styleCode: r.styleCode,
+            brand: r.brand,
+          }))
+        : undefined;
+
+    if (floorKey === 'branding' && nextFloorKey === 'finalChecking' && transferItemsForContainer?.length) {
       await VendorProductionFlow.updateOne(
         { _id: flowId },
-        { $push: { [floorPath(nextFloorKey, 'receivedData')]: { $each: receiptRows } } },
+        {
+          $push: {
+            'floorQuantities.branding.transferredData': { $each: transferItemsForContainer },
+          },
+        },
         sessionOptions
       );
     }
+
+    await stageVendorTransferOnExistingContainer({
+      barcode: String(bodyForPatch.existingContainerBarcode).trim(),
+      flowId: flowId.toString(),
+      quantity: transferable,
+      toFloorKey: nextFloorKey,
+      transferItems: transferItemsForContainer,
+      session,
+    });
   }
 }
 
@@ -281,19 +338,25 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
     const bodyForPatch = { ...normalizedBody };
     const hasTransferredBreakdown =
       (floorKey === 'branding' || floorKey === 'finalChecking') && Array.isArray(bodyForPatch?.transferredData);
-    if (
-      hasTransferredBreakdown &&
-      bodyForPatch.completed === undefined &&
-      bodyForPatch.completedDelta === undefined
-    ) {
+    if (hasTransferredBreakdown && bodyForPatch.transferredData.length > 0) {
       const transferredDataTotal = bodyForPatch.transferredData.reduce(
         (sum, row) => sum + Math.max(0, Number(row?.transferred || 0)),
         0
       );
-      if (resolveMode(bodyForPatch) === 'increment') {
-        bodyForPatch.completedDelta = Math.max(0, transferredDataTotal - Number(before.completed || 0));
-      } else {
-        bodyForPatch.completed = transferredDataTotal;
+      const patchMode = resolveMode(bodyForPatch);
+      /** Style-line totals define completed work; UI often sends `completed: 0` with real lines — treat as “derive”. */
+      const deriveCompletedFromTransferredData =
+        transferredDataTotal > 0 &&
+        (bodyForPatch.completed === undefined ||
+          (bodyForPatch.completed === 0 && bodyForPatch.completedDelta === undefined));
+      if (deriveCompletedFromTransferredData) {
+        if (patchMode === 'increment') {
+          if (bodyForPatch.completedDelta === undefined) {
+            bodyForPatch.completedDelta = Math.max(0, transferredDataTotal - Number(before.completed || 0));
+          }
+        } else {
+          bodyForPatch.completed = transferredDataTotal;
+        }
       }
     }
 
@@ -460,12 +523,16 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
 /**
  * Transfer quantity from one vendor floor to another.
  * For checking floors, transfer uses M1 pool.
+ * Secondary→branding and branding→final checking: stages on **existing** {@link ContainersMaster} (`existingContainerBarcode`); destination `received` updates on accept scan (same as factory).
+ *
  * @param {string} flowId
  * @param {string} fromFloorKey
  * @param {string} toFloorKey
  * @param {number} quantity
+ * @param {{ transferItems?: Array<{ transferred: number, styleCode?: string, brand?: string }>, existingContainerBarcode: string }} [opts]
+ *   `existingContainerBarcode` — required when staging secondary→branding or branding→final checking (reuse physical container; no new container is created).
  */
-export const transferVendorProductionFlowQuantity = async (flowId, fromFloorKey, toFloorKey, quantity) => {
+export const transferVendorProductionFlowQuantity = async (flowId, fromFloorKey, toFloorKey, quantity, opts = {}) => {
   assertAllowedFloorKey(fromFloorKey);
   assertAllowedFloorKey(toFloorKey);
   if (fromFloorKey === toFloorKey) {
@@ -478,6 +545,50 @@ export const transferVendorProductionFlowQuantity = async (flowId, fromFloorKey,
   if (!Number.isFinite(qty) || qty <= 0) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Transfer quantity must be greater than 0');
   }
+
+  const usesContainer =
+    (fromFloorKey === 'secondaryChecking' && toFloorKey === 'branding') ||
+    (fromFloorKey === 'branding' && toFloorKey === 'finalChecking') ||
+    (fromFloorKey === 'finalChecking' && toFloorKey === 'dispatch' && opts.existingContainerBarcode);
+
+  if (
+    (fromFloorKey === 'secondaryChecking' && toFloorKey === 'branding') ||
+    (fromFloorKey === 'branding' && toFloorKey === 'finalChecking')
+  ) {
+    const bc = opts.existingContainerBarcode;
+    if (!bc || !String(bc).trim()) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'existingContainerBarcode is required for this transfer (use a container that already exists; quantity is staged on it for the next floor).'
+      );
+    }
+  }
+
+  if (fromFloorKey === 'finalChecking' && toFloorKey === 'dispatch' && opts.existingContainerBarcode) {
+    const items = opts.transferItems;
+    if (Array.isArray(items) && items.length > 0) {
+      const sum = items.reduce((s, row) => s + Math.max(0, Number(row?.transferred || 0)), 0);
+      if (Math.abs(sum - qty) > 0.0001) {
+        throw new ApiError(httpStatus.BAD_REQUEST, `transferItems sum (${sum}) must equal quantity (${qty})`);
+      }
+    }
+  }
+
+  if (fromFloorKey === 'branding' && toFloorKey === 'finalChecking') {
+    const items = opts.transferItems;
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'transferItems (styleCode / brand / transferred per line) is required when transferring from branding to final checking'
+      );
+    }
+    const sum = items.reduce((s, row) => s + Math.max(0, Number(row?.transferred || 0)), 0);
+    if (Math.abs(sum - qty) > 0.0001) {
+      throw new ApiError(httpStatus.BAD_REQUEST, `transferItems sum (${sum}) must equal quantity (${qty})`);
+    }
+  }
+
+  let vendorTransferContainerMeta = null;
 
   const applyTransferUpdates = async (session = null) => {
     const sessionOptions = session ? { session } : undefined;
@@ -505,8 +616,10 @@ export const transferVendorProductionFlowQuantity = async (flowId, fromFloorKey,
 
     const inc = {
       [floorPath(fromFloorKey, 'transferred')]: qty,
-      [floorPath(toFloorKey, 'received')]: qty,
     };
+    if (!usesContainer) {
+      inc[floorPath(toFloorKey, 'received')] = qty;
+    }
     if (isCheckingFloor) {
       inc[floorPath(fromFloorKey, 'm1Transferred')] = qty;
     }
@@ -518,10 +631,12 @@ export const transferVendorProductionFlowQuantity = async (flowId, fromFloorKey,
       transferred: Number(fromBefore.transferred || 0) + qty,
       m1Transferred: isCheckingFloor ? Number(fromBefore.m1Transferred || 0) + qty : fromBefore.m1Transferred,
     };
-    const toAfter = {
-      ...toBefore,
-      received: Number(toBefore.received || 0) + qty,
-    };
+    const toAfter = usesContainer
+      ? { ...toBefore }
+      : {
+          ...toBefore,
+          received: Number(toBefore.received || 0) + qty,
+        };
 
     assertValidFloorState(fromFloorKey, fromAfter);
     assertValidFloorState(toFloorKey, toAfter);
@@ -535,26 +650,44 @@ export const transferVendorProductionFlowQuantity = async (flowId, fromFloorKey,
         $set: {
           ...Object.fromEntries(Object.entries(fromDerived).map(([k, v]) => [floorPath(fromFloorKey, k), v])),
           ...Object.fromEntries(Object.entries(toDerived).map(([k, v]) => [floorPath(toFloorKey, k), v])),
-          currentFloorKey: toFloorKey,
+          currentFloorKey: usesContainer ? flow.currentFloorKey || fromFloorKey : toFloorKey,
           startedAt: flow.startedAt || new Date(),
         },
       },
       sessionOptions
     );
 
-    if (fromFloorKey === 'branding' && toFloorKey === 'finalChecking') {
-      const receiptRows = normalizeTransferBreakdownForReceipt(
-        fromBefore?.transferredData,
-        qty,
-        fromFloorKey
+    if (fromFloorKey === 'branding' && toFloorKey === 'finalChecking' && Array.isArray(opts.transferItems)) {
+      const lines = opts.transferItems.map((row) => ({
+        transferred: Math.max(0, Number(row?.transferred || 0)),
+        styleCode: String(row?.styleCode || ''),
+        brand: String(row?.brand || ''),
+      }));
+      await VendorProductionFlow.updateOne(
+        { _id: flowId },
+        { $push: { 'floorQuantities.branding.transferredData': { $each: lines } } },
+        sessionOptions
       );
-      if (receiptRows.length > 0) {
-        await VendorProductionFlow.updateOne(
-          { _id: flowId },
-          { $push: { [floorPath(toFloorKey, 'receivedData')]: { $each: receiptRows } } },
-          sessionOptions
-        );
-      }
+    }
+
+    if (usesContainer) {
+      const transferItemsForContainer =
+        (toFloorKey === 'finalChecking' || toFloorKey === 'dispatch') && Array.isArray(opts.transferItems)
+          ? opts.transferItems.map((row) => ({
+              transferred: Math.max(0, Number(row?.transferred || 0)),
+              styleCode: String(row?.styleCode || ''),
+              brand: String(row?.brand || ''),
+            }))
+          : undefined;
+      const c = await stageVendorTransferOnExistingContainer({
+        barcode: opts.existingContainerBarcode,
+        flowId: flowId.toString(),
+        quantity: qty,
+        toFloorKey,
+        transferItems: transferItemsForContainer,
+        session,
+      });
+      vendorTransferContainerMeta = { barcode: c.barcode, _id: c._id.toString() };
     }
 
     const updatedQuery = VendorProductionFlow.findById(flowId);
@@ -568,7 +701,6 @@ export const transferVendorProductionFlowQuantity = async (flowId, fromFloorKey,
       await session.withTransaction(async () => {
         updatedFlow = await applyTransferUpdates(session);
       });
-      return updatedFlow;
     } catch (error) {
       const message = String(error?.message || '');
       const isReplicaSetError =
@@ -576,8 +708,14 @@ export const transferVendorProductionFlowQuantity = async (flowId, fromFloorKey,
       if (!isReplicaSetError) {
         throw error;
       }
-      return applyTransferUpdates(null);
+      updatedFlow = await applyTransferUpdates(null);
     }
+    if (vendorTransferContainerMeta && updatedFlow) {
+      const o = updatedFlow.toObject ? updatedFlow.toObject() : { ...updatedFlow };
+      o.vendorTransferContainer = vendorTransferContainerMeta;
+      return o;
+    }
+    return updatedFlow;
   } finally {
     session.endSession();
   }
@@ -609,6 +747,45 @@ export const confirmVendorProductionFlowById = async (flowId, remarks) => {
 
     dispatch.received = Number(dispatch.received || 0) + pendingToDispatch;
     dispatch.remaining = Number(dispatch.remaining || 0) + pendingToDispatch;
+
+    /** Style-wise lines on dispatch: split `pendingToDispatch` in proportion to final checking `receivedData` buckets */
+    const fcRd = finalChecking.receivedData || [];
+    const agg = aggregateTransferredByStyleKey(fcRd);
+    const keys = [...agg.keys()].filter((k) => (agg.get(k) || 0) > 0);
+    const weights = keys.map((k) => agg.get(k) || 0);
+    const sumW = weights.reduce((a, b) => a + b, 0);
+    const now = new Date();
+    let dispatchLines = [];
+    if (keys.length > 0 && sumW > 0) {
+      const parts = splitIntegerByWeights(pendingToDispatch, weights);
+      dispatchLines = keys
+        .map((k, i) => {
+          const p = parts[i] ?? 0;
+          if (p <= 0) return null;
+          const { styleCode, brand } = parseVendorStyleKey(k);
+          return {
+            transferred: p,
+            styleCode: styleCode || '',
+            brand: brand || '',
+            receivedTimestamp: now,
+            receivedStatusFromPreviousFloor: 'confirm:finalChecking',
+          };
+        })
+        .filter(Boolean);
+    }
+    if (dispatchLines.length === 0) {
+      dispatchLines = [
+        {
+          transferred: pendingToDispatch,
+          styleCode: '',
+          brand: '',
+          receivedTimestamp: now,
+          receivedStatusFromPreviousFloor: 'confirm:finalChecking',
+        },
+      ];
+    }
+    dispatch.receivedData = [...(dispatch.receivedData || []), ...dispatchLines];
+    flow.markModified('floorQuantities.dispatch');
   }
 
   dispatch.completed = Number(dispatch.received || 0);
