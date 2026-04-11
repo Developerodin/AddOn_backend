@@ -313,6 +313,13 @@ export function buildIncrementOps(floorKey, body) {
   if (floorKey === 'branding' || floorKey === 'finalChecking') {
     if (body?.transferredData !== undefined) set[floorPath(floorKey, 'transferredData')] = body.transferredData;
     if (body?.receivedData !== undefined) set[floorPath(floorKey, 'receivedData')] = body.receivedData;
+    /** Server-computed scalars from lines (see vendorProductionFlow.service merge + lineSum). */
+    if (body?.transferredData !== undefined && body?.completed !== undefined) {
+      set[floorPath(floorKey, 'completed')] = toFiniteNumber(body.completed, 0);
+    }
+    if (body?.transferredData !== undefined && body?.transferred !== undefined) {
+      set[floorPath(floorKey, 'transferred')] = toFiniteNumber(body.transferred, 0);
+    }
   }
 
   const out = {};
