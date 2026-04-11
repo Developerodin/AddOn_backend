@@ -122,66 +122,57 @@ Frontend guidance:
 - Treat each **accept scan** as a **one-time receipt** for that container’s current payload. Do not attempt to “re-accept” the same staged load.
 - If user wants to send more later for the same style key, stage another transfer on a container (or reuse a container per your ops rules) with only the **new quantity** (do not resend already-sent lines).
 
-### 2.1 Increment mode (recommended)
+### 2.1 Patch mode (server-owned)
 
-Use deltas only.
+**Do not send `mode`.** It is ignored. The server chooses:
+
+- **Increment** when any of `receivedDelta`, `completedDelta`, `transferredDelta`, `m1Delta`, `m2Delta`, `m4Delta` is present.
+- **Replace** when none of those are present (e.g. only `repairStatus`, `transferred`, `received`, …).
+
+### 2.2 Secondary checking — what to send (required contract)
+
+On **`PATCH .../floors/secondaryChecking`**, treat **`m1Quantity`**, **`m2Quantity`**, **`m4Quantity`** as **“add this many units to this bucket on this save”** (not absolute totals). The server maps them to internal increments automatically.
+
+Example sequence for `received = 100`:
+
+1. `{ "m1Quantity": 10 }` → stored M1 += 10 → **`completed` = 10** (M1 only), **`remaining` = 90**
+2. `{ "m2Quantity": 2 }` → M2 += 2 → **`completed` = 10** (still M1 total), **`remaining` = 88**
+3. `{ "m4Quantity": 3 }` → M4 += 3 → **`completed` = 10**, **`remaining` = 85**
+4. `{ "m1Quantity": 20 }` → M1 += 20 → **`completed` = 30**, **`remaining` = 65**
+
+Optional on the same requests: **`repairStatus`**, **`repairRemarks`**, **`autoTransferToNextFloor`**, **`existingContainerBarcode`** (required when auto-transfer stages to branding).
+
+**Do not send `completed` or `completedDelta` on secondary checking** — the server sets **`completed = m1Quantity`** (M1 / good-path count only; M2 and M4 appear only in **`m2Quantity`** / **`m4Quantity`**).
+
+You may send **`m1Delta` / `m2Delta` / `m4Delta`** alone (same additive behavior). If you send **`m1Quantity` / `m2Quantity` / `m4Quantity`** on the same request as deltas, the **named quantity fields win** (they become the increment); stale **`m1Delta: 0`** from the form must not block that — the server overwrites the delta from the quantity field.
+
+**Invariant:** **`m1Quantity + m2Quantity + m4Quantity ≤ received`** (stored totals after the patch).
+
+**Derived fields (secondary checking)**
+
+- **`remaining`** = **`received − m1Quantity − m2Quantity − m4Quantity`** (does not subtract `transferred`; use `m1Remaining` / transfer fields for outbound M1)
+- **`m1Remaining`** = **`m1Quantity − m1Transferred`** (M1 pool still available to move toward branding)
+- **`m2Remaining`** = **`m2Quantity − m2Transferred`**
+
+Responses include **`m1Quantity`**, **`m2Quantity`**, **`m4Quantity`**, and transfer sub-fields on checking floors for **secondary** and **final** checking.
+
+### 2.3 Final checking (unchanged vs secondary)
+
+On **`finalChecking`**, **`m1Quantity` / `m2Quantity` / `m4Quantity`** are also **additive** per save (same name → delta mapping). **`remaining`** there is still **`received − transferred`** (pipeline handoff). **`completed`** is **not** auto-derived from M1+M2+M4 on final checking.
+
+### 2.4 Other floors — increment vs replace
+
+Non-checking floors (e.g. **branding**): use **`*Delta`** fields for additive updates, or absolute **`received` / `completed` / `transferred`** when you are not sending any `*Delta` (replace-shaped patch).
+
+Example (branding / generic):
 
 ```json
 {
-  "mode": "increment",
   "completedDelta": 10
 }
 ```
 
-For checking floors (`secondaryChecking`, `finalChecking`) you can also send quality split deltas (additive on previous stored values):
-
-```json
-{
-  "mode": "increment",
-  "m1Delta": 5,
-  "m2Delta": 3,
-  "m4Delta": 1,
-  "repairStatus": "In Review",
-  "repairRemarks": "batch check"
-}
-```
-
-**M1 / M2 / M4 rules**
-
-- Backend **does not** overwrite `m1Quantity` with `received − m2 − m4`.
-- **Default (checking floors):** sending `m1Quantity` / `m2Quantity` / `m4Quantity` **without** `mode: "replace"` and **without** structural fields (`received`, `completed`, `transferred`, `remaining`, or `*Delta` for those) is treated as **additive** — each value is applied as **`m1Delta` / `m2Delta` / `m4Delta`** (increment on top of existing).
-- **Absolute overwrite:** send **`mode: "replace"`** with the full `m1Quantity` / `m2Quantity` / `m4Quantity` you want stored.
-- You can also send **`mode: "increment"`** with **`m1Delta` / `m2Delta` / `m4Delta`** explicitly (same additive behavior).
-- Invariant: **`m1Quantity + m2Quantity + m4Quantity ≤ received`** on that checking floor after each update.
-
-**`remaining` vs `m1Remaining` (checking floors)**
-
-- **`remaining`** = **`received − m2Quantity − m4Quantity − transferred − completed`** — net quantity after reserving M2/M4 and after outflow. Example: `received = 120`, `m2 = 10`, `m4 = 0`, no transfers → **`remaining = 110`**.
-- **`m1Remaining`** = **`m1Quantity − m1Transferred`** — how much of the **declared M1 bucket** is still available to transfer (M1 path only). These are different fields; do not expect `remaining === m1Remaining` unless your numbers happen to align.
-
-Backend behavior:
-
-- Applies `$inc` for deltas
-- Recomputes **derived only**: `remaining`, `m1Remaining`, `m2Remaining` (not `m1Quantity`)
-- Validates impossible states and rejects with `400`
-
-### 2.2 Replace mode (absolute values)
-
-Send absolute numbers when setting a floor from the form (no `mode: "increment"` and no `*Delta` fields):
-
-```json
-{
-  "m1Quantity": 30,
-  "m2Quantity": 10,
-  "m4Quantity": 10,
-  "repairStatus": "Not Required",
-  "repairRemarks": ""
-}
-```
-
-Use this for “first save” of the split; use **increment** + `m1Delta` / `m2Delta` / `m4Delta` for later additive updates.
-
-### 2.3 Reset secondary checking (retest)
+### 2.5 Reset secondary checking (retest)
 
 `PATCH` `.../floors/secondaryChecking` with:
 
@@ -191,9 +182,9 @@ Use this for “first save” of the split; use **increment** + `m1Delta` / `m2D
 
 Clears on **secondary checking only**: M1–M4, transfers, completed, repair text, `receivedData`; **keeps** `received` (and planned flow totals). Invalid on other floors.
 
-### 2.4 Auto-transfer note (important)
+### 2.6 Auto-transfer note (important)
 
-When `autoTransferToNextFloor` / `completedDelta` triggers a forward move **to `branding` or `finalChecking`**, the backend **does not** increase the next floor’s `received` immediately. You must send **`existingContainerBarcode`** on that floor PATCH; the backend stages quantity on that **`containers_masters`** document. **`received` on the destination updates only when someone scans the container barcode** on the receiving floor (`POST /v1/containers-masters/barcode/:barcode/accept`).
+When `autoTransferToNextFloor` or (on non–secondary-checking floors) `completedDelta` triggers a forward move **to `branding` or `finalChecking`**, the backend **does not** increase the next floor’s `received` immediately. You must send **`existingContainerBarcode`** on that floor PATCH; the backend stages quantity on that **`containers_masters`** document. **`received` on the destination updates only when someone scans the container barcode** on the receiving floor (`POST /v1/containers-masters/barcode/:barcode/accept`).
 
 Moves **to `dispatch`** from final checking: if you send **`existingContainerBarcode`** (and style **`transferredData`** when applicable), **`dispatch.received` does not increase** until **`POST .../containers-masters/barcode/:barcode/accept`** at **Dispatch**. If you omit the barcode, **`dispatch.received` updates in the same PATCH** (direct handoff, no scan).
 
@@ -329,7 +320,7 @@ So **dispatch** reflects **QC-completed** work on final checking, not raw **`rec
 `secondaryChecking → branding → finalChecking → dispatch`
 
 1. **`GET`** flow — render counters from server.
-2. **`PATCH .../floors/secondaryChecking`** — set **M1 / M2 / M4** (and optional **`autoTransferToNextFloor`**, which stages a **container** to branding; destination **`received`** on scan).
+2. **`PATCH .../floors/secondaryChecking`** — send **additive** **M1 / M2 / M4** per save (`m1Quantity` / `m2Quantity` / `m4Quantity` = amount to add); optional **`autoTransferToNextFloor`** + **`existingContainerBarcode`** stages a **container** to branding; destination **`received`** on scan.
 3. **`PATCH .../transfer`** `secondaryChecking → branding` with **`quantity`** — or rely on step 2 auto-transfer; **scan container** at branding: **`POST .../containers-masters/barcode/:barcode/accept`** → **`branding.received`** updates.
 4. **`PATCH .../floors/branding`** — complete work on branding (**`completed`**, etc.).
 5. **`PATCH .../transfer`** `branding → finalChecking` with **`quantity`** + **`transferItems`** (style-wise); **scan** at final checking → **`finalChecking.received`** and **`finalChecking.receivedData`** lines match **`transferItems`**.
@@ -387,7 +378,7 @@ UI action:
 
 ## 8) Minimal frontend integration checklist
 
-- Use increment mode for all floor updates.
+- Do not send `mode`; use **`*Delta`** fields when you need additive non-checking updates, and **named quantities** on checking floors as documented in §2.2 / §2.3.
 - Use `quantity` for every transfer; add **`transferItems`** for **branding → final checking**.
 - After transfer, if response includes **`vendorTransferContainer`**, run **container accept** on the destination floor before expecting **`received`** to change.
 - Always render from API response document.

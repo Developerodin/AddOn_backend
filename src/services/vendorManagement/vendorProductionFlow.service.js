@@ -13,6 +13,7 @@ import {
   pickFloorSnapshot,
   resolveMode,
   normalizeCheckingFloorSplitBody,
+  stripSecondaryCheckingServerDerivedFields,
   assertValidFloorState,
   computeCompletedBasedTransferableForFloor,
   floorPath,
@@ -41,6 +42,9 @@ function computeM1PoolTransferableForCheckingFloor(after, floorKey) {
   if (floorKey === 'finalChecking') {
     const pending = Math.max(0, after.completed - after.transferred);
     return Math.min(m1Avail, pending);
+  }
+  if (floorKey === 'secondaryChecking') {
+    return m1Avail;
   }
   const aggRoom = Math.max(0, after.received - after.completed - after.transferred);
   return Math.min(m1Avail, aggRoom);
@@ -322,7 +326,10 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
     throw new ApiError(httpStatus.BAD_REQUEST, 'resetSecondaryChecking is only valid for secondaryChecking');
   }
 
-  const normalizedBody = normalizeCheckingFloorSplitBody(floorKey, body);
+  let normalizedBody = normalizeCheckingFloorSplitBody(floorKey, body);
+  if (floorKey === 'secondaryChecking') {
+    normalizedBody = stripSecondaryCheckingServerDerivedFields(normalizedBody);
+  }
 
   const applyPatchUpdates = async (session = null) => {
     const sessionOptions = session ? { session } : undefined;
@@ -412,7 +419,6 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
       const after = {
         ...before,
         received: before.received + (ops.$inc?.[floorPath(floorKey, 'received')] || 0),
-        completed: before.completed + (ops.$inc?.[floorPath(floorKey, 'completed')] || 0),
         transferred: before.transferred + (ops.$inc?.[floorPath(floorKey, 'transferred')] || 0),
         m1Quantity: before.m1Quantity + (ops.$inc?.[floorPath(floorKey, 'm1Quantity')] || 0),
         m2Quantity: before.m2Quantity + (ops.$inc?.[floorPath(floorKey, 'm2Quantity')] || 0),
@@ -420,6 +426,11 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
         repairStatus: ops.$set?.[floorPath(floorKey, 'repairStatus')] ?? before.repairStatus,
         repairRemarks: ops.$set?.[floorPath(floorKey, 'repairRemarks')] ?? before.repairRemarks,
       };
+      if (floorKey === 'secondaryChecking') {
+        after.completed = after.m1Quantity;
+      } else {
+        after.completed = before.completed + (ops.$inc?.[floorPath(floorKey, 'completed')] || 0);
+      }
 
       assertValidFloorState(floorKey, after);
       const derived = computeDerivedForFloor(floorKey, after);
@@ -459,6 +470,9 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
             .map(([k, v]) => [k.split('.').slice(-1)[0], v])
         ),
       };
+      if (floorKey === 'secondaryChecking') {
+        after.completed = after.m1Quantity;
+      }
 
       assertValidFloorState(floorKey, after);
       const derived = computeDerivedForFloor(floorKey, after);

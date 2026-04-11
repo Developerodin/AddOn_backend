@@ -99,10 +99,12 @@ export const updateVendorProductionFlowFloor = {
   }),
   body: Joi.object()
     .keys({
+      /** Ignored by the server — patch mode is derived from *Delta fields only. */
       mode: Joi.string().valid('increment', 'replace'),
 
       // Increment mode (idempotent cumulative semantics)
       receivedDelta: Joi.number().min(0),
+      /** On `secondaryChecking` only: ignored — server sets `completed = m1Quantity`. */
       completedDelta: Joi.number().min(0),
       transferredDelta: Joi.number().min(0),
       m1Delta: Joi.number().min(0),
@@ -111,6 +113,7 @@ export const updateVendorProductionFlowFloor = {
 
       // Backward compatibility (replace semantics)
       received: Joi.number().min(0),
+      /** On `secondaryChecking` only: ignored — server sets `completed = m1Quantity`. */
       completed: Joi.number().min(0),
       remaining: Joi.number().min(0),
       transferred: Joi.number().min(0),

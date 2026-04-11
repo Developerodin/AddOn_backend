@@ -26,10 +26,10 @@ export function assertAllowedFloorKey(floorKey) {
   }
 }
 
+/**
+ * Server-owned patch mode: client `mode` is ignored. Increment when any *Delta field is present; otherwise replace.
+ */
 export function resolveMode(body) {
-  const explicit = body?.mode;
-  if (explicit === 'increment' || explicit === 'replace') return explicit;
-
   const hasDelta =
     body?.receivedDelta !== undefined ||
     body?.completedDelta !== undefined ||
@@ -42,50 +42,53 @@ export function resolveMode(body) {
 }
 
 /**
- * Checking floors: clients often send `m1Quantity` / `m2Quantity` / `m4Quantity` meaning **add** to existing
- * on each save. Map those to `*Delta` + `mode: "increment"` unless the client explicitly uses `mode: "replace"`
- * or sends structural fields (`received`, `completed`, `transferred`, `remaining`, or `*Delta` for those).
- * Absolute overwrite: send `mode: "replace"` with full `m1Quantity` / `m2Quantity` / `m4Quantity`.
+ * Checking floors: `m1Quantity` / `m2Quantity` / `m4Quantity` always mean **add this many** to stored buckets.
+ * Client `mode` is stripped — use `m1Delta` / `m2Delta` / `m4Delta` only if you must bypass this (rare).
  */
 export function normalizeCheckingFloorSplitBody(floorKey, body) {
   if (!body || typeof body !== 'object') return body;
   if (!checkingFloorKeys.has(floorKey)) return body;
-  if (body.resetSecondaryChecking === true) return body;
-  if (body.mode === 'replace') return body;
+  const { mode: _unusedMode, ...withoutMode } = body;
+  if (withoutMode.resetSecondaryChecking === true) return { ...withoutMode };
 
-  const structural =
-    body.received !== undefined ||
-    body.completed !== undefined ||
-    body.transferred !== undefined ||
-    body.remaining !== undefined ||
-    body.receivedDelta !== undefined ||
-    body.completedDelta !== undefined ||
-    body.transferredDelta !== undefined ||
-    body.transferredData !== undefined ||
-    body.receivedData !== undefined;
-
-  if (structural) return body;
+  const next = { ...withoutMode };
 
   const hasSplitAbsolute =
-    body.m1Quantity !== undefined ||
-    body.m2Quantity !== undefined ||
-    body.m4Quantity !== undefined;
-  if (!hasSplitAbsolute) return body;
+    next.m1Quantity !== undefined ||
+    next.m2Quantity !== undefined ||
+    next.m4Quantity !== undefined;
+  if (!hasSplitAbsolute) return next;
 
-  const next = { ...body };
-  if (next.m1Delta === undefined && next.m1Quantity !== undefined) {
+  /**
+   * `m1Quantity` / `m2Quantity` / `m4Quantity` always mean “add this many now”.
+   * If the client also sends `m1Delta`/`m2Delta`/`m4Delta` (e.g. form defaults to 0),
+   * those deltas must not block conversion — otherwise `m1Quantity` stays on the body and
+   * can hit **replace** `$set` and look like an absolute overwrite.
+   */
+  if (next.m1Quantity !== undefined) {
     next.m1Delta = next.m1Quantity;
     delete next.m1Quantity;
   }
-  if (next.m2Delta === undefined && next.m2Quantity !== undefined) {
+  if (next.m2Quantity !== undefined) {
     next.m2Delta = next.m2Quantity;
     delete next.m2Quantity;
   }
-  if (next.m4Delta === undefined && next.m4Quantity !== undefined) {
+  if (next.m4Quantity !== undefined) {
     next.m4Delta = next.m4Quantity;
     delete next.m4Quantity;
   }
-  if (next.mode === undefined) next.mode = 'increment';
+  return next;
+}
+
+/** Secondary checking: these counters are always server-derived from M1/M2/M4 (and transfer sub-pools). */
+export function stripSecondaryCheckingServerDerivedFields(body) {
+  if (!body || typeof body !== 'object') return body;
+  const next = { ...body };
+  delete next.completed;
+  delete next.completedDelta;
+  delete next.remaining;
+  delete next.m1Remaining;
+  delete next.m2Remaining;
   return next;
 }
 
@@ -129,7 +132,8 @@ export function pickFloorSnapshot(flow, floorKey) {
  * `remaining` meaning:
  * - Branding / dispatch: received − transferred (not yet sent to next floor).
  * - Other non-checking floors: received − completed − transferred.
- * - Checking floors (secondary / final): received − m2 − m4 − transferred − completed (M1 lane net).
+ * - secondaryChecking: received − m1 − m2 − m4 (not yet classified into M1/M2/M4 buckets; independent of transferred).
+ * - finalChecking: received − transferred (pipeline handoff view).
  */
 /** Branding / dispatch: assert + transferable math use pipeline rules (transferred ≤ completed ≤ received). */
 const pipelineStandardFloorKeys = new Set(['branding', 'dispatch']);
@@ -142,10 +146,11 @@ export function computeRemainingForFloor(floorKey, floor) {
   if (floorKey === 'finalChecking') {
     return Math.max(0, received - transferred);
   }
-  if (checkingFloorKeys.has(floorKey)) {
+  if (floorKey === 'secondaryChecking') {
+    const m1Quantity = toFiniteNumber(floor.m1Quantity, 0);
     const m2Quantity = toFiniteNumber(floor.m2Quantity, 0);
     const m4Quantity = toFiniteNumber(floor.m4Quantity, 0);
-    return Math.max(0, received - m2Quantity - m4Quantity - transferred - completed);
+    return Math.max(0, received - m1Quantity - m2Quantity - m4Quantity);
   }
   if (pipelineStandardFloorKeys.has(floorKey)) {
     return Math.max(0, received - transferred);
@@ -168,6 +173,11 @@ export function computeDerivedForFloor(floorKey, floor) {
     derived.m2Remaining = Math.max(0, m2Quantity - m2Transferred);
   }
 
+  /** Secondary: `completed` is M1 (good path) only — M2/M4 are only in their quantity fields. */
+  if (floorKey === 'secondaryChecking') {
+    derived.completed = toFiniteNumber(floor.m1Quantity, 0);
+  }
+
   return derived;
 }
 
@@ -179,11 +189,17 @@ export function computeCompletedBasedTransferableForFloor(floorKey, floor) {
   const received = toFiniteNumber(floor.received, 0);
   const completed = toFiniteNumber(floor.completed, 0);
   const transferred = toFiniteNumber(floor.transferred, 0);
-  const pending = Math.max(0, completed - transferred);
   if (floorKey === 'finalChecking') {
+    const pending = Math.max(0, completed - transferred);
     const aggRoom = Math.max(0, received - transferred);
     return Math.min(pending, aggRoom);
   }
+  if (floorKey === 'secondaryChecking') {
+    const m1Quantity = toFiniteNumber(floor.m1Quantity, 0);
+    const m1Transferred = toFiniteNumber(floor.m1Transferred, 0);
+    return Math.max(0, m1Quantity - m1Transferred);
+  }
+  const pending = Math.max(0, completed - transferred);
   const aggRoom = pipelineStandardFloorKeys.has(floorKey)
     ? Math.max(0, received - transferred)
     : Math.max(0, received - completed - transferred);
@@ -221,14 +237,12 @@ export function assertValidFloorState(floorKey, floor) {
         throw new ApiError(httpStatus.BAD_REQUEST, 'Transferred cannot exceed completed');
       }
     } else {
+      /** secondaryChecking: `completed` tracks M1 only; `transferred` is M1 outbound — do not use completed+transferred ≤ received (double-counts). */
       if (completed > received) {
         throw new ApiError(httpStatus.BAD_REQUEST, 'Completed cannot exceed received');
       }
       if (transferred > received) {
         throw new ApiError(httpStatus.BAD_REQUEST, 'Transferred cannot exceed received');
-      }
-      if (completed + transferred > received) {
-        throw new ApiError(httpStatus.BAD_REQUEST, 'Completed + transferred cannot exceed received');
       }
     }
 
@@ -253,6 +267,9 @@ export function assertValidFloorState(floorKey, floor) {
     }
     if (m2Transferred > m2Quantity) {
       throw new ApiError(httpStatus.BAD_REQUEST, 'M2 transferred cannot exceed M2 quantity');
+    }
+    if (floorKey === 'secondaryChecking' && transferred > m1Quantity) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Transferred cannot exceed M1 quantity on secondary checking');
     }
   } else {
     if (completed > received) {

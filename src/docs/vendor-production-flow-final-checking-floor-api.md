@@ -17,7 +17,7 @@ Auth required.
 - Transfers: `m1Transferred`, `m1Remaining`, `m2Transferred`, `m2Remaining`
 - Repair: `repairStatus`, `repairRemarks` (same `RepairStatus` enum as elsewhere)
 
-**Additive vs replace for M1/M2/M4:** follow the rules in `vendor-production-flow-frontend-api.md` (default additive mapping for `m1Quantity`/`m2Quantity`/`m4Quantity` on checking floors unless `mode: "replace"` or structural fields).
+**M1/M2/M4 on each PATCH:** `m1Quantity` / `m2Quantity` / `m4Quantity` are **additive** (amount to add this save). Client `mode` is ignored — see `vendor-production-flow-frontend-api.md`. **Secondary checking** also auto-sets `completed` and `remaining`; **final checking** does not.
 
 ## `transferredData` (array)
 
@@ -35,7 +35,6 @@ Example:
 
 ```json
 {
-  "mode": "replace",
   "transferredData": [
     { "transferred": 20, "styleCode": "699024260d1e1d92d979e147", "brand": "Van Heusen" }
   ]
