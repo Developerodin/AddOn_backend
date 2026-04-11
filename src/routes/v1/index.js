@@ -39,6 +39,7 @@ import yarnInventoryRoute from './yarn/yarnInventory.route.js';
 import yarnReportRoute from './yarn/yarnReport.route.js';
 import storageRoute from './storage.route.js';
 import yarnReqRoute from './yarn/yarnReq.route.js';
+import yarnEstimationRoute from './yarn/yarnEstimation.route.js';
 import vendorRoute from './vendor.route.js';
 import vendorManagementRoute from './vendorManagement.route.js';
 import teamMasterRoute from './teamMaster.route.js';
@@ -204,6 +205,10 @@ const defaultRoutes = [
    {
     path: '/yarn-management/yarn-receiving',
     route: yarnReceivingRoute,
+  },
+  {
+    path: '/yarn-management/yarn-estimation',
+    route: yarnEstimationRoute,
   },
   {
     path: '/storage',
