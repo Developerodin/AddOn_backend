@@ -11,6 +11,10 @@ router
   .post(auth(), validate(vendorBoxValidation.bulkCreateVendorBoxes), vendorBoxController.bulkCreateVendorBoxes);
 
 router
+  .route('/process-lot')
+  .post(auth(), validate(vendorBoxValidation.processVendorLot), vendorBoxController.processVendorLot);
+
+router
   .route('/')
   .get(auth(), validate(vendorBoxValidation.getVendorBoxes), vendorBoxController.getVendorBoxes)
   .post(auth(), validate(vendorBoxValidation.createVendorBox), vendorBoxController.createVendorBox);

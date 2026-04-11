@@ -48,8 +48,14 @@ export const bulkCreateVendorBoxes = {
           tearweight: Joi.number().min(0),
         })
       )
-      .min(1)
-      .required(),
+      .min(1),
+  }),
+};
+
+export const processVendorLot = {
+  body: Joi.object().keys({
+    vpoNumber: Joi.string().required().trim(),
+    lotNumber: Joi.string().required().trim(),
   }),
 };
 

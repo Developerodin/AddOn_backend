@@ -2,6 +2,7 @@ import httpStatus from 'http-status';
 import pick from '../../utils/pick.js';
 import catchAsync from '../../utils/catchAsync.js';
 import * as vendorPurchaseOrderService from '../../services/vendorManagement/vendorPurchaseOrder.service.js';
+import * as vendorBoxService from '../../services/vendorManagement/vendorBox.service.js';
 
 export const createVendorPurchaseOrder = catchAsync(async (req, res) => {
   const { year, ...body } = req.body;
@@ -43,6 +44,21 @@ export const updateVendorPurchaseOrder = catchAsync(async (req, res) => {
     req.params.vendorPurchaseOrderId,
     req.body
   );
+
+  if (doc.receivedLotDetails?.length > 0) {
+    const boxResult = await vendorBoxService.bulkCreateVendorBoxes({
+      vpoNumber: doc.vpoNumber,
+    });
+    return res.send({
+      purchaseOrder: doc,
+      boxProcessing: {
+        createdCount: boxResult.createdCount,
+        skippedLots: boxResult.skippedLots,
+        message: boxResult.message,
+      },
+    });
+  }
+
   res.send(doc);
 });
 
