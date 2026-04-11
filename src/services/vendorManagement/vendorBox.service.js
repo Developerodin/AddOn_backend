@@ -117,15 +117,45 @@ export const deleteVendorBoxById = async (vendorBoxId) => {
 };
 
 /**
+ * Build lotDetails array from the VPO's receivedLotDetails for lots that are still pending.
+ * Used when the caller does not provide explicit lotDetails (process-all-pending mode).
+ */
+function buildLotDetailsFromPo(po) {
+  return (po.receivedLotDetails || [])
+    .filter((lot) => lot.status === 'lot_pending')
+    .map((lot) => ({
+      lotNumber: (lot.lotNumber || '').trim(),
+      numberOfBoxes: Number(lot.numberOfBoxes) || 0,
+    }));
+}
+
+/**
+ * After boxes are created for a lot, update that lot's status inside the VPO document.
+ * @param {string} vpoNumber
+ * @param {string} lotNumber
+ * @param {string} newStatus - e.g. 'lot_qc_pending'
+ */
+async function updateLotStatusOnPo(vpoNumber, lotNumber, newStatus) {
+  const normalized = String(lotNumber).trim();
+  await VendorPurchaseOrder.updateOne(
+    { vpoNumber, 'receivedLotDetails.lotNumber': normalized },
+    { $set: { 'receivedLotDetails.$.status': newStatus } }
+  );
+}
+
+/**
  * Bulk-create boxes for a VPO (similar to yarn box bulk).
- * @param {{ vpoNumber: string, lotDetails: { lotNumber: string, numberOfBoxes: number, productId?: string, vendorPoItemId?: string, orderQty?: number, boxWeight?: number, grossWeight?: number, numberOfUnits?: number, tearweight?: number }[] }} bulkData
+ *
+ * When `lotDetails` is provided, creates boxes for the specified lots (existing behaviour).
+ * When `lotDetails` is omitted / empty, auto-detects all pending lots from the VPO's
+ * `receivedLotDetails` and creates boxes for those that don't already have boxes.
+ *
+ * @param {{ vpoNumber: string, lotDetails?: { lotNumber: string, numberOfBoxes?: number, productId?: string, vendorPoItemId?: string, orderQty?: number, boxWeight?: number, grossWeight?: number, numberOfUnits?: number, tearweight?: number }[] }} bulkData
  */
 /* eslint-disable no-underscore-dangle -- lean PO subdocs expose Mongo _id */
 export const bulkCreateVendorBoxes = async (bulkData) => {
-  const { lotDetails, vpoNumber } = bulkData;
-  if (!lotDetails?.length) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'lotDetails array is required with at least one lot');
-  }
+  const { vpoNumber } = bulkData;
+  let { lotDetails } = bulkData;
 
   const po = await VendorPurchaseOrder.findOne({ vpoNumber: String(vpoNumber).trim() })
     .populate({ path: 'poItems.productId', select: 'name' })
@@ -133,6 +163,19 @@ export const bulkCreateVendorBoxes = async (bulkData) => {
 
   if (!po) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Vendor purchase order not found for this VPO number');
+  }
+
+  if (!lotDetails?.length) {
+    lotDetails = buildLotDetailsFromPo(po);
+  }
+
+  if (!lotDetails.length) {
+    return {
+      createdCount: 0,
+      boxes: [],
+      skippedLots: [],
+      message: 'No pending lots found on this VPO',
+    };
   }
 
   const vendorId = po.vendor;
@@ -175,8 +218,6 @@ export const bulkCreateVendorBoxes = async (bulkData) => {
     );
     const inputNumberOfBoxes = Number(numberOfBoxes);
 
-    // If lot has per-item receivedBoxes and caller did not select one item, create for all items.
-    // Also expand-all when caller passes lot total count with a single vendorPoItemId (common UI flow).
     const shouldExpandAllPoItemsForLot =
       lotPoItemsWithReceivedBoxes.length > 0 &&
       (!vendorPoItemId ||
@@ -235,6 +276,8 @@ export const bulkCreateVendorBoxes = async (bulkData) => {
       existingCount,
     });
   }
+
+  const lotsWithBoxesCreated = new Set();
 
   lotRows.forEach((row) => {
     const {
@@ -309,6 +352,8 @@ export const bulkCreateVendorBoxes = async (bulkData) => {
         tearweight,
       });
     }
+
+    lotsWithBoxesCreated.add(lotNumber);
   });
 
   if (!boxesToCreate.length) {
@@ -329,10 +374,61 @@ export const bulkCreateVendorBoxes = async (bulkData) => {
       }
     })
   );
+
+  await Promise.all(
+    [...lotsWithBoxesCreated].map((lotNum) => updateLotStatusOnPo(po.vpoNumber, lotNum, 'lot_qc_pending'))
+  );
+
   return {
     createdCount: inserted.length,
     boxes: inserted,
     skippedLots,
   };
+};
+
+/**
+ * Process a single lot on a VPO: creates boxes for that lot only (skips if already processed).
+ * Useful when lots are added incrementally.
+ *
+ * @param {{ vpoNumber: string, lotNumber: string }} params
+ */
+export const processVendorLot = async ({ vpoNumber, lotNumber }) => {
+  const normalizedVpo = String(vpoNumber).trim();
+  const normalizedLot = String(lotNumber).trim();
+
+  const po = await VendorPurchaseOrder.findOne({ vpoNumber: normalizedVpo })
+    .populate({ path: 'poItems.productId', select: 'name' })
+    .lean();
+
+  if (!po) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Vendor purchase order not found');
+  }
+
+  const lotFromPo = (po.receivedLotDetails || []).find(
+    (l) => String(l?.lotNumber || '').trim() === normalizedLot
+  );
+  if (!lotFromPo) {
+    throw new ApiError(httpStatus.NOT_FOUND, `Lot "${normalizedLot}" not found on VPO ${normalizedVpo}`);
+  }
+
+  if (lotFromPo.status && lotFromPo.status !== 'lot_pending') {
+    const existingBoxCount = await VendorBox.countDocuments({
+      vpoNumber: normalizedVpo,
+      lotNumber: normalizedLot,
+    });
+    if (existingBoxCount > 0) {
+      return {
+        createdCount: 0,
+        boxes: [],
+        skippedLots: [{ lotNumber: normalizedLot, reason: `Lot already processed (status: ${lotFromPo.status}, ${existingBoxCount} boxes exist)` }],
+        message: `Lot ${normalizedLot} already processed`,
+      };
+    }
+  }
+
+  return bulkCreateVendorBoxes({
+    vpoNumber: normalizedVpo,
+    lotDetails: [{ lotNumber: normalizedLot, numberOfBoxes: lotFromPo.numberOfBoxes || 0 }],
+  });
 };
 /* eslint-enable no-underscore-dangle */
