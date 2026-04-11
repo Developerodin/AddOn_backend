@@ -106,3 +106,45 @@ export const deleteWarehouseOrder = {
   }),
 };
 
+const bulkSinglePairItem = Joi.object({
+  styleCode: Joi.string().required().trim(),
+  colour: Joi.string().allow('').trim(),
+  color: Joi.string().allow('').trim(),
+  pattern: Joi.string().allow('').trim(),
+  quantity: Joi.number().integer().min(1).required(),
+});
+
+const bulkMultiPairItem = Joi.object({
+  styleCode: Joi.string().required().trim(),
+  type: Joi.string().allow('').trim(),
+  colour: Joi.string().allow('').trim(),
+  color: Joi.string().allow('').trim(),
+  pattern: Joi.string().allow('').trim(),
+  quantity: Joi.number().integer().min(1).required(),
+});
+
+export const bulkImportWarehouseOrders = {
+  body: Joi.object().keys({
+    orders: Joi.array()
+      .items(
+        Joi.object({
+          clientType: Joi.string().valid(...clientTypes).required(),
+          clientName: Joi.string().required().trim(),
+          date: Joi.alternatives().try(Joi.date(), Joi.string().trim()).allow('', null),
+          status: Joi.string().valid(...orderStatuses).default('pending'),
+          styleCodeSinglePair: Joi.array().items(bulkSinglePairItem).default([]),
+          styleCodeMultiPair: Joi.array().items(bulkMultiPairItem).default([]),
+        }).custom((value, helpers) => {
+          const singleCount = Array.isArray(value.styleCodeSinglePair) ? value.styleCodeSinglePair.length : 0;
+          const multiCount = Array.isArray(value.styleCodeMultiPair) ? value.styleCodeMultiPair.length : 0;
+          if (singleCount + multiCount === 0) {
+            return helpers.error('any.custom', { message: 'Each order must have at least one style-code item' });
+          }
+          return value;
+        })
+      )
+      .min(1)
+      .required(),
+  }),
+};
+

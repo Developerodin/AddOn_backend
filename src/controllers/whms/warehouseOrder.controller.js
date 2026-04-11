@@ -47,11 +47,17 @@ const deleteWarehouseOrder = catchAsync(async (req, res) => {
   res.status(httpStatus.NO_CONTENT).send();
 });
 
+const bulkImportWarehouseOrders = catchAsync(async (req, res) => {
+  const result = await warehouseOrderService.bulkImportWarehouseOrders(req.body.orders);
+  res.status(httpStatus.CREATED).send(result);
+});
+
 export {
   createWarehouseOrder,
   getWarehouseOrders,
   getWarehouseOrder,
   updateWarehouseOrder,
   deleteWarehouseOrder,
+  bulkImportWarehouseOrders,
 };
 
