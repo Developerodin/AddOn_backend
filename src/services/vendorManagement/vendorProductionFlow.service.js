@@ -22,6 +22,7 @@ import {
 import { stageVendorTransferOnExistingContainer } from './vendorProductionFlowReceive.service.js';
 import {
   aggregateTransferredByStyleKey,
+  mergeTransferredDataByStyleKey,
   parseVendorStyleKey,
   splitIntegerByWeights,
 } from '../../utils/vendorStyleQuantity.util.js';
@@ -181,7 +182,19 @@ async function maybeAutoTransferVendorFloor(
           }))
         : undefined;
 
-    if (floorKey === 'branding' && nextFloorKey === 'finalChecking' && transferItemsForContainer?.length) {
+    /**
+     * Branding→FC container leg: only $push breakdown rows when the floor patch did **not** already persist
+     * `transferredData`. Replace/increment handlers $set `floorQuantities.branding.transferredData` from the body;
+     * pushing here would duplicate the same lines (e.g. one PATCH with mode replace + autoTransfer).
+     */
+    const patchAlreadyWroteTransferredData =
+      Array.isArray(bodyForPatch?.transferredData) && bodyForPatch.transferredData.length > 0;
+    if (
+      floorKey === 'branding' &&
+      nextFloorKey === 'finalChecking' &&
+      transferItemsForContainer?.length &&
+      !patchAlreadyWroteTransferredData
+    ) {
       await VendorProductionFlow.updateOne(
         { _id: flowId },
         {
@@ -343,27 +356,52 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
     const before = pickFloorSnapshot(flow, floorKey);
 
     const bodyForPatch = { ...normalizedBody };
-    const hasTransferredBreakdown =
-      (floorKey === 'branding' || floorKey === 'finalChecking') && Array.isArray(bodyForPatch?.transferredData);
-    if (hasTransferredBreakdown && bodyForPatch.transferredData.length > 0) {
-      const transferredDataTotal = bodyForPatch.transferredData.reduce(
+
+    /**
+     * Branding / final checking: when `transferredData` is present, counters are **server-owned**.
+     * - Merge keyed lines by style+brand (add qty); unkeyed rows append.
+     * - `completed` and `transferred` = sum(lines); `remaining` is derived (never taken from client).
+     * - Client values for those fields are stripped.
+     */
+    if (
+      (floorKey === 'branding' || floorKey === 'finalChecking') &&
+      bodyForPatch.transferredData !== undefined
+    ) {
+      if (!Array.isArray(bodyForPatch.transferredData)) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'transferredData must be an array');
+      }
+      const prior = flow.floorQuantities?.[floorKey]?.transferredData;
+      if (bodyForPatch.transferredData.length > 0) {
+        bodyForPatch.transferredData = mergeTransferredDataByStyleKey(prior, bodyForPatch.transferredData);
+      }
+
+      delete bodyForPatch.completed;
+      delete bodyForPatch.remaining;
+      delete bodyForPatch.transferred;
+      delete bodyForPatch.completedDelta;
+      delete bodyForPatch.transferredDelta;
+
+      const lineSum = bodyForPatch.transferredData.reduce(
         (sum, row) => sum + Math.max(0, Number(row?.transferred || 0)),
         0
       );
-      const patchMode = resolveMode(bodyForPatch);
-      /** Style-line totals define completed work; UI often sends `completed: 0` with real lines — treat as “derive”. */
-      const deriveCompletedFromTransferredData =
-        transferredDataTotal > 0 &&
-        (bodyForPatch.completed === undefined ||
-          (bodyForPatch.completed === 0 && bodyForPatch.completedDelta === undefined));
-      if (deriveCompletedFromTransferredData) {
-        if (patchMode === 'increment') {
-          if (bodyForPatch.completedDelta === undefined) {
-            bodyForPatch.completedDelta = Math.max(0, transferredDataTotal - Number(before.completed || 0));
-          }
-        } else {
-          bodyForPatch.completed = transferredDataTotal;
-        }
+      const receivedCap = toFiniteNumber(
+        bodyForPatch.received !== undefined ? bodyForPatch.received : before.received,
+        0
+      );
+      if (lineSum > receivedCap) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Sum of transferredData (${lineSum}) cannot exceed received (${receivedCap}) on ${floorKey}`
+        );
+      }
+      if (bodyForPatch.transferredData.length === 0) {
+        bodyForPatch.completed = 0;
+        bodyForPatch.transferred = 0;
+      } else {
+        /** Style-line total = completed; keep scalar `transferred` until maybeAutoTransfer $inc catches up (pipeline). */
+        bodyForPatch.completed = lineSum;
+        bodyForPatch.transferred = toFiniteNumber(before.transferred, 0);
       }
     }
 
@@ -430,6 +468,14 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
         after.completed = after.m1Quantity;
       } else {
         after.completed = before.completed + (ops.$inc?.[floorPath(floorKey, 'completed')] || 0);
+        const setCompleted = ops.$set?.[floorPath(floorKey, 'completed')];
+        if (setCompleted !== undefined) {
+          after.completed = toFiniteNumber(setCompleted, 0);
+        }
+      }
+      const setTransferred = ops.$set?.[floorPath(floorKey, 'transferred')];
+      if (setTransferred !== undefined) {
+        after.transferred = toFiniteNumber(setTransferred, 0);
       }
 
       assertValidFloorState(floorKey, after);

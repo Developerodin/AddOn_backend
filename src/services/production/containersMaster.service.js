@@ -12,6 +12,17 @@ const ARTICLE_POPULATE_SELECT = 'id articleNumber knittingCode plannedQuantity s
 
 const VENDOR_FLOW_LEAN_SELECT = 'referenceCode plannedQuantity currentFloorKey vendor vendorPurchaseOrder product';
 
+/** Populate for vendor flow on container reads — never embed `floorQuantities` (misread as “in this bag”). */
+const vendorProductionFlowPopulateForContainer = {
+  path: 'activeItems.vendorProductionFlow',
+  select: VENDOR_FLOW_LEAN_SELECT,
+  populate: [
+    { path: 'vendor', select: 'vendorName vendorCode' },
+    { path: 'vendorPurchaseOrder', select: 'vpoNumber' },
+    { path: 'product', select: 'factoryCode name' },
+  ],
+};
+
 /**
  * Create a container. Barcode is set from _id in model pre-save.
  * @param {Object} body
@@ -66,7 +77,7 @@ export const queryContainersMasters = async (filter, options = {}) => {
 export const getContainersMasterById = async (id) => {
   return ContainersMaster.findById(id)
     .populate('activeItems.article')
-    .populate('activeItems.vendorProductionFlow');
+    .populate(vendorProductionFlowPopulateForContainer);
 };
 
 /**
@@ -156,11 +167,11 @@ export const getContainerByBarcode = async (barcode) => {
   const trimmed = String(barcode).trim();
   let doc = await ContainersMaster.findOne({ barcode: trimmed })
     .populate('activeItems.article')
-    .populate('activeItems.vendorProductionFlow');
+    .populate(vendorProductionFlowPopulateForContainer);
   if (!doc && /^[0-9a-fA-F]{24}$/.test(trimmed)) {
     doc = await ContainersMaster.findById(trimmed)
       .populate('activeItems.article')
-      .populate('activeItems.vendorProductionFlow');
+      .populate(vendorProductionFlowPopulateForContainer);
   }
   return doc || null;
 };
