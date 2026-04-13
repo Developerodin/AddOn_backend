@@ -5,6 +5,10 @@ import Product from '../../models/product.model.js';
 import ApiError from '../../utils/ApiError.js';
 import { generateArticleNumber } from '../../utils/generateId.js';
 import { getAllFloorsOrder, getFloorKey, validateProductProcesses } from '../../utils/productionHelper.js';
+import {
+  getPendingDispatchTransferredData,
+  sumPendingDispatchTransferred,
+} from '../../utils/dispatchWarehousePending.util.js';
 import { removeProductionOrderFromAssignments, removeArticleFromAssignments } from './machineOrderAssignment.service.js';
 // import { generateOrderNumber } from '../../utils/generateId.js'; // Using model's auto-generation instead
 
@@ -579,6 +583,83 @@ export const getOrdersByFloor = async (floor, filter, options) => {
     results: filteredResults,
     totalResults: filteredResults.length,
     totalPages: Math.ceil(filteredResults.length / (options.limit || 10))
+  };
+};
+
+/**
+ * Same query and shape as {@link getOrdersByFloor} for Dispatch, but each article's
+ * `floorQuantities.dispatch.transferredData` is **only qty not yet inward at warehouse**
+ * (matched against `floorQuantities.warehouse.receivedData` with the same rules as container accept).
+ * `dispatch.transferred` is set to the sum of those pending rows.
+ * Orders/articles with no pending qty are omitted.
+ *
+ * @param {string} floor — must normalize to `Dispatch`
+ * @param {Object} filter
+ * @param {Object} options
+ */
+export const getDispatchOrdersPendingWarehousePrint = async (floor, filter, options) => {
+  const floorMapping = {
+    FinalChecking: 'Final Checking',
+    finalchecking: 'Final Checking',
+    'final-checking': 'Final Checking',
+    final_checking: 'Final Checking',
+    SecondaryChecking: 'Secondary Checking',
+    secondarychecking: 'Secondary Checking',
+    'secondary-checking': 'Secondary Checking',
+    secondary_checking: 'Secondary Checking',
+    Silicon: 'Silicon',
+    silicon: 'Silicon',
+  };
+  const normalizedFloor = floorMapping[floor] || floor;
+  if (normalizedFloor !== 'Dispatch') {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'This endpoint only supports the Dispatch floor');
+  }
+
+  const raw = await getOrdersByFloor('Dispatch', filter, options);
+
+  const applyDispatchPendingWarehousePrintView = (articlePlain) => {
+    const dispatch = articlePlain.floorQuantities?.dispatch || {};
+    const warehouse = articlePlain.floorQuantities?.warehouse || {};
+    const pending = getPendingDispatchTransferredData(dispatch.transferredData, warehouse.receivedData);
+    const transferredSum = pending.reduce((s, r) => s + (r.transferred || 0), 0);
+    return {
+      ...articlePlain,
+      floorQuantities: {
+        ...articlePlain.floorQuantities,
+        dispatch: {
+          ...dispatch,
+          transferredData: pending,
+          transferred: transferredSum,
+        },
+      },
+    };
+  };
+
+  const mappedResults = raw.results
+    .map((order) => {
+      const orderObj = order.toObject ? order.toObject({ flattenMaps: true }) : { ...order };
+      const articlesPlain = (orderObj.articles || []).map((a) =>
+        a.toObject ? a.toObject({ flattenMaps: true }) : { ...a }
+      );
+      orderObj.articles = articlesPlain
+        .filter(
+          (art) =>
+            sumPendingDispatchTransferred(
+              art.floorQuantities?.dispatch?.transferredData,
+              art.floorQuantities?.warehouse?.receivedData
+            ) > 0
+        )
+        .map(applyDispatchPendingWarehousePrintView);
+      return orderObj;
+    })
+    .filter((order) => (order.articles || []).length > 0);
+
+  const limit = options?.limit || 10;
+  return {
+    ...raw,
+    results: mappedResults,
+    totalResults: mappedResults.length,
+    totalPages: mappedResults.length ? Math.ceil(mappedResults.length / limit) : 0,
   };
 };
 

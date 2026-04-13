@@ -104,6 +104,13 @@ router
 // ==================== FLOOR OPERATIONS ROUTES ====================
 
 router
+  .route('/floors/:floor/orders/pending-warehouse-print')
+  .get(
+    validate(productionValidation.getDispatchPendingWarehousePrintOrders),
+    productionController.getDispatchPendingWarehousePrintOrders
+  );
+
+router
   .route('/floors/:floor/orders')
   .get(validate(productionValidation.getFloorOrders), productionController.getFloorOrders);
 

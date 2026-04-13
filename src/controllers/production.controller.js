@@ -69,6 +69,22 @@ export const getFloorOrders = catchAsync(async (req, res) => {
   res.send(result);
 });
 
+/** Dispatch floor: same list filters as floor orders; each article shows only qty not yet inward at warehouse. */
+export const getDispatchPendingWarehousePrintOrders = catchAsync(async (req, res) => {
+  const { floor } = req.params;
+  const allowedFilterFields = ['status', 'priority', 'search', 'machineId'];
+  const filter = pick(req.query, allowedFilterFields);
+
+  const allowedOptions = ['sortBy', 'limit', 'page', 'populate'];
+  const options = pick(req.query, allowedOptions);
+
+  if (options.limit) options.limit = parseInt(options.limit, 10);
+  if (options.page) options.page = parseInt(options.page, 10);
+
+  const result = await productionService.getDispatchOrdersPendingWarehousePrint(floor, filter, options);
+  res.send(result);
+});
+
 export const updateArticleProgress = catchAsync(async (req, res) => {
   const { floor, orderId, articleId } = req.params;
   const article = await productionService.updateArticleProgress(floor, orderId, articleId, req.body, req.user);

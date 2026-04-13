@@ -13,6 +13,7 @@ import {
   createFinalQualityLog
 } from '../../utils/loggingHelper.js';
 import { createInwardReceivesForWarehouseAccept } from '../whms/inwardReceiveFromWarehouse.helper.js';
+import { computeConsumedPerDispatchRow } from '../../utils/dispatchWarehousePending.util.js';
 
 /** Floors that support brand/style breakdown via transferItems / transferredData (same shape as Branding → Final Checking). */
 const FLOORS_WITH_STYLE_TRANSFER_ITEMS = ['Branding', 'Final Checking', 'Dispatch'];
@@ -1399,27 +1400,7 @@ export const updateArticleFloorReceivedData = async (articleId, payload) => {
     if (Array.isArray(prevTransferredData) && prevTransferredData.length > 0) {
       const totalAvailable = prevTransferredData.reduce((s, i) => s + (i.transferred || 0), 0);
       if (totalAvailable >= quantity) {
-        // Track how much of each transferredData entry has already been consumed by previous receives
-        const consumedPerEntry = new Array(prevTransferredData.length).fill(0);
-        const existingReceived = floorData.receivedData || [];
-        for (const rd of existingReceived) {
-          const rdStyle = (rd.styleCode || '').trim();
-          const rdBrand = (rd.brand || '').trim();
-          let rdRemaining = rd.transferred || 0;
-          if (rdRemaining <= 0 || (!rdStyle && !rdBrand)) continue;
-          for (let j = 0; j < prevTransferredData.length; j++) {
-            if (rdRemaining <= 0) break;
-            const td = prevTransferredData[j];
-            if ((td.styleCode || '').trim() === rdStyle && (td.brand || '').trim() === rdBrand) {
-              const available = (td.transferred || 0) - consumedPerEntry[j];
-              const take = Math.min(available, rdRemaining);
-              if (take > 0) {
-                consumedPerEntry[j] += take;
-                rdRemaining -= take;
-              }
-            }
-          }
-        }
+        const consumedPerEntry = computeConsumedPerDispatchRow(prevTransferredData, floorData.receivedData || []);
 
         // Now allocate from remaining (unconsumed) transferred amounts
         let remaining = quantity;

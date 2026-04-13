@@ -109,6 +109,23 @@ const getFloorOrders = {
   }),
 };
 
+/** Dispatch-only: same query as floor orders, but dispatch `transferredData` is pending warehouse inward only. */
+const getDispatchPendingWarehousePrintOrders = {
+  params: Joi.object().keys({
+    floor: Joi.string().valid('Dispatch').required(),
+  }),
+  query: Joi.object().keys({
+    status: Joi.string().valid('Pending', 'In Progress', 'Completed', 'On Hold', 'Cancelled'),
+    priority: Joi.string().valid('Urgent', 'High', 'Medium', 'Low'),
+    search: Joi.string(),
+    machineId: Joi.string().custom(objectId),
+    sortBy: Joi.string(),
+    limit: Joi.number().integer(),
+    page: Joi.number().integer(),
+    populate: Joi.string()
+  }),
+};
+
 const updateArticleProgress = {
   params: Joi.object().keys({
     floor: Joi.string()
@@ -555,6 +572,7 @@ export default {
   
   // Floor operations validations
   getFloorOrders,
+  getDispatchPendingWarehousePrintOrders,
   updateArticleProgress,
   transferArticle,
   getFloorStatistics,
