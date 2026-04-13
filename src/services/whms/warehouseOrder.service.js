@@ -3,7 +3,11 @@ import ApiError from '../../utils/ApiError.js';
 import { WarehouseClient, WarehouseOrder } from '../../models/whms/index.js';
 import StyleCode from '../../models/styleCode.model.js';
 import StyleCodePairs from '../../models/styleCodePairs.model.js';
-import { createPickListForOrder } from './pickList.service.js';
+import {
+  createPickListForOrder,
+  syncPickListForOrderLineItems,
+  syncPickListOrderMetadata,
+} from './pickList.service.js';
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -70,6 +74,33 @@ export const buildWarehouseOrderFilter = (query) => {
   return filter;
 };
 
+/** Auto-fill styleCode strings on line items when the client only sends ids (create/update). */
+const enrichWarehouseOrderStyleCodes = async (payload) => {
+  if (!payload || typeof payload !== 'object') return;
+
+  const singleItems = Array.isArray(payload.styleCodeSinglePair) ? payload.styleCodeSinglePair : [];
+  if (singleItems.length && singleItems.some((i) => !i?.styleCode)) {
+    const ids = singleItems.map((i) => i?.styleCodeId).filter(Boolean);
+    const rows = await StyleCode.find({ _id: { $in: ids } }).select('styleCode');
+    const byId = new Map(rows.map((r) => [String(r._id), r.styleCode]));
+    payload.styleCodeSinglePair = singleItems.map((i) => ({
+      ...i,
+      styleCode: i.styleCode || byId.get(String(i.styleCodeId)) || '',
+    }));
+  }
+
+  const multiItems = Array.isArray(payload.styleCodeMultiPair) ? payload.styleCodeMultiPair : [];
+  if (multiItems.length && multiItems.some((i) => !i?.styleCode)) {
+    const ids = multiItems.map((i) => i?.styleCodeMultiPairId).filter(Boolean);
+    const rows = await StyleCodePairs.find({ _id: { $in: ids } }).select('pairStyleCode');
+    const byId = new Map(rows.map((r) => [String(r._id), r.pairStyleCode]));
+    payload.styleCodeMultiPair = multiItems.map((i) => ({
+      ...i,
+      styleCode: i.styleCode || byId.get(String(i.styleCodeMultiPairId)) || '',
+    }));
+  }
+};
+
 export const createWarehouseOrder = async (body) => {
   if (!body.orderNumber) body.orderNumber = await generateWarehouseOrderNumber();
 
@@ -84,29 +115,7 @@ export const createWarehouseOrder = async (body) => {
       ? client.storeProfile?.brand || client.storeProfile?.billCode || client.storeProfile?.sapCode || 'Store'
       : client.retailerName || client.distributorName || 'Client';
 
-  // Auto-fill readable style codes if frontend only sends ids.
-  const singleItems = Array.isArray(body.styleCodeSinglePair) ? body.styleCodeSinglePair : [];
-  const multiItems = Array.isArray(body.styleCodeMultiPair) ? body.styleCodeMultiPair : [];
-
-  if (singleItems.some((i) => !i?.styleCode)) {
-    const ids = singleItems.map((i) => i?.styleCodeId).filter(Boolean);
-    const rows = await StyleCode.find({ _id: { $in: ids } }).select('styleCode');
-    const byId = new Map(rows.map((r) => [String(r._id), r.styleCode]));
-    body.styleCodeSinglePair = singleItems.map((i) => ({
-      ...i,
-      styleCode: i.styleCode || byId.get(String(i.styleCodeId)) || '',
-    }));
-  }
-
-  if (multiItems.some((i) => !i?.styleCode)) {
-    const ids = multiItems.map((i) => i?.styleCodeMultiPairId).filter(Boolean);
-    const rows = await StyleCodePairs.find({ _id: { $in: ids } }).select('pairStyleCode');
-    const byId = new Map(rows.map((r) => [String(r._id), r.pairStyleCode]));
-    body.styleCodeMultiPair = multiItems.map((i) => ({
-      ...i,
-      styleCode: i.styleCode || byId.get(String(i.styleCodeMultiPairId)) || '',
-    }));
-  }
+  await enrichWarehouseOrderStyleCodes(body);
 
   const doc = await WarehouseOrder.create({
     ...body,
@@ -137,8 +146,23 @@ export const updateWarehouseOrderById = async (id, updateBody) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'clientId/clientType cannot be updated');
   }
 
+  const lineItemsTouched =
+    Object.prototype.hasOwnProperty.call(updateBody, 'styleCodeSinglePair') ||
+    Object.prototype.hasOwnProperty.call(updateBody, 'styleCodeMultiPair');
+
+  if (lineItemsTouched) {
+    await enrichWarehouseOrderStyleCodes(updateBody);
+  }
+
   Object.assign(doc, updateBody);
   await doc.save();
+
+  if (lineItemsTouched) {
+    await syncPickListForOrderLineItems(doc);
+  } else {
+    await syncPickListOrderMetadata(doc);
+  }
+
   return getWarehouseOrderById(id);
 };
 
