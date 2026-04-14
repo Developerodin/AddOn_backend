@@ -21,6 +21,25 @@ const headerFields = {
     }),
 };
 
+/** Product ref by code only (matches Product.factoryCode or Product.internalCode). Raw Mongo product ids are not accepted. */
+const vendorProductInputRow = Joi.object({
+  factoryCode: Joi.string().trim().allow('', null),
+  internalCode: Joi.string().trim().allow('', null),
+  articleCode: Joi.string().trim().allow('', null),
+}).custom((value, helpers) => {
+  const fc = value.factoryCode?.trim();
+  const ic = value.internalCode?.trim();
+  const ac = value.articleCode?.trim();
+  const parts = [fc, ic, ac].filter(Boolean);
+  if (parts.length === 0) {
+    return helpers.message('Provide factoryCode, internalCode, or articleCode');
+  }
+  if (new Set(parts).size > 1) {
+    return helpers.message('factoryCode, internalCode, and articleCode must match when more than one is set');
+  }
+  return value;
+});
+
 const contactPersonsSchema = Joi.array()
   .items(
     Joi.object({
@@ -50,11 +69,19 @@ const contactPersonsSchema = Joi.array()
     return contacts;
   });
 
+const vendorManagementCreateBody = Joi.object({
+  header: Joi.object().keys(headerFields).required(),
+  contactPersons: contactPersonsSchema.required(),
+  products: Joi.array().items(vendorProductInputRow).default([]),
+});
+
 export const createVendorManagement = {
+  body: vendorManagementCreateBody,
+};
+
+export const bulkCreateVendorManagements = {
   body: Joi.object().keys({
-    header: Joi.object().keys(headerFields).required(),
-    contactPersons: contactPersonsSchema.required(),
-    products: Joi.array().items(Joi.string().custom(objectId)).default([]),
+    vendors: Joi.array().items(vendorManagementCreateBody).min(1).required(),
   }),
 };
 
@@ -234,7 +261,7 @@ export const updateVendorManagement = {
     .keys({
       header: Joi.object().keys(headerUpdateFields).min(1),
       contactPersons: contactPersonsSchema,
-      products: Joi.array().items(Joi.string().custom(objectId)),
+      products: Joi.array().items(vendorProductInputRow),
     })
     .min(1),
 };
@@ -250,7 +277,7 @@ export const addVendorProducts = {
     vendorManagementId: Joi.string().custom(objectId).required(),
   }),
   body: Joi.object().keys({
-    productIds: Joi.array().items(Joi.string().custom(objectId)).min(1).required(),
+    productIds: Joi.array().items(vendorProductInputRow).min(1).required(),
   }),
 };
 

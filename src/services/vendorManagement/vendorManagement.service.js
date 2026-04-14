@@ -5,19 +5,101 @@ import ApiError from '../../utils/ApiError.js';
 
 /** Fields loaded when `populate=products` on vendor management */
 const VENDOR_PRODUCT_POPULATE_SELECT =
-  'name softwareCode internalCode vendorCode status category attributes';
+  'name softwareCode internalCode vendorCode factoryCode status category attributes';
 
 /**
- * Ensure every id exists in Product collection.
- * @param {string[]|mongoose.Types.ObjectId[]} productIds
+ * Whether this product doc matches a single lookup code (same value may live in factoryCode or internalCode).
+ * @param {{ factoryCode?: string, internalCode?: string }} doc
+ * @param {string} v
  */
-async function assertProductIdsExist(productIds) {
-  if (!productIds?.length) return;
-  const ids = [...new Set(productIds.map((id) => String(id)))];
-  const count = await Product.countDocuments({ _id: { $in: ids } });
-  if (count !== ids.length) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'One or more product ids are invalid');
+function productDocMatchesCode(doc, v) {
+  const fc = doc.factoryCode != null ? String(doc.factoryCode).trim() : '';
+  const ic = doc.internalCode != null ? String(doc.internalCode).trim() : '';
+  return (fc && fc === v) || (ic && ic === v);
+}
+
+/**
+ * Normalize vendor `products` input to unique `ObjectId`s.
+ * Each row must be `{ factoryCode }` and/or `{ internalCode }` / `{ articleCode }` (same article no. may live on either Product field). Raw Mongo product ids are not accepted.
+ * @param {unknown[]} [products]
+ * @returns {Promise<mongoose.Types.ObjectId[]>}
+ */
+async function resolveProductsInputToIds(products) {
+  if (!products?.length) return [];
+
+  /** @typedef {{ value: string }} Slot */
+  /** @type {Slot[]} */
+  const slots = [];
+
+  for (const raw of products) {
+    const isPlainObject =
+      raw !== null && typeof raw === 'object' && !Array.isArray(raw) && !(raw instanceof mongoose.Types.ObjectId);
+
+    if (!isPlainObject) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Each product must be an object with factoryCode, internalCode, or articleCode (raw product ids are not accepted)'
+      );
+    }
+
+    const fc = raw.factoryCode != null ? String(raw.factoryCode).trim() : '';
+    const ic = raw.internalCode != null ? String(raw.internalCode).trim() : '';
+    const ac = raw.articleCode != null ? String(raw.articleCode).trim() : '';
+    const parts = [fc, ic, ac].filter(Boolean);
+    if (parts.length === 0) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Each product object must include factoryCode, internalCode, or articleCode'
+      );
+    }
+    if (new Set(parts).size > 1) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'factoryCode, internalCode, and articleCode must be the same value when more than one is set'
+      );
+    }
+    slots.push({ value: parts[0] });
   }
+
+  const codeVals = [...new Set(slots.map((s) => s.value))];
+  /** @type {Map<string, mongoose.Types.ObjectId>} */
+  const codeMap = new Map();
+  if (codeVals.length) {
+    const docs = await Product.find({
+      $or: [{ factoryCode: { $in: codeVals } }, { internalCode: { $in: codeVals } }],
+    })
+      .select('_id factoryCode internalCode')
+      .lean();
+
+    for (const v of codeVals) {
+      const mids = docs.filter((d) => productDocMatchesCode(d, v)).map((d) => d._id);
+      if (mids.length === 0) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `No product found with factoryCode or internalCode/article number "${v}"`
+        );
+      }
+      if (mids.length > 1) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Multiple products match factoryCode/internalCode "${v}"`
+        );
+      }
+      codeMap.set(v, mids[0]);
+    }
+  }
+
+  const out = [];
+  const seen = new Set();
+  for (const s of slots) {
+    const oid = codeMap.get(s.value);
+    const key = oid.toString();
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(oid);
+    }
+  }
+  return out;
 }
 
 function normalizeHeader(header) {
@@ -62,14 +144,54 @@ export const createVendorManagement = async (body) => {
   if (header?.gstin && (await VendorManagement.isGstinTaken(header.gstin))) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'GSTIN already taken');
   }
-  if (body.products?.length) {
-    await assertProductIdsExist(body.products);
-  }
+  const productIds = await resolveProductsInputToIds(body.products);
   return VendorManagement.create({
     header,
     contactPersons: body.contactPersons,
-    products: body.products || [],
+    products: productIds,
   });
+};
+
+/**
+ * Create many vendor records in order (same rules as single create). Stops on first error.
+ * @param {{ vendors: object[] }} body
+ */
+export const bulkCreateVendorManagements = async (body) => {
+  const { vendors } = body;
+  if (!Array.isArray(vendors) || vendors.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'vendors array is required');
+  }
+
+  const seenVendorCodes = new Set();
+  const seenGstins = new Set();
+  for (const row of vendors) {
+    const h = row.header;
+    if (h?.vendorCode != null) {
+      const vc = String(h.vendorCode).trim().toUpperCase();
+      if (seenVendorCodes.has(vc)) {
+        throw new ApiError(httpStatus.BAD_REQUEST, `Duplicate vendorCode in import: ${vc}`);
+      }
+      seenVendorCodes.add(vc);
+    }
+    if (h?.gstin != null && String(h.gstin).trim()) {
+      const g = String(h.gstin).trim().toUpperCase();
+      if (seenGstins.has(g)) {
+        throw new ApiError(httpStatus.BAD_REQUEST, `Duplicate GSTIN in import: ${g}`);
+      }
+      seenGstins.add(g);
+    }
+  }
+
+  const created = [];
+  /* eslint-disable no-await-in-loop, no-restricted-syntax -- sequential creates; fail-fast on duplicate DB keys */
+  for (const raw of vendors) {
+    const doc = await createVendorManagement(raw);
+    const populated = await getVendorManagementById(doc._id, { populateProducts: true });
+    created.push(populated ?? doc);
+  }
+  /* eslint-enable no-await-in-loop, no-restricted-syntax */
+
+  return { created, count: created.length };
 };
 
 /**
@@ -206,8 +328,8 @@ export const updateVendorManagementById = async (vendorId, updateBody) => {
   }
 
   if (normalizedBody.products !== undefined) {
-    await assertProductIdsExist(normalizedBody.products);
-    vendor.set('products', normalizedBody.products);
+    const productIds = await resolveProductsInputToIds(normalizedBody.products);
+    vendor.set('products', productIds);
   }
 
   await vendor.save();
@@ -229,15 +351,14 @@ export const deleteVendorManagementById = async (vendorId) => {
 /**
  * Add product ids to vendor (deduped via $addToSet).
  * @param {import('mongoose').Types.ObjectId|string} vendorId
- * @param {string[]} productIds
+ * @param {unknown[]} productInputs — `{ factoryCode }` / `{ internalCode | articleCode }` per row
  */
-export const addProductsToVendor = async (vendorId, productIds) => {
+export const addProductsToVendor = async (vendorId, productInputs) => {
   const vendor = await VendorManagement.findById(vendorId);
   if (!vendor) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Vendor management record not found');
   }
-  await assertProductIdsExist(productIds);
-  const oidList = productIds.map((id) => new mongoose.Types.ObjectId(id));
+  const oidList = await resolveProductsInputToIds(productInputs);
   await VendorManagement.updateOne({ _id: vendorId }, { $addToSet: { products: { $each: oidList } } });
   return getVendorManagementById(vendorId, { populateProducts: true });
 };

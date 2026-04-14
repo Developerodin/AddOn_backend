@@ -10,6 +10,11 @@ export const createVendorManagement = catchAsync(async (req, res) => {
   res.status(httpStatus.CREATED).send(doc);
 });
 
+export const bulkCreateVendorManagements = catchAsync(async (req, res) => {
+  const result = await vendorManagementService.bulkCreateVendorManagements(req.body);
+  res.status(httpStatus.CREATED).send(result);
+});
+
 export const getVendorManagements = catchAsync(async (req, res) => {
   const filter = pick(req.query, ['vendorName', 'vendorCode', 'status', 'city', 'state']);
   const options = pick(req.query, ['sortBy', 'limit', 'page', 'populate']);
