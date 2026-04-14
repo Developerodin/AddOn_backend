@@ -7,6 +7,14 @@ import * as inwardReceiveController from '../../../controllers/whms/inwardReceiv
 const router = express.Router();
 
 router
+  .route('/promote-vendor-dispatch')
+  .post(
+    auth('manageOrders'),
+    validate(inwardReceiveValidation.promoteVendorDispatchToInwardReceive),
+    inwardReceiveController.promoteVendorDispatchToInwardReceive
+  );
+
+router
   .route('/')
   .post(
     auth('manageOrders'),

@@ -9,22 +9,47 @@ export const InwardReceiveStatus = {
   ON_HOLD: 'onhold',
 };
 
+/** Origin of the inward line — factory production vs vendor dispatch. */
+export const InwardReceiveSource = {
+  PRODUCTION: 'production',
+  VENDOR: 'vendor',
+};
+
 /**
- * Production warehouse inward receive line — links an article + order to received qty, style, brand,
- * and an optional snapshot of order context in orderData.
+ * WHMS inward receive line: production (Article + ProductionOrder + warehouse receive) or
+ * vendor (VendorProductionFlow dispatch container accept). Same accept → inventory reconciliation.
  */
 const inwardReceiveSchema = mongoose.Schema(
   {
+    inwardSource: {
+      type: String,
+      enum: Object.values(InwardReceiveSource),
+      default: InwardReceiveSource.PRODUCTION,
+      index: true,
+    },
     articleId: {
       type: mongoose.SchemaTypes.ObjectId,
       ref: 'Article',
-      required: true,
+      default: null,
       index: true,
     },
     orderId: {
       type: mongoose.SchemaTypes.ObjectId,
       ref: 'ProductionOrder',
-      required: true,
+      default: null,
+      index: true,
+    },
+    /** Vendor flow when inwardSource is vendor (dispatch container accept). */
+    vendorProductionFlowId: {
+      type: mongoose.SchemaTypes.ObjectId,
+      ref: 'VendorProductionFlow',
+      default: null,
+      index: true,
+    },
+    vendorPurchaseOrderId: {
+      type: mongoose.SchemaTypes.ObjectId,
+      ref: 'VendorPurchaseOrder',
+      default: null,
       index: true,
     },
     articleNumber: {
@@ -61,7 +86,7 @@ const inwardReceiveSchema = mongoose.Schema(
       default: InwardReceiveStatus.PENDING,
       index: true,
     },
-    /** Snapshot / denormalized production order payload at receive time (flexible shape). */
+    /** Snapshot: production order, vendor PO, container, etc. */
     orderData: {
       type: mongoose.Schema.Types.Mixed,
       default: undefined,
@@ -71,15 +96,21 @@ const inwardReceiveSchema = mongoose.Schema(
       type: Date,
       default: Date.now,
     },
-    /** Container scan accept (production) — ties line to container. */
+    /** Container scan accept — ties line to container. */
     receivedInContainerId: {
       type: mongoose.SchemaTypes.ObjectId,
       ref: 'ContainersMaster',
       default: null,
       index: true,
     },
-    /** `floorQuantities.warehouse.receivedData` subdoc _id at creation (audit / dedupe). */
+    /** `floorQuantities.warehouse.receivedData` subdoc _id (production; audit / dedupe). */
     warehouseReceivedLineId: {
+      type: mongoose.SchemaTypes.ObjectId,
+      default: null,
+      index: true,
+    },
+    /** `floorQuantities.dispatch.receivedData` subdoc _id (vendor; audit / dedupe). */
+    vendorDispatchReceivedLineId: {
       type: mongoose.SchemaTypes.ObjectId,
       default: null,
       index: true,
@@ -97,8 +128,33 @@ const inwardReceiveSchema = mongoose.Schema(
   { timestamps: true }
 );
 
+inwardReceiveSchema.pre('validate', function inwardReceiveValidateSource(next) {
+  const src = this.inwardSource || InwardReceiveSource.PRODUCTION;
+  if (src === InwardReceiveSource.VENDOR) {
+    if (!this.vendorProductionFlowId) {
+      this.invalidate('vendorProductionFlowId', 'required for vendor inward');
+      return next();
+    }
+    if (!String(this.articleNumber || '').trim()) {
+      this.invalidate('articleNumber', 'required');
+      return next();
+    }
+  } else {
+    if (!this.articleId) {
+      this.invalidate('articleId', 'required for production inward');
+      return next();
+    }
+    if (!this.orderId) {
+      this.invalidate('orderId', 'required for production inward');
+      return next();
+    }
+  }
+  next();
+});
+
 inwardReceiveSchema.index({ orderId: 1, createdAt: -1 });
 inwardReceiveSchema.index({ articleId: 1, createdAt: -1 });
+inwardReceiveSchema.index({ vendorProductionFlowId: 1, createdAt: -1 });
 inwardReceiveSchema.index({ status: 1, createdAt: -1 });
 
 inwardReceiveSchema.plugin(toJSON);

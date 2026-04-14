@@ -74,6 +74,8 @@ export const vendorDispatchFloorSchema = new mongoose.Schema(
     remaining: { type: Number, default: 0 },
     transferred: { type: Number, default: 0 },
     repairReceived: { type: Number, default: 0, min: 0 },
+    /** Outbound style breakdown toward WHMS (same role as branding.transferredData / finalChecking.transferredData). */
+    transferredData: { type: [transferredDataEntrySchema], default: [] },
     receivedData: { type: [receivedDataBrandingEntrySchema], default: [] },
   },
   { _id: false }

@@ -6,6 +6,10 @@ import { ContainerStatus } from '../../models/production/enums.js';
 import ApiError from '../../utils/ApiError.js';
 import { computeDerivedForFloor, pickFloorSnapshot } from './vendorProductionFlowFloorPatch.js';
 import { aggregateTransferredByStyleKey } from '../../utils/vendorStyleQuantity.util.js';
+import { promoteVendorDispatchToInwardReceive } from '../whms/inwardReceiveFromVendorDispatch.helper.js';
+
+/** WHMS: container accept after dispatch→warehouse transfer stages this floor. */
+export const VENDOR_WAREHOUSE_INWARD_ACTIVE_FLOOR = 'Warehouse Inward';
 
 /** `activeFloor` on ContainersMaster for vendor receive scans (must match accept mapping below). */
 export const vendorFloorKeyToContainerActiveFloor = (floorKey) => {
@@ -14,8 +18,15 @@ export const vendorFloorKeyToContainerActiveFloor = (floorKey) => {
     branding: 'Branding',
     finalChecking: 'Final Checking',
     dispatch: 'Dispatch',
+    warehouse: VENDOR_WAREHOUSE_INWARD_ACTIVE_FLOOR,
   };
   return map[floorKey] || floorKey;
+};
+
+/** True when `activeFloor` on ContainersMaster is the vendor dispatch→WHMS staging target. */
+export const isVendorWarehouseInwardActiveFloor = (activeFloor) => {
+  const a = String(activeFloor || '').trim().toLowerCase();
+  return a === VENDOR_WAREHOUSE_INWARD_ACTIVE_FLOOR.toLowerCase();
 };
 
 const FLOOR_NAME_TO_KEY = {
@@ -23,6 +34,7 @@ const FLOOR_NAME_TO_KEY = {
   'Branding': 'branding',
   'Final Checking': 'finalChecking',
   'Dispatch': 'dispatch',
+  [VENDOR_WAREHOUSE_INWARD_ACTIVE_FLOOR]: 'warehouse',
 };
 
 /**
@@ -73,6 +85,58 @@ function assertVendorFcReceiveWithinBrandingCap(flow, incomingRows) {
     throw new ApiError(
       httpStatus.BAD_REQUEST,
       `Final checking total receive would be ${fcAfter} but branding only sent ${brandingTotal} in total.`
+    );
+  }
+}
+
+/**
+ * Cumulative dispatch receive per style cannot exceed final checking’s outbound ledger toward dispatch
+ * (`finalChecking.transferredData`, plus same totals as `finalChecking.transferred` when style rows are maintained).
+ */
+function assertVendorDispatchReceiveWithinFinalCheckingCap(flow, incomingRows) {
+  const fc = flow.floorQuantities?.finalChecking || {};
+  const fcTotal = Number(fc.transferred || 0);
+  const fcByStyle = aggregateTransferredByStyleKey(fc.transferredData);
+
+  const dispatch = flow.floorQuantities?.dispatch || {};
+  const dispatchExisting = aggregateTransferredByStyleKey(dispatch.receivedData);
+  const incomingMap = aggregateTransferredByStyleKey(incomingRows);
+  const incomingTotal = [...incomingMap.values()].reduce((a, b) => a + b, 0);
+  if (incomingTotal <= 0) return;
+
+  if (fcTotal <= 0 && fcByStyle.size === 0) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Cannot receive at dispatch: final checking has not recorded quantity toward dispatch (transfer or confirm).'
+    );
+  }
+
+  if (fcByStyle.size > 0) {
+    for (const [k, inc] of incomingMap) {
+      if (inc <= 0) continue;
+      const cap = fcByStyle.get(k);
+      if (cap === undefined) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Style/brand key "${k}" is not present in final checking outbound toward dispatch. Each dispatch line must match a style final checking already sent.`
+        );
+      }
+      const after = (dispatchExisting.get(k) || 0) + inc;
+      if (after > cap + 1e-6) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `For "${k}": dispatch would receive ${after} cumulative but final checking only sent ${cap} toward dispatch.`
+        );
+      }
+    }
+    return;
+  }
+
+  const dispatchTotal = [...dispatchExisting.values()].reduce((a, b) => a + b, 0);
+  if (dispatchTotal + incomingTotal > fcTotal + 1e-6) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Dispatch total receive would be ${dispatchTotal + incomingTotal} but final checking only sent ${fcTotal} toward dispatch in total.`
     );
   }
 }
@@ -162,6 +226,34 @@ export const updateVendorProductionFlowFloorReceivedData = async (flowId, payloa
     }
   }
 
+  if (
+    (!receivedTransferItems || receivedTransferItems.length === 0) &&
+    typeof quantity === 'number' &&
+    quantity > 0 &&
+    floorKey === 'dispatch'
+  ) {
+    const fc = flow.floorQuantities?.finalChecking;
+    const prevTransferredData = fc?.transferredData;
+    if (Array.isArray(prevTransferredData) && prevTransferredData.length > 0) {
+      const totalAvailable = prevTransferredData.reduce((s, i) => s + (i.transferred || 0), 0);
+      if (totalAvailable >= quantity) {
+        let remaining = quantity;
+        const items = [];
+        for (const i of prevTransferredData) {
+          if (remaining <= 0) break;
+          const take = Math.min(i.transferred || 0, remaining);
+          if (take > 0) {
+            items.push({ transferred: take, styleCode: i.styleCode || '', brand: i.brand || '' });
+            remaining -= take;
+          }
+        }
+        if (items.length > 0 && items.reduce((s, x) => s + x.transferred, 0) === quantity) {
+          receivedTransferItems = items;
+        }
+      }
+    }
+  }
+
   if (floorKey === 'finalChecking') {
     const capLines =
       Array.isArray(receivedTransferItems) && receivedTransferItems.length > 0
@@ -176,6 +268,23 @@ export const updateVendorProductionFlowFloorReceivedData = async (flowId, payloa
     const capSum = capLines.reduce((s, x) => s + Math.max(0, x.transferred), 0);
     if (capSum > 0) {
       assertVendorFcReceiveWithinBrandingCap(flow, capLines);
+    }
+  }
+
+  if (floorKey === 'dispatch') {
+    const capLines =
+      Array.isArray(receivedTransferItems) && receivedTransferItems.length > 0
+        ? receivedTransferItems.map((item) => ({
+            transferred: Number(item.transferred || 0),
+            styleCode: item.styleCode || '',
+            brand: item.brand || '',
+          }))
+        : typeof quantity === 'number' && quantity > 0
+          ? [{ transferred: quantity, styleCode: '', brand: '' }]
+          : [];
+    const capSum = capLines.reduce((s, x) => s + Math.max(0, x.transferred), 0);
+    if (capSum > 0) {
+      assertVendorDispatchReceiveWithinFinalCheckingCap(flow, capLines);
     }
   }
 
@@ -216,11 +325,25 @@ export const updateVendorProductionFlowFloorReceivedData = async (flowId, payloa
   flow.floorQuantities[floorKey] = floorData;
   const snap = { ...pickFloorSnapshot(flow, floorKey) };
   const derived = computeDerivedForFloor(floorKey, snap);
-  Object.assign(floorData, derived);
+  for (const [k, v] of Object.entries(derived)) {
+    floorData[k] = v;
+  }
   flow.markModified(`floorQuantities.${floorKey}`);
+
   await flow.save();
 
-  return { flow, receivedDataNewLines: floorData.receivedData.slice(receivedDataLengthBefore) };
+  // Mongoose subdoc save can silently drop derived fields — reconcile with atomic $set.
+  const derivedSet = {};
+  for (const [k, v] of Object.entries(derived)) {
+    derivedSet[`floorQuantities.${floorKey}.${k}`] = v;
+  }
+  if (Object.keys(derivedSet).length > 0) {
+    await VendorProductionFlow.updateOne({ _id: flow._id }, { $set: derivedSet });
+  }
+
+  const receivedDataNewLines = floorData.receivedData.slice(receivedDataLengthBefore);
+
+  return { flow, receivedDataNewLines };
 };
 
 /**
@@ -248,8 +371,11 @@ export const stageVendorTransferOnExistingContainer = async ({
   if (!Number.isFinite(qty) || qty <= 0) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid quantity for vendor container');
   }
-  if (!['branding', 'finalChecking', 'dispatch'].includes(toFloorKey)) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Vendor staging is only used for Branding, Final Checking, or Dispatch');
+  if (!['branding', 'finalChecking', 'dispatch', 'warehouse'].includes(toFloorKey)) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Vendor staging is only used for Branding, Final Checking, Dispatch, or warehouse (WHMS handoff)'
+    );
   }
 
   const trimmed = String(barcode || '').trim();
@@ -287,3 +413,69 @@ export const stageVendorTransferOnExistingContainer = async ({
   await doc.save(session ? { session } : undefined);
   return doc;
 };
+
+/**
+ * WHMS container scan: record `warehouse:handoff` rows on `dispatch.receivedData` and create inward queue lines
+ * (same scan as production “accept”, but destination is WHMS inward via {@link promoteVendorDispatchToInwardReceive}).
+ *
+ * @param {import('mongoose').Document} doc - ContainersMaster with {@link VENDOR_WAREHOUSE_INWARD_ACTIVE_FLOOR}
+ * @returns {Promise<{ flows: import('mongoose').Document[], barcode: string }>}
+ */
+export async function applyVendorWarehouseInwardAcceptFromContainer(doc) {
+  const items = doc.activeItems || [];
+  const flows = [];
+  const barcode = doc.barcode && String(doc.barcode).trim() ? doc.barcode : doc._id.toString();
+
+  for (const item of items) {
+    const vpf = item.vendorProductionFlow;
+    if (!vpf) continue;
+    const qty = Number(item.quantity || 0);
+    if (qty <= 0) continue;
+
+    const flowId = typeof vpf === 'object' ? vpf._id.toString() : String(vpf);
+    const flow = await VendorProductionFlow.findById(flowId);
+    if (!flow) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'Vendor production flow not found');
+    }
+
+    let rows = [];
+    if (Array.isArray(item.transferItems) && item.transferItems.length > 0) {
+      rows = item.transferItems.map((t) => ({
+        receivedStatusFromPreviousFloor: 'warehouse:handoff',
+        receivedInContainerId: doc._id,
+        receivedTimestamp: new Date(),
+        transferred: Math.max(0, Number(t.transferred || 0)),
+        styleCode: String(t.styleCode || ''),
+        brand: String(t.brand || ''),
+      }));
+    } else {
+      rows = [
+        {
+          receivedStatusFromPreviousFloor: 'warehouse:handoff',
+          receivedInContainerId: doc._id,
+          receivedTimestamp: new Date(),
+          transferred: qty,
+          styleCode: '',
+          brand: '',
+        },
+      ];
+    }
+
+    if (!flow.floorQuantities.dispatch) {
+      flow.floorQuantities.dispatch = {};
+    }
+    if (!Array.isArray(flow.floorQuantities.dispatch.receivedData)) {
+      flow.floorQuantities.dispatch.receivedData = [];
+    }
+    for (const r of rows) {
+      flow.floorQuantities.dispatch.receivedData.push(r);
+    }
+    flow.markModified('floorQuantities.dispatch');
+    await flow.save();
+    flows.push(flow);
+
+    await promoteVendorDispatchToInwardReceive(flowId, { containerBarcode: barcode });
+  }
+
+  return { flows, barcode };
+}

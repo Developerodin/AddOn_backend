@@ -33,4 +33,19 @@ const deleteInwardReceive = catchAsync(async (req, res) => {
   res.status(httpStatus.NO_CONTENT).send();
 });
 
-export { createInwardReceive, getInwardReceives, getInwardReceive, updateInwardReceive, deleteInwardReceive };
+const promoteVendorDispatchToInwardReceive = catchAsync(async (req, res) => {
+  const { vendorProductionFlowId, containerBarcode } = req.body;
+  const result = await inwardReceiveService.promoteVendorDispatchToInwardReceive(vendorProductionFlowId, {
+    containerBarcode,
+  });
+  res.status(httpStatus.OK).send(result);
+});
+
+export {
+  createInwardReceive,
+  getInwardReceives,
+  getInwardReceive,
+  updateInwardReceive,
+  deleteInwardReceive,
+  promoteVendorDispatchToInwardReceive,
+};

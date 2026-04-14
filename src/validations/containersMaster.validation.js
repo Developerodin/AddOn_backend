@@ -106,6 +106,19 @@ export const acceptContainerByBarcode = {
   params: Joi.object().keys({
     barcode: Joi.string().trim().required(),
   }),
+  body: Joi.object()
+    .keys({
+      vendorReceive: Joi.object()
+        .keys({
+          vendorProductionFlow: Joi.string().custom(objectId).optional(),
+          quantity: Joi.number().min(0.0001).optional(),
+          transferItems: Joi.array().items(transferItemRowSchema).min(1).optional(),
+        })
+        .or('quantity', 'transferItems')
+        .optional(),
+    })
+    .unknown(true)
+    .default({}),
 };
 
 /** Clear activeArticle and activeFloor for container by barcode */

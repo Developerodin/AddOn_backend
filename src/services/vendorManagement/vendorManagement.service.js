@@ -284,6 +284,12 @@ export const queryVendorProductionFlows = async (filter, options, search) => {
       { currentFloorKey: 'finalChecking' },
       { 'floorQuantities.finalChecking.remaining': { $gt: 0 } },
     ];
+  } else if (filter.currentFloorKey === 'dispatch') {
+    mongoFilter.$or = [
+      { currentFloorKey: 'dispatch' },
+      { 'floorQuantities.dispatch.received': { $gt: 0 } },
+      { 'floorQuantities.dispatch.remaining': { $gt: 0 } },
+    ];
   } else if (filter.currentFloorKey) {
     mongoFilter.currentFloorKey = String(filter.currentFloorKey);
   }

@@ -262,9 +262,10 @@ export const updateContainersMasterByBarcode = async (barcode, body) => {
 /**
  * Accept container on receiving floor - updates each article's or vendor flow's floor received from container data.
  * @param {string} barcode - Container barcode
+ * @param {{ vendorReceive?: { vendorProductionFlow?: string, quantity?: number, transferItems?: Array<{ transferred: number, styleCode?: string, brand?: string }> } }} [body] - Optional overrides for vendor flows (dispatch / final checking / branding): enter qty or style lines at accept time instead of only staged values.
  * @returns {Promise<{ container: ContainersMaster, articles: Article[], vendorProductionFlows?: import('mongoose').Document[] }>}
  */
-export const acceptContainerByBarcode = async (barcode) => {
+export const acceptContainerByBarcode = async (barcode, body = {}) => {
   const doc = await getContainerByBarcode(barcode);
   if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Container not found for this barcode');
   const items = doc.activeItems || [];
@@ -272,10 +273,59 @@ export const acceptContainerByBarcode = async (barcode) => {
   if (!floor || items.length === 0) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Container has no active items or floor to accept');
   }
+
+  /** Dispatch → WHMS: same pattern as FC → dispatch (transfer staged this floor; scan completes handoff + inward). */
+  if (vendorProductionFlowReceive.isVendorWarehouseInwardActiveFloor(floor)) {
+    const hasArticle = items.some((i) => i.article && Number(i.quantity || 0) > 0);
+    if (hasArticle) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Warehouse inward container accept supports vendor production flows only'
+      );
+    }
+    const { flows } = await vendorProductionFlowReceive.applyVendorWarehouseInwardAcceptFromContainer(doc);
+    doc.activeItems = [];
+    doc.activeFloor = '';
+    await doc.save();
+    return {
+      container: doc,
+      articles: [],
+      vendorProductionFlows: flows,
+    };
+  }
+
+  const vendorReceive =
+    body && typeof body === 'object' && body.vendorReceive && typeof body.vendorReceive === 'object'
+      ? body.vendorReceive
+      : null;
+
+  const vrFlowId =
+    vendorReceive &&
+    vendorReceive.vendorProductionFlow != null &&
+    String(vendorReceive.vendorProductionFlow).trim() !== ''
+      ? String(vendorReceive.vendorProductionFlow).trim()
+      : null;
+
+  const vendorRows = items.filter((i) => i.vendorProductionFlow && Number(i.quantity || 0) > 0);
+  if (
+    vendorReceive &&
+    (vendorReceive.quantity != null ||
+      (Array.isArray(vendorReceive.transferItems) && vendorReceive.transferItems.length > 0))
+  ) {
+    if (vendorRows.length > 1 && !vrFlowId) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'vendorReceive.vendorProductionFlow is required when the container has more than one vendor production flow item'
+      );
+    }
+  }
+
   const updatedArticles = [];
   const updatedVendorFlows = [];
+  let vendorOverrideMatched = false;
+
   for (const item of items) {
-    const quantity = item.quantity || 0;
+    let quantity = item.quantity || 0;
     if (quantity <= 0) continue;
     const article = item.article;
     const vpf = item.vendorProductionFlow;
@@ -295,8 +345,37 @@ export const acceptContainerByBarcode = async (barcode) => {
     }
     if (vpf) {
       const flowId = typeof vpf === 'object' ? vpf._id : vpf;
-      const transferItems =
+      let transferItems =
         Array.isArray(item.transferItems) && item.transferItems.length > 0 ? item.transferItems : undefined;
+
+      if (
+        vendorReceive &&
+        (vendorReceive.quantity != null ||
+          (Array.isArray(vendorReceive.transferItems) && vendorReceive.transferItems.length > 0))
+      ) {
+        const idMatches = !vrFlowId || String(flowId) === vrFlowId;
+        if (idMatches) {
+          vendorOverrideMatched = true;
+          if (Array.isArray(vendorReceive.transferItems) && vendorReceive.transferItems.length > 0) {
+            transferItems = vendorReceive.transferItems.map((t) => ({
+              transferred: Math.max(0, Number(t.transferred || 0)),
+              styleCode: String(t.styleCode || ''),
+              brand: String(t.brand || ''),
+            }));
+            quantity = transferItems.reduce((s, t) => s + t.transferred, 0);
+          } else if (vendorReceive.quantity != null) {
+            const q = Number(vendorReceive.quantity);
+            if (!Number.isFinite(q) || q < 0.0001) {
+              throw new ApiError(httpStatus.BAD_REQUEST, 'vendorReceive.quantity must be a positive number');
+            }
+            quantity = q;
+            transferItems = undefined;
+          }
+        }
+      }
+
+      if (quantity <= 0) continue;
+
       const { flow } = await vendorProductionFlowReceive.updateVendorProductionFlowFloorReceivedData(flowId.toString(), {
         floor,
         quantity,
@@ -311,6 +390,20 @@ export const acceptContainerByBarcode = async (barcode) => {
       continue;
     }
   }
+
+  if (
+    vendorReceive &&
+    vrFlowId &&
+    (vendorReceive.quantity != null ||
+      (Array.isArray(vendorReceive.transferItems) && vendorReceive.transferItems.length > 0)) &&
+    !vendorOverrideMatched
+  ) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'vendorReceive.vendorProductionFlow does not match any vendor item on this container'
+    );
+  }
+
   if (updatedArticles.length > 0 || updatedVendorFlows.length > 0) {
     doc.activeItems = [];
     doc.activeFloor = '';

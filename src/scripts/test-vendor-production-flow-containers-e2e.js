@@ -23,6 +23,7 @@ import {
   VendorBox,
   VendorProductionFlow,
 } from '../models/index.js';
+import InwardReceive, { InwardReceiveSource } from '../models/whms/inwardReceive.model.js';
 import { ContainerStatus } from '../models/production/enums.js';
 import * as vendorProductionFlowService from '../services/vendorManagement/vendorProductionFlow.service.js';
 import * as vendorProductionFlowReceive from '../services/vendorManagement/vendorProductionFlowReceive.service.js';
@@ -33,6 +34,7 @@ import {
   computeDerivedForFloor,
   pickFloorSnapshot,
 } from '../services/vendorManagement/vendorProductionFlowFloorPatch.js';
+import { promoteVendorDispatchToInwardReceive } from '../services/whms/inwardReceiveFromVendorDispatch.helper.js';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
@@ -133,7 +135,11 @@ async function seedVendorAndFlow(units) {
     product = await Product.create({
       name: `VPF-E2E-${ts}`,
       softwareCode: `VPF-E2E-${ts}`,
+      factoryCode: `FC-VPF-E2E-${ts}`,
     });
+  } else if (!String(product.factoryCode || '').trim()) {
+    await Product.updateOne({ _id: product._id }, { $set: { factoryCode: `FC-VPF-FIX-${ts}` } });
+    product = await Product.findById(product._id);
   }
 
   const vendorCode = `VPF${ts}`.toUpperCase().slice(0, 16);
@@ -397,9 +403,121 @@ async function main() {
     throw new Error('expected finalQualityConfirmed');
   }
 
+  const inwardAfterConfirm = await InwardReceive.countDocuments({
+    vendorProductionFlowId: flow._id,
+    inwardSource: InwardReceiveSource.VENDOR,
+  });
+  const dispatchRd = floor(flow, 'dispatch').receivedData || [];
+  if (inwardAfterConfirm !== 0) {
+    throw new Error(
+      `expected 0 vendor InwardReceive after confirm (promote at WHMS), got ${inwardAfterConfirm}`
+    );
+  }
+  await promoteVendorDispatchToInwardReceive(flowId, {});
+  const inwardAfterPromote = await InwardReceive.countDocuments({
+    vendorProductionFlowId: flow._id,
+    inwardSource: InwardReceiveSource.VENDOR,
+  });
+  if (inwardAfterPromote < dispatchRd.length) {
+    throw new Error(
+      `expected at least ${dispatchRd.length} vendor InwardReceive row(s) after promote, got ${inwardAfterPromote}`
+    );
+  }
+
+  // FC→dispatch accept, then dispatch→warehouse transfer + WHMS scan accept (inward via warehouse handoff)
+  const { flowId: dispatchOnlyFlowId } = await seedVendorAndFlow(5);
+  const bagD = await containersMasterService.createContainersMaster({
+    containerName: `VPF-DISPATCH-${Date.now()}`,
+    status: ContainerStatus.ACTIVE,
+  });
+  const barcodeD = bagD.barcode || bagD._id.toString();
+  await vendorProductionFlowService.updateVendorProductionFlowFloorById(dispatchOnlyFlowId, 'secondaryChecking', {
+    mode: 'replace',
+    m1Quantity: 5,
+    m2Quantity: 0,
+    m4Quantity: 0,
+    repairStatus: 'Not Required',
+    repairRemarks: '',
+    existingContainerBarcode: barcodeD,
+  });
+  await containersMasterService.acceptContainerByBarcode(barcodeD);
+  await applyFloorSnapshot(dispatchOnlyFlowId, 'branding', (s) => {
+    s.completed = 5;
+  });
+  await vendorProductionFlowService.transferVendorProductionFlowQuantity(
+    dispatchOnlyFlowId,
+    'branding',
+    'finalChecking',
+    5,
+    {
+      existingContainerBarcode: barcodeD,
+      transferItems: [{ transferred: 5, styleCode: 'STY-D', brand: 'BR-D' }],
+    }
+  );
+  await containersMasterService.acceptContainerByBarcode(barcodeD);
+  await applyFloorSnapshot(dispatchOnlyFlowId, 'finalChecking', (s) => {
+    s.m1Quantity = 5;
+    s.m2Quantity = 0;
+    s.m4Quantity = 0;
+    s.completed = 5;
+    s.repairStatus = 'Not Required';
+    s.repairRemarks = '';
+  });
+  await vendorProductionFlowService.transferVendorProductionFlowQuantity(
+    dispatchOnlyFlowId,
+    'finalChecking',
+    'dispatch',
+    5,
+    {
+      existingContainerBarcode: barcodeD,
+      transferItems: [{ transferred: 5, styleCode: 'STY-D', brand: 'BR-D' }],
+    }
+  );
+  const inwardBeforeAccept = await InwardReceive.countDocuments({
+    vendorProductionFlowId: dispatchOnlyFlowId,
+    inwardSource: InwardReceiveSource.VENDOR,
+  });
+  await containersMasterService.acceptContainerByBarcode(barcodeD);
+  const inwardAfterAccept = await InwardReceive.countDocuments({
+    vendorProductionFlowId: dispatchOnlyFlowId,
+    inwardSource: InwardReceiveSource.VENDOR,
+  });
+  if (inwardAfterAccept !== inwardBeforeAccept) {
+    throw new Error(
+      `expected no vendor InwardReceive until WHMS handoff (before ${inwardBeforeAccept}, after dispatch accept ${inwardAfterAccept})`
+    );
+  }
+
+  const bagW = await containersMasterService.createContainersMaster({
+    containerName: `VPF-WHMS-${Date.now()}`,
+    status: ContainerStatus.ACTIVE,
+  });
+  const barcodeW = bagW.barcode || bagW._id.toString();
+  await vendorProductionFlowService.transferVendorProductionFlowQuantity(
+    dispatchOnlyFlowId,
+    'dispatch',
+    'warehouse',
+    5,
+    {
+      existingContainerBarcode: barcodeW,
+      transferItems: [{ transferred: 5, styleCode: 'STY-D', brand: 'BR-D' }],
+    }
+  );
+  await containersMasterService.acceptContainerByBarcode(barcodeW);
+  const inwardAfterWhScan = await InwardReceive.countDocuments({
+    vendorProductionFlowId: dispatchOnlyFlowId,
+    inwardSource: InwardReceiveSource.VENDOR,
+  });
+  if (inwardAfterWhScan <= inwardAfterAccept) {
+    throw new Error(
+      `expected vendor InwardReceive after WHMS container accept (before ${inwardAfterAccept}, after ${inwardAfterWhScan})`
+    );
+  }
+
   console.log('\nOK — validations + multi-container SC→branding + style split branding→FC + confirm/dispatch.');
   console.log('   main flowId:', flowId);
   console.log('   cap-validation flowId:', capFlow);
+  console.log('   dispatch-container inward flowId:', dispatchOnlyFlowId);
 }
 
 main()

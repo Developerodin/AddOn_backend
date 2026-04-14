@@ -4,6 +4,7 @@ import ApiError from '../../utils/ApiError.js';
 import pick from '../../utils/pick.js';
 import { InwardReceive } from '../../models/whms/index.js';
 import { reconcileInwardReceiveWarehouseInventory } from './inwardReceiveWarehouseInventory.helper.js';
+import { promoteVendorDispatchToInwardReceive as promoteVendorDispatchToInwardReceiveHelper } from './inwardReceiveFromVendorDispatch.helper.js';
 
 /** Fields the frontend (WHMS) may PATCH — not articleId/orderId/refs. */
 const INWARD_RECEIVE_PATCH_KEYS = [
@@ -19,6 +20,11 @@ const INWARD_RECEIVE_PATCH_KEYS = [
 const POPULATE_DEFAULT = [
   { path: 'articleId', select: 'articleNumber id status plannedQuantity' },
   { path: 'orderId', select: 'orderNumber status currentFloor priority' },
+  {
+    path: 'vendorProductionFlowId',
+    select: 'referenceCode plannedQuantity vendor vendorPurchaseOrder product currentFloorKey',
+  },
+  { path: 'vendorPurchaseOrderId', select: 'vpoNumber currentStatus vendorName total' },
 ];
 
 /**
@@ -30,11 +36,18 @@ export const buildInwardReceiveFilter = (query) => {
   const filter = {};
 
   if (query.status) filter.status = query.status;
+  if (query.inwardSource) filter.inwardSource = query.inwardSource;
   if (query.articleId && mongoose.Types.ObjectId.isValid(query.articleId)) {
     filter.articleId = new mongoose.Types.ObjectId(query.articleId);
   }
   if (query.orderId && mongoose.Types.ObjectId.isValid(query.orderId)) {
     filter.orderId = new mongoose.Types.ObjectId(query.orderId);
+  }
+  if (query.vendorProductionFlowId && mongoose.Types.ObjectId.isValid(query.vendorProductionFlowId)) {
+    filter.vendorProductionFlowId = new mongoose.Types.ObjectId(query.vendorProductionFlowId);
+  }
+  if (query.vendorPurchaseOrderId && mongoose.Types.ObjectId.isValid(query.vendorPurchaseOrderId)) {
+    filter.vendorPurchaseOrderId = new mongoose.Types.ObjectId(query.vendorPurchaseOrderId);
   }
   if (query.articleNumber && String(query.articleNumber).trim()) {
     filter.articleNumber = { $regex: String(query.articleNumber).trim(), $options: 'i' };
@@ -57,6 +70,14 @@ export const buildInwardReceiveFilter = (query) => {
   }
 
   return filter;
+};
+
+/**
+ * WHMS gate: materialize vendor inward queue rows from `dispatch.receivedData`.
+ * Call after warehouse scans the same container (or without barcode for confirm-only lines).
+ */
+export const promoteVendorDispatchToInwardReceive = async (vendorProductionFlowId, options = {}) => {
+  return promoteVendorDispatchToInwardReceiveHelper(vendorProductionFlowId, options);
 };
 
 export const createInwardReceive = async (body) => {

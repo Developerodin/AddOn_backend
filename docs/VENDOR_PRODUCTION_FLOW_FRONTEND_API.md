@@ -1,5 +1,7 @@
 # Vendor Production Flow Frontend API Guide
 
+> **2026 update:** The live vendor pipeline is **`secondaryChecking` → `branding` → `finalChecking` → `dispatch`** (no washing/boarding in code). Production-flow routes **are mounted** under `/v1/vendor-management/production-flow/...`. For **dispatch → warehouse** UI and payloads, use **`docs/VENDOR_DISPATCH_TO_WAREHOUSE_FRONTEND.md`** (accurate contract + WHMS scan step).
+
 This guide is for frontend integration of the vendor production flow.
 
 It documents:

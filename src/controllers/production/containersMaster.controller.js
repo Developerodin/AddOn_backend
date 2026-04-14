@@ -59,7 +59,7 @@ const updateContainerByBarcode = catchAsync(async (req, res) => {
 });
 
 const acceptContainerByBarcode = catchAsync(async (req, res) => {
-  const result = await containersMasterService.acceptContainerByBarcode(req.params.barcode);
+  const result = await containersMasterService.acceptContainerByBarcode(req.params.barcode, req.body || {});
   res.send(result);
 });
 

@@ -1,5 +1,5 @@
 import { ProductionOrder } from '../../models/production/index.js';
-import InwardReceive, { InwardReceiveStatus } from '../../models/whms/inwardReceive.model.js';
+import InwardReceive, { InwardReceiveStatus, InwardReceiveSource } from '../../models/whms/inwardReceive.model.js';
 
 /**
  * After warehouse container accept, one InwardReceive per new `warehouse.receivedData` line.
@@ -32,6 +32,7 @@ export async function createInwardReceivesForWarehouseAccept(article, newLines, 
     if (qty <= 0) continue;
 
     await InwardReceive.create({
+      inwardSource: InwardReceiveSource.PRODUCTION,
       articleId: article._id,
       orderId: article.orderId,
       articleNumber: article.articleNumber || '',

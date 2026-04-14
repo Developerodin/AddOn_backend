@@ -1,6 +1,6 @@
 import WhmsOrder from './whmsOrder.model.js';
 import InwardRecord from './inwardRecord.model.js';
-import InwardReceive from './inwardReceive.model.js';
+import InwardReceive, { InwardReceiveSource } from './inwardReceive.model.js';
 import VarianceApproval from './varianceApproval.model.js';
 import DispatchApproval from './dispatchApproval.model.js';
 import ConsolidationBatch from './consolidationBatch.model.js';
@@ -17,6 +17,7 @@ export {
   WhmsOrder,
   InwardRecord,
   InwardReceive,
+  InwardReceiveSource,
   VarianceApproval,
   DispatchApproval,
   ConsolidationBatch,

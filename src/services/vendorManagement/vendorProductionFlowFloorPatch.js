@@ -310,7 +310,7 @@ export function buildIncrementOps(floorKey, body) {
   if (body?.repairStatus !== undefined) set[floorPath(floorKey, 'repairStatus')] = body.repairStatus;
   if (body?.repairRemarks !== undefined) set[floorPath(floorKey, 'repairRemarks')] = body.repairRemarks ?? '';
 
-  if (floorKey === 'branding' || floorKey === 'finalChecking') {
+  if (floorKey === 'branding' || floorKey === 'finalChecking' || floorKey === 'dispatch') {
     if (body?.transferredData !== undefined) set[floorPath(floorKey, 'transferredData')] = body.transferredData;
     if (body?.receivedData !== undefined) set[floorPath(floorKey, 'receivedData')] = body.receivedData;
     /** Server-computed scalars from lines (see vendorProductionFlow.service merge + lineSum). */
@@ -347,7 +347,7 @@ export function buildReplaceOps(floorKey, body) {
     'repairRemarks',
   ];
 
-  if (floorKey === 'branding' || floorKey === 'finalChecking') {
+  if (floorKey === 'branding' || floorKey === 'finalChecking' || floorKey === 'dispatch') {
     patchableKeys.push('transferredData', 'receivedData');
   }
   if (floorKey === 'branding') {
@@ -357,7 +357,7 @@ export function buildReplaceOps(floorKey, body) {
     patchableKeys.push('receivedData');
   }
   if (floorKey === 'dispatch') {
-    patchableKeys.push('repairReceived', 'receivedData');
+    patchableKeys.push('repairReceived');
   }
 
   patchableKeys.forEach((key) => {

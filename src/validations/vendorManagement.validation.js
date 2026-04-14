@@ -149,9 +149,9 @@ export const transferVendorProductionFlow = {
   body: Joi.object()
     .keys({
       fromFloorKey: Joi.string()
-        .valid('secondaryChecking', 'branding', 'finalChecking')
+        .valid('secondaryChecking', 'branding', 'finalChecking', 'dispatch')
         .required(),
-      toFloorKey: Joi.string().valid('branding', 'finalChecking', 'dispatch').required(),
+      toFloorKey: Joi.string().valid('branding', 'finalChecking', 'dispatch', 'warehouse').required(),
       quantity: Joi.number().min(1).required(),
       /** Required for secondary→branding and branding→final checking — physical container that already exists */
       existingContainerBarcode: Joi.string().trim().allow('', null),
@@ -159,6 +159,27 @@ export const transferVendorProductionFlow = {
       transferItems: Joi.array().items(vendorTransferItemSchema),
     })
     .custom((value) => {
+      if (value.toFloorKey === 'warehouse' && value.fromFloorKey !== 'dispatch') {
+        throw new Error('warehouse destination is only valid when fromFloorKey is dispatch');
+      }
+      if (value.fromFloorKey === 'dispatch' && value.toFloorKey !== 'warehouse') {
+        throw new Error('From dispatch, toFloorKey must be warehouse');
+      }
+      if (value.fromFloorKey === 'dispatch' && value.toFloorKey === 'warehouse') {
+        if (!value.existingContainerBarcode || !String(value.existingContainerBarcode).trim()) {
+          throw new Error(
+            'existingContainerBarcode is required for dispatch → warehouse (stage a container for the WHMS scan)'
+          );
+        }
+        if (Array.isArray(value.transferItems) && value.transferItems.length > 0) {
+          const sum = value.transferItems.reduce((s, row) => s + Math.max(0, Number(row?.transferred || 0)), 0);
+          if (Math.abs(sum - value.quantity) > 0.0001) {
+            throw new Error(`transferItems sum (${sum}) must equal quantity (${value.quantity})`);
+          }
+        }
+        return value;
+      }
+
       const usesContainer =
         (value.fromFloorKey === 'secondaryChecking' && value.toFloorKey === 'branding') ||
         (value.fromFloorKey === 'branding' && value.toFloorKey === 'finalChecking');

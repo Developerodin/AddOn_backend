@@ -1,5 +1,6 @@
 import httpStatus from 'http-status';
 import { VendorProductionFlow } from '../../models/index.js';
+import Product from '../../models/product.model.js';
 import ApiError from '../../utils/ApiError.js';
 import { RepairStatus } from '../../models/production/enums.js';
 import { vendorProductionFlowSequence } from '../../models/vendorManagement/vendorProductionFlow.model.js';
@@ -20,6 +21,7 @@ import {
   toFiniteNumber,
 } from './vendorProductionFlowFloorPatch.js';
 import { stageVendorTransferOnExistingContainer } from './vendorProductionFlowReceive.service.js';
+import { transferVendorDispatchToWarehouseQuantity } from './vendorDispatchWarehouseTransfer.service.js';
 import {
   aggregateTransferredByStyleKey,
   mergeTransferredDataByStyleKey,
@@ -149,7 +151,8 @@ async function maybeAutoTransferVendorFloor(
   assertValidFloorState(nextFloorKey, nextAfter);
 
   const fromDerived = computeDerivedForFloor(floorKey, curAfterTransfer);
-  const nextDerived = computeDerivedForFloor(nextFloorKey, nextAfter);
+  const skipNextDerived = fcDispatchStaging;
+  const nextDerived = skipNextDerived ? {} : computeDerivedForFloor(nextFloorKey, nextAfter);
 
   const session = sessionOptions?.session;
 
@@ -159,7 +162,9 @@ async function maybeAutoTransferVendorFloor(
       $inc: inc,
       $set: {
         ...Object.fromEntries(Object.entries(fromDerived).map(([k, v]) => [floorPath(floorKey, k), v])),
-        ...Object.fromEntries(Object.entries(nextDerived).map(([k, v]) => [floorPath(nextFloorKey, k), v])),
+        ...(Object.keys(nextDerived).length > 0
+          ? Object.fromEntries(Object.entries(nextDerived).map(([k, v]) => [floorPath(nextFloorKey, k), v]))
+          : {}),
         currentFloorKey: usesContainer ? flow.currentFloorKey || floorKey : nextFloorKey,
         startedAt: flow.startedAt || new Date(),
       },
@@ -364,7 +369,7 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
      * - Client values for those fields are stripped.
      */
     if (
-      (floorKey === 'branding' || floorKey === 'finalChecking') &&
+      (floorKey === 'branding' || floorKey === 'finalChecking' || floorKey === 'dispatch') &&
       bodyForPatch.transferredData !== undefined
     ) {
       if (!Array.isArray(bodyForPatch.transferredData)) {
@@ -593,6 +598,10 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
  *   `existingContainerBarcode` — required when staging secondary→branding or branding→final checking (reuse physical container; no new container is created).
  */
 export const transferVendorProductionFlowQuantity = async (flowId, fromFloorKey, toFloorKey, quantity, opts = {}) => {
+  if (fromFloorKey === 'dispatch' && toFloorKey === 'warehouse') {
+    return transferVendorDispatchToWarehouseQuantity(flowId, quantity, opts);
+  }
+
   assertAllowedFloorKey(fromFloorKey);
   assertAllowedFloorKey(toFloorKey);
   if (fromFloorKey === toFloorKey) {
@@ -702,14 +711,16 @@ export const transferVendorProductionFlowQuantity = async (flowId, fromFloorKey,
     assertValidFloorState(toFloorKey, toAfter);
 
     const fromDerived = computeDerivedForFloor(fromFloorKey, fromAfter);
-    const toDerived = computeDerivedForFloor(toFloorKey, toAfter);
+    const toDerived = usesContainer ? {} : computeDerivedForFloor(toFloorKey, toAfter);
 
     await VendorProductionFlow.updateOne(
       { _id: flowId },
       {
         $set: {
           ...Object.fromEntries(Object.entries(fromDerived).map(([k, v]) => [floorPath(fromFloorKey, k), v])),
-          ...Object.fromEntries(Object.entries(toDerived).map(([k, v]) => [floorPath(toFloorKey, k), v])),
+          ...(Object.keys(toDerived).length > 0
+            ? Object.fromEntries(Object.entries(toDerived).map(([k, v]) => [floorPath(toFloorKey, k), v]))
+            : {}),
           currentFloorKey: usesContainer ? flow.currentFloorKey || fromFloorKey : toFloorKey,
           startedAt: flow.startedAt || new Date(),
         },
@@ -726,6 +737,23 @@ export const transferVendorProductionFlowQuantity = async (flowId, fromFloorKey,
       await VendorProductionFlow.updateOne(
         { _id: flowId },
         { $push: { 'floorQuantities.branding.transferredData': { $each: lines } } },
+        sessionOptions
+      );
+    }
+
+    /** Style ledger for “sent from final checking toward dispatch” — used to cap dispatch container receive (like branding → FC). */
+    if (fromFloorKey === 'finalChecking' && toFloorKey === 'dispatch') {
+      const lines =
+        Array.isArray(opts.transferItems) && opts.transferItems.length > 0
+          ? opts.transferItems.map((row) => ({
+              transferred: Math.max(0, Number(row?.transferred || 0)),
+              styleCode: String(row?.styleCode || ''),
+              brand: String(row?.brand || ''),
+            }))
+          : [{ transferred: qty, styleCode: '', brand: '' }];
+      await VendorProductionFlow.updateOne(
+        { _id: flowId },
+        { $push: { 'floorQuantities.finalChecking.transferredData': { $each: lines } } },
         sessionOptions
       );
     }
@@ -797,6 +825,19 @@ export const confirmVendorProductionFlowById = async (flowId, remarks) => {
 
   const pendingToDispatch = Math.max(0, Number(finalChecking.completed || 0) - Number(finalChecking.transferred || 0));
   if (pendingToDispatch > 0) {
+    if (!flow.product) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Vendor production flow must have a product linked before confirm (required for WHMS inward / factory code).'
+      );
+    }
+    const prod = await Product.findById(flow.product).select('factoryCode').lean();
+    if (!String(prod?.factoryCode || '').trim()) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Product ${flow.product} has no factoryCode; cannot confirm to dispatch for WHMS inward.`
+      );
+    }
     finalChecking.transferred = Number(finalChecking.transferred || 0) + pendingToDispatch;
     finalChecking.remaining = Math.max(
       0,
@@ -846,12 +887,19 @@ export const confirmVendorProductionFlowById = async (flowId, remarks) => {
     }
     dispatch.receivedData = [...(dispatch.receivedData || []), ...dispatchLines];
     flow.markModified('floorQuantities.dispatch');
+
+    const tdLines = dispatchLines.map((d) => ({
+      transferred: d.transferred,
+      styleCode: d.styleCode || '',
+      brand: d.brand || '',
+    }));
+    finalChecking.transferredData = [...(finalChecking.transferredData || []), ...tdLines];
+    flow.markModified('floorQuantities.finalChecking');
   }
 
-  dispatch.completed = Number(dispatch.received || 0);
   dispatch.remaining = Math.max(
     0,
-    Number(dispatch.received || 0) - Number(dispatch.completed || 0) - Number(dispatch.transferred || 0)
+    Number(dispatch.received || 0) - Number(dispatch.transferred || 0)
   );
 
   flow.floorQuantities.finalChecking = finalChecking;
@@ -867,6 +915,7 @@ export const confirmVendorProductionFlowById = async (flowId, remarks) => {
   }
 
   await flow.save();
+
   return flow;
 };
 
