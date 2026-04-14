@@ -49,20 +49,28 @@ const sharedFields = {
 const { storeProfile: _storeProfileField, ...nonStoreRootFields } = sharedFields;
 
 /** Store clients: `type` + `storeProfile`; optional `status` / `remarks` / `slNo` only (no other root fields). */
+export const createWarehouseClientBodySchema = Joi.alternatives().try(
+  Joi.object({
+    type: Joi.string().valid('Store').required(),
+    storeProfile: storeProfileSchema.required(),
+    status: Joi.string().valid(...statusValues),
+    remarks: Joi.string().allow('').trim(),
+    slNo: Joi.number().integer().min(0).allow(null),
+  }).unknown(false),
+  Joi.object({
+    type: Joi.string().valid('Trade', 'Departmental', 'Ecom').required(),
+    ...nonStoreRootFields,
+  }).unknown(false)
+);
+
 export const createWarehouseClient = {
-  body: Joi.alternatives().try(
-    Joi.object({
-      type: Joi.string().valid('Store').required(),
-      storeProfile: storeProfileSchema.required(),
-      status: Joi.string().valid(...statusValues),
-      remarks: Joi.string().allow('').trim(),
-      slNo: Joi.number().integer().min(0).allow(null),
-    }).unknown(false),
-    Joi.object({
-      type: Joi.string().valid('Trade', 'Departmental', 'Ecom').required(),
-      ...nonStoreRootFields,
-    }).unknown(false)
-  ),
+  body: createWarehouseClientBodySchema,
+};
+
+export const bulkImportWarehouseClients = {
+  body: Joi.object().keys({
+    items: Joi.array().items(createWarehouseClientBodySchema).min(1).max(10000).required(),
+  }),
 };
 
 const listQueryKeys = {

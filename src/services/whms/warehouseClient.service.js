@@ -98,6 +98,41 @@ export const createWarehouseClient = async (body) => {
   return WarehouseClient.findById(doc._id);
 };
 
+/**
+ * Create many warehouse clients; each row uses the same rules as {@link createWarehouseClient}.
+ * @param {Array<Record<string, unknown>>} items
+ * @returns {Promise<{ total: number; created: number; failed: number; errors: Array<{ index: number; type?: string; error: string }>; processingTime: number }>}
+ */
+export const bulkImportWarehouseClients = async (items) => {
+  const results = {
+    total: items.length,
+    created: 0,
+    failed: 0,
+    errors: [],
+    processingTime: 0,
+  };
+  const startTime = Date.now();
+
+  for (let i = 0; i < items.length; i += 1) {
+    const row = items[i];
+    try {
+      await createWarehouseClient(row);
+      results.created += 1;
+    } catch (error) {
+      results.failed += 1;
+      const message = error?.message || String(error);
+      results.errors.push({
+        index: i,
+        type: row?.type,
+        error: message,
+      });
+    }
+  }
+
+  results.processingTime = Date.now() - startTime;
+  return results;
+};
+
 export const queryWarehouseClients = async (filter, options) => {
   return WarehouseClient.paginate(filter, options);
 };

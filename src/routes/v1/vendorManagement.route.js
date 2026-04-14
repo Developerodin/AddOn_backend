@@ -17,6 +17,14 @@ router
   .get(auth(), validate(vendorManagementValidation.getVendorManagements), vendorManagementController.getVendorManagements);
 
 router
+  .route('/bulk')
+  .post(
+    auth(),
+    validate(vendorManagementValidation.bulkCreateVendorManagements),
+    vendorManagementController.bulkCreateVendorManagements
+  );
+
+router
   .route('/production-flow')
   .get(
     auth(),

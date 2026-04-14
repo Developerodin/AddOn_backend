@@ -1,6 +1,7 @@
 import express from 'express';
 import auth from '../../../middlewares/auth.js';
 import validate from '../../../middlewares/validate.js';
+import { bulkImportMiddleware } from '../../../middlewares/bulkImport.js';
 import * as warehouseClientValidation from '../../../validations/whms/warehouseClient.validation.js';
 import * as warehouseClientController from '../../../controllers/whms/warehouseClient.controller.js';
 
@@ -26,6 +27,14 @@ router
     validate(warehouseClientValidation.getWarehouseClientsByType),
     warehouseClientController.getWarehouseClientsByType
   );
+
+router.post(
+  '/bulk-import',
+  auth('manageOrders'),
+  bulkImportMiddleware,
+  validate(warehouseClientValidation.bulkImportWarehouseClients),
+  warehouseClientController.bulkImportWarehouseClients
+);
 
 router
   .route('/:clientId')

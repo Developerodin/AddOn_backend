@@ -65,8 +65,14 @@ const deleteWarehouseInventory = catchAsync(async (req, res) => {
   res.status(httpStatus.NO_CONTENT).send();
 });
 
+const bulkImportWarehouseInventory = catchAsync(async (req, res) => {
+  const result = await warehouseInventoryService.bulkImportWarehouseInventory(req.body.items);
+  res.status(httpStatus.CREATED).send(result);
+});
+
 export {
   createWarehouseInventory,
+  bulkImportWarehouseInventory,
   getWarehouseInventories,
   getWarehouseInventoryByStyleCode,
   getWarehouseInventory,

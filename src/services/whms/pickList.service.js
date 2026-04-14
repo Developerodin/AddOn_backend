@@ -72,11 +72,175 @@ export const createPickListForOrder = async (order) => {
     }
   }
 
-  if (docs.length) {
-    await PickList.insertMany(docs);
+  const mergedDocs = mergePickListRowsByKey(docs);
+  if (mergedDocs.length) {
+    await PickList.insertMany(mergedDocs);
   }
 
-  return docs.length;
+  return mergedDocs.length;
+};
+
+const buildPickRowKey = (row) => [
+  String(row.skuCode || ''),
+  String(row.styleCode || ''),
+  String(row.size || ''),
+  String(row.shade || ''),
+].join('||');
+
+/** Merge rows with the same sku/style/size/shade; sum quantity (multi-line orders → one pick row). */
+const mergePickListRowsByKey = (rows) => {
+  const map = new Map();
+  for (const row of rows) {
+    const key = buildPickRowKey(row);
+    const qty = Number(row.quantity || 0);
+    if (!map.has(key)) {
+      map.set(key, { ...row, quantity: qty });
+    } else {
+      const agg = map.get(key);
+      agg.quantity = Number(agg.quantity || 0) + qty;
+    }
+  }
+  return [...map.values()];
+};
+
+const getPickupStatus = (pickupQuantity, quantity) => {
+  if (pickupQuantity > 0 && pickupQuantity < quantity) return 'partial';
+  if (pickupQuantity >= quantity) return 'picked';
+  return 'pending';
+};
+
+/**
+ * Refresh denormalized order fields on existing pick rows (orderNumber, orderDetails snapshot).
+ * Use when the warehouse order was edited without replacing line items, so pickup progress is kept.
+ */
+export const syncPickListOrderMetadata = async (order) => {
+  const orderSnapshot = order.toObject ? order.toObject() : { ...order };
+  await PickList.updateMany(
+    { orderId: order._id },
+    { $set: { orderNumber: order.orderNumber, orderDetails: orderSnapshot } }
+  );
+};
+
+/**
+ * Incrementally sync picklist lines after warehouse-order line edits.
+ * Keeps pickup progress for unchanged rows, and only creates/updates/deletes changed rows.
+ */
+export const syncPickListForOrderLineItems = async (order) => {
+  const orderSnapshot = order.toObject ? order.toObject() : { ...order };
+  const base = { orderId: order._id, orderNumber: order.orderNumber, orderDetails: orderSnapshot };
+
+  const expectedRows = [];
+  const singleItems = Array.isArray(order.styleCodeSinglePair) ? order.styleCodeSinglePair : [];
+  for (const item of singleItems) {
+    expectedRows.push({
+      ...base,
+      size: item.pack || '',
+      shade: item.colour || '',
+      skuCode: item.styleCode,
+      styleCode: item.styleCode,
+      quantity: item.quantity,
+    });
+  }
+
+  const multiItems = Array.isArray(order.styleCodeMultiPair) ? order.styleCodeMultiPair : [];
+  if (multiItems.length) {
+    const pairIds = multiItems.map((i) => i.styleCodeMultiPairId).filter(Boolean);
+    const pairs = await StyleCodePairs.find({ _id: { $in: pairIds } })
+      .populate('styleCodes', 'styleCode')
+      .lean();
+    const pairMap = new Map(pairs.map((p) => [String(p._id), p]));
+
+    for (const item of multiItems) {
+      const pair = pairMap.get(String(item.styleCodeMultiPairId));
+      if (!pair) continue;
+
+      const skuCode = pair.pairStyleCode || item.styleCode;
+      const childCodes = Array.isArray(pair.styleCodes) ? pair.styleCodes : [];
+
+      if (childCodes.length === 0) {
+        expectedRows.push({
+          ...base,
+          size: item.pack || '',
+          shade: item.colour || '',
+          skuCode,
+          styleCode: skuCode,
+          quantity: item.quantity,
+        });
+      } else {
+        for (const child of childCodes) {
+          expectedRows.push({
+            ...base,
+            size: item.pack || '',
+            shade: item.colour || '',
+            skuCode,
+            styleCode: child.styleCode,
+            quantity: item.quantity,
+          });
+        }
+      }
+    }
+  }
+
+  const mergedExpected = mergePickListRowsByKey(expectedRows);
+
+  const existingRows = await PickList.find({ orderId: order._id }).sort({ createdAt: 1 });
+  const existingBuckets = new Map();
+  for (const row of existingRows) {
+    const key = buildPickRowKey(row);
+    if (!existingBuckets.has(key)) existingBuckets.set(key, []);
+    existingBuckets.get(key).push(row);
+  }
+
+  const updates = [];
+  const creates = [];
+  const deleteIds = [];
+  for (const expected of mergedExpected) {
+    const key = buildPickRowKey(expected);
+    const bucket = existingBuckets.get(key) || [];
+    const matchedRows = bucket.length ? [...bucket] : [];
+    existingBuckets.set(key, []);
+
+    if (matchedRows.length === 0) {
+      creates.push({ ...expected, pickupQuantity: 0, status: 'pending' });
+      continue;
+    }
+
+    const [primary, ...duplicates] = matchedRows;
+    const summedPickup = matchedRows.reduce((s, r) => s + Number(r.pickupQuantity || 0), 0);
+    const nextPickup = Math.min(summedPickup, Number(expected.quantity || 0));
+
+    updates.push({
+      updateOne: {
+        filter: { _id: primary._id },
+        update: {
+          $set: {
+            orderNumber: expected.orderNumber,
+            orderDetails: expected.orderDetails,
+            size: expected.size,
+            shade: expected.shade,
+            skuCode: expected.skuCode,
+            styleCode: expected.styleCode,
+            quantity: expected.quantity,
+            pickupQuantity: nextPickup,
+            status: getPickupStatus(nextPickup, Number(expected.quantity || 0)),
+          },
+        },
+      },
+    });
+    for (const dup of duplicates) {
+      deleteIds.push(dup._id);
+    }
+  }
+
+  for (const bucket of existingBuckets.values()) {
+    for (const row of bucket) deleteIds.push(row._id);
+  }
+
+  const operations = [];
+  if (updates.length) operations.push(PickList.bulkWrite(updates));
+  if (creates.length) operations.push(PickList.insertMany(creates));
+  if (deleteIds.length) operations.push(PickList.deleteMany({ _id: { $in: deleteIds } }));
+  if (operations.length) await Promise.all(operations);
 };
 
 export const buildPickListFilter = (query) => {
