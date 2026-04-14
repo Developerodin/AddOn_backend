@@ -41,8 +41,14 @@ const deleteWarehouseClient = catchAsync(async (req, res) => {
   res.status(httpStatus.NO_CONTENT).send();
 });
 
+const bulkImportWarehouseClients = catchAsync(async (req, res) => {
+  const result = await warehouseClientService.bulkImportWarehouseClients(req.body.items);
+  res.status(httpStatus.CREATED).send(result);
+});
+
 export {
   createWarehouseClient,
+  bulkImportWarehouseClients,
   getWarehouseClients,
   getWarehouseClientsByType,
   getWarehouseClient,
