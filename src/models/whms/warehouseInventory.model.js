@@ -8,10 +8,12 @@ import { toJSON, paginate } from '../plugins/index.js';
 
 const warehouseInventorySchema = mongoose.Schema(
   {
+    /** Optional when stock is keyed by style only (no unique product on Product.styleCodes). */
     itemId: {
       type: mongoose.SchemaTypes.ObjectId,
       ref: 'Product',
-      required: true,
+      required: false,
+      default: null,
       index: true,
     },
     styleCodeId: {

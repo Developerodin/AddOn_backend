@@ -11,8 +11,8 @@ router
   .route('/')
   .post(
     auth('manageOrders'),
-    validate(warehouseInventoryValidation.createWarehouseInventory),
-    warehouseInventoryController.createWarehouseInventory
+    validate(warehouseInventoryValidation.createOrBulkWarehouseInventory),
+    warehouseInventoryController.createOrBulkWarehouseInventory
   )
   .get(
     auth('getOrders'),

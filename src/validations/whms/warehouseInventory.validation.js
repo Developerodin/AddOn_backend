@@ -22,20 +22,22 @@ export const createWarehouseInventoryBodySchema = Joi.object()
     const style = String(value.styleCode || '').trim();
     const hasExplicit = Boolean(value.itemId && value.styleCodeId && style);
     const article = String(value.factoryCode || value.articleNumber || '').trim();
-    const hasResolve = Boolean(article && style);
+    const hasArticleResolve = Boolean(article && style);
+    /** styleCode + quantities only — product resolved via Product.styleCodes */
+    const hasStyleOnly = Boolean(style && !article && !value.itemId && !value.styleCodeId);
 
     if (hasExplicit && article) {
       return helpers.error('any.custom', {
         message:
-          'Use either (itemId, styleCodeId, styleCode) or (factoryCode or articleNumber, styleCode), not both',
+          'Do not mix article fields (factoryCode/articleNumber) with itemId/styleCodeId; use one resolution path',
       });
     }
-    if (hasExplicit || hasResolve) {
+    if (hasExplicit || hasArticleResolve || hasStyleOnly) {
       return value;
     }
     return helpers.error('any.custom', {
       message:
-        'Provide (itemId, styleCodeId, and styleCode) or (factoryCode or articleNumber and styleCode)',
+        'Provide (itemId, styleCodeId, and styleCode), (factoryCode or articleNumber and styleCode), or (styleCode only with that style on exactly one product)',
     });
   });
 
@@ -47,6 +49,23 @@ export const bulkImportWarehouseInventory = {
   body: Joi.object().keys({
     items: Joi.array().items(createWarehouseInventoryBodySchema).min(1).max(10000).required(),
   }),
+};
+
+/**
+ * POST /warehouse-inventory — single row **or** `{ items: [...] }` bulk (same as /bulk-import).
+ */
+export const createOrBulkWarehouseInventory = {
+  body: Joi.alternatives()
+    .try(
+      Joi.object({
+        items: Joi.array().items(createWarehouseInventoryBodySchema).min(1).max(10000).required(),
+      }).unknown(false),
+      createWarehouseInventoryBodySchema
+    )
+    .messages({
+      'alternatives.match':
+        'Body must be either a single inventory row (styleCode, quantities, etc.) or bulk import with an "items" array',
+    }),
 };
 
 export const getWarehouseInventories = {

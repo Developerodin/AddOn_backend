@@ -5,8 +5,10 @@ import express from 'express';
  * Handles large payloads and provides monitoring
  */
 export const bulkImportMiddleware = (req, res, next) => {
-  // Set specific timeout for bulk operations
-  req.setTimeout(300000); // 5 minutes timeout for bulk operations
+  // Large inventory imports (thousands of rows + DB writes) can exceed a few minutes
+  const bulkMs = 900000; // 15 minutes
+  req.setTimeout(bulkMs);
+  res.setTimeout(bulkMs);
   
   // Add request size monitoring
   const contentLength = req.headers['content-length'];
