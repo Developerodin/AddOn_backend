@@ -1,6 +1,6 @@
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
-import { VendorBox, VendorPurchaseOrder, VendorManagement } from '../../models/index.js';
+import { VendorBox, VendorPurchaseOrder, VendorManagement, VendorProductionFlow } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import * as vendorProductionFlowService from './vendorProductionFlow.service.js';
 
@@ -105,6 +105,67 @@ export const updateVendorBoxById = async (vendorBoxId, updateBody) => {
     await vendorProductionFlowService.syncBoxToProductionFlow(box, currentUnits - previousUnits);
   }
   return box;
+};
+
+/**
+ * Accept a vendor box on the secondary checking floor by scanning its barcode.
+ * Moves the box's quantity from `pendingFromBoxes` into `received` / `remaining` on the production flow.
+ * @param {string} barcode - The box barcode (or Mongo _id that doubles as barcode)
+ * @returns {{ box: Object, flow: Object | null, acceptedUnits: number }}
+ */
+export const scanAcceptVendorBoxForSecondaryChecking = async (barcode) => {
+  const trimmed = String(barcode).trim();
+  if (!trimmed) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Barcode is required');
+  }
+
+  const box = await VendorBox.findOne({
+    $or: [{ barcode: trimmed }, { boxId: trimmed }],
+  });
+  if (!box) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'No box found with this barcode');
+  }
+  if (box.secondaryCheckingAccepted) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'This box has already been accepted on secondary checking');
+  }
+
+  const units = Number(box.numberOfUnits) || 0;
+  if (units <= 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Box has no units to accept (numberOfUnits is 0)');
+  }
+
+  box.secondaryCheckingAccepted = true;
+  box.secondaryCheckingAcceptedAt = new Date();
+  await box.save();
+
+  const filter = {
+    vendor: box.vendor,
+    vendorPurchaseOrder: box.vendorPurchaseOrderId,
+    product: box.productId,
+  };
+  const flow = await VendorProductionFlow.findOne(filter);
+  if (!flow) {
+    return { box, flow: null, acceptedUnits: units };
+  }
+
+  const sc = flow.floorQuantities?.secondaryChecking || {};
+  const pending = Number(sc.pendingFromBoxes || 0);
+  const acceptQty = Math.min(units, pending);
+
+  if (acceptQty > 0) {
+    sc.pendingFromBoxes = Math.max(0, pending - acceptQty);
+    sc.received = Number(sc.received || 0) + acceptQty;
+    sc.remaining = Number(sc.remaining || 0) + acceptQty;
+    flow.floorQuantities.secondaryChecking = sc;
+    await flow.save();
+  }
+
+  const updatedFlow = await VendorProductionFlow.findById(flow._id)
+    .populate({ path: 'vendor', select: 'header' })
+    .populate({ path: 'vendorPurchaseOrder', select: 'vpoNumber vendorName currentStatus' })
+    .populate({ path: 'product', select: 'name softwareCode internalCode status' });
+
+  return { box, flow: updatedFlow, acceptedUnits: acceptQty };
 };
 
 export const deleteVendorBoxById = async (vendorBoxId) => {

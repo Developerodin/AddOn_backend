@@ -149,6 +149,8 @@ export const vendorSecondaryCheckingFloorSchema = new mongoose.Schema(
       default: RepairStatus.NOT_REQUIRED,
     },
     repairRemarks: { type: String, default: '' },
+    /** Quantity from boxes not yet scanned/accepted on this floor — moves to `received` on scan. */
+    pendingFromBoxes: { type: Number, default: 0, min: 0 },
     receivedData: { type: [receivedDataEntrySchema], default: [] },
     /** Filled later by another system / job */
     externalSource: {

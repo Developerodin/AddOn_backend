@@ -91,6 +91,15 @@ const vendorBoxSchema = mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    /** True once the box has been scanned/accepted on the secondary checking floor. */
+    secondaryCheckingAccepted: {
+      type: Boolean,
+      default: false,
+    },
+    secondaryCheckingAcceptedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

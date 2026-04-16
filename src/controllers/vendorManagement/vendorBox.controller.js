@@ -43,6 +43,11 @@ export const processVendorLot = catchAsync(async (req, res) => {
   res.status(httpStatus.CREATED).send(result);
 });
 
+export const scanAcceptForSecondaryChecking = catchAsync(async (req, res) => {
+  const result = await vendorBoxService.scanAcceptVendorBoxForSecondaryChecking(req.body.barcode);
+  res.send(result);
+});
+
 export const deleteVendorBox = catchAsync(async (req, res) => {
   await vendorBoxService.deleteVendorBoxById(req.params.vendorBoxId);
   res.status(httpStatus.NO_CONTENT).send();

@@ -294,8 +294,9 @@ export const syncBoxToProductionFlow = async (box, quantityChange) => {
       plannedQuantity: qty,
       floorQuantities: {
         secondaryChecking: {
-          received: qty,
-          remaining: qty,
+          received: 0,
+          remaining: 0,
+          pendingFromBoxes: qty,
           receivedData: [lotEntry],
         },
       },
@@ -306,8 +307,7 @@ export const syncBoxToProductionFlow = async (box, quantityChange) => {
 
   flow.plannedQuantity = Number(flow.plannedQuantity || 0) + qty;
   const sc = flow.floorQuantities?.secondaryChecking || {};
-  sc.received = Number(sc.received || 0) + qty;
-  sc.remaining = Number(sc.remaining || 0) + qty;
+  sc.pendingFromBoxes = Number(sc.pendingFromBoxes || 0) + qty;
   sc.receivedData = Array.isArray(sc.receivedData) ? sc.receivedData : [];
 
   const hasLotEntry = lotMarker

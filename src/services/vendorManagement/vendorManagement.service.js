@@ -397,7 +397,10 @@ export const queryVendorProductionFlows = async (filter, options, search) => {
    */
   if (filter.currentFloorKey === 'secondaryChecking') {
     mongoFilter.$or = [
-      { currentFloorKey: 'secondaryChecking' },
+      {
+        currentFloorKey: 'secondaryChecking',
+        'floorQuantities.secondaryChecking.received': { $gt: 0 },
+      },
       { 'floorQuantities.secondaryChecking.remaining': { $gt: 0 } },
     ];
   } else if (filter.currentFloorKey === 'finalChecking') {

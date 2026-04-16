@@ -11,6 +11,10 @@ router
   .post(auth(), validate(vendorBoxValidation.bulkCreateVendorBoxes), vendorBoxController.bulkCreateVendorBoxes);
 
 router
+  .route('/scan-accept')
+  .post(auth(), validate(vendorBoxValidation.scanAcceptForSecondaryChecking), vendorBoxController.scanAcceptForSecondaryChecking);
+
+router
   .route('/process-lot')
   .post(auth(), validate(vendorBoxValidation.processVendorLot), vendorBoxController.processVendorLot);
 

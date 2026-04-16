@@ -110,6 +110,12 @@ export const updateVendorBox = {
     .min(1),
 };
 
+export const scanAcceptForSecondaryChecking = {
+  body: Joi.object().keys({
+    barcode: Joi.string().required().trim(),
+  }),
+};
+
 export const deleteVendorBox = {
   params: Joi.object().keys({
     vendorBoxId: Joi.string().custom(objectId).required(),
