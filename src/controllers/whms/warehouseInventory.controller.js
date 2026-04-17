@@ -15,7 +15,19 @@ const withLogSummary = async (record) => {
   return serializeWarehouseInventory(record, { logCount });
 };
 
-const createWarehouseInventory = catchAsync(async (req, res) => {
+/** Explicit JSON so clients always get a visible body (success flag + summary fields). */
+const bulkImportJson = (result) => ({
+  success: true,
+  message: 'Bulk import completed',
+  ...result,
+});
+
+/** Single row create OR `{ items: [...] }` bulk — same URL as many clients expect for “bulk-import”. */
+const createOrBulkWarehouseInventory = catchAsync(async (req, res) => {
+  if (Array.isArray(req.body?.items)) {
+    const result = await warehouseInventoryService.bulkImportWarehouseInventory(req.body.items);
+    return res.status(httpStatus.CREATED).json(bulkImportJson(result));
+  }
   const record = await warehouseInventoryService.createWarehouseInventory(req.body);
   res.status(httpStatus.CREATED).send(await withLogSummary(record));
 });
@@ -67,11 +79,11 @@ const deleteWarehouseInventory = catchAsync(async (req, res) => {
 
 const bulkImportWarehouseInventory = catchAsync(async (req, res) => {
   const result = await warehouseInventoryService.bulkImportWarehouseInventory(req.body.items);
-  res.status(httpStatus.CREATED).send(result);
+  res.status(httpStatus.CREATED).json(bulkImportJson(result));
 });
 
 export {
-  createWarehouseInventory,
+  createOrBulkWarehouseInventory,
   bulkImportWarehouseInventory,
   getWarehouseInventories,
   getWarehouseInventoryByStyleCode,

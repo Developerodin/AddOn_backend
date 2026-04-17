@@ -88,14 +88,14 @@ export const queryVendorPurchaseOrders = async (filter, options, search) => {
 
 export const getVendorPurchaseOrderById = async (id) =>
   VendorPurchaseOrder.findById(id)
-    .populate({ path: 'vendor', select: 'header products' })
-    .populate({ path: 'poItems.productId', select: 'name softwareCode internalCode status category' })
+    .populate({ path: 'vendor', select: 'header.vendorName header.vendorCode products' })
+    .populate({ path: 'poItems.productId', select: 'name softwareCode internalCode vendorCode status category' })
     .exec();
 
 export const getVendorPurchaseOrderByVpoNumber = async (vpoNumber) =>
   VendorPurchaseOrder.findOne({ vpoNumber: String(vpoNumber).trim() })
-    .populate({ path: 'vendor', select: 'header products' })
-    .populate({ path: 'poItems.productId', select: 'name softwareCode internalCode status category' })
+    .populate({ path: 'vendor', select: 'header.vendorName header.vendorCode products' })
+    .populate({ path: 'poItems.productId', select: 'name softwareCode internalCode vendorCode status category' })
     .exec();
 
 export const updateVendorPurchaseOrderById = async (purchaseOrderId, updateBody) => {
