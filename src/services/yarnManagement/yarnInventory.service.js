@@ -40,11 +40,11 @@ const getSlotBarcodes = async () => {
 const transformInventoryForResponse = (inventory) => {
   const lt = inventory.longTermInventory || {};
   const st = inventory.shortTermInventory || {};
-  const blocked = inventory.blockedNetWeight || 0;
+  const blockedQty = Math.max(0, inventory.blockedNetWeight || 0);
 
   // Long-term storage: Only weight (boxes), NO cones
   // Short-term storage: Weight and cones
-  // Blocked weight applies to short-term (where yarn is issued from)
+  // Blocked weight = cones currently issued (out for production)
   
   const catalogRef = inventory.yarnCatalogId ?? inventory.yarn;
   const yarnId = catalogRef?._id || catalogRef || inventory.yarnId;
@@ -55,15 +55,16 @@ const transformInventoryForResponse = (inventory) => {
     yarnId,
     yarnName: inventory.yarnName,
     longTermStorage: {
-      totalWeight: Math.max(0, lt.totalWeight || 0), // Ensure non-negative
-      netWeight: Math.max(0, lt.totalNetWeight || 0), // Long-term: weight only, no blocked weight
-      numberOfCones: 0, // Long-term storage has boxes, not individual cones
+      totalWeight: Math.max(0, lt.totalWeight || 0),
+      netWeight: Math.max(0, lt.totalNetWeight || 0),
+      numberOfCones: 0,
     },
     shortTermStorage: {
-      totalWeight: Math.max(0, st.totalWeight || 0), // Ensure non-negative
-      netWeight: Math.max(0, (st.totalNetWeight || 0) - blocked), // Short-term: net weight minus blocked
-      numberOfCones: Math.max(0, st.numberOfCones || 0), // Ensure non-negative
+      totalWeight: Math.max(0, st.totalWeight || 0),
+      netWeight: Math.max(0, st.totalNetWeight || 0),
+      numberOfCones: Math.max(0, st.numberOfCones || 0),
     },
+    blockedQty,
     inventoryStatus: inventory.inventoryStatus,
     overbooked: inventory.overbooked,
   };
@@ -306,15 +307,36 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
     },
   ];
 
+  // Blocked cones: issueStatus = 'issued' (sent out for production, not yet returned)
+  const blockedConePipeline = [
+    {
+      $match: {
+        issueStatus: 'issued',
+        ...yarnNameMatch,
+      },
+    },
+    {
+      $group: {
+        _id: { $trim: { input: { $ifNull: ['$yarnName', 'Unknown'] } } },
+        blockedWeight: { $sum: { $subtract: [{ $ifNull: ['$coneWeight', 0] }, { $ifNull: ['$tearWeight', 0] }] } },
+        blockedCones: { $sum: 1 },
+      },
+    },
+  ];
+
   const ltBoxQuery = { storageLocation: { $in: ltBarcodes }, storedStatus: true, ...yarnNameMatch };
 
-  const [coneWeightAgg, ltBoxes, stConeAgg] = await Promise.all([
+  const [coneWeightAgg, ltBoxes, stConeAgg, blockedConeAgg] = await Promise.all([
     YarnCone.aggregate(coneWeightByBoxPipeline).allowDiskUse(true),
     YarnBox.find(ltBoxQuery).select('boxId yarnName boxWeight tearweight').lean(),
     YarnCone.aggregate(stConePipeline).allowDiskUse(true),
+    YarnCone.aggregate(blockedConePipeline).allowDiskUse(true),
   ]);
 
   const coneWeightByBox = new Map(coneWeightAgg.map((x) => [x._id, x.totalConeWeight || 0]));
+
+  // Map blocked weight by yarnName
+  const blockedByYarn = new Map(blockedConeAgg.map((x) => [x._id, { blockedWeight: x.blockedWeight || 0, blockedCones: x.blockedCones || 0 }]));
 
   // LT: group in JS after filtering out fully-transferred boxes (avoids expensive per-row $lookup)
   const ltByYarn = new Map();
@@ -377,7 +399,8 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
   }
 
   // Resolve yarnId, inventoryStatus from YarnCatalog (batch lookup)
-  const allYarnNames = new Set([...ltByYarn.keys(), ...stByYarn.keys()]);
+  // Include blocked yarn names in the lookup
+  const allYarnNames = new Set([...ltByYarn.keys(), ...stByYarn.keys(), ...blockedByYarn.keys()]);
   const [catalogs, inventoryRows] = await Promise.all([
     YarnCatalog.find({ yarnName: { $in: Array.from(allYarnNames) } }).select('_id yarnName minQuantity').lean(),
     // Pre-fetch all inventory rows in one go
@@ -390,6 +413,7 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
   for (const yarnName of allYarnNames) {
     const lt = ltByYarn.get(yarnName) || { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0 };
     const st = stByYarn.get(yarnName) || { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, numberOfCones: 0 };
+    const blocked = blockedByYarn.get(yarnName) || { blockedWeight: 0, blockedCones: 0 };
     const catalog = catalogByName.get(yarnName);
     const totalNet = toNum(lt.totalNetWeight) + toNum(st.totalNetWeight);
     let inventoryStatus = 'in_stock';
@@ -399,14 +423,14 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
       else if (totalNet <= minQty * 1.2) inventoryStatus = 'soon_to_be_low';
     }
     const inventory = catalog?._id ? inventoryByCatalogId.get(String(catalog._id)) : undefined;
-    const blocked = toNum(inventory?.blockedNetWeight ?? 0);
 
     inventoryMap.set(yarnName, {
       yarnId: catalog?._id,
       yarnName,
       longTermInventory: { totalWeight: toNum(lt.totalWeight), totalTearWeight: toNum(lt.totalTearWeight), totalNetWeight: toNum(lt.totalNetWeight), numberOfCones: 0 },
       shortTermInventory: { totalWeight: toNum(st.totalWeight), totalTearWeight: toNum(st.totalTearWeight), totalNetWeight: toNum(st.totalNetWeight), numberOfCones: st.numberOfCones || 0 },
-      blockedNetWeight: blocked,
+      blockedNetWeight: toNum(blocked.blockedWeight),
+      blockedCones: toNum(blocked.blockedCones),
       inventoryStatus,
       overbooked: inventory?.overbooked ?? false,
     });
