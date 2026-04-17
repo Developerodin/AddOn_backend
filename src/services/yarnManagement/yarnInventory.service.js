@@ -11,8 +11,27 @@ const LT_STORAGE_REGEX = { $regex: new RegExp(`^(LT-|${LT_SECTION_CODES.map((s) 
 /** ST: legacy ST-* OR slot barcode B7-01- (from StorageSlot) */
 const ST_STORAGE_REGEX = { $regex: new RegExp(`^(ST-|${ST_SECTION_CODE}-)`, 'i') };
 
-/** storageLocation/coneStorageId must exist and not be empty - do not count items without location */
-const HAS_STORAGE_LOCATION = { $exists: true, $nin: [null, ''] };
+/** Cached slot barcodes — refreshed every 5 minutes since slots rarely change */
+let _slotBarcodeCache = { lt: null, st: null, expiresAt: 0 };
+const SLOT_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * @returns {Promise<{ ltBarcodes: string[], stBarcodes: string[] }>}
+ */
+const getSlotBarcodes = async () => {
+  if (_slotBarcodeCache.lt && Date.now() < _slotBarcodeCache.expiresAt) {
+    return { ltBarcodes: _slotBarcodeCache.lt, stBarcodes: _slotBarcodeCache.st };
+  }
+  const [ltSlots, stSlots] = await Promise.all([
+    StorageSlot.find({ zoneCode: STORAGE_ZONES.LONG_TERM, isActive: true }).select('barcode label').lean(),
+    StorageSlot.find({ zoneCode: STORAGE_ZONES.SHORT_TERM, isActive: true }).select('barcode label').lean(),
+  ]);
+  const ltBarcodes = ltSlots.map((s) => s.barcode || s.label).filter(Boolean);
+  const stBarcodes = stSlots.map((s) => s.barcode || s.label).filter(Boolean);
+  _slotBarcodeCache = { lt: ltBarcodes, st: stBarcodes, expiresAt: Date.now() + SLOT_CACHE_TTL_MS };
+  return { ltBarcodes, stBarcodes };
+};
+
 
 /**
  * Transform inventory data to include LTS/STS breakdown with blocked weight
@@ -180,184 +199,191 @@ const recalculateInventoryFromStorage = async (inventory) => {
 
 /**
  * Compute total net weight and blocked weight from storage (boxes + cones) for a yarn.
- * Used by requisition service to get accurate availableQty without relying on stale YarnInventory.
+ * Uses aggregation pipelines — 3 parallel queries instead of fetching every doc.
  * @param {ObjectId} yarnId - Yarn catalog ID
  * @returns {Promise<{ totalNetWeight: number, blockedNetWeight: number }>}
  */
 export const computeInventoryFromStorage = async (yarnId) => {
-  const yarnCatalog = await YarnCatalog.findById(yarnId).lean();
+  const yarnCatalog = await YarnCatalog.findById(yarnId).select('yarnName').lean();
   if (!yarnCatalog) return { totalNetWeight: 0, blockedNetWeight: 0 };
 
   const yarnName = yarnCatalog.yarnName || '';
-  const boxYarnMatcher = yarnName.trim()
-    ? { yarnName: { $regex: new RegExp(`^${yarnName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }
-    : {};
+  const escapedName = yarnName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const nameRegex = new RegExp(`^${escapedName}$`, 'i');
 
-  // LT: boxes only
-  const ltBoxes = await YarnBox.find({
-    ...boxYarnMatcher,
-    storageLocation: LT_STORAGE_REGEX,
-    storedStatus: true,
-    'qcData.status': 'qc_approved',
-  }).lean();
-  let ltNet = 0;
-  for (const b of ltBoxes) {
-    ltNet += Math.max(0, (b.boxWeight || 0) - (b.tearweight || 0));
+  const [ltBoxAgg, stConeAgg, inventory] = await Promise.all([
+    YarnBox.aggregate([
+      { $match: { yarnName: nameRegex, storageLocation: LT_STORAGE_REGEX.$regex, storedStatus: true, 'qcData.status': 'qc_approved' } },
+      { $group: { _id: null, netWeight: { $sum: { $subtract: [{ $ifNull: ['$boxWeight', 0] }, { $ifNull: ['$tearweight', 0] }] } } } },
+    ]),
+    YarnCone.aggregate([
+      {
+        $match: {
+          $or: [{ yarnCatalogId: mongoose.Types.ObjectId.createFromHexString(String(yarnId)) }, { yarnName: nameRegex }],
+          coneStorageId: { $exists: true, $nin: [null, ''] },
+          issueStatus: { $ne: 'issued' },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          netWeight: { $sum: { $subtract: [{ $ifNull: ['$coneWeight', 0] }, { $ifNull: ['$tearWeight', 0] }] } },
+          boxIds: { $addToSet: '$boxId' },
+        },
+      },
+    ]),
+    YarnInventory.findOne({ yarnCatalogId: yarnId }).select('blockedNetWeight').lean(),
+  ]);
+
+  const ltNet = Math.max(0, ltBoxAgg[0]?.netWeight || 0);
+  let stNet = Math.max(0, stConeAgg[0]?.netWeight || 0);
+
+  // Unopened boxes in ST (no cones from them yet)
+  const boxIdsWithCones = stConeAgg[0]?.boxIds?.filter(Boolean) || [];
+  if (boxIdsWithCones.length > 0 || stConeAgg.length === 0) {
+    const stBoxAgg = await YarnBox.aggregate([
+      {
+        $match: {
+          yarnName: nameRegex,
+          storageLocation: ST_STORAGE_REGEX.$regex,
+          storedStatus: true,
+          'qcData.status': 'qc_approved',
+          boxId: { $nin: boxIdsWithCones },
+        },
+      },
+      { $group: { _id: null, netWeight: { $sum: { $subtract: [{ $ifNull: ['$boxWeight', 0] }, { $ifNull: ['$tearweight', 0] }] } } } },
+    ]);
+    stNet += Math.max(0, stBoxAgg[0]?.netWeight || 0);
   }
 
-  // ST: cones only
-  const stCones = await YarnCone.find({
-    $or: [{ yarnCatalogId: yarnId }, { yarnName }],
-    coneStorageId: { $exists: true, $nin: [null, ''] },
-    issueStatus: { $ne: 'issued' },
-  }).lean();
-  let stNet = 0;
-  for (const c of stCones) {
-    stNet += Math.max(0, (c.coneWeight || 0) - (c.tearWeight || 0));
-  }
-
-  // Unopened boxes in ST
-  const boxIdsWithCones = new Set(stCones.map((c) => c.boxId).filter(Boolean));
-  const stBoxes = await YarnBox.find({
-    ...boxYarnMatcher,
-    storageLocation: ST_STORAGE_REGEX,
-    storedStatus: true,
-    'qcData.status': 'qc_approved',
-    boxId: { $nin: Array.from(boxIdsWithCones) },
-  }).lean();
-  for (const b of stBoxes) {
-    stNet += Math.max(0, (b.boxWeight || 0) - (b.tearweight || 0));
-  }
-
-  const totalNetWeight = ltNet + stNet;
-  const inventory = await YarnInventory.findOne({ yarnCatalogId: yarnId }).lean();
-  const blockedNetWeight = Math.max(0, Number(inventory?.blockedNetWeight ?? 0));
-
-  return { totalNetWeight, blockedNetWeight };
+  return {
+    totalNetWeight: ltNet + stNet,
+    blockedNetWeight: Math.max(0, Number(inventory?.blockedNetWeight ?? 0)),
+  };
 };
 
 /**
- * Aggregate inventory directly from storage (LT/ST zones).
- * Only counts boxes/cones with non-empty storageLocation/coneStorageId.
- * Uses actual slot barcodes from StorageSlot to be aligned with storage API.
+ * Aggregate inventory from storage using MongoDB aggregation pipelines.
+ * Runs grouping server-side instead of fetching all docs into JS.
  * @param {Object} filters - Optional yarn_name filter
  * @returns {Promise<Map<string, Object>>} - Map of yarnName -> { lt, st, yarnId?, inventoryStatus }
  */
 const aggregateInventoryFromStorage = async (filters = {}) => {
   const toNum = (v) => Math.max(0, Number(v ?? 0));
+  const { ltBarcodes, stBarcodes } = await getSlotBarcodes();
 
-  // Get slot barcodes for LT and ST zones (same as storage API)
-  const [ltSlots, stSlots] = await Promise.all([
-    StorageSlot.find({ zoneCode: STORAGE_ZONES.LONG_TERM, isActive: true }).select('barcode label').lean(),
-    StorageSlot.find({ zoneCode: STORAGE_ZONES.SHORT_TERM, isActive: true }).select('barcode label').lean(),
-  ]);
-  const ltBarcodes = ltSlots.map((s) => s.barcode || s.label).filter(Boolean);
-  const stBarcodes = stSlots.map((s) => s.barcode || s.label).filter(Boolean);
+  const yarnNameMatch = filters.yarn_name
+    ? { yarnName: { $regex: filters.yarn_name, $options: 'i' } }
+    : {};
 
-  // LT: boxes with storageLocation in LT slots AND non-empty
-  const ltBoxQuery = {
-    storageLocation: { $in: ltBarcodes },
-    storedStatus: true,
-  };
-  if (filters.yarn_name) {
-    ltBoxQuery.yarnName = { $regex: filters.yarn_name, $options: 'i' };
-  }
+  // Step 1: Pre-aggregate cone weights per boxId (used to detect fully-transferred LT boxes)
+  // Step 2: LT boxes — filter out fully-transferred, group by yarnName
+  // Step 3: ST cones — group by yarnName
+  // All 3 run in parallel for speed.
 
-  // Exclude boxes fully transferred to cones (same logic as storage slots service)
-  const ltBoxes = await YarnBox.find(ltBoxQuery).lean();
-  const boxIds = ltBoxes.map((b) => b.boxId);
-  const conesInSTByBox = await YarnCone.aggregate([
+  const coneWeightByBoxPipeline = [
+    { $match: { coneStorageId: { $exists: true, $nin: [null, ''] } } },
+    { $group: { _id: '$boxId', totalConeWeight: { $sum: { $ifNull: ['$coneWeight', 0] } } } },
+  ];
+
+  const stConePipeline = [
     {
       $match: {
-        boxId: { $in: boxIds },
-        coneStorageId: HAS_STORAGE_LOCATION,
+        coneStorageId: { $in: stBarcodes },
+        $or: [{ issueStatus: 'not_issued' }, { returnStatus: 'returned' }],
+        ...yarnNameMatch,
       },
     },
-    { $group: { _id: '$boxId', totalConeWeight: { $sum: '$coneWeight' } } },
-  ]);
-  const coneWeightByBox = new Map(conesInSTByBox.map((x) => [x._id, x.totalConeWeight || 0]));
+    {
+      $group: {
+        _id: { $trim: { input: { $ifNull: ['$yarnName', 'Unknown'] } } },
+        totalWeight: { $sum: { $ifNull: ['$coneWeight', 0] } },
+        totalTearWeight: { $sum: { $ifNull: ['$tearWeight', 0] } },
+        totalNetWeight: { $sum: { $subtract: [{ $ifNull: ['$coneWeight', 0] }, { $ifNull: ['$tearWeight', 0] }] } },
+        numberOfCones: { $sum: 1 },
+        boxIds: { $addToSet: '$boxId' },
+      },
+    },
+  ];
 
+  const ltBoxQuery = { storageLocation: { $in: ltBarcodes }, storedStatus: true, ...yarnNameMatch };
+
+  const [coneWeightAgg, ltBoxes, stConeAgg] = await Promise.all([
+    YarnCone.aggregate(coneWeightByBoxPipeline).allowDiskUse(true),
+    YarnBox.find(ltBoxQuery).select('boxId yarnName boxWeight tearweight').lean(),
+    YarnCone.aggregate(stConePipeline).allowDiskUse(true),
+  ]);
+
+  const coneWeightByBox = new Map(coneWeightAgg.map((x) => [x._id, x.totalConeWeight || 0]));
+
+  // LT: group in JS after filtering out fully-transferred boxes (avoids expensive per-row $lookup)
   const ltByYarn = new Map();
   for (const box of ltBoxes) {
-    const boxWeight = box.boxWeight || 0;
-    const coneWeightInST = coneWeightByBox.get(box.boxId) || 0;
-    const fullyTransferred = boxWeight > 0 && coneWeightInST >= boxWeight - 0.001;
-    if (fullyTransferred) continue;
-
+    const bw = box.boxWeight || 0;
+    const coneW = coneWeightByBox.get(box.boxId) || 0;
+    if (bw > 0 && coneW >= bw - 0.001) continue;
     const yarnName = (box.yarnName || 'Unknown').trim();
-    if (!ltByYarn.has(yarnName)) {
-      ltByYarn.set(yarnName, { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0 });
-    }
+    if (!ltByYarn.has(yarnName)) ltByYarn.set(yarnName, { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0 });
     const r = ltByYarn.get(yarnName);
-    const tear = toNum(box.tearweight);
-    const net = Math.max(0, toNum(box.boxWeight) - tear);
-    r.totalWeight += toNum(box.boxWeight);
+    const tear = Math.max(0, box.tearweight || 0);
+    r.totalWeight += Math.max(0, bw);
     r.totalTearWeight += tear;
-    r.totalNetWeight += net;
+    r.totalNetWeight += Math.max(0, bw - tear);
   }
 
-  // ST: cones with coneStorageId in ST slots AND non-empty
-  const stConeQuery = {
-    coneStorageId: { $in: stBarcodes },
-    $or: [{ issueStatus: 'not_issued' }, { returnStatus: 'returned' }],
-  };
-  if (filters.yarn_name) {
-    stConeQuery.yarnName = { $regex: filters.yarn_name, $options: 'i' };
+  // Collect boxIds that have cones in ST to exclude from ST box query
+  const allBoxIdsWithCones = new Set();
+  for (const r of stConeAgg) {
+    if (r.boxIds) r.boxIds.forEach((id) => { if (id) allBoxIdsWithCones.add(id); });
   }
 
-  const stCones = await YarnCone.find(stConeQuery).lean();
-  const boxIdsWithCones = new Set(stCones.map((c) => c.boxId).filter(Boolean));
+  // ST unopened boxes (no cones) — aggregation
+  const stBoxPipeline = [
+    {
+      $match: {
+        storageLocation: { $in: stBarcodes },
+        storedStatus: true,
+        boxId: { $nin: Array.from(allBoxIdsWithCones) },
+        ...yarnNameMatch,
+      },
+    },
+    {
+      $group: {
+        _id: { $trim: { input: { $ifNull: ['$yarnName', 'Unknown'] } } },
+        totalWeight: { $sum: { $ifNull: ['$boxWeight', 0] } },
+        totalTearWeight: { $sum: { $ifNull: ['$tearweight', 0] } },
+        totalNetWeight: { $sum: { $subtract: [{ $ifNull: ['$boxWeight', 0] }, { $ifNull: ['$tearweight', 0] }] } },
+      },
+    },
+  ];
+  const stBoxAgg = await YarnBox.aggregate(stBoxPipeline).allowDiskUse(true);
 
-  // ST: unopened boxes (no cones from them yet) with storageLocation in ST slots
-  const stBoxQuery = {
-    storageLocation: { $in: stBarcodes },
-    storedStatus: true,
-    boxId: { $nin: Array.from(boxIdsWithCones) },
-  };
-  if (filters.yarn_name) {
-    stBoxQuery.yarnName = { $regex: filters.yarn_name, $options: 'i' };
-  }
-
-  const stBoxes = await YarnBox.find(stBoxQuery).lean();
-
+  // Merge ST cones + ST boxes
   const stByYarn = new Map();
-  for (const cone of stCones) {
-    const yarnName = (cone.yarnName || 'Unknown').trim();
-    if (!stByYarn.has(yarnName)) {
-      stByYarn.set(yarnName, { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, numberOfCones: 0 });
-    }
-    const r = stByYarn.get(yarnName);
-    const tear = toNum(cone.tearWeight);
-    const net = Math.max(0, toNum(cone.coneWeight) - tear);
-    r.totalWeight += toNum(cone.coneWeight);
-    r.totalTearWeight += tear;
-    r.totalNetWeight += net;
-    r.numberOfCones += 1;
+  for (const r of stConeAgg) {
+    stByYarn.set(r._id, {
+      totalWeight: r.totalWeight,
+      totalTearWeight: r.totalTearWeight,
+      totalNetWeight: r.totalNetWeight,
+      numberOfCones: r.numberOfCones,
+    });
   }
-  for (const box of stBoxes) {
-    const yarnName = (box.yarnName || 'Unknown').trim();
-    if (!stByYarn.has(yarnName)) {
-      stByYarn.set(yarnName, { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, numberOfCones: 0 });
-    }
-    const r = stByYarn.get(yarnName);
-    const tear = toNum(box.tearweight);
-    const net = Math.max(0, toNum(box.boxWeight) - tear);
-    r.totalWeight += toNum(box.boxWeight);
-    r.totalTearWeight += tear;
-    r.totalNetWeight += net;
+  for (const r of stBoxAgg) {
+    const existing = stByYarn.get(r._id) || { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, numberOfCones: 0 };
+    existing.totalWeight += r.totalWeight;
+    existing.totalTearWeight += r.totalTearWeight;
+    existing.totalNetWeight += r.totalNetWeight;
+    stByYarn.set(r._id, existing);
   }
 
-  // Merge and resolve yarnId, inventoryStatus from YarnCatalog
+  // Resolve yarnId, inventoryStatus from YarnCatalog (batch lookup)
   const allYarnNames = new Set([...ltByYarn.keys(), ...stByYarn.keys()]);
-  const catalogs = await YarnCatalog.find({ yarnName: { $in: Array.from(allYarnNames) } }).lean();
+  const [catalogs, inventoryRows] = await Promise.all([
+    YarnCatalog.find({ yarnName: { $in: Array.from(allYarnNames) } }).select('_id yarnName minQuantity').lean(),
+    // Pre-fetch all inventory rows in one go
+    YarnInventory.find({}).select('yarnCatalogId blockedNetWeight overbooked').lean(),
+  ]);
   const catalogByName = new Map(catalogs.map((c) => [c.yarnName, c]));
-
-  const catalogIds = catalogs.map((c) => c._id).filter(Boolean);
-  const inventoryRows =
-    catalogIds.length > 0
-      ? await YarnInventory.find({ yarnCatalogId: { $in: catalogIds } }).lean()
-      : [];
-  /** One lookup per catalog — avoids N sequential findOne calls (major latency on large yarn sets). */
   const inventoryByCatalogId = new Map(inventoryRows.map((inv) => [String(inv.yarnCatalogId), inv]));
 
   const inventoryMap = new Map();
@@ -365,7 +391,7 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
     const lt = ltByYarn.get(yarnName) || { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0 };
     const st = stByYarn.get(yarnName) || { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, numberOfCones: 0 };
     const catalog = catalogByName.get(yarnName);
-    const totalNet = lt.totalNetWeight + st.totalNetWeight;
+    const totalNet = toNum(lt.totalNetWeight) + toNum(st.totalNetWeight);
     let inventoryStatus = 'in_stock';
     if (catalog?.minQuantity) {
       const minQty = toNum(catalog.minQuantity);
@@ -378,8 +404,8 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
     inventoryMap.set(yarnName, {
       yarnId: catalog?._id,
       yarnName,
-      longTermInventory: { totalWeight: lt.totalWeight, totalTearWeight: lt.totalTearWeight, totalNetWeight: lt.totalNetWeight, numberOfCones: 0 },
-      shortTermInventory: { totalWeight: st.totalWeight, totalTearWeight: st.totalTearWeight, totalNetWeight: st.totalNetWeight, numberOfCones: st.numberOfCones || 0 },
+      longTermInventory: { totalWeight: toNum(lt.totalWeight), totalTearWeight: toNum(lt.totalTearWeight), totalNetWeight: toNum(lt.totalNetWeight), numberOfCones: 0 },
+      shortTermInventory: { totalWeight: toNum(st.totalWeight), totalTearWeight: toNum(st.totalTearWeight), totalNetWeight: toNum(st.totalNetWeight), numberOfCones: st.numberOfCones || 0 },
       blockedNetWeight: blocked,
       inventoryStatus,
       overbooked: inventory?.overbooked ?? false,
@@ -397,7 +423,7 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
  * @returns {Promise<Object>} - Paginated inventory results
  */
 export const queryYarnInventories = async (filters = {}, options = {}) => {
-  const limit = Math.min(Math.max(1, Number(options.limit) || 100000), 100000);
+  const limit = Math.min(Math.max(1, Number(options.limit) || 100), 100000);
   const page = Math.max(1, Number(options.page) || 1);
   const skip = (page - 1) * limit;
 

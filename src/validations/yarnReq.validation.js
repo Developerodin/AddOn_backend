@@ -7,6 +7,9 @@ export const getYarnRequisitionList = {
       startDate: Joi.date().iso().required(),
       endDate: Joi.date().iso().required(),
       poSent: Joi.boolean().optional(),
+      page: Joi.number().integer().min(1).optional(),
+      limit: Joi.number().integer().min(1).max(200).optional(),
+      skipRecalculation: Joi.string().valid('true', 'false').optional(),
     })
     .with('startDate', 'endDate')
     .with('endDate', 'startDate')

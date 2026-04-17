@@ -316,6 +316,11 @@ yarnConeSchema.post('save', async function (doc) {
   }
 });
 
+yarnConeSchema.index({ coneStorageId: 1, issueStatus: 1 });
+yarnConeSchema.index({ yarnName: 1, coneStorageId: 1 });
+yarnConeSchema.index({ boxId: 1, coneStorageId: 1 });
+yarnConeSchema.index({ yarnCatalogId: 1, coneStorageId: 1, issueStatus: 1 });
+
 yarnConeSchema.plugin(toJSON);
 yarnConeSchema.plugin(paginate);
 

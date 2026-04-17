@@ -346,6 +346,10 @@ yarnBoxSchema.post('save', async function (doc) {
   }
 });
 
+yarnBoxSchema.index({ storageLocation: 1, storedStatus: 1 });
+yarnBoxSchema.index({ yarnName: 1, storageLocation: 1 });
+yarnBoxSchema.index({ boxId: 1 });
+
 yarnBoxSchema.plugin(toJSON);
 yarnBoxSchema.plugin(paginate);
 

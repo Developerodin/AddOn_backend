@@ -45,7 +45,17 @@ const recalculateRequisitionFromInventory = async (requisition) => {
   };
 };
 
-export const getYarnRequisitionList = async ({ startDate, endDate, poSent }) => {
+/**
+ * @param {Object} params
+ * @param {string} params.startDate
+ * @param {string} params.endDate
+ * @param {boolean} [params.poSent]
+ * @param {number} [params.page] - 1-based page number (default 1)
+ * @param {number} [params.limit] - results per page (default 50, max 200)
+ * @param {boolean} [params.skipRecalculation] - skip expensive per-row recalculation (for summary/count calls)
+ * @returns {Promise<Object>} paginated response with results, page, limit, totalPages, totalResults, alertSummary
+ */
+export const getYarnRequisitionList = async ({ startDate, endDate, poSent, page, limit, skipRecalculation }) => {
   const start = new Date(startDate);
   start.setHours(0, 0, 0, 0);
   const end = new Date(endDate);
@@ -62,28 +72,65 @@ export const getYarnRequisitionList = async ({ startDate, endDate, poSent }) => 
     filter.poSent = poSent;
   }
 
-  const yarnRequisitions = await YarnRequisition.find(filter)
-    .populate({
-      path: 'yarnCatalogId',
-      select: '_id yarnName yarnType status',
-    })
-    .sort({ created: -1 })
-    .lean();
+  const pageNum = Math.max(1, Number(page) || 1);
+  const limitNum = Math.min(Math.max(1, Number(limit) || 50), 200);
+  const skip = (pageNum - 1) * limitNum;
 
-  // Recalculate each requisition from actual inventory to ensure accuracy
-  const recalculatedRequisitions = await Promise.all(
-    yarnRequisitions.map(async (req) => {
-      try {
-        const recalculated = await recalculateRequisitionFromInventory(req);
-        return recalculated;
-      } catch (error) {
-        console.error(`Error recalculating requisition for ${req.yarnName}:`, error.message);
-        return req; // Return original if recalculation fails
-      }
-    })
-  );
+  const [yarnRequisitions, totalResults] = await Promise.all([
+    YarnRequisition.find(filter)
+      .populate({ path: 'yarnCatalogId', select: '_id yarnName yarnType status' })
+      .sort({ created: -1 })
+      .skip(skip)
+      .limit(limitNum)
+      .lean(),
+    YarnRequisition.countDocuments(filter),
+  ]);
 
-  return recalculatedRequisitions;
+  let results;
+  if (skipRecalculation) {
+    results = yarnRequisitions;
+  } else {
+    results = await Promise.all(
+      yarnRequisitions.map(async (req) => {
+        try {
+          return await recalculateRequisitionFromInventory(req);
+        } catch (error) {
+          console.error(`Error recalculating requisition for ${req.yarnName}:`, error.message);
+          return req;
+        }
+      })
+    );
+  }
+
+  const alertSummary = await YarnRequisition.aggregate([
+    { $match: filter },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        pendingCount: { $sum: { $cond: [{ $eq: ['$poSent', false] }, 1, 0] } },
+        belowMinimumCount: { $sum: { $cond: [{ $eq: ['$alertStatus', 'below_minimum'] }, 1, 0] } },
+        overbookedCount: { $sum: { $cond: [{ $eq: ['$alertStatus', 'overbooked'] }, 1, 0] } },
+      },
+    },
+  ]);
+
+  const summary = alertSummary[0] || { total: 0, pendingCount: 0, belowMinimumCount: 0, overbookedCount: 0 };
+
+  return {
+    results,
+    page: pageNum,
+    limit: limitNum,
+    totalPages: Math.ceil(totalResults / limitNum) || 1,
+    totalResults,
+    alertSummary: {
+      total: summary.total,
+      pendingDeliveries: summary.pendingCount,
+      alertCount: summary.belowMinimumCount + summary.overbookedCount,
+      belowMinimumCount: summary.belowMinimumCount,
+      overbookedCount: summary.overbookedCount,
+    },
+  };
 };
 
 export const createYarnRequisition = async (yarnRequisitionBody) => {

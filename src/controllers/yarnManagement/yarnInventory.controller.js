@@ -11,9 +11,8 @@ import * as yarnInventoryService from '../../services/yarnManagement/yarnInvento
 export const getYarnInventories = catchAsync(async (req, res) => {
   const filter = pick(req.query, ['yarn_id', 'yarn_name', 'inventory_status', 'overbooked']);
   const options = pick(req.query, ['sortBy', 'page', 'limit']);
-  // Default limit 100000 = return entire data (no pagination cap)
   if (!options.limit || options.limit <= 0) {
-    options.limit = 100000;
+    options.limit = 100;
   }
   const result = await yarnInventoryService.queryYarnInventories(filter, options);
   res.status(httpStatus.OK).send(result);
