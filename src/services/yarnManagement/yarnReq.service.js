@@ -50,12 +50,13 @@ const recalculateRequisitionFromInventory = async (requisition) => {
  * @param {string} params.startDate
  * @param {string} params.endDate
  * @param {boolean} [params.poSent]
+ * @param {string} [params.alertStatus] - filter by alert status: 'below_minimum', 'overbooked', or 'has_alert' (either)
  * @param {number} [params.page] - 1-based page number (default 1)
  * @param {number} [params.limit] - results per page (default 50, max 200)
  * @param {boolean} [params.skipRecalculation] - skip expensive per-row recalculation (for summary/count calls)
  * @returns {Promise<Object>} paginated response with results, page, limit, totalPages, totalResults, alertSummary
  */
-export const getYarnRequisitionList = async ({ startDate, endDate, poSent, page, limit, skipRecalculation }) => {
+export const getYarnRequisitionList = async ({ startDate, endDate, poSent, alertStatus, page, limit, skipRecalculation }) => {
   const start = new Date(startDate);
   start.setHours(0, 0, 0, 0);
   const end = new Date(endDate);
@@ -70,6 +71,14 @@ export const getYarnRequisitionList = async ({ startDate, endDate, poSent, page,
 
   if (typeof poSent === 'boolean') {
     filter.poSent = poSent;
+  }
+
+  if (alertStatus) {
+    if (alertStatus === 'has_alert') {
+      filter.alertStatus = { $in: ['below_minimum', 'overbooked'] };
+    } else {
+      filter.alertStatus = alertStatus;
+    }
   }
 
   const pageNum = Math.max(1, Number(page) || 1);
