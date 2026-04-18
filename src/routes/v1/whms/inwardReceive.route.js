@@ -9,7 +9,7 @@ const router = express.Router();
 router
   .route('/promote-vendor-dispatch')
   .post(
-    auth('manageOrders'),
+    auth(),
     validate(inwardReceiveValidation.promoteVendorDispatchToInwardReceive),
     inwardReceiveController.promoteVendorDispatchToInwardReceive
   );
@@ -17,12 +17,12 @@ router
 router
   .route('/')
   .post(
-    auth('manageOrders'),
+    auth(),
     validate(inwardReceiveValidation.createInwardReceive),
     inwardReceiveController.createInwardReceive
   )
   .get(
-    auth('getOrders'),
+    auth(),
     validate(inwardReceiveValidation.getInwardReceives),
     inwardReceiveController.getInwardReceives
   );
@@ -30,17 +30,17 @@ router
 router
   .route('/:id')
   .get(
-    auth('getOrders'),
+    auth(),
     validate(inwardReceiveValidation.getInwardReceive),
     inwardReceiveController.getInwardReceive
   )
   .patch(
-    auth('manageOrders'),
+    auth(),
     validate(inwardReceiveValidation.updateInwardReceive),
     inwardReceiveController.updateInwardReceive
   )
   .delete(
-    auth('manageOrders'),
+    auth(),
     validate(inwardReceiveValidation.deleteInwardReceive),
     inwardReceiveController.deleteInwardReceive
   );

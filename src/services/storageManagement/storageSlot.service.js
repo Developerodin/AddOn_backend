@@ -248,10 +248,41 @@ export const getStorageSlotsWithContents = async (zone, query = {}) => {
     };
   });
 
+  // Calculate zone summary
+  let totalBoxes = 0;
+  let totalCones = 0;
+  let totalWeight = 0;
+  const yarnNamesSet = new Set();
+
+  for (const slot of results) {
+    totalBoxes += slot.boxCount || 0;
+    totalCones += slot.coneCount || 0;
+    
+    // LT: boxWeight (already net)
+    // ST: coneWeight - tearWeight (net)
+    if (zone === STORAGE_ZONES.LONG_TERM) {
+      for (const box of slot.boxes || []) {
+        totalWeight += box.boxWeight || 0;
+        if (box.yarnName) yarnNamesSet.add(box.yarnName);
+      }
+    } else {
+      for (const cone of slot.cones || []) {
+        totalWeight += (cone.coneWeight || 0) - (cone.tearWeight || 0);
+        if (cone.yarnName) yarnNamesSet.add(cone.yarnName);
+      }
+    }
+  }
+
   return {
     results,
     totalResults: results.length,
     zoneCode: zone || null,
+    summary: {
+      totalBoxes,
+      totalCones,
+      totalWeight: Math.round(totalWeight * 100) / 100,
+      yarnTypes: yarnNamesSet.size,
+    },
   };
 };
 
