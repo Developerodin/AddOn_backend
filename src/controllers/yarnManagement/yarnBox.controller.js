@@ -76,4 +76,10 @@ export const bulkSetBoxStorageLocation = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(result);
 });
 
+export const resetBoxesWeightToZeroIfStConesPresent = catchAsync(async (req, res) => {
+  const { poNumber, dryRun } = req.body;
+  const result = await yarnBoxService.resetBoxesWeightToZeroIfStConesPresent({ poNumber, dryRun });
+  res.status(httpStatus.OK).send(result);
+});
+
 

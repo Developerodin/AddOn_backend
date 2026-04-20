@@ -15,3 +15,15 @@ export const getYarnReport = {
       return value;
     }, 'date range validation'),
 };
+
+export const getPoShortTermStorageReport = {
+  params: Joi.object().keys({
+    poNumber: Joi.string().trim().min(1).required(),
+  }),
+};
+
+export const getPoBoxAuditReport = {
+  params: Joi.object().keys({
+    poNumber: Joi.string().trim().min(1).required(),
+  }),
+};

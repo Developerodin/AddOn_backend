@@ -114,6 +114,12 @@ export const getYarnConeByBarcode = {
   }),
 };
 
+export const getShortTermConesByBoxId = {
+  params: Joi.object().keys({
+    boxId: Joi.string().trim().required(),
+  }),
+};
+
 export const generateConesByBox = {
   params: Joi.object().keys({
     boxId: Joi.string().trim().required(),

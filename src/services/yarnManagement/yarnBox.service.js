@@ -1,6 +1,6 @@
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
-import { YarnBox, YarnPurchaseOrder } from '../../models/index.js';
+import { YarnBox, YarnCone, YarnPurchaseOrder } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import { LT_SECTION_CODES } from '../../models/storageManagement/storageSlot.model.js';
 
@@ -84,6 +84,46 @@ export const updateYarnBoxById = async (yarnBoxId, updateBody) => {
   const yarnBox = await YarnBox.findById(yarnBoxId);
   if (!yarnBox) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Yarn box not found');
+  }
+
+  // Guardrail: prevent inconsistent states when cones are already in short-term storage for this box.
+  // Partial transfer is allowed (box still in LT with weight + LT storageLocation).
+  // But unsetting storageLocation while keeping boxWeight > 0 causes "orphan" boxes (no location but nonzero weight).
+  const hasShortTermCones = await YarnCone.exists({
+    boxId: yarnBox.boxId,
+    coneStorageId: { $exists: true, $nin: [null, ''] },
+  });
+  if (hasShortTermCones) {
+    const willSetStorageLocation =
+      Object.prototype.hasOwnProperty.call(updateBody, 'storageLocation') &&
+      updateBody.storageLocation != null &&
+      String(updateBody.storageLocation).trim() !== '';
+    const willUnsetStorageLocation =
+      Object.prototype.hasOwnProperty.call(updateBody, 'storageLocation') &&
+      (updateBody.storageLocation == null || String(updateBody.storageLocation).trim() === '');
+    const nextBoxWeight = Object.prototype.hasOwnProperty.call(updateBody, 'boxWeight')
+      ? Number(updateBody.boxWeight)
+      : Number(yarnBox.boxWeight ?? 0);
+
+    if (Number.isNaN(nextBoxWeight) || nextBoxWeight < 0) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'boxWeight must be a valid non-negative number');
+    }
+
+    if (willUnsetStorageLocation && nextBoxWeight > 0) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Cannot remove storageLocation while boxWeight > 0 for a box that has cones in short-term storage. Set boxWeight=0 if the box is fully transferred.'
+      );
+    }
+
+    // If user tries to set a storage location while keeping boxWeight=0, it's probably wrong too:
+    // a fully transferred box should stay empty; force user to set a non-zero weight if they want to "bring back" the box.
+    if (willSetStorageLocation && nextBoxWeight === 0) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Cannot set storageLocation for an empty box (boxWeight=0) when cones are already in short-term storage.'
+      );
+    }
   }
 
   if (updateBody.boxId && updateBody.boxId !== yarnBox.boxId) {
@@ -513,6 +553,87 @@ export const updateQcStatusByPoNumber = async (poNumber, qcStatus, qcData = {}) 
     updatedCount: updateResult.modifiedCount,
     totalBoxes: boxes.length,
     boxes: updatedBoxes,
+  };
+};
+
+/**
+ * Reset boxes for a PO when cones are already present in short-term storage.
+ * Safe rule: reset ONLY when ST cone count >= expected cone count for the box.
+ * expected = numberOfCones || coneData.numberOfCones
+ *
+ * @param {Object} payload
+ * @param {string} payload.poNumber
+ * @param {boolean} [payload.dryRun=false]
+ * @returns {Promise<{ message: string, poNumber: string, dryRun: boolean, fixed: number, skipped: number, updatedBoxIds: string[] }>}
+ */
+export const resetBoxesWeightToZeroIfStConesPresent = async ({ poNumber, dryRun = false }) => {
+  const normalizedPo = String(poNumber || '').trim();
+  if (!normalizedPo) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'poNumber is required');
+  }
+
+  const boxes = await YarnBox.find({ poNumber: normalizedPo, boxWeight: { $gt: 0 } })
+    .select('_id boxId boxWeight numberOfCones coneData storageLocation storedStatus')
+    .lean();
+
+  let fixed = 0;
+  let skipped = 0;
+  const updatedBoxIds = [];
+
+  for (const box of boxes) {
+    const boxId = String(box.boxId || '').trim();
+    if (!boxId) {
+      skipped += 1;
+      continue;
+    }
+
+    const expectedCones = Number(box.numberOfCones ?? box?.coneData?.numberOfCones ?? 0);
+    if (!Number.isFinite(expectedCones) || expectedCones <= 0) {
+      skipped += 1;
+      continue;
+    }
+
+    const stConeCount = await YarnCone.countDocuments({
+      boxId,
+      coneStorageId: { $exists: true, $nin: [null, ''] },
+    });
+
+    if (stConeCount > 0 && stConeCount >= expectedCones) {
+      fixed += 1;
+      updatedBoxIds.push(boxId);
+
+      if (!dryRun) {
+        await YarnBox.updateOne(
+          { _id: box._id },
+          {
+            $set: {
+              boxWeight: 0,
+              storedStatus: false,
+              coneData: {
+                ...(box.coneData && typeof box.coneData === 'object' ? box.coneData : {}),
+                conesIssued: true,
+                numberOfCones: expectedCones,
+                coneIssueDate: new Date(),
+              },
+            },
+            $unset: { storageLocation: '' },
+          }
+        );
+      }
+    } else {
+      skipped += 1;
+    }
+  }
+
+  return {
+    message: dryRun
+      ? `Dry-run: would reset ${fixed} box(es) for PO ${normalizedPo}`
+      : `Reset ${fixed} box(es) for PO ${normalizedPo}`,
+    poNumber: normalizedPo,
+    dryRun: Boolean(dryRun),
+    fixed,
+    skipped,
+    updatedBoxIds,
   };
 };
 

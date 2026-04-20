@@ -64,6 +64,31 @@ export const getYarnConeByBarcode = async (barcode) => {
 };
 
 /**
+ * Get cones currently in short-term storage for a given boxId.
+ * Short-term definition: coneStorageId is set (non-empty) and cone is not issued.
+ *
+ * @param {string} boxId
+ * @returns {Promise<Array>}
+ */
+export const getShortTermConesByBoxId = async (boxId) => {
+  const trimmed = String(boxId || '').trim();
+  if (!trimmed) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'boxId is required');
+  }
+
+  const cones = await YarnCone.find({
+    boxId: trimmed,
+    coneStorageId: { $exists: true, $nin: [null, ''] },
+    issueStatus: { $ne: 'issued' },
+  })
+    .populate({ path: 'yarnCatalogId', select: '_id yarnName yarnType status' })
+    .sort({ createdAt: -1 })
+    .lean();
+
+  return cones;
+};
+
+/**
  * Get cones by storage location (coneStorageId). Returns all matching cones (no limit).
  * @param {string} storageLocation - coneStorageId to filter by
  * @returns {Promise<Array>} Cones with the given storage location

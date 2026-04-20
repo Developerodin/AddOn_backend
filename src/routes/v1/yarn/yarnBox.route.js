@@ -57,6 +57,13 @@ router
   );
 
 router
+  .route('/reset-by-st-cones')
+  .post(
+    validate(yarnBoxValidation.resetBoxesWeightToZeroIfStConesPresent),
+    yarnBoxController.resetBoxesWeightToZeroIfStConesPresent
+  );
+
+router
   .route('/by-storage-location/:storageLocation')
   .get(
     validate(yarnBoxValidation.getBoxesByStorageLocation),

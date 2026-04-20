@@ -162,6 +162,15 @@ export const bulkSetBoxStorageLocation = {
     .required(),
 };
 
+export const resetBoxesWeightToZeroIfStConesPresent = {
+  body: Joi.object()
+    .keys({
+      poNumber: Joi.string().trim().required(),
+      dryRun: Joi.boolean().default(false),
+    })
+    .required(),
+};
+
 export const getYarnBoxes = {
   query: Joi.object().keys({
     po_number: Joi.string().trim().optional(),

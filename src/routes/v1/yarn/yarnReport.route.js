@@ -9,4 +9,15 @@ router
   .route('/')
   .get(validate(yarnReportValidation.getYarnReport), yarnReportController.getYarnReport);
 
+router
+  .route('/po-short-term/:poNumber')
+  .get(
+    validate(yarnReportValidation.getPoShortTermStorageReport),
+    yarnReportController.getPoShortTermStorageReport
+  );
+
+router
+  .route('/po-audit/:poNumber')
+  .get(validate(yarnReportValidation.getPoBoxAuditReport), yarnReportController.getPoBoxAuditReport);
+
 export default router;

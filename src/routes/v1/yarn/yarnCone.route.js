@@ -16,6 +16,17 @@ router
     yarnConeController.createYarnCone
   );
 
+// Match boxId that may contain slashes; capture full path after prefix
+router.get(
+  /^\/short-term\/by-box\/(.+)$/,
+  (req, res, next) => {
+    req.params = { boxId: req.params[0] };
+    next();
+  },
+  validate(yarnConeValidation.getShortTermConesByBoxId),
+  yarnConeController.getShortTermConesByBoxId
+);
+
 // Match boxId that may contain slashes (e.g. BOX-PO-2026-997-CN/2067-...); capture full path after prefix
 router.post(
   /^\/generate-by-box\/(.+)$/,

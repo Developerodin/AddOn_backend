@@ -38,6 +38,12 @@ export const getYarnConeByBarcode = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(yarnCone);
 });
 
+export const getShortTermConesByBoxId = catchAsync(async (req, res) => {
+  const { boxId } = req.params;
+  const cones = await yarnConeService.getShortTermConesByBoxId(boxId);
+  res.status(httpStatus.OK).send(cones);
+});
+
 export const generateConesByBox = catchAsync(async (req, res) => {
   const { boxId } = req.params;
   const result = await yarnConeService.generateConesByBox(boxId, req.body);
