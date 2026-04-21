@@ -59,6 +59,8 @@ const warehouseOrderMultiPairItemSchema = mongoose.Schema(
 const warehouseOrderSchema = mongoose.Schema(
   {
     orderNumber: { type: String, trim: true, unique: true, sparse: true },
+    /** Optional external / customer reference (e.g. Addon order number). */
+    addonOrderId: { type: String, trim: true },
     date: { type: Date, default: Date.now },
 
     clientType: {

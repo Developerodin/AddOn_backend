@@ -29,6 +29,7 @@ export const createWarehouseOrder = {
   body: Joi.object()
     .keys({
       orderNumber: Joi.string().allow('').trim(),
+      addonOrderId: Joi.string().allow('').trim(),
       date: Joi.date(),
       clientType: Joi.string().valid(...clientTypes).required(),
       clientId: Joi.string().custom(objectId).required(),
@@ -66,6 +67,7 @@ export const getWarehouseOrders = {
     clientType: Joi.string().valid(...clientTypes),
     clientId: Joi.string().custom(objectId),
     orderNumber: Joi.string().trim(),
+    addonOrderId: Joi.string().trim(),
     q: Joi.string().trim(),
     dateFrom: Joi.date(),
     dateTo: Joi.date(),
@@ -92,6 +94,7 @@ export const updateWarehouseOrder = {
   body: Joi.object()
     .keys({
       date: Joi.date(),
+      addonOrderId: Joi.string().allow('').trim(),
       styleCodeSinglePair: Joi.array().items(singlePairItem),
       styleCodeMultiPair: Joi.array().items(multiPairItem),
       status: Joi.string().valid(...orderStatuses),
@@ -130,6 +133,7 @@ export const bulkImportWarehouseOrders = {
         Joi.object({
           clientType: Joi.string().valid(...clientTypes).required(),
           clientName: Joi.string().required().trim(),
+          addonOrderId: Joi.string().allow('').trim(),
           date: Joi.alternatives().try(Joi.date(), Joi.string().trim()).allow('', null),
           status: Joi.string().valid(...orderStatuses).default('pending'),
           styleCodeSinglePair: Joi.array().items(bulkSinglePairItem).default([]),

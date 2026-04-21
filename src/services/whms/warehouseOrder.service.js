@@ -45,11 +45,14 @@ export const buildWarehouseOrderFilter = (query) => {
   if (query.orderNumber && String(query.orderNumber).trim()) {
     filter.orderNumber = new RegExp(`^${escapeRegex(String(query.orderNumber).trim())}`, 'i');
   }
+  if (query.addonOrderId && String(query.addonOrderId).trim()) {
+    filter.addonOrderId = new RegExp(`^${escapeRegex(String(query.addonOrderId).trim())}`, 'i');
+  }
 
   if (query.q && String(query.q).trim()) {
     const term = escapeRegex(String(query.q).trim());
     const regex = new RegExp(term, 'i');
-    filter.$or = [{ orderNumber: regex }, { clientName: regex }];
+    filter.$or = [{ orderNumber: regex }, { clientName: regex }, { addonOrderId: regex }];
   }
 
   if (query.dateFrom || query.dateTo) {
@@ -230,6 +233,7 @@ const resolveClientByName = async (clientName, clientType) => {
  *  - clientName (string — resolved to clientId)
  *  - date (DD/MM/YYYY or DD-MM-YYYY)
  *  - status (string)
+ *  - addonOrderId (optional — external / customer Addon order reference)
  *  - styleCodeSinglePair[].styleCode (code string — resolved to styleCodeId, pack & type auto-filled)
  *  - styleCodeMultiPair[].styleCode  (code string — resolved to styleCodeMultiPairId, pack auto-filled)
  */
@@ -311,6 +315,8 @@ export const bulkImportWarehouseOrders = async (orders, batchSize = 50) => {
       }
 
       const orderNumber = await generateWarehouseOrderNumber();
+      const addonOrderId =
+        row.addonOrderId != null && String(row.addonOrderId).trim() ? String(row.addonOrderId).trim() : undefined;
 
       const created = await WarehouseOrder.create({
         orderNumber,
@@ -318,6 +324,7 @@ export const bulkImportWarehouseOrders = async (orders, batchSize = 50) => {
         clientType: row.clientType,
         clientId: client._id,
         clientName,
+        ...(addonOrderId !== undefined ? { addonOrderId } : {}),
         styleCodeSinglePair: singleItems,
         styleCodeMultiPair: multiItems,
         status: row.status || 'pending',

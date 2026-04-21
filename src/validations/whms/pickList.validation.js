@@ -7,6 +7,7 @@ export const getPickLists = {
   query: Joi.object().keys({
     orderId: Joi.string().custom(objectId),
     orderNumber: Joi.string().trim(),
+    addonOrderId: Joi.string().trim(),
     skuCode: Joi.string().trim(),
     styleCode: Joi.string().trim(),
     status: Joi.string().valid(...pickListStatuses),
@@ -62,6 +63,7 @@ export const getPickListsGroupedByOrder = {
   query: Joi.object().keys({
     orderId: Joi.string().custom(objectId),
     orderNumber: Joi.string().trim(),
+    addonOrderId: Joi.string().trim(),
     skuCode: Joi.string().trim(),
     styleCode: Joi.string().trim(),
     status: Joi.string().valid(...pickListStatuses),

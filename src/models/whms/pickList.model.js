@@ -17,6 +17,7 @@ const pickListSchema = mongoose.Schema(
       required: true,
     },
     orderNumber: { type: String, trim: true },
+    addonOrderId: { type: String, trim: true },
 
     orderDetails: { type: mongoose.Schema.Types.Mixed, default: {} },
 

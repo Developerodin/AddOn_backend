@@ -16,7 +16,12 @@ const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$
 export const createPickListForOrder = async (order) => {
   const docs = [];
   const orderSnapshot = order.toObject ? order.toObject() : { ...order };
-  const base = { orderId: order._id, orderNumber: order.orderNumber, orderDetails: orderSnapshot };
+  const base = {
+    orderId: order._id,
+    orderNumber: order.orderNumber,
+    addonOrderId: order.addonOrderId,
+    orderDetails: orderSnapshot,
+  };
 
   const singleItems = Array.isArray(order.styleCodeSinglePair) ? order.styleCodeSinglePair : [];
   for (const item of singleItems) {
@@ -110,14 +115,14 @@ const getPickupStatus = (pickupQuantity, quantity) => {
 };
 
 /**
- * Refresh denormalized order fields on existing pick rows (orderNumber, orderDetails snapshot).
+ * Refresh denormalized order fields on existing pick rows (orderNumber, addonOrderId, orderDetails snapshot).
  * Use when the warehouse order was edited without replacing line items, so pickup progress is kept.
  */
 export const syncPickListOrderMetadata = async (order) => {
   const orderSnapshot = order.toObject ? order.toObject() : { ...order };
   await PickList.updateMany(
     { orderId: order._id },
-    { $set: { orderNumber: order.orderNumber, orderDetails: orderSnapshot } }
+    { $set: { orderNumber: order.orderNumber, addonOrderId: order.addonOrderId, orderDetails: orderSnapshot } }
   );
 };
 
@@ -127,7 +132,12 @@ export const syncPickListOrderMetadata = async (order) => {
  */
 export const syncPickListForOrderLineItems = async (order) => {
   const orderSnapshot = order.toObject ? order.toObject() : { ...order };
-  const base = { orderId: order._id, orderNumber: order.orderNumber, orderDetails: orderSnapshot };
+  const base = {
+    orderId: order._id,
+    orderNumber: order.orderNumber,
+    addonOrderId: order.addonOrderId,
+    orderDetails: orderSnapshot,
+  };
 
   const expectedRows = [];
   const singleItems = Array.isArray(order.styleCodeSinglePair) ? order.styleCodeSinglePair : [];
@@ -215,6 +225,7 @@ export const syncPickListForOrderLineItems = async (order) => {
         update: {
           $set: {
             orderNumber: expected.orderNumber,
+            addonOrderId: expected.addonOrderId,
             orderDetails: expected.orderDetails,
             size: expected.size,
             shade: expected.shade,
@@ -250,6 +261,9 @@ export const buildPickListFilter = (query) => {
   if (query.orderNumber && String(query.orderNumber).trim()) {
     filter.orderNumber = new RegExp(`^${escapeRegex(String(query.orderNumber).trim())}`, 'i');
   }
+  if (query.addonOrderId && String(query.addonOrderId).trim()) {
+    filter.addonOrderId = new RegExp(`^${escapeRegex(String(query.addonOrderId).trim())}`, 'i');
+  }
   if (query.skuCode) filter.skuCode = new RegExp(`^${escapeRegex(String(query.skuCode).trim())}`, 'i');
   if (query.styleCode) filter.styleCode = new RegExp(`^${escapeRegex(String(query.styleCode).trim())}`, 'i');
   if (query.status) filter.status = query.status;
@@ -257,7 +271,7 @@ export const buildPickListFilter = (query) => {
   if (query.q && String(query.q).trim()) {
     const term = escapeRegex(String(query.q).trim());
     const regex = new RegExp(term, 'i');
-    filter.$or = [{ orderNumber: regex }, { skuCode: regex }, { styleCode: regex }];
+    filter.$or = [{ orderNumber: regex }, { addonOrderId: regex }, { skuCode: regex }, { styleCode: regex }];
   }
 
   return filter;
@@ -330,6 +344,7 @@ export const queryPickListsGroupedByOrder = async (filter, options) => {
       $group: {
         _id: '$orderId',
         orderNumber: { $first: '$orderNumber' },
+        addonOrderId: { $first: '$addonOrderId' },
         items: {
           $push: {
             id: '$_id',
@@ -359,6 +374,38 @@ export const queryPickListsGroupedByOrder = async (filter, options) => {
       },
     },
     { $unwind: { path: '$order', preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: 'warehouse_clients',
+        localField: 'order.clientId',
+        foreignField: '_id',
+        as: 'whClient',
+      },
+    },
+    { $unwind: { path: '$whClient', preserveNullAndEmptyArrays: true } },
+    {
+      $addFields: {
+        order: {
+          $mergeObjects: [
+            '$order',
+            {
+              clientName: {
+                $cond: [
+                  { $eq: ['$order.clientType', 'Store'] },
+                  {
+                    $ifNull: ['$whClient.storeProfile.billCode', '$order.clientName'],
+                  },
+                  {
+                    $ifNull: ['$whClient.retailerName', '$order.clientName'],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    },
+    { $unset: ['whClient'] },
     {
       $addFields: {
         orderId: '$_id',
