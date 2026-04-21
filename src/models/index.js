@@ -27,6 +27,7 @@ import YarnBox from './yarnReq/yarnBox.model.js';
 import YarnCone from './yarnReq/yarnCone.model.js';
 import YarnTransaction from './yarnReq/yarnTransaction.model.js';
 import YarnInventory from './yarnReq/yarnInventory.model.js';
+import YarnDailyClosingSnapshot from './yarnReq/yarnDailyClosingSnapshot.model.js';
 import StorageSlot from './storageManagement/storageSlot.model.js';
 import Vendor from './vendor.model.js';
 import VendorManagement from './vendorManagement/vendorManagement.model.js';
@@ -64,6 +65,7 @@ export {
   YarnCone,
   YarnTransaction,
   YarnInventory,
+  YarnDailyClosingSnapshot,
   StorageSlot,
   Vendor,
   VendorManagement,
