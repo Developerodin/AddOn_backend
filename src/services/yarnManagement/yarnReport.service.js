@@ -6,6 +6,7 @@ import {
   Supplier,
   YarnBox,
   YarnCone,
+  YarnDailyClosingSnapshot,
 } from '../../models/index.js';
 import { LT_SECTION_CODES } from '../../models/storageManagement/storageSlot.model.js';
 
@@ -110,79 +111,6 @@ const getBrandAndShadeForYarns = async (yarnIds, catalogMap) => {
   return map;
 };
 
-/**
- * Discover yarnIds that have physical stock (boxes or cones) but may not be in PO/txn.
- * Returns Set of yarnIds for loading catalog.
- */
-const getYarnIdsWithPhysicalStock = async () => {
-  const ids = new Set();
-  const [boxNames, boxCatalogIds, coneYarns, catalogAll] = await Promise.all([
-    YarnBox.distinct('yarnName', { boxWeight: { $gt: 0 } }),
-    YarnBox.distinct('yarnCatalogId', { boxWeight: { $gt: 0 }, yarnCatalogId: { $exists: true, $ne: null } }),
-    YarnCone.distinct('yarnCatalogId', {
-      coneStorageId: { $exists: true, $nin: [null, ''] },
-      issueStatus: { $ne: 'issued' },
-    }),
-    YarnCatalog.find({}).select('_id yarnName').lean(),
-  ]);
-  coneYarns.forEach((id) => id && ids.add(id.toString()));
-  (boxCatalogIds || []).forEach((id) => id && ids.add(id.toString()));
-  const nameToId = new Map();
-  catalogAll.forEach((c) => {
-    if (c?.yarnName) nameToId.set(c.yarnName.trim().toLowerCase(), c._id.toString());
-  });
-  (boxNames || []).forEach((n) => {
-    const id = nameToId.get((n || '').trim().toLowerCase());
-    if (id) ids.add(id);
-  });
-  return ids;
-};
-
-/**
- * Opening balance = physical inventory only (YarnBox + YarnCone).
- * What's actually in the warehouse. Issue/return come from YarnTransaction only.
- *
- * Boxes: YarnBox with boxWeight > 0 (net = boxWeight - tearweight).
- * Cones: YarnCone in ST (coneStorageId set), not issued.
- */
-const getOpeningFromPhysicalStorage = async (yarnIds, catalogMap) => {
-  const map = new Map();
-  const yarnNameToId = new Map();
-  catalogMap.forEach((c, id) => {
-    if (c?.yarnName) yarnNameToId.set(c.yarnName.trim().toLowerCase(), id);
-  });
-
-  // 1. ALL boxes with weight > 0 - fetch all, filter in memory (avoids MongoDB regex length limit)
-  const allBoxes = await YarnBox.find({ boxWeight: { $gt: 0 } })
-    .select('yarnName boxWeight tearweight')
-    .lean();
-
-  for (const b of allBoxes) {
-    const yarnId = yarnNameToId.get((b.yarnName || '').trim().toLowerCase());
-    if (!yarnId) continue;
-    const net = Math.max(0, toNum(b.boxWeight) - toNum(b.tearweight));
-    if (net > 0) map.set(yarnId, (map.get(yarnId) || 0) + net);
-  }
-
-  // 2. Cones in ST (not issued) - no date filter
-  const objectIds = yarnIds.map((id) => new mongoose.Types.ObjectId(id));
-  const cones = await YarnCone.find({
-    yarnCatalogId: { $in: objectIds },
-    coneStorageId: { $exists: true, $nin: [null, ''] },
-    issueStatus: { $ne: 'issued' },
-  })
-    .select('yarnCatalogId coneWeight tearWeight')
-    .lean();
-
-  for (const c of cones) {
-    const yarnId = c.yarnCatalogId?.toString?.();
-    if (!yarnId) continue;
-    const net = Math.max(0, toNum(c.coneWeight) - toNum(c.tearWeight));
-    if (net > 0) map.set(yarnId, (map.get(yarnId) || 0) + net);
-  }
-
-  return map;
-};
 
 /**
  * Aggregate transaction totals per yarn for a date range.
@@ -351,34 +279,70 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
   start.setHours(0, 0, 0, 0);
   end.setHours(23, 59, 59, 999);
 
-  const [txnMap, purchaseRows] = await Promise.all([
+  const formatDate = (d) =>
+    d instanceof Date
+      ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      : d;
+
+  // Opening = EOD closing snapshot of the day before the report range
+  const prevDay = new Date(start.getFullYear(), start.getMonth(), start.getDate() - 1);
+  const openingSnapshotKey = formatDate(prevDay);
+  // Closing = EOD closing snapshot of the end date itself
+  const closingSnapshotKey = formatDate(end);
+
+  const [txnMap, purchaseRows, snapshotDocs, closingSnapshotDocs] = await Promise.all([
     getTransactionTotalsInRange(start, end),
     getPurchaseDataByYarnShadeSupplier(start, end),
+    YarnDailyClosingSnapshot.find({ snapshotDate: openingSnapshotKey }).lean(),
+    YarnDailyClosingSnapshot.find({ snapshotDate: closingSnapshotKey }).lean(),
   ]);
+
+  if (snapshotDocs.length === 0) {
+    throw new Error(
+      `Opening snapshot not available for ${openingSnapshotKey}. ` +
+      `Please wait for the nightly snapshot job to run, or run it manually for this date.`
+    );
+  }
+
+  if (closingSnapshotDocs.length === 0) {
+    throw new Error(
+      `Closing snapshot not available for ${closingSnapshotKey}. ` +
+      `Please wait for the nightly snapshot job to run, or run it manually for this date.`
+    );
+  }
+
+  const openingMap = new Map(snapshotDocs.map((s) => [s.yarnCatalogId.toString(), s.closingKg]));
+  const closingMap = new Map(closingSnapshotDocs.map((s) => [s.yarnCatalogId.toString(), s.closingKg]));
+  const stockYarnIds = new Set([...openingMap.keys(), ...closingMap.keys()]);
+  const VARIANCE_TOLERANCE_KG = 0.5;
+  const closingVariances = [];
 
   const purchaseYarnIds = new Set(purchaseRows.map((r) => r.yarnId));
   const txnYarnIds = new Set(txnMap.keys());
-  const physicalYarnIds = await getYarnIdsWithPhysicalStock();
-  const yarnIds = [...new Set([...purchaseYarnIds, ...txnYarnIds, ...physicalYarnIds])];
+  const yarnIds = [...new Set([...purchaseYarnIds, ...txnYarnIds, ...stockYarnIds])];
 
-  const catalogs = await YarnCatalog.find({ _id: { $in: yarnIds.map((id) => new mongoose.Types.ObjectId(id)) } })
+  const catalogs = await YarnCatalog.find({
+    _id: { $in: yarnIds.map((id) => new mongoose.Types.ObjectId(id)) },
+  })
     .select('yarnName hsnCode yarnType yarnSubtype countSize colorFamily pantonName gst')
     .lean();
 
   const catalogMap = new Map();
   catalogs.forEach((c) => catalogMap.set(c._id.toString(), c));
 
-  const openingMap = await getOpeningFromPhysicalStorage(yarnIds, catalogMap);
-
-  // Include yarns with physical stock but no PO/transactions in range
+  // Yarns with opening but no PO/transactions in range
   const yarnIdsWithOpening = [...openingMap.keys()].filter((id) => openingMap.get(id) > 0);
   const missingIds = yarnIdsWithOpening.filter((id) => !purchaseYarnIds.has(id) && !txnYarnIds.has(id));
   if (missingIds.length) {
-    yarnIds.push(...missingIds);
-    const extraCatalogs = await YarnCatalog.find({ _id: { $in: missingIds.map((id) => new mongoose.Types.ObjectId(id)) } })
-      .select('yarnName hsnCode yarnType yarnSubtype countSize colorFamily pantonName gst')
-      .lean();
-    extraCatalogs.forEach((c) => catalogMap.set(c._id.toString(), c));
+    const missingNotLoaded = missingIds.filter((id) => !catalogMap.has(id));
+    if (missingNotLoaded.length) {
+      const extraCatalogs = await YarnCatalog.find({
+        _id: { $in: missingNotLoaded.map((id) => new mongoose.Types.ObjectId(id)) },
+      })
+        .select('yarnName hsnCode yarnType yarnSubtype countSize colorFamily pantonName gst')
+        .lean();
+      extraCatalogs.forEach((c) => catalogMap.set(c._id.toString(), c));
+    }
   }
 
   const txnOnlyYarnIds = [...txnYarnIds].filter((id) => !purchaseYarnIds.has(id));
@@ -395,8 +359,18 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
     const purRet = row.purRet;
     const issued = txn.issued;
     const returned = txn.returned;
-    // Opening = physical (boxes+cones). Don't add store - physical already includes yarn_stocked.
-    const balance = opening + pur - purRet + returned - issued;
+    const formulaBalance = opening + pur - purRet;
+    const balance = closingMap.get(row.yarnId) ?? 0;
+
+    const variance = Math.abs(balance - formulaBalance);
+    if (variance > VARIANCE_TOLERANCE_KG) {
+      closingVariances.push({
+        yarnName: catalog?.yarnName ?? row.yarnId,
+        snapshotClosingKg: Math.round(balance * 1000) / 1000,
+        formulaClosingKg: Math.round(formulaBalance * 1000) / 1000,
+        varianceKg: Math.round(variance * 1000) / 1000,
+      });
+    }
 
     const yarnType = catalog?.yarnType;
     const yarnSubtype = catalog?.yarnSubtype;
@@ -437,8 +411,18 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
     const catalog = catalogMap.get(yarnId);
     const txn = txnMap.get(yarnId) || { store: 0, issued: 0, returned: 0 };
     const opening = openingMap.get(yarnId) ?? 0;
-    // Opening = physical. Don't add store - physical already includes yarn_stocked.
-    const balance = opening + txn.returned - txn.issued;
+    const balance = closingMap.get(yarnId) ?? 0;
+
+    const variance = Math.abs(balance - opening);
+    if (variance > VARIANCE_TOLERANCE_KG) {
+      closingVariances.push({
+        yarnName: catalog?.yarnName ?? yarnId,
+        snapshotClosingKg: Math.round(balance * 1000) / 1000,
+        formulaClosingKg: Math.round(opening * 1000) / 1000,
+        varianceKg: Math.round(variance * 1000) / 1000,
+      });
+    }
+
     const brandShade = brandShadeMap.get(yarnId) || { brand: '', shadeNumber: '', rate: 0, gstRate: 0 };
     const rate = brandShade.rate ?? 0;
     const gstPercent = (brandShade.gstRate ?? catalog?.gst) ?? 0;
@@ -468,14 +452,26 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
     });
   }
 
-  // Include yarns with physical stock only (no PO, no transactions in range)
+  // Include yarns with opening balance only (no PO, no transactions in range)
   for (const yarnId of missingIds) {
     const catalog = catalogMap.get(yarnId);
     const opening = openingMap.get(yarnId) ?? 0;
+    const balance = closingMap.get(yarnId) ?? 0;
+
+    const variance = Math.abs(balance - opening);
+    if (variance > VARIANCE_TOLERANCE_KG) {
+      closingVariances.push({
+        yarnName: catalog?.yarnName ?? yarnId,
+        snapshotClosingKg: Math.round(balance * 1000) / 1000,
+        formulaClosingKg: Math.round(opening * 1000) / 1000,
+        varianceKg: Math.round(variance * 1000) / 1000,
+      });
+    }
+
     const brandShade = brandShadeMap.get(yarnId) || { brand: '', shadeNumber: '', rate: 0, gstRate: 0 };
     const rate = brandShade.rate ?? 0;
     const gstPercent = (brandShade.gstRate ?? catalog?.gst) ?? 0;
-    const amount = rate * opening * (1 + gstPercent / 100);
+    const amount = rate * balance * (1 + gstPercent / 100);
 
     results.push({
       store: 'yarn',
@@ -493,7 +489,7 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
       purRet: 0,
       yarnIssueToKnitting: 0,
       yarnReturnedFromKnitting: 0,
-      balance: Math.round(opening * 1000) / 1000,
+      balance: Math.round(balance * 1000) / 1000,
       rate,
       unit: 'kg',
       gstPercent,
@@ -501,10 +497,14 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
     });
   }
 
-  const formatDate = (d) => (d instanceof Date ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : d);
   return {
     results,
     startDate: formatDate(start),
     endDate: formatDate(end),
+    meta: {
+      openingSnapshotDate: openingSnapshotKey,
+      closingSnapshotDate: closingSnapshotKey,
+      ...(closingVariances.length ? { closingVariances } : {}),
+    },
   };
 };

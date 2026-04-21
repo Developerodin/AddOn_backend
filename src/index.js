@@ -4,9 +4,11 @@ import config from './config/config.js';
 import logger from './config/logger.js';
 import { testS3Connection } from './utils/s3Connection.js';
 import { startOrderSyncJob } from './cron/orderSync.cron.js';
+import { startYarnDailySnapshotJob, stopYarnDailySnapshotJob } from './cron/yarnDailySnapshot.cron.js';
 
 let server;
 let orderSyncCronJob;
+let yarnSnapshotCronJob;
 
 mongoose.connect(config.mongoose.url, config.mongoose.options).then(async () => {
   logger.info('Connected to MongoDB');
@@ -17,6 +19,11 @@ mongoose.connect(config.mongoose.url, config.mongoose.options).then(async () => 
   // Start order sync cron job
   const cronSchedule = process.env.ORDER_SYNC_CRON_SCHEDULE || '*/30 * * * *'; // Every 30 minutes
   orderSyncCronJob = startOrderSyncJob(cronSchedule);
+
+  // Start yarn daily closing snapshot job (feature-flagged)
+  if (process.env.YARN_DAILY_SNAPSHOT_ENABLED === 'true') {
+    yarnSnapshotCronJob = startYarnDailySnapshotJob();
+  }
   
   server = app.listen(config.port, () => {
     logger.info(`Listening to port ${config.port}`);
@@ -37,6 +44,7 @@ const exitHandler = () => {
         orderSyncCronJob.stop();
         logger.info('Order sync cron job stopped');
       }
+      stopYarnDailySnapshotJob(yarnSnapshotCronJob);
       process.exit(1);
     });
   } else {
@@ -58,6 +66,7 @@ process.on('SIGTERM', () => {
     orderSyncCronJob.stop();
     logger.info('Order sync cron job stopped');
   }
+  stopYarnDailySnapshotJob(yarnSnapshotCronJob);
   if (server) {
     server.close();
   }
