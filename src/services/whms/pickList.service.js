@@ -340,6 +340,23 @@ export const queryPickListsGroupedByOrder = async (filter, options) => {
 
   const basePipeline = [
     { $match: filter },
+    // Attach live stock (WarehouseInventory) by styleCode before grouping.
+    // Inventory collection name is legacy `stocks` (see WarehouseInventory model).
+    {
+      $lookup: {
+        from: 'stocks',
+        localField: 'styleCode',
+        foreignField: 'styleCode',
+        as: 'inv',
+      },
+    },
+    { $unwind: { path: '$inv', preserveNullAndEmptyArrays: true } },
+    {
+      $addFields: {
+        availableStock: { $ifNull: ['$inv.availableQuantity', 0] },
+      },
+    },
+    { $unset: ['inv'] },
     {
       $group: {
         _id: '$orderId',
@@ -355,6 +372,7 @@ export const queryPickListsGroupedByOrder = async (filter, options) => {
             quantity: '$quantity',
             pickupQuantity: '$pickupQuantity',
             status: '$status',
+            availableStock: '$availableStock',
           },
         },
         totalQuantity: { $sum: '$quantity' },
@@ -409,6 +427,9 @@ export const queryPickListsGroupedByOrder = async (filter, options) => {
     {
       $addFields: {
         orderId: '$_id',
+        // Keep these at the top-level so clients don't have to dig into `order`.
+        clientType: '$order.clientType',
+        clientName: '$order.clientName',
         overallStatus: {
           $cond: [
             { $eq: ['$pickedCount', '$totalItems'] },
