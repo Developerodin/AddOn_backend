@@ -35,6 +35,9 @@ const pickListSchema = mongoose.Schema(
     quantity: { type: Number, required: true, min: 0 },
     pickupQuantity: { type: Number, default: 0, min: 0 },
 
+    // Name of the person who picked this order's list (stored redundantly per pick line for simplicity).
+    pickerName: { type: String, trim: true, default: '' },
+
     status: {
       type: String,
       enum: PICK_LIST_STATUSES,

@@ -29,6 +29,11 @@ router
     validate(pickListValidation.getPickListsByOrder),
     pickListController.getPickListsByOrder
   )
+  .patch(
+    auth('manageOrders'),
+    validate(pickListValidation.setPickerNameForOrder),
+    pickListController.setPickerNameForOrder
+  )
   .delete(
     auth('manageOrders'),
     validate(pickListValidation.deletePickListsByOrder),

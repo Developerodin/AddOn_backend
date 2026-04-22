@@ -48,11 +48,17 @@ const getPickListsGroupedByOrder = catchAsync(async (req, res) => {
   res.send(result);
 });
 
+const setPickerNameForOrder = catchAsync(async (req, res) => {
+  const result = await pickListService.setPickerNameForOrder(req.params.orderId, req.body.pickerName);
+  res.status(httpStatus.OK).send(result);
+});
+
 export {
   getPickLists,
   getPickList,
   getPickListsByOrder,
   getPickListsGroupedByOrder,
+  setPickerNameForOrder,
   updatePickList,
   deletePickList,
   deletePickListsByOrder,

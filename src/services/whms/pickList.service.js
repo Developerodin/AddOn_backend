@@ -3,8 +3,79 @@ import httpStatus from 'http-status';
 import ApiError from '../../utils/ApiError.js';
 import PickList from '../../models/whms/pickList.model.js';
 import StyleCodePairs from '../../models/styleCodePairs.model.js';
+import WarehouseInventory from '../../models/whms/warehouseInventory.model.js';
+import { appendWarehouseInventoryLog } from './warehouseInventory.service.js';
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Apply a pick delta to warehouse inventory for a styleCode.
+ * Positive delta reduces stock (picked more). Negative delta increases stock (picked qty reduced).
+ * @param {object} args
+ * @param {import('mongoose').ClientSession} args.session
+ * @param {string} args.styleCode
+ * @param {number} args.deltaPickupQuantity
+ * @param {string} args.pickListId
+ */
+async function applyPickDeltaToInventory({ session, styleCode, deltaPickupQuantity, pickListId }) {
+  if (!styleCode || !deltaPickupQuantity) return;
+  if (!Number.isFinite(deltaPickupQuantity)) return;
+
+  const inv = await WarehouseInventory.findOne({ styleCode }).session(session);
+
+  if (deltaPickupQuantity > 0) {
+    if (!inv) {
+      throw new ApiError(httpStatus.BAD_REQUEST, `No inventory row found for styleCode "${styleCode}"`);
+    }
+    const total = Number(inv.totalQuantity ?? 0);
+    if (total < deltaPickupQuantity) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Insufficient stock for styleCode "${styleCode}" (available total: ${total}, required: ${deltaPickupQuantity})`
+      );
+    }
+  }
+
+  // IMPORTANT: `availableQuantity` is derived from total - blocked, but the model's
+  // pre('save') hook won't run for findOneAndUpdate. So we recompute in the update itself.
+  // Uses pipeline update so it's atomic and consistent.
+  const updated = await WarehouseInventory.findOneAndUpdate(
+    { styleCode },
+    [
+      {
+        $set: {
+          totalQuantity: { $add: ['$totalQuantity', -deltaPickupQuantity] },
+        },
+      },
+      {
+        $set: {
+          availableQuantity: {
+            $max: [0, { $subtract: ['$totalQuantity', { $ifNull: ['$blockedQuantity', 0] }] }],
+          },
+        },
+      },
+    ],
+    { new: true, session }
+  );
+
+  if (!updated) return;
+
+  const totalAfter = Number(updated.totalQuantity ?? 0);
+  const blockedAfter = Number(updated.blockedQuantity ?? 0);
+  await appendWarehouseInventoryLog({
+    warehouseInventoryId: updated._id,
+    styleCodeId: updated.styleCodeId,
+    styleCode: updated.styleCode,
+    action: 'picklist_pick',
+    message: `PickList pickupQuantity change (${pickListId})`,
+    quantityDelta: -deltaPickupQuantity,
+    blockedDelta: 0,
+    totalQuantityAfter: totalAfter,
+    blockedQuantityAfter: blockedAfter,
+    availableQuantityAfter: Math.max(0, totalAfter - blockedAfter),
+    userId: null,
+  });
+}
 
 /**
  * Auto-create picklist entries when a warehouse order is created.
@@ -292,20 +363,56 @@ export const getPickListsByOrderId = async (orderId) => {
   return PickList.find({ orderId }).populate('orderId').sort({ createdAt: 1 });
 };
 
+/**
+ * Set picker name for all pick lines of an order.
+ * @param {string} orderId
+ * @param {string} pickerName
+ */
+export const setPickerNameForOrder = async (orderId, pickerName) => {
+  const name = String(pickerName || '').trim();
+  if (!name) throw new ApiError(httpStatus.BAD_REQUEST, 'pickerName is required');
+  await PickList.updateMany({ orderId }, { $set: { pickerName: name } });
+  return { orderId, pickerName: name };
+};
+
 export const updatePickListById = async (id, updateBody) => {
-  const doc = await PickList.findById(id);
-  if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Pick list entry not found');
+  const session = await mongoose.startSession();
+  try {
+    let updatedId = id;
+    await session.withTransaction(async () => {
+      const doc = await PickList.findById(id).session(session);
+      if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Pick list entry not found');
 
-  Object.assign(doc, updateBody);
+      const prevPickup = Number(doc.pickupQuantity ?? 0);
+      Object.assign(doc, updateBody);
 
-  if (doc.pickupQuantity > 0 && doc.pickupQuantity < doc.quantity) {
-    doc.status = 'partial';
-  } else if (doc.pickupQuantity >= doc.quantity) {
-    doc.status = 'picked';
+      const nextPickup = Number(doc.pickupQuantity ?? 0);
+      const delta = nextPickup - prevPickup;
+
+      if (delta !== 0) {
+        await applyPickDeltaToInventory({
+          session,
+          styleCode: doc.styleCode,
+          deltaPickupQuantity: delta,
+          pickListId: String(doc._id),
+        });
+      }
+
+      if (doc.pickupQuantity > 0 && doc.pickupQuantity < doc.quantity) {
+        doc.status = 'partial';
+      } else if (doc.pickupQuantity >= doc.quantity) {
+        doc.status = 'picked';
+      } else {
+        doc.status = 'pending';
+      }
+
+      await doc.save({ session });
+      updatedId = String(doc._id);
+    });
+    return getPickListById(updatedId);
+  } finally {
+    session.endSession();
   }
-
-  await doc.save();
-  return getPickListById(id);
 };
 
 export const deletePickListById = async (id) => {
@@ -362,6 +469,7 @@ export const queryPickListsGroupedByOrder = async (filter, options) => {
         _id: '$orderId',
         orderNumber: { $first: '$orderNumber' },
         addonOrderId: { $first: '$addonOrderId' },
+        pickerName: { $first: '$pickerName' },
         items: {
           $push: {
             id: '$_id',

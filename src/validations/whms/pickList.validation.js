@@ -73,3 +73,14 @@ export const getPickListsGroupedByOrder = {
     page: Joi.number().integer(),
   }),
 };
+
+export const setPickerNameForOrder = {
+  params: Joi.object().keys({
+    orderId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object()
+    .keys({
+      pickerName: Joi.string().trim().min(1).required(),
+    })
+    .required(),
+};
