@@ -171,6 +171,16 @@ export const resetBoxesWeightToZeroIfStConesPresent = {
     .required(),
 };
 
+export const backfillLtBoxWeightFromStCones = {
+  body: Joi.object()
+    .keys({
+      dryRun: Joi.boolean().default(false),
+      limit: Joi.number().integer().min(1).max(50000).optional().options({ convert: true }),
+      onlyBoxId: Joi.string().trim().optional(),
+    })
+    .required(),
+};
+
 export const getYarnBoxes = {
   query: Joi.object().keys({
     po_number: Joi.string().trim().optional(),

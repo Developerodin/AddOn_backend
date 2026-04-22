@@ -161,11 +161,9 @@ yarnConeSchema.post('save', async function (doc) {
     return;
   }
 
-  // Only trigger if coneStorageId or coneWeight changed, or if it's a new document
-  const isNewOrRelevantFieldModified = doc.isNew || doc.isModified('coneStorageId') || doc.isModified('coneWeight') || doc.isModified('issueStatus');
-  if (!isNewOrRelevantFieldModified) {
-    return;
-  }
+  // NOTE: Avoid checking doc.isModified(...) here.
+  // In a post('save') hook, Mongoose clears modification flags after persistence,
+  // so isModified() is usually false and we would skip required recomputations.
 
   try {
     // Find matching yarn catalog
@@ -279,32 +277,42 @@ yarnConeSchema.post('save', async function (doc) {
 
     await inventory.save();
 
-    // If cone has storage and has a boxId, check if box is fully transferred and should be reset
+    // If cone has storage and has a boxId, reduce LT remaining weight and possibly mark box as fully transferred.
     if (doc.boxId && hasStorage) {
       try {
         const box = await YarnBox.findOne({ boxId: doc.boxId });
-        if (box && box.boxWeight != null && box.boxWeight > 0) {
+        if (box) {
           const conesInST = await mongoose.model('YarnCone').find({
             boxId: doc.boxId,
             coneStorageId: { $exists: true, $nin: [null, ''] },
           }).lean();
           const totalConesInST = conesInST.length;
           const totalConeWeight = conesInST.reduce((sum, c) => sum + (c.coneWeight || 0), 0);
-          const boxWeight = box.boxWeight || 0;
-          // Fully transferred when cone weight matches box weight (allow small rounding)
-          const fullyTransferred = totalConesInST > 0 && totalConeWeight >= boxWeight - 0.001;
+          const initial = box.initialBoxWeight != null ? Number(box.initialBoxWeight) : 0;
+          const boxWeightNow = Number(box.boxWeight ?? 0);
+          // For legacy boxes (initialBoxWeight missing), treat current boxWeight as the original LT weight.
+          // Only if boxWeightNow looks like an already-decremented remaining weight (rare), infer base as remaining + moved.
+          const inferredBase =
+            boxWeightNow >= totalConeWeight ? boxWeightNow : boxWeightNow + totalConeWeight;
+          const baseWeight = initial > 0 ? initial : inferredBase;
+          const remaining = Math.max(0, baseWeight - (totalConeWeight || 0));
+          const fullyTransferred = totalConesInST > 0 && remaining <= 0.001;
 
+          // Keep initialBoxWeight stable once inferred.
+          if (box.initialBoxWeight == null || Number(box.initialBoxWeight) <= 0) {
+            box.initialBoxWeight = baseWeight;
+          }
+          box.boxWeight = remaining;
           if (fullyTransferred) {
-            box.boxWeight = 0;
             box.storageLocation = undefined; // unset so field is removed from document
             box.storedStatus = false;
             if (!box.coneData) box.coneData = {};
             box.coneData.conesIssued = true;
             box.coneData.numberOfCones = totalConesInST;
             box.coneData.coneIssueDate = doc.createdAt || new Date();
-            await box.save();
-            console.log(`[YarnCone] Reset box ${doc.boxId} (fully transferred to cones): storageLocation cleared, boxWeight=0`);
+            console.log(`[YarnCone] Box ${doc.boxId} fully transferred to ST cones (remaining=0).`);
           }
+          await box.save();
         }
       } catch (boxError) {
         console.error(`[YarnCone] Error resetting box ${doc.boxId}:`, boxError.message);

@@ -64,6 +64,13 @@ router
   );
 
 router
+  .route('/backfill-lt-weight-from-st-cones')
+  .post(
+    validate(yarnBoxValidation.backfillLtBoxWeightFromStCones),
+    yarnBoxController.backfillLtBoxWeightFromStCones
+  );
+
+router
   .route('/by-storage-location/:storageLocation')
   .get(
     validate(yarnBoxValidation.getBoxesByStorageLocation),

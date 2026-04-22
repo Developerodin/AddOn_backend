@@ -637,4 +637,165 @@ export const resetBoxesWeightToZeroIfStConesPresent = async ({ poNumber, dryRun 
   };
 };
 
+/**
+ * Backfill LT YarnBox.boxWeight (remaining) from cones already stored in ST.
+ *
+ * Rules:
+ * - Only boxes currently in LT storage (storageLocation matches LT pattern).
+ * - Skip boxWeight <= 0.
+ * - Skip boxes with no ST cones.
+ *
+ * @param {Object} payload
+ * @param {boolean} [payload.dryRun=false]
+ * @param {number} [payload.limit]
+ * @param {string} [payload.onlyBoxId]
+ */
+export const backfillLtBoxWeightFromStCones = async ({ dryRun = false, limit, onlyBoxId } = {}) => {
+  const normalizedOnly = String(onlyBoxId || '').trim();
+  const max = Number(limit ?? 0);
+
+  // 1) Aggregate ST cone totals by boxId.
+  const coneMatch = {
+    coneStorageId: { $exists: true, $nin: [null, ''] },
+    coneWeight: { $gt: 0 },
+    ...(normalizedOnly ? { boxId: normalizedOnly } : {}),
+  };
+
+  const coneAgg = await YarnCone.aggregate([
+    { $match: coneMatch },
+    {
+      $group: {
+        _id: '$boxId',
+        totalConeWeight: { $sum: { $ifNull: ['$coneWeight', 0] } },
+        coneCount: { $sum: 1 },
+      },
+    },
+  ]).allowDiskUse(true);
+
+  const byBoxId = new Map();
+  for (const row of coneAgg) {
+    const boxId = String(row._id || '').trim();
+    if (!boxId) continue;
+    const totalConeWeight = Number(row.totalConeWeight ?? 0);
+    const coneCount = Number(row.coneCount ?? 0);
+    if (!Number.isFinite(totalConeWeight) || totalConeWeight <= 0 || coneCount <= 0) continue;
+    byBoxId.set(boxId, { totalConeWeight, coneCount });
+  }
+
+  const boxIds = Array.from(byBoxId.keys());
+  if (boxIds.length === 0) {
+    return {
+      message: 'No short-term cones found; nothing to backfill.',
+      dryRun: Boolean(dryRun),
+      updated: 0,
+      skipped: 0,
+      touchedBoxIds: [],
+    };
+  }
+
+  // 2) Load candidate LT boxes (weight > 0, storageLocation set).
+  let q = YarnBox.find({
+    boxId: { $in: boxIds },
+    boxWeight: { $gt: 0 },
+    storageLocation: { $exists: true, $ne: '' },
+  }).select('_id boxId boxWeight initialBoxWeight storageLocation storedStatus coneData');
+
+  if (max > 0) q = q.limit(max);
+  const boxes = await q.lean();
+
+  const LT_STORAGE_PATTERN_LOCAL = /^(LT-|B7-0[2-5]-)/i;
+  const touchedBoxIds = [];
+  let updated = 0;
+  let skipped = 0;
+
+  const resolveBaseWeight = ({ initialBoxWeight, boxWeightNow, moved }) => {
+    const initial = initialBoxWeight != null ? Number(initialBoxWeight) : 0;
+    if (Number.isFinite(initial) && initial > 0) return initial;
+    const bw = Number(boxWeightNow ?? 0);
+    const m = Number(moved ?? 0);
+    if (!Number.isFinite(bw) || bw <= 0) return 0;
+    if (!Number.isFinite(m) || m <= 0) return bw;
+    return bw >= m ? bw : bw + m;
+  };
+
+  for (const box of boxes) {
+    const boxId = String(box.boxId || '').trim();
+    const storageLocation = String(box.storageLocation || '').trim();
+    const boxWeightNow = Number(box.boxWeight ?? 0);
+    const st = byBoxId.get(boxId);
+
+    if (!boxId || !st) {
+      skipped += 1;
+      continue;
+    }
+    if (!storageLocation || !LT_STORAGE_PATTERN_LOCAL.test(storageLocation)) {
+      skipped += 1;
+      continue;
+    }
+    if (!Number.isFinite(boxWeightNow) || boxWeightNow <= 0.001) {
+      skipped += 1;
+      continue;
+    }
+
+    const baseWeight = resolveBaseWeight({
+      initialBoxWeight: box.initialBoxWeight,
+      boxWeightNow,
+      moved: st.totalConeWeight,
+    });
+
+    if (!Number.isFinite(baseWeight) || baseWeight <= 0) {
+      skipped += 1;
+      continue;
+    }
+
+    const remaining = Math.max(0, baseWeight - st.totalConeWeight);
+    const fullyTransferred = st.coneCount > 0 && remaining <= 0.001;
+
+    if (Math.abs(remaining - boxWeightNow) <= 0.0005) {
+      skipped += 1;
+      continue;
+    }
+
+    touchedBoxIds.push(boxId);
+    updated += 1;
+
+    if (dryRun) continue;
+
+    const update = fullyTransferred
+      ? {
+          $set: {
+            boxWeight: 0,
+            storedStatus: false,
+            initialBoxWeight:
+              box.initialBoxWeight == null || Number(box.initialBoxWeight) <= 0 ? baseWeight : box.initialBoxWeight,
+            coneData: {
+              ...(box.coneData && typeof box.coneData === 'object' ? box.coneData : {}),
+              conesIssued: true,
+              numberOfCones: st.coneCount,
+              coneIssueDate: new Date(),
+            },
+          },
+          $unset: { storageLocation: '' },
+        }
+      : {
+          $set: {
+            boxWeight: remaining,
+            ...(box.initialBoxWeight == null || Number(box.initialBoxWeight) <= 0 ? { initialBoxWeight: baseWeight } : {}),
+          },
+        };
+
+    await YarnBox.updateOne({ _id: box._id }, update);
+  }
+
+  return {
+    message: dryRun
+      ? `Dry-run: would update ${updated} LT box(es) from ST cones`
+      : `Updated ${updated} LT box(es) from ST cones`,
+    dryRun: Boolean(dryRun),
+    updated,
+    skipped,
+    touchedBoxIds,
+  };
+};
+
 

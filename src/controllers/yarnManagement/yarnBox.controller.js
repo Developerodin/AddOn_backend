@@ -82,4 +82,10 @@ export const resetBoxesWeightToZeroIfStConesPresent = catchAsync(async (req, res
   res.status(httpStatus.OK).send(result);
 });
 
+export const backfillLtBoxWeightFromStCones = catchAsync(async (req, res) => {
+  const { dryRun, limit, onlyBoxId } = req.body;
+  const result = await yarnBoxService.backfillLtBoxWeightFromStCones({ dryRun, limit, onlyBoxId });
+  res.status(httpStatus.OK).send(result);
+});
+
 

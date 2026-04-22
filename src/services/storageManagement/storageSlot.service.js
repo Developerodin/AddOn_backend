@@ -169,8 +169,11 @@ export const getStorageSlotsWithContents = async (zone, query = {}) => {
     storedStatus: true,
   }).lean();
 
-  // Filter out boxes whose cones are FULLY transferred to ST (box effectively empty)
-  // Only exclude when total cone weight in ST >= box weight (or boxWeight=0)
+  // Filter out boxes whose cones are FULLY transferred to ST (box effectively empty).
+  // With partial transfers, `box.boxWeight` represents remaining LT weight, so we rely on:
+  // - explicit marker coneData.conesIssued OR
+  // - remaining weight == 0 OR
+  // - initialBoxWeight fully consumed by cone weight in ST (fallback).
   const boxIds = boxes.map((b) => b.boxId);
   const conesInSTByBox = await YarnCone.aggregate([
     {
@@ -186,7 +189,11 @@ export const getStorageSlotsWithContents = async (zone, query = {}) => {
   for (const box of boxes) {
     const boxWeight = box.boxWeight || 0;
     const coneWeightInST = coneWeightByBox.get(box.boxId) || 0;
-    const fullyTransferred = boxWeight > 0 && coneWeightInST >= boxWeight - 0.001;
+    const initial = box.initialBoxWeight != null ? Number(box.initialBoxWeight) : null;
+    const fullyTransferred =
+      box?.coneData?.conesIssued === true ||
+      boxWeight <= 0.001 ||
+      (initial != null && initial > 0 && coneWeightInST >= initial - 0.001);
     if (fullyTransferred) continue; // Box fully transferred to cones, skip
     const loc = box.storageLocation;
     if (!boxesByLocation[loc]) boxesByLocation[loc] = [];

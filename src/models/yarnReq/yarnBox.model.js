@@ -116,6 +116,15 @@ const yarnBoxSchema = mongoose.Schema(
       type: Number,
       min: 0,
     },
+    /**
+     * Snapshot of the box weight when it is first stored in long-term (LT) storage.
+     * Used to derive "remaining in LT" as cones are moved to short-term (ST).
+     */
+    initialBoxWeight: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
     grossWeight: {
       type: Number,
       min: 0,
@@ -183,6 +192,18 @@ yarnBoxSchema.pre('save', async function (next) {
   }
   if (!this.yarnName || !String(this.yarnName).trim()) {
     return next(new Error('YarnBox requires yarnName or a valid yarnCatalogId'));
+  }
+
+  // Capture initial LT weight once (for partial transfers LT→ST).
+  try {
+    const isLongTermStorage = this.storageLocation && LT_STORAGE_PATTERN.test(this.storageLocation);
+    const isStored = this.storedStatus === true;
+    const hasWeight = this.boxWeight != null && Number(this.boxWeight) > 0;
+    if (isLongTermStorage && isStored && hasWeight && (this.initialBoxWeight == null || Number(this.initialBoxWeight) <= 0)) {
+      this.initialBoxWeight = Number(this.boxWeight);
+    }
+  } catch (e) {
+    console.error('[YarnBox] initialBoxWeight capture:', e.message);
   }
   next();
 });

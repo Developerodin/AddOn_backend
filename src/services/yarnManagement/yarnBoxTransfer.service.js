@@ -136,6 +136,12 @@ export const transferBoxes = async (transferData) => {
       }).lean();
       
       const actualConeCount = conesInST.length;
+
+      // IMPORTANT: For LT→ST, inventory should move by the amount actually extracted into ST (cones),
+      // not by the original LT box weight. Otherwise LT will keep showing full weight.
+      const movedTotalWeight = conesInST.reduce((sum, c) => sum + (c.coneWeight || 0), 0);
+      const movedTearWeight = conesInST.reduce((sum, c) => sum + (c.tearWeight || 0), 0);
+      const movedNetWeight = conesInST.reduce((sum, c) => sum + ((c.coneWeight || 0) - (c.tearWeight || 0)), 0);
       
       // LT→ST: Update inventory (moves from longTermInventory to shortTermInventory)
       transaction = await yarnTransactionService.createYarnTransaction({
@@ -143,9 +149,9 @@ export const transferBoxes = async (transferData) => {
         yarnName: yarnCatalog.yarnName,
         transactionType: 'internal_transfer',
         transactionDate: transferDate || new Date(),
-        totalWeight,
-        totalNetWeight,
-        totalTearWeight,
+        totalWeight: movedTotalWeight,
+        totalNetWeight: movedNetWeight,
+        totalTearWeight: movedTearWeight,
         numberOfCones: actualConeCount, // Actual number of cones in ST for these boxes
         orderno: boxIdsForYarn.join(','),
         boxIds: boxIdsForYarn,
@@ -153,7 +159,7 @@ export const transferBoxes = async (transferData) => {
         toStorageLocation,
       });
 
-      // After transaction: If box is fully transferred (cones in ST, total cone weight >= box weight), reset box
+      // After transaction: update remaining weight in LT and reset only when fully transferred.
       for (const box of yarnBoxes) {
         const conesForThisBox = await YarnCone.find({
           boxId: box.boxId,
@@ -161,11 +167,20 @@ export const transferBoxes = async (transferData) => {
         }).lean();
         const coneCount = conesForThisBox.length;
         const totalConeWeight = conesForThisBox.reduce((sum, c) => sum + (c.coneWeight || 0), 0);
-        const boxWeight = box.boxWeight || 0;
-        const fullyTransferred = coneCount > 0 && totalConeWeight >= boxWeight - 0.001;
+        const initial = box.initialBoxWeight != null ? Number(box.initialBoxWeight) : 0;
+        const boxWeightNow = Number(box.boxWeight ?? 0);
+        const inferredBase =
+          boxWeightNow >= totalConeWeight ? boxWeightNow : boxWeightNow + totalConeWeight;
+        const baseWeight = initial > 0 ? initial : inferredBase;
+        const remaining = Math.max(0, baseWeight - (totalConeWeight || 0));
+        const fullyTransferred = coneCount > 0 && remaining <= 0.001;
+
+        if (box.initialBoxWeight == null || Number(box.initialBoxWeight) <= 0) {
+          box.initialBoxWeight = baseWeight;
+        }
+        box.boxWeight = remaining;
 
         if (fullyTransferred) {
-          box.boxWeight = 0;
           box.storageLocation = undefined; // unset so field is removed
           box.storedStatus = false;
           box.coneData = {
@@ -174,9 +189,8 @@ export const transferBoxes = async (transferData) => {
             numberOfCones: coneCount,
             coneIssueDate: transferDate || new Date(),
           };
-          await box.save();
         }
-        // If not fully transferred, box stays in LT (no save needed)
+        await box.save();
       }
     } else {
       // LT→LT or ST→ST: Location change only, no inventory update
