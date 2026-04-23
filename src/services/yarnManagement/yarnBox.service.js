@@ -14,6 +14,18 @@ const ACTIVE_BOX_FILTER = {
   ],
 };
 
+/**
+ * Whether a box matches the default GET /yarn-boxes list filter (editable on PO receive process).
+ * True when cones are not marked issued, or the box still has positive weight.
+ * @param {Object} box - YarnBox document or plain object
+ * @returns {boolean}
+ */
+export const isYarnBoxActiveForProcessing = (box) => {
+  const conesIssued = box?.coneData?.conesIssued === true;
+  const w = Number(box?.boxWeight ?? 0);
+  return !conesIssued || w > 0;
+};
+
 export const createYarnBox = async (yarnBoxBody) => {
   if (!yarnBoxBody.boxId) {
     const autoBoxId = `BOX-${Date.now()}`;
@@ -86,6 +98,13 @@ export const updateYarnBoxById = async (yarnBoxId, updateBody) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Yarn box not found');
   }
 
+  if (!isYarnBoxActiveForProcessing(yarnBox)) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'This yarn box is read-only (inactive or fully transferred) and cannot be updated.'
+    );
+  }
+
   // Guardrail: prevent inconsistent states when cones are already in short-term storage for this box.
   // Partial transfer is allowed (box still in LT with weight + LT storageLocation).
   // But unsetting storageLocation while keeping boxWeight > 0 causes "orphan" boxes (no location but nonzero weight).
@@ -146,7 +165,8 @@ export const updateYarnBoxById = async (yarnBoxId, updateBody) => {
 };
 
 export const queryYarnBoxes = async (filters = {}) => {
-  const mongooseFilter = { ...ACTIVE_BOX_FILTER };
+  const includeInactive = filters.include_inactive === true || filters.include_inactive === 'true';
+  const mongooseFilter = includeInactive ? {} : { ...ACTIVE_BOX_FILTER };
 
   if (filters.po_number) {
     mongooseFilter.poNumber = filters.po_number;
@@ -180,7 +200,13 @@ export const queryYarnBoxes = async (filters = {}) => {
   if (!Number.isNaN(limitNum) && limitNum > 0) {
     query = query.limit(limitNum);
   }
-  const yarnBoxes = await query.lean();
+  let yarnBoxes = await query.lean();
+  if (includeInactive) {
+    yarnBoxes = yarnBoxes.map((b) => ({
+      ...b,
+      isActiveForProcessing: isYarnBoxActiveForProcessing(b),
+    }));
+  }
   return yarnBoxes;
 };
 

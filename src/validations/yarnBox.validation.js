@@ -189,6 +189,8 @@ export const getYarnBoxes = {
     storage_location: Joi.string().trim().optional(),
     cones_issued: Joi.boolean().optional(),
     stored_status: Joi.alternatives().try(Joi.boolean(), Joi.string().valid('true', 'false')).optional(),
+    /** When true, returns boxes hidden by the default active filter; each row includes `isActiveForProcessing`. */
+    include_inactive: Joi.alternatives().try(Joi.boolean(), Joi.string().valid('true', 'false')).optional(),
     limit: Joi.number().integer().min(1).max(10000).optional().options({ convert: true }),
   }),
 };
