@@ -333,17 +333,20 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
     },
   ];
 
-  // Unallocated boxes: boxes without storage location (empty, null, or doesn't exist)
-  // Note: boxWeight is already NET weight (tare subtracted at entry), so no subtraction needed
+  // Unallocated boxes: boxes without a storage location.
+  // IMPORTANT: these are typically `storedStatus=false` until allocated, so do NOT require storedStatus=true here.
+  // Note: boxWeight is treated as net for inventory bucketing in this service.
   const unallocatedBoxPipeline = [
     {
       $match: {
         $or: [
           { storageLocation: { $exists: false } },
           { storageLocation: null },
-          { storageLocation: '' },
+          { storageLocation: { $in: ['', ' '] } },
+          { storageLocation: { $regex: /^\s*$/ } },
         ],
-        storedStatus: true,
+        // Avoid counting placeholder rows without weights.
+        boxWeight: { $gt: 0 },
         ...yarnNameMatch,
       },
     },
