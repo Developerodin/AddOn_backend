@@ -37,7 +37,7 @@ Shared helper module extracted from `yarnReport.service.js`. Used by both the cr
 Daily cron job that computes and persists closing kg snapshots.
 
 **Behaviour:**
-- Runs at `00:05` local business-timezone time (snapshots the **previous calendar day**)
+- Runs at `00:00` (midnight) local business-timezone time (snapshots the **previous calendar day**)
 - Queries all yarns with physical stock via `getYarnIdsWithPhysicalStock`
 - Computes net kg via `computePhysicalKgMap`
 - Upserts one `YarnDailyClosingSnapshot` document per yarn (safe to re-run)
@@ -121,7 +121,7 @@ When fallback is active:
 |----------|---------|-------------|
 | `YARN_DAILY_SNAPSHOT_ENABLED` | _(unset / disabled)_ | Set to `true` to enable the cron job |
 | `YARN_SNAPSHOT_TZ` | `Asia/Kolkata` | Business timezone for snapshot date keys and cron schedule |
-| `YARN_SNAPSHOT_CRON` | `5 0 * * *` | Cron schedule override (default: 00:05 local TZ) |
+| `YARN_SNAPSHOT_CRON` | `0 0 * * *` | Cron schedule override (default: 00:00 midnight local TZ, IST when `YARN_SNAPSHOT_TZ=Asia/Kolkata`) |
 
 ---
 
@@ -146,7 +146,7 @@ Balance = opening + pur − purRet + returned − issued
 ## Data Flow Diagram
 
 ```
-Daily Cron (00:05 IST)
+Daily Cron (00:00 IST)
   └── computePhysicalKgMap()    ← YarnBox + YarnCone (live)
         └── upsert YarnDailyClosingSnapshot (snapshotDate = yesterday)
 

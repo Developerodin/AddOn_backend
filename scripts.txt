@@ -1,0 +1,14 @@
+npm run audit:yarn-lt-st-recon -- --output-csv=./yarn-lt-st-issues-only.csv --csv-scope=problems
+
+give the boxes and invtryd ata inw hich issue is there 
+
+
+npm run audit:yarn-lt-st-recon -- --output-csv=./yarn-lt-st-full.csv
+
+give entier invtry report 
+
+
+cd AddOn_backend
+node src/scripts/bulk-return-cones-from-csv.js --csv="./Cone Out data - Sheet1.csv" --out="./bulk-cone-return-report.csv"
+
+bulk retrun cone and give a reprot on cons data 

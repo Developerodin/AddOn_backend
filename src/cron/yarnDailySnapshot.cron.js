@@ -10,14 +10,29 @@ const SNAPSHOT_TZ = process.env.YARN_SNAPSHOT_TZ || 'Asia/Kolkata';
 const toLocalDateString = (date) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: SNAPSHOT_TZ }).format(date);
 
+/** @param {string} s */
+const isIsoDateKey = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
+
 /**
- * Compute and upsert EOD closing kg snapshots for the previous calendar day.
+ * Compute and upsert EOD closing kg snapshots for the previous calendar day (business TZ),
+ * or for an explicit calendar key when backfilling / testing.
  * Idempotent: safe to run multiple times.
+ *
+ * @param {{ snapshotDate?: string }} [opts] - If `snapshotDate` is `YYYY-MM-DD`, that key is used
+ *   instead of "yesterday". **Values are always current physical stock** from DB — only the label
+ *   changes; use for ops backfill when nightly jobs missed, not forensic historical truth.
+ * @returns {Promise<{ snapshotDate: string, upserted: number, total?: number, duration: number }>}
  */
-export const runYarnDailySnapshot = async () => {
+export const runYarnDailySnapshot = async (opts = {}) => {
   const now = new Date();
-  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const snapshotDate = toLocalDateString(yesterday);
+  let snapshotDate;
+  if (opts.snapshotDate && isIsoDateKey(opts.snapshotDate)) {
+    snapshotDate = opts.snapshotDate;
+    logger.info(`[YarnSnapshot] Using explicit snapshotDate=${snapshotDate} (current stock → this key)`);
+  } else {
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    snapshotDate = toLocalDateString(yesterday);
+  }
 
   logger.info(`[YarnSnapshot] Computing snapshot for ${snapshotDate} (TZ: ${SNAPSHOT_TZ})`);
   const startMs = Date.now();
@@ -64,16 +79,18 @@ export const runYarnDailySnapshot = async () => {
 
 /**
  * Start the daily snapshot cron job.
- * Default schedule: 00:05 local TZ (snapshots previous calendar day).
- * Override with YARN_SNAPSHOT_CRON env var.
+ * Default schedule: 00:00 (midnight) in `YARN_SNAPSHOT_TZ` (default Asia/Kolkata = IST);
+ * each run still labels data as the **previous calendar day** in that TZ (EOD closing).
+ * Override with `YARN_SNAPSHOT_CRON` — use five fields (`M H DoM Mo DoW`) for production.
+ * Six-field patterns (leading seconds) are for short-interval dev testing only; do not use in prod.
  */
 export const startYarnDailySnapshotJob = () => {
-  const schedule = process.env.YARN_SNAPSHOT_CRON || '5 0 * * *';
+  const schedule = process.env.YARN_SNAPSHOT_CRON || '0 0 * * *';
   const job = new CronJob(
     schedule,
     async () => {
       try {
-        await runYarnDailySnapshot();
+        await runYarnDailySnapshot({});
       } catch (err) {
         logger.error('[YarnSnapshot] Job failed:', err);
       }

@@ -17,7 +17,8 @@ export const getYarnBox = catchAsync(async (req, res) => {
 
 export const getYarnBoxByBarcode = catchAsync(async (req, res) => {
   const { barcode } = req.params;
-  const yarnBox = await yarnBoxService.getYarnBoxByBarcode(barcode);
+  const includeInactive = req.query?.include_inactive;
+  const yarnBox = await yarnBoxService.getYarnBoxByBarcode(barcode, { includeInactive });
   res.status(httpStatus.OK).send(yarnBox);
 });
 

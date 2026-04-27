@@ -30,7 +30,21 @@ node src/scripts/transfer-atlas-to-local.js --dry-run
 node src/scripts/transfer-atlas-to-local.js
  */
 
-import mongoose from 'mongoose';
+// Node 25+ made url.parse() throw in some MongoDB driver pre-checks.
+// The mongodb driver 3.x uses url.parse() before its own parsing, so we patch it
+// to return best-effort output instead of throwing.
+import url from 'url';
+const _origUrlParse = url.parse;
+url.parse = function patchedParse(urlStr, ...args) {
+  try {
+    return _origUrlParse.call(this, urlStr, ...args);
+  } catch {
+    const firstHost = String(urlStr).replace(/(@[^,/]+),([^/])/, '$1/$2');
+    return _origUrlParse.call(this, firstHost, ...args);
+  }
+};
+
+const { default: mongoose } = await import('mongoose');
 import dotenv from 'dotenv';
 import path from 'path';
 
@@ -48,14 +62,34 @@ const FALLBACK_ATLAS_URL = `mongodb://${ATLAS_HOSTS}/Addonbackupdatabase?ssl=tru
 
 let ATLAS_MONGODB_URL = process.env.ATLAS_MONGODB_URL || process.env.MONGODB_URL;
 
-// If we detect a specific SRV URL that we know fails, use the fallback
-if (ATLAS_MONGODB_URL && ATLAS_MONGODB_URL.includes('cluster0.0qimubb.mongodb.net') && ATLAS_MONGODB_URL.startsWith('mongodb+srv://')) {
+// If we detect a specific SRV URL that we know fails, use the fallback.
+// NOTE: This fallback is optional because it requires correctly encoded credentials.
+// Set FORCE_DIRECT_ATLAS=1 to enable it; otherwise we keep mongodb+srv (preferred).
+if (
+  process.env.FORCE_DIRECT_ATLAS === '1' &&
+  ATLAS_MONGODB_URL &&
+  ATLAS_MONGODB_URL.includes('cluster0.0qimubb.mongodb.net') &&
+  ATLAS_MONGODB_URL.startsWith('mongodb+srv://')
+) {
   // Extract credentials
-  const match = ATLAS_MONGODB_URL.match(/\/\/([^:]+):([^@]+)@/);
-  if (match) {
-    const [_, user, pass] = match;
-    ATLAS_MONGODB_URL = `mongodb://${user}:${pass}@${ATLAS_HOSTS}/Addonbackupdatabase?ssl=true&replicaSet=atlas-26xn7fg-shard-0&authSource=admin&retryWrites=true&w=majority`;
-    console.log('ℹ️  Using direct connection string to bypass DNS/SRV issues');
+  try {
+    // Handle passwords that may contain '@' by splitting at the LAST '@' in the authority part.
+    const scheme = 'mongodb+srv://';
+    const afterScheme = ATLAS_MONGODB_URL.slice(scheme.length);
+    const atIdx = afterScheme.lastIndexOf('@');
+    const credsPart = atIdx >= 0 ? afterScheme.slice(0, atIdx) : '';
+    const colonIdx = credsPart.indexOf(':');
+    const user = colonIdx >= 0 ? credsPart.slice(0, colonIdx) : '';
+    const pass = colonIdx >= 0 ? credsPart.slice(colonIdx + 1) : '';
+    if (user && pass) {
+      // Credentials may contain URL-reserved chars; encode so the Mongo parser accepts the URI.
+      const encUser = encodeURIComponent(user);
+      const encPass = encodeURIComponent(pass);
+      ATLAS_MONGODB_URL = `mongodb://${encUser}:${encPass}@${ATLAS_HOSTS}/Addonbackupdatabase?ssl=true&replicaSet=atlas-26xn7fg-shard-0&authSource=admin&retryWrites=true&w=majority`;
+      console.log('ℹ️  Using direct connection string to bypass DNS/SRV issues');
+    }
+  } catch {
+    // If parsing fails, keep the original mongodb+srv URL.
   }
 }
 const LOCAL_MONGODB_URL = process.env.LOCAL_MONGODB_URL || 'mongodb://127.0.0.1:27017/addon';

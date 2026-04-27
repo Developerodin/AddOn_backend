@@ -57,8 +57,46 @@ export const getYarnBoxById = async (yarnBoxId) => {
   return yarnBox;
 };
 
-export const getYarnBoxByBarcode = async (barcode) => {
-  const yarnBox = await YarnBox.findOne({ barcode, ...ACTIVE_BOX_FILTER }).lean();
+/**
+ * Resolve a yarn box from a scanned or pasted value.
+ * @param {string} barcode - Box barcode, legacy box Mongo id string, or yarn cone barcode
+ * @param {{ includeInactive?: boolean|string }} [options] - When true, do not apply ACTIVE_BOX_FILTER on direct barcode/boxId matches
+ */
+export const getYarnBoxByBarcode = async (barcode, options = {}) => {
+  const trimmed = String(barcode || '').trim();
+  const includeInactive =
+    options.includeInactive === true ||
+    options.includeInactive === 'true' ||
+    options.includeInactive === '1';
+
+  const activePart = includeInactive ? {} : ACTIVE_BOX_FILTER;
+
+  let yarnBox = await YarnBox.findOne({ barcode: trimmed, ...activePart }).lean();
+
+  if (!yarnBox && includeInactive) {
+    yarnBox = await YarnBox.findOne({ barcode: trimmed }).lean();
+  }
+
+  // Cone barcodes are ObjectId-shaped strings; resolve parent box by boxId (always, for ST/process flows)
+  if (!yarnBox) {
+    const cone = await YarnCone.findOne({ barcode: trimmed }).select('boxId').lean();
+    if (cone?.boxId) {
+      yarnBox = await YarnBox.findOne({ boxId: cone.boxId }).lean();
+    }
+  }
+
+  // Box may use Mongo _id string as barcode (pre-save hook)
+  const isCanonicalObjectId =
+    mongoose.Types.ObjectId.isValid(trimmed) &&
+    String(new mongoose.Types.ObjectId(trimmed)) === trimmed;
+
+  if (!yarnBox && isCanonicalObjectId) {
+    const byId = await YarnBox.findById(new mongoose.Types.ObjectId(trimmed)).lean();
+    if (byId && (includeInactive || isYarnBoxActiveForProcessing(byId))) {
+      yarnBox = byId;
+    }
+  }
+
   if (!yarnBox) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Yarn box not found with this barcode');
   }

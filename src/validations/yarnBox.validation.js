@@ -61,6 +61,12 @@ export const getYarnBoxByBarcode = {
   params: Joi.object().keys({
     barcode: Joi.string().trim().required(),
   }),
+  query: Joi.object().keys({
+    /** When true, include boxes hidden after ST transfer (cones issued + zero weight) and improve cone/_id resolution */
+    include_inactive: Joi.alternatives()
+      .try(Joi.boolean(), Joi.string().valid('true', 'false', '1', '0'))
+      .optional(),
+  }),
 };
 
 export const updateYarnBox = {
