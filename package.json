@@ -33,6 +33,7 @@
     "report:yarn-stocked": "cross-env NODE_ENV=development node src/scripts/report-yarn-stocked.js",
     "report:yarn-boxes-po": "cross-env NODE_ENV=development node src/scripts/report-yarn-boxes-by-po.js",
     "report:yarn-storage-opening": "cross-env NODE_ENV=development node src/scripts/report-yarn-storage-opening.js",
+    "report:yarn-snapshot-coverage": "cross-env NODE_ENV=development node src/scripts/report-yarn-daily-snapshot-coverage.js",
     "check:yarn-lt-st-barcode": "cross-env NODE_ENV=development node src/scripts/check-yarn-lt-st-by-barcode.js",
     "audit:yarn-lt-st-recon": "cross-env NODE_ENV=development node src/scripts/audit-yarn-lt-st-weight-reconciliation.js",
     "audit:yarn-lt-st-recon:csv": "cross-env NODE_ENV=development node src/scripts/audit-yarn-lt-st-weight-reconciliation.js --output-csv=./yarn-lt-st-audit.csv",
