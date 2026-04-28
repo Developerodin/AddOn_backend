@@ -98,6 +98,22 @@ function missingDaysInRange(present, startKey, endKey) {
 }
 
 /**
+ * Widest (S, E) with S−1 and E both snapshot keys and S ≤ E (gaps between snapshot days OK).
+ *
+ * @param {Set<string>} dateSet
+ * @returns {{ start_date: string, end_date: string } | null}
+ */
+function buildGlobalMaxReportRange(dateSet) {
+  const sorted = [...dateSet].sort();
+  if (!sorted.length) return null;
+  const eMax = sorted[sorted.length - 1];
+  const validStarts = sorted.map((d) => addCalendarDays(d, 1)).filter((s) => s <= eMax);
+  if (!validStarts.length) return null;
+  validStarts.sort();
+  return { start_date: validStarts[0], end_date: eMax };
+}
+
+/**
  * @param {Set<string>} dateSet
  * @param {number} maxExamples
  * @returns {Array<{ start_date: string, end_date: string, openingSnapshot: string, closingSnapshot: string }>}
@@ -211,6 +227,7 @@ async function main() {
 
   const exampleRanges = buildExampleReportRanges(dateSet, 12);
   const streakWindows = buildMaxWindowsPerConsecutiveSnapshotStreak(dateSet);
+  const globalMaxRange = buildGlobalMaxReportRange(dateSet);
 
   await mongoose.connection.close();
 
@@ -234,6 +251,7 @@ async function main() {
       requires_snapshot_keys: [x.openingSnapshot, x.closingSnapshot],
     })),
     maxReportWindowPerConsecutiveSnapshotStreak: streakWindows,
+    globalMaxValidReportRange: globalMaxRange,
   };
 
   if (asJson) {
@@ -274,7 +292,14 @@ async function main() {
   }
 
   console.log(`\n--- ${summary.yarnReportRule} ---`);
-  console.log('\nExample valid start_date / end_date (first few dates that have opening day before):');
+  if (summary.globalMaxValidReportRange) {
+    const g = summary.globalMaxValidReportRange;
+    console.log(
+      `\nWidest valid report window (any gap days only need no snapshot; opening/closing keys must exist):`
+    );
+    console.log(`  start_date=${g.start_date}  end_date=${g.end_date}`);
+  }
+  console.log('\nExample valid start_date / end_date (one-day: closing and previous calendar day both snapshotted):');
   for (const ex of summary.exampleValidQueryParams.slice(0, 8)) {
     console.log(
       `  start_date=${ex.start_date}  end_date=${ex.end_date}  (snapshots: ${ex.requires_snapshot_keys.join(', ')})`
