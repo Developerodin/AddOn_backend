@@ -43,11 +43,11 @@ const syncShortTermStorage = async () => {
   console.log('='.repeat(80));
   console.log();
 
-  // Find all cones in short-term storage (not issued)
-  // Only count cones that are available (not issued)
+  // Find all cones in short-term storage that are still available
+  // (neither issued out for production nor used/empty-returned)
   const shortTermCones = await YarnCone.find({
     coneStorageId: { $regex: /^ST-/i },
-    issueStatus: { $ne: 'issued' }, // Only count available cones
+    issueStatus: { $nin: ['issued', 'used'] },
   }).lean();
 
   console.log(`📦 Found ${shortTermCones.length} cones in short-term storage\n`);

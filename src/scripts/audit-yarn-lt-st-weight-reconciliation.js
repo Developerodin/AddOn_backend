@@ -173,7 +173,7 @@ async function main() {
     conesWithLtPatternStorage(LT_REGEX),
     coneTotals({
       coneStorageId: { $exists: true, $nin: [null, ''] },
-      issueStatus: { $ne: 'issued' },
+      issueStatus: { $nin: ['issued', 'used'] },
       coneWeight: { $gt: WEIGHT_EPS_KG },
     }),
     YarnBox.countDocuments({ storageLocation: { $regex: LT_REGEX } }),

@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { YarnBox, YarnCone, YarnCatalog } from '../../models/index.js';
+import { yarnConeUnavailableIssueStatuses } from '../../models/yarnReq/yarnCone.model.js';
 
 const toNum = (v) => Number(v ?? 0);
 
@@ -14,7 +15,7 @@ export const getYarnIdsWithPhysicalStock = async () => {
     YarnBox.distinct('yarnCatalogId', { boxWeight: { $gt: 0 }, yarnCatalogId: { $exists: true, $ne: null } }),
     YarnCone.distinct('yarnCatalogId', {
       coneStorageId: { $exists: true, $nin: [null, ''] },
-      issueStatus: { $ne: 'issued' },
+      issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
     }),
     YarnCatalog.find({}).select('_id yarnName').lean(),
   ]);
@@ -63,7 +64,7 @@ export const computePhysicalKgMap = async (yarnIds, catalogMap) => {
   const cones = await YarnCone.find({
     yarnCatalogId: { $in: objectIds },
     coneStorageId: { $exists: true, $nin: [null, ''] },
-    issueStatus: { $ne: 'issued' },
+    issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
   })
     .select('yarnCatalogId coneWeight tearWeight')
     .lean();

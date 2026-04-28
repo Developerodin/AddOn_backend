@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { YarnBox, YarnCone, YarnTransaction } from '../../models/index.js';
 import { LT_SECTION_CODES } from '../../models/storageManagement/storageSlot.model.js';
+import { yarnConeUnavailableIssueStatuses } from '../../models/yarnReq/yarnCone.model.js';
 
 const toNum = (v) => Number(v ?? 0);
 const LT_STORAGE_PATTERN = new RegExp(`^(LT-|${LT_SECTION_CODES.map((s) => `${s}-`).join('|')})`, 'i');
@@ -34,7 +35,7 @@ export async function getPoBoxAuditReport({ poNumber }) {
           poNumber: normalizedPo,
           boxId: { $in: boxIds },
           coneStorageId: { $exists: true, $nin: [null, ''] },
-          issueStatus: { $ne: 'issued' },
+          issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
         },
       },
       {

@@ -7,6 +7,7 @@ import {
   LT_SECTION_CODES,
   ST_SECTION_CODE,
 } from '../../models/storageManagement/storageSlot.model.js';
+import { yarnConeUnavailableIssueStatuses } from '../../models/yarnReq/yarnCone.model.js';
 
 const FLOORS_PER_SECTION = 4;
 const MAX_RACKS_PER_ADD = 50;
@@ -204,7 +205,7 @@ export const getStorageSlotsWithContents = async (zone, query = {}) => {
   const conesByLocation = {};
   const cones = await YarnCone.find({
     coneStorageId: { $in: barcodes },
-    $or: [{ issueStatus: 'not_issued' }, { returnStatus: 'returned' }],
+    issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
   }).lean();
   for (const cone of cones) {
     const loc = cone.coneStorageId;
@@ -376,14 +377,11 @@ export const getStorageContentsByBarcode = async (barcode) => {
   }
 
   if (zoneCode === STORAGE_ZONES.SHORT_TERM) {
-    // For short-term storage, return yarn cones
-    // Show cones that are: (1) not issued, OR (2) issued but returned
-    const yarnCones = await YarnCone.find({ 
+    // For short-term storage, return yarn cones that are still available in the slot
+    // (i.e. neither issued nor used).
+    const yarnCones = await YarnCone.find({
       coneStorageId: barcode,
-      $or: [
-        { issueStatus: 'not_issued' },           // Never issued - in storage
-        { returnStatus: 'returned' }             // Was issued but returned - back in storage
-      ]
+      issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
     })
       .sort({ createdAt: -1 })
       .lean();

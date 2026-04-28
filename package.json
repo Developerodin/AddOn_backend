@@ -47,6 +47,7 @@
     "seed:order-to-branding": "cross-env NODE_ENV=development API_URL=http://localhost:8000 node scripts/seed-order-to-branding.js",
     "migrate:containers-type-tearweight": "node src/scripts/update-containers-type-tearweight.js",
     "migrate:yarn-catalog-id": "cross-env NODE_ENV=development node src/scripts/migrate-yarn-to-yarnCatalogId.js",
+    "migrate:cone-mark-used": "cross-env NODE_ENV=development node src/scripts/migrate-cone-mark-used.js",
     "migrate:backfill-final-checking-received": "cross-env NODE_ENV=development node src/scripts/backfill-final-checking-received-data-from-branding.js",
     "sync:yarn-labels-from-catalog": "cross-env NODE_ENV=development node src/scripts/sync-yarn-labels-from-catalog.js",
     "verify:yarn-catalog-names": "cross-env NODE_ENV=development node src/scripts/verify-yarn-catalog-yarn-names.js",

@@ -8023,8 +8023,11 @@ export const getYarnCones = async (params = {}) => {
     }
     
     const totalCount = cones.length;
-    const issuedCount = limitedCones.filter(c => c.issueStatus === 'issued').length;
-    const availableCount = limitedCones.filter(c => c.issueStatus !== 'issued' || !c.issueStatus).length;
+    const issuedCount = limitedCones.filter((c) => c.issueStatus === 'issued').length;
+    const usedCount = limitedCones.filter((c) => c.issueStatus === 'used').length;
+    const availableCount = limitedCones.filter(
+      (c) => c.issueStatus !== 'issued' && c.issueStatus !== 'used'
+    ).length;
     
     const html = AI_TOOL_STYLES + `
       <div class="ai-tool-response">
@@ -8045,6 +8048,11 @@ export const getYarnCones = async (params = {}) => {
             <div class="kpi-label">Available Cones</div>
             <div class="kpi-value">${availableCount.toLocaleString()}</div>
             <div class="kpi-change">Available for Issue</div>
+          </div>
+          <div class="kpi-item">
+            <div class="kpi-label">Used Cones</div>
+            <div class="kpi-value">${usedCount.toLocaleString()}</div>
+            <div class="kpi-change">Empty / Consumed</div>
           </div>
         </div>
         

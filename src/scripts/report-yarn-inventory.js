@@ -30,10 +30,10 @@ const run = async () => {
     })
       .lean();
 
-    // ST: cones with storage (coneStorageId, not issued)
+    // ST: cones with storage (coneStorageId, available — neither issued nor used)
     const stCones = await YarnCone.find({
       coneStorageId: { $exists: true, $nin: [null, ''] },
-      issueStatus: { $ne: 'issued' },
+      issueStatus: { $nin: ['issued', 'used'] },
     })
       .lean();
 

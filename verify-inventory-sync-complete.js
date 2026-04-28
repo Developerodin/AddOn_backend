@@ -63,10 +63,10 @@ const verifyInventory = async () => {
 
   console.log(`   Found ${ltBoxes.length} boxes in long-term storage`);
 
-  // Short-term storage: Available cones (not issued)
+  // Short-term storage: Available cones (neither issued nor used)
   const stConesAvailable = await YarnCone.find({
     coneStorageId: { $regex: /^ST-/i },
-    issueStatus: { $ne: 'issued' },
+    issueStatus: { $nin: ['issued', 'used'] },
   }).lean();
 
   console.log(`   Found ${stConesAvailable.length} available cones in short-term storage`);

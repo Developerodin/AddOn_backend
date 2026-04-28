@@ -5,6 +5,7 @@ import ApiError from '../../utils/ApiError.js';
 import pick from '../../utils/pick.js';
 import { pickYarnCatalogId } from '../../utils/yarnCatalogRef.js';
 import { STORAGE_ZONES, ST_SECTION_CODE, LT_SECTION_CODES } from '../../models/storageManagement/storageSlot.model.js';
+import { yarnConeUnavailableIssueStatuses } from '../../models/yarnReq/yarnCone.model.js';
 
 /** LT: legacy LT-* OR slot barcodes B7-02-, B7-03-, B7-04-, B7-05- (from StorageSlot) */
 const LT_STORAGE_REGEX = { $regex: new RegExp(`^(LT-|${LT_SECTION_CODES.map((s) => `${s}-`).join('|')})`, 'i') };
@@ -117,7 +118,7 @@ const recalculateInventoryFromStorage = async (inventory) => {
   const yarnId = inventory.yarnCatalogId?._id || inventory.yarnCatalogId;
   const stConeQuery = {
     coneStorageId: { $exists: true, $nin: [null, ''] },
-    issueStatus: { $ne: 'issued' },
+    issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
   };
   if (yarnId) {
     stConeQuery.$or = [{ yarnCatalogId: yarnId }, { yarnName: inventory.yarnName }];
@@ -229,7 +230,7 @@ export const computeInventoryFromStorage = async (yarnId) => {
         $match: {
           $or: [{ yarnCatalogId: mongoose.Types.ObjectId.createFromHexString(String(yarnId)) }, { yarnName: nameRegex }],
           coneStorageId: { $exists: true, $nin: [null, ''] },
-          issueStatus: { $ne: 'issued' },
+          issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
         },
       },
       {
@@ -296,12 +297,12 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
     { $group: { _id: '$boxId', totalConeWeight: { $sum: { $ifNull: ['$coneWeight', 0] } } } },
   ];
 
-  // ST: Only cones in ST storage (NOT boxes)
+  // ST: Only cones in ST storage (NOT boxes). Exclude issued/used cones explicitly.
   const stConePipeline = [
     {
       $match: {
         coneStorageId: { $in: stBarcodes },
-        $or: [{ issueStatus: 'not_issued' }, { returnStatus: 'returned' }],
+        issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
         ...yarnNameMatch,
       },
     },

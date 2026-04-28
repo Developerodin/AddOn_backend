@@ -5,8 +5,15 @@ import YarnCatalog from '../yarnManagement/yarnCatalog.model.js';
 import YarnInventory from './yarnInventory.model.js';
 import YarnBox from './yarnBox.model.js';
 
-export const yarnConeIssueStatuses = ['issued', 'not_issued'];
+export const yarnConeIssueStatuses = ['issued', 'not_issued', 'used'];
 export const yarnConeReturnStatuses = ['returned', 'not_returned'];
+
+/**
+ * Issue statuses considered to make a cone unavailable for the short-term
+ * inventory pool: issued cones are out for production; used cones are
+ * empty-returned and cannot be reused.
+ */
+export const yarnConeUnavailableIssueStatuses = ['issued', 'used'];
 
 const issuedBySchema = mongoose.Schema(
   {
@@ -123,8 +130,16 @@ const yarnConeSchema = mongoose.Schema(
 );
 
 /**
- * Pre-save hook: When a yarn cone is returned (returnStatus set to 'returned'), set issueStatus to not_issued
- * and returnStatus to not_returned so the cone is back in pool / available again.
+ * Pre-save hook for YarnCone.
+ *
+ * Behavior:
+ *  - Syncs yarnName from YarnCatalog when yarnCatalogId changes / yarnName is missing.
+ *  - When returnStatus === 'returned' (transient flag set by the return service),
+ *    classify the return based on remaining weight:
+ *      - empty return  (coneWeight is 0 or null) -> issueStatus = 'used'
+ *      - partial return (coneWeight > 0)         -> issueStatus = 'not_issued' (back to pool)
+ *    In both cases reset returnStatus to 'not_returned' and clear orderId/articleId.
+ *  - If the cone has no weight, also clear coneStorageId so it does not appear in any slot.
  */
 yarnConeSchema.pre('save', async function (next) {
   if (this.yarnCatalogId && (this.isModified('yarnCatalogId') || !this.yarnName)) {
@@ -136,9 +151,9 @@ yarnConeSchema.pre('save', async function (next) {
     }
   }
   if (this.returnStatus === 'returned') {
-    this.issueStatus = 'not_issued';
+    const isEmptyReturn = this.coneWeight == null || Number(this.coneWeight) <= 0;
+    this.issueStatus = isEmptyReturn ? 'used' : 'not_issued';
     this.returnStatus = 'not_returned';
-    // Clear linkage to order/article so cone can be issued again
     this.orderId = undefined;
     this.articleId = undefined;
   }
@@ -154,10 +169,10 @@ yarnConeSchema.pre('save', async function (next) {
  */
 yarnConeSchema.post('save', async function (doc) {
   const hasStorage = doc.coneStorageId != null && String(doc.coneStorageId).trim() !== '';
-  const isNotIssued = doc.issueStatus !== 'issued';
+  const isAvailable = !yarnConeUnavailableIssueStatuses.includes(doc.issueStatus);
   const hasWeight = doc.coneWeight && doc.coneWeight > 0;
 
-  if (!hasStorage || !isNotIssued || !hasWeight) {
+  if (!hasStorage || !isAvailable || !hasWeight) {
     return;
   }
 
@@ -230,7 +245,7 @@ yarnConeSchema.post('save', async function (doc) {
     // This ensures we always have accurate counts
     const allSTCones = await mongoose.model('YarnCone').find({
       coneStorageId: { $exists: true, $nin: [null, ''] },
-      issueStatus: { $ne: 'issued' },
+      issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
       yarnCatalogId: yarnCatalog._id,
     }).lean();
 

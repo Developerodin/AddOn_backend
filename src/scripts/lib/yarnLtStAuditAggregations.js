@@ -23,10 +23,11 @@ export async function loadConeMetricsByBoxId() {
       $addFields: {
         _hasSlot: { $gt: [{ $strLenCP: { $trim: { input: '$_cs' } } }, 0] },
         _issued: { $eq: ['$issueStatus', 'issued'] },
+        _used: { $eq: ['$issueStatus', 'used'] },
         _activeSt: {
           $and: [
             { $gt: [{ $strLenCP: { $trim: { input: '$_cs' } } }, 0] },
-            { $ne: ['$issueStatus', 'issued'] },
+            { $not: { $in: ['$issueStatus', ['issued', 'used']] } },
             { $gt: ['$_cw', 0] },
           ],
         },
@@ -37,6 +38,7 @@ export async function loadConeMetricsByBoxId() {
         _id: '$boxId',
         totalConeCount: { $sum: 1 },
         issuedConeCount: { $sum: { $cond: ['$_issued', 1, 0] } },
+        usedConeCount: { $sum: { $cond: ['$_used', 1, 0] } },
         activeStCount: { $sum: { $cond: ['$_activeSt', 1, 0] } },
         activeStGrossKg: { $sum: { $cond: ['$_activeSt', '$_cw', 0] } },
         activeStNetKg: {
@@ -62,6 +64,7 @@ export async function loadConeMetricsByBoxId() {
       activeStGrossKg: num(r.activeStGrossKg),
       activeStNetKg: num(r.activeStNetKg),
       issuedConeCount: r.issuedConeCount || 0,
+      usedConeCount: r.usedConeCount || 0,
       totalConeCount: r.totalConeCount || 0,
       anySlotGrossKg: num(r.anySlotGrossKg),
     });
@@ -79,7 +82,7 @@ export async function loadActiveStRackBarcodesByBoxId() {
       $match: {
         boxId: { $exists: true, $nin: [null, ''] },
         coneStorageId: { $exists: true, $nin: [null, ''] },
-        issueStatus: { $ne: 'issued' },
+        issueStatus: { $nin: ['issued', 'used'] },
         coneWeight: { $gt: WEIGHT_EPS_KG },
       },
     },

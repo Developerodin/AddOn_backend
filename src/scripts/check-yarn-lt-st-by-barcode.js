@@ -190,9 +190,9 @@ function num(v) {
  */
 function isActiveShortTermCone(c) {
   const storage = c.coneStorageId != null && String(c.coneStorageId).trim() !== '';
-  const notIssued = c.issueStatus !== 'issued';
+  const isAvailable = c.issueStatus !== 'issued' && c.issueStatus !== 'used';
   const w = num(c.coneWeight);
-  return storage && notIssued && w > 0;
+  return storage && isAvailable && w > 0;
 }
 
 /**

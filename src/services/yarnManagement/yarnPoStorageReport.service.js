@@ -1,4 +1,5 @@
 import { YarnBox, YarnCone } from '../../models/index.js';
+import { yarnConeUnavailableIssueStatuses } from '../../models/yarnReq/yarnCone.model.js';
 
 const toNum = (v) => Number(v ?? 0);
 
@@ -7,7 +8,7 @@ const toNum = (v) => Number(v ?? 0);
  *
  * Short-term storage definition (existing system behavior):
  * - coneStorageId is set (non-empty)
- * - issueStatus !== 'issued'
+ * - issueStatus is not 'issued' or 'used' (cone is still available in the slot)
  *
  * @param {Object} params
  * @param {string} params.poNumber
@@ -55,7 +56,7 @@ export async function getPoBoxesAndShortTermConesReport({ poNumber }) {
     YarnCone.find({
       poNumber: normalizedPo,
       coneStorageId: { $exists: true, $nin: [null, ''] },
-      issueStatus: { $ne: 'issued' },
+      issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
     })
       .select('boxId barcode coneStorageId coneWeight tearWeight')
       .sort({ createdAt: 1 })

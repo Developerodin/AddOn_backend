@@ -2,7 +2,11 @@ import httpStatus from 'http-status';
 import mongoose from 'mongoose';
 import { YarnCone, YarnBox } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
-import { yarnConeIssueStatuses, yarnConeReturnStatuses } from '../../models/yarnReq/yarnCone.model.js';
+import {
+  yarnConeIssueStatuses,
+  yarnConeReturnStatuses,
+  yarnConeUnavailableIssueStatuses,
+} from '../../models/yarnReq/yarnCone.model.js';
 
 export const createYarnCone = async (yarnConeBody) => {
   const existingBarcode = await YarnCone.findOne({ barcode: yarnConeBody.barcode });
@@ -65,7 +69,8 @@ export const getYarnConeByBarcode = async (barcode) => {
 
 /**
  * Get cones currently in short-term storage for a given boxId.
- * Short-term definition: coneStorageId is set (non-empty) and cone is not issued.
+ * Short-term definition: coneStorageId is set (non-empty) and cone is available
+ * (i.e. not issued and not used).
  *
  * @param {string} boxId
  * @returns {Promise<Array>}
@@ -79,7 +84,7 @@ export const getShortTermConesByBoxId = async (boxId) => {
   const cones = await YarnCone.find({
     boxId: trimmed,
     coneStorageId: { $exists: true, $nin: [null, ''] },
-    issueStatus: { $ne: 'issued' },
+    issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
   })
     .populate({ path: 'yarnCatalogId', select: '_id yarnName yarnType status' })
     .sort({ createdAt: -1 })
@@ -420,9 +425,10 @@ export const returnYarnCone = async (barcode, returnData = {}) => {
   if (isEmpty) {
     yarnCone.coneWeight = 0;
     yarnCone.tearWeight = 0;
-    if (!yarnCone.coneStorageId || String(yarnCone.coneStorageId).trim() === '') {
-      yarnCone.coneStorageId = null;
-    }
+    // Mark as used so UI / inventory can distinguish "consumed" from "fresh".
+    // Pre-save hook will also enforce this, but we set it explicitly for clarity.
+    yarnCone.issueStatus = 'used';
+    // Pre-save hook clears coneStorageId when coneWeight is 0; no need to set it here.
   } else {
     yarnCone.coneWeight = returnWeight;
     yarnCone.tearWeight = 0;
