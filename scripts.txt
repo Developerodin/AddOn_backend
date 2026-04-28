@@ -5,8 +5,13 @@ give the boxes and invtryd ata inw hich issue is there
 
 npm run audit:yarn-lt-st-recon -- --output-csv=./yarn-lt-st-full.csv
 
+NODE_ENV=development node src/scripts/export-issued-cones.js --output=./issued-cones.csv
+
 give entier invtry report 
 
+NODE_ENV=development node src/scripts/fix-article-knitting-qty.js --_id=69e8b3f8733c29bce00946b6 --value=1166 --write
+
+ NODE_ENV=development node src/scripts/fix-container-activeitem-qty.js --_id=699865138112b2ead70340c2 --value=67 --write
 
 cd AddOn_backend
 node src/scripts/bulk-return-cones-from-csv.js --csv="./Cone Out data - Sheet1.csv" --out="./bulk-cone-return-report.csv"

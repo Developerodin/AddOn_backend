@@ -1,0 +1,862 @@
+{
+  "query": {
+    "orderNumber": "ORD-000036",
+    "articleNumber": "A644"
+  },
+  "order": {
+    "_id": "69e88468733c29bce005bedc",
+    "orderNumber": "ORD-000036",
+    "status": "Pending",
+    "priority": "Medium",
+    "currentFloor": "Knitting",
+    "articleCount": 9,
+    "createdAt": "2026-04-22T08:18:48.146Z",
+    "updatedAt": "2026-04-28T10:02:31.237Z",
+    "orderNote": "core"
+  },
+  "articlesOnOrder": [
+    {
+      "_id": "69e88468733c29bce005bed5",
+      "id": "ARTMO9S6SPAQ8N",
+      "articleNumber": "A582",
+      "knittingCode": "AL-VXAL0030-Plain-Black",
+      "plannedQuantity": 6600,
+      "progress": 100,
+      "status": "In Progress",
+      "priority": "Medium",
+      "linkingType": "Auto Linking",
+      "machineId": "[object Object]"
+    },
+    {
+      "_id": "69e88468733c29bce005bed6",
+      "id": "ARTMO9S6SPBHL0",
+      "articleNumber": "A574",
+      "knittingCode": "QC-VX116605-Plain-Black",
+      "plannedQuantity": 3000,
+      "progress": 100,
+      "status": "In Progress",
+      "priority": "Medium",
+      "linkingType": "Rosso Linking",
+      "machineId": "[object Object]"
+    },
+    {
+      "_id": "69e88468733c29bce005bed7",
+      "id": "ARTMO9S6SPCBND",
+      "articleNumber": "A142",
+      "knittingCode": "FL-PXC1027-Argyle D-Black",
+      "plannedQuantity": 2500,
+      "progress": 100,
+      "status": "In Progress",
+      "priority": "Medium",
+      "linkingType": "Rosso Linking",
+      "machineId": "[object Object]"
+    },
+    {
+      "_id": "69e88468733c29bce005bed8",
+      "id": "ARTMO9S6SPCWKB",
+      "articleNumber": "A903",
+      "knittingCode": "FL-AXCR26221-Pique-Denim",
+      "plannedQuantity": 1500,
+      "progress": 100,
+      "status": "In Progress",
+      "priority": "Medium",
+      "linkingType": "Rosso Linking",
+      "machineId": "[object Object]"
+    },
+    {
+      "_id": "69e88468733c29bce005bed9",
+      "id": "ARTMO9S6SPCG2B",
+      "articleNumber": "A101",
+      "knittingCode": "FL-PXC2006-Plain-Dk. Grey",
+      "plannedQuantity": 1500,
+      "progress": 100,
+      "status": "In Progress",
+      "priority": "Medium",
+      "linkingType": "Rosso Linking",
+      "machineId": "[object Object]"
+    },
+    {
+      "_id": "69e88468733c29bce005beda",
+      "id": "ARTMO9S6SPCTFC",
+      "articleNumber": "A2757",
+      "knittingCode": "NS-PLAIN-Plain-White",
+      "plannedQuantity": 2000,
+      "progress": 100,
+      "status": "In Progress",
+      "priority": "Medium",
+      "linkingType": "Rosso Linking",
+      "machineId": "[object Object]"
+    },
+    {
+      "_id": "69e88468733c29bce005bedb",
+      "id": "ARTMO9S6SPD5TB",
+      "articleNumber": "A049",
+      "knittingCode": "AL-AXCR6230-Half Terry-White",
+      "plannedQuantity": 700,
+      "progress": 100,
+      "status": "In Progress",
+      "priority": "Medium",
+      "linkingType": "Rosso Linking",
+      "machineId": "[object Object]"
+    },
+    {
+      "_id": "69e8b3f8733c29bce00946b6",
+      "id": "ART1776858104567QNCSO0U2T",
+      "articleNumber": "A644",
+      "knittingCode": "FL-AXCR26220-Pique-Dk. Grey",
+      "plannedQuantity": 2000,
+      "progress": 100,
+      "status": "In Progress",
+      "priority": "Medium",
+      "linkingType": "Rosso Linking",
+      "machineId": "[object Object]"
+    },
+    {
+      "_id": "69e8b3f8733c29bce00946bc",
+      "id": "ART1776858104587FHA0GDLW0",
+      "articleNumber": "A1108",
+      "knittingCode": "NS-PEAW18 # 50-Plain-Dk.Grey",
+      "plannedQuantity": 1000,
+      "progress": 100,
+      "status": "In Progress",
+      "priority": "Medium",
+      "linkingType": "Rosso Linking",
+      "machineId": "[object Object]"
+    }
+  ],
+  "matchedArticleCount": 1,
+  "matchedArticles": [
+    {
+      "_id": "69e8b3f8733c29bce00946b6",
+      "floorQuantities": {
+        "knitting": {
+          "received": 2000,
+          "completed": 67700801,
+          "remaining": 0,
+          "transferred": 67700801,
+          "m4Quantity": 0,
+          "weight": 49.37400000000001,
+          "receivedData": []
+        },
+        "linking": {
+          "received": 635,
+          "completed": 635,
+          "remaining": 0,
+          "transferred": 635,
+          "repairReceived": 0,
+          "receivedData": [
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead7034166",
+              "receivedTimestamp": "2026-04-23T08:16:53.285Z",
+              "_id": "69e9d57559aa9fc88a553cce"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead70340c8",
+              "receivedTimestamp": "2026-04-24T11:19:19.878Z",
+              "_id": "69eb51b786f7ddd153eb3994"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead70340e1",
+              "receivedTimestamp": "2026-04-24T12:42:47.117Z",
+              "_id": "69eb654786f7ddd153eb4e54"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead70340cb",
+              "receivedTimestamp": "2026-04-24T12:59:05.349Z",
+              "_id": "69eb691986f7ddd153eb6442"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead703408c",
+              "receivedTimestamp": "2026-04-24T13:02:09.813Z",
+              "_id": "69eb69d186f7ddd153eb69e6"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead703414a",
+              "receivedTimestamp": "2026-04-27T05:32:16.161Z",
+              "_id": "69eef4e086f7ddd15309a4c1"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead703408b",
+              "receivedTimestamp": "2026-04-27T09:59:01.985Z",
+              "_id": "69ef336586f7ddd153103d43"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead703416c",
+              "receivedTimestamp": "2026-04-27T10:56:21.045Z",
+              "_id": "69ef40d586f7ddd153106d62"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead7034228",
+              "receivedTimestamp": "2026-04-28T07:01:58.853Z",
+              "_id": "69f05b66cf872c247667671d"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead70340b3",
+              "receivedTimestamp": "2026-04-28T08:22:42.906Z",
+              "_id": "69f06e523a174c277cce9115"
+            }
+          ]
+        },
+        "checking": {
+          "received": 635,
+          "completed": 542.5,
+          "remaining": 0,
+          "transferred": 542.5,
+          "m1Quantity": 542.5,
+          "m2Quantity": 27.5,
+          "m3Quantity": 0,
+          "m4Quantity": 65,
+          "m1Transferred": 542.5,
+          "m1Remaining": 0,
+          "m2Transferred": 0,
+          "m2Remaining": 27.5,
+          "repairStatus": "Not Required",
+          "repairRemarks": "",
+          "receivedData": [
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead7034166",
+              "receivedTimestamp": "2026-04-23T08:17:16.000Z",
+              "_id": "69e9d58c59aa9fc88a553d3b"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead70340c8",
+              "receivedTimestamp": "2026-04-24T11:19:47.250Z",
+              "_id": "69eb51d386f7ddd153eb3a1e"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead70340e1",
+              "receivedTimestamp": "2026-04-24T12:43:24.390Z",
+              "_id": "69eb656c86f7ddd153eb4eb4"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead70340cb",
+              "receivedTimestamp": "2026-04-24T12:59:24.915Z",
+              "_id": "69eb692c86f7ddd153eb665e"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead703408c",
+              "receivedTimestamp": "2026-04-24T13:02:29.145Z",
+              "_id": "69eb69e586f7ddd153eb6a54"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead703414a",
+              "receivedTimestamp": "2026-04-27T05:32:34.163Z",
+              "_id": "69eef4f286f7ddd15309a691"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead703408b",
+              "receivedTimestamp": "2026-04-27T09:59:26.224Z",
+              "_id": "69ef337e86f7ddd153103ddf"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead703416c",
+              "receivedTimestamp": "2026-04-27T10:56:49.593Z",
+              "_id": "69ef40f186f7ddd153106dfd"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead7034228",
+              "receivedTimestamp": "2026-04-28T07:03:14.473Z",
+              "_id": "69f05bb2cf872c24766768b5"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead70340b3",
+              "receivedTimestamp": "2026-04-28T08:23:02.371Z",
+              "_id": "69f06e663a174c277cce917b"
+            }
+          ]
+        },
+        "washing": {
+          "received": 542.5,
+          "completed": 412.5,
+          "remaining": 130,
+          "transferred": 412.5,
+          "repairReceived": 0,
+          "receivedData": [
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead7034166",
+              "receivedTimestamp": "2026-04-23T08:17:38.160Z",
+              "_id": "69e9d5a259aa9fc88a553dc7"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead70340c8",
+              "receivedTimestamp": "2026-04-24T11:20:25.673Z",
+              "_id": "69eb51f986f7ddd153eb3af1"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead70340e1",
+              "receivedTimestamp": "2026-04-24T12:43:47.971Z",
+              "_id": "69eb658386f7ddd153eb4f6f"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead70340cb",
+              "receivedTimestamp": "2026-04-24T12:59:49.309Z",
+              "_id": "69eb694586f7ddd153eb6719"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead703408c",
+              "receivedTimestamp": "2026-04-24T13:02:54.485Z",
+              "_id": "69eb69fe86f7ddd153eb6b0f"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead703414a",
+              "receivedTimestamp": "2026-04-27T05:32:58.233Z",
+              "_id": "69eef50a86f7ddd15309ac8e"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead703408b",
+              "receivedTimestamp": "2026-04-27T10:00:03.092Z",
+              "_id": "69ef33a386f7ddd153103f5d"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead703416c",
+              "receivedTimestamp": "2026-04-27T10:57:16.824Z",
+              "_id": "69ef410c86f7ddd153106f1a"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead7034228",
+              "receivedTimestamp": "2026-04-28T07:03:51.413Z",
+              "_id": "69f05bd7cf872c24766769b5"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead70340b3",
+              "receivedTimestamp": "2026-04-28T08:23:32.467Z",
+              "_id": "69f06e843a174c277cce9253"
+            }
+          ]
+        },
+        "boarding": {
+          "received": 366,
+          "completed": 366,
+          "remaining": 0,
+          "transferred": 366,
+          "repairReceived": 0,
+          "receivedData": [
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead70344bf",
+              "receivedTimestamp": "2026-04-23T12:25:52.744Z",
+              "_id": "69ea0fd059aa9fc88a5c8108"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead70344cb",
+              "receivedTimestamp": "2026-04-24T12:14:57.654Z",
+              "_id": "69eb5ec186f7ddd153eb492d"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead70344cd",
+              "receivedTimestamp": "2026-04-25T08:31:36.513Z",
+              "_id": "69ec7be886f7ddd153ef4091"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead703454a",
+              "receivedTimestamp": "2026-04-27T10:22:31.582Z",
+              "_id": "69ef38e786f7ddd153105bf9"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead7034550",
+              "receivedTimestamp": "2026-04-27T13:34:21.130Z",
+              "_id": "69ef65dd64b7ac1888ec9f40"
+            }
+          ]
+        },
+        "silicon": {
+          "received": 0,
+          "completed": 0,
+          "remaining": 0,
+          "transferred": 0,
+          "repairReceived": 0,
+          "receivedData": []
+        },
+        "secondaryChecking": {
+          "received": 366,
+          "completed": 366,
+          "remaining": 0,
+          "transferred": 366,
+          "m1Quantity": 366,
+          "m2Quantity": 0,
+          "m3Quantity": 0,
+          "m4Quantity": 0,
+          "m1Transferred": 366,
+          "m1Remaining": 0,
+          "m2Transferred": 0,
+          "m2Remaining": 0,
+          "repairStatus": "Not Required",
+          "repairRemarks": "",
+          "receivedData": [
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead70344c0",
+              "receivedTimestamp": "2026-04-23T12:39:29.038Z",
+              "_id": "69ea130159aa9fc88a5c874c"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead70344cb",
+              "receivedTimestamp": "2026-04-24T12:30:55.513Z",
+              "_id": "69eb627f86f7ddd153eb4b6b"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead70344cf",
+              "receivedTimestamp": "2026-04-25T08:53:24.586Z",
+              "_id": "69ec810486f7ddd153f04fd1"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead703454a",
+              "receivedTimestamp": "2026-04-27T10:24:20.673Z",
+              "_id": "69ef395486f7ddd153105ee0"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead7034550",
+              "receivedTimestamp": "2026-04-28T08:58:05.874Z",
+              "_id": "69f0769dbd0f1f2ad783a44a"
+            }
+          ]
+        },
+        "finalChecking": {
+          "received": 0,
+          "completed": 0,
+          "remaining": 0,
+          "transferred": 0,
+          "m1Quantity": 0,
+          "m2Quantity": 0,
+          "m3Quantity": 0,
+          "m4Quantity": 0,
+          "m1Transferred": 0,
+          "m1Remaining": 0,
+          "m2Transferred": 0,
+          "m2Remaining": 0,
+          "repairStatus": "Not Required",
+          "repairRemarks": "",
+          "transferredData": [],
+          "receivedData": []
+        },
+        "branding": {
+          "received": 366,
+          "completed": 0,
+          "remaining": 366,
+          "transferred": 0,
+          "repairReceived": 0,
+          "transferredData": [],
+          "receivedData": [
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead70344bf",
+              "receivedTimestamp": "2026-04-23T12:45:29.666Z",
+              "transferred": 60,
+              "styleCode": "",
+              "brand": "",
+              "_id": "69ea146959aa9fc88a5c8ce9"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead70344cb",
+              "receivedTimestamp": "2026-04-24T12:34:41.452Z",
+              "transferred": 70,
+              "styleCode": "",
+              "brand": "",
+              "_id": "69eb636186f7ddd153eb4dfb"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead703454a",
+              "receivedTimestamp": "2026-04-27T11:34:33.927Z",
+              "transferred": 20,
+              "styleCode": "",
+              "brand": "",
+              "_id": "69ef49c986f7ddd153108628"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead70344cf",
+              "receivedTimestamp": "2026-04-28T07:24:13.130Z",
+              "transferred": 170,
+              "styleCode": "",
+              "brand": "",
+              "_id": "69f0609d3a174c277cce7c62"
+            },
+            {
+              "receivedStatusFromPreviousFloor": "Completed",
+              "receivedInContainerId": "699865138112b2ead7034550",
+              "receivedTimestamp": "2026-04-28T09:02:46.247Z",
+              "transferred": 46,
+              "styleCode": "",
+              "brand": "",
+              "_id": "69f077b6bd0f1f2ad783f07f"
+            }
+          ]
+        },
+        "warehouse": {
+          "received": 0,
+          "completed": 0,
+          "remaining": 0,
+          "transferred": 0,
+          "repairReceived": 0,
+          "transferredData": [],
+          "receivedData": []
+        },
+        "dispatch": {
+          "received": 0,
+          "completed": 0,
+          "remaining": 0,
+          "transferred": 0,
+          "repairReceived": 0,
+          "transferredData": [],
+          "receivedData": []
+        }
+      },
+      "status": "In Progress",
+      "progress": 100,
+      "finalQualityConfirmed": false,
+      "id": "ART1776858104567QNCSO0U2T",
+      "orderId": "69e88468733c29bce005bedc",
+      "articleNumber": "A644",
+      "knittingCode": "FL-AXCR26220-Pique-Dk. Grey",
+      "plannedQuantity": 2000,
+      "linkingType": "Rosso Linking",
+      "priority": "Medium",
+      "remarks": "",
+      "machineId": {
+        "_id": "6943e19b75f1ed1d469e13cd",
+        "status": "Idle",
+        "machineCode": "K010",
+        "machineNumber": "010",
+        "model": "ZX-605Y/3.50Dia/168N",
+        "floor": "knitting Floor",
+        "capacityPerShift": 90,
+        "capacityPerDay": 180
+      },
+      "createdAt": "2026-04-22T11:41:44.570Z",
+      "updatedAt": "2026-04-28T10:02:21.214Z",
+      "__v": 0,
+      "startedAt": "2026-04-23T04:54:33.593Z"
+    }
+  ],
+  "product": {
+    "_id": "69ae5272bec7c1c9b31c73d7",
+    "knittingCode": "FL-AXCR26220-Pique-Dk. Grey",
+    "styleCodes": [
+      "699024200d1e1d92d979a1e2",
+      "699024200d1e1d92d979a21c",
+      "699024200d1e1d92d979a246"
+    ],
+    "productionType": "internal",
+    "description": "Allen Solly Mens Full Length Cotton Non-Terry Pique Socks -1 Pair (Dark Grey)",
+    "attributes": {
+      "Needles": "168",
+      "Age Group": "Adult",
+      "Color": "Dark Grey",
+      "Gender": "Mens",
+      "Material": "Cotton",
+      "Occasion": "Formal",
+      "Pattern": "Pique",
+      "Product": "Socks",
+      "Season": "CORE",
+      "Thickness": "Non-Terry",
+      "Type": "Full Length"
+    },
+    "status": "active",
+    "name": "Mens Pique Dark Grey FL",
+    "internalCode": "AXCR26220",
+    "vendorCode": "AXCR26220",
+    "factoryCode": "A644",
+    "category": "68318f6398f9ff407c4e882f",
+    "bom": [
+      {
+        "_id": "69e8b876733c29bce0094e6e",
+        "yarnCatalogId": "698ac642e46d5f2f3c25a11f",
+        "yarnName": "30s-Deep Grey-Eiffel Tower (Deep Grey)-Cotton/Compact",
+        "quantity": 40
+      },
+      {
+        "_id": "69e8b876733c29bce0094e6f",
+        "yarnCatalogId": "6926a7b6a5ccbd9b84f71269",
+        "yarnName": "Soft top-Dark Grey-Dark Grey-Rubber/Soft top",
+        "quantity": 4
+      },
+      {
+        "_id": "69e8b876733c29bce0094e70",
+        "yarnCatalogId": "692e7cbcabe3fbc58a86e502",
+        "yarnName": "20/70-Black-Black-Nylon/Spandex",
+        "quantity": 7
+      },
+      {
+        "_id": "69e8b876733c29bce0094e71",
+        "yarnCatalogId": "69b2b89905698dfad7b27ede",
+        "yarnName": "70/2-Deep Grey-Deep Grey-Nylon/Nylon",
+        "quantity": 3.5
+      },
+      {
+        "_id": "69e8b876733c29bce0094e72",
+        "yarnCatalogId": "6926a7b9a5ccbd9b84f71e8f",
+        "yarnName": "70/1-Dark Grey-Dark Grey-Nylon/Nylon",
+        "quantity": 1.6
+      },
+      {
+        "_id": "69e8b876733c29bce0094e73",
+        "yarnCatalogId": "6926a7b8a5ccbd9b84f7195f",
+        "yarnName": "14s-Ecru-Kora-Cotton/Kora",
+        "quantity": 1.5
+      }
+    ],
+    "processes": [
+      {
+        "_id": "69e8b876733c29bce0094e74",
+        "processId": {
+          "_id": "68ca63140293dfb2b2baec21",
+          "sortOrder": 6,
+          "status": "active",
+          "name": "Knitting",
+          "description": "Knitting",
+          "type": "Manufacturing",
+          "steps": [
+            {
+              "_id": "68ca63140293dfb2b2baec22",
+              "stepTitle": "na",
+              "stepDescription": "na",
+              "duration": 0,
+              "createdAt": "2025-09-17T07:28:20.049Z",
+              "updatedAt": "2025-09-17T07:28:20.049Z"
+            }
+          ],
+          "createdAt": "2025-09-17T07:28:20.049Z",
+          "updatedAt": "2025-09-17T07:28:20.049Z",
+          "__v": 0
+        }
+      },
+      {
+        "_id": "69e8b876733c29bce0094e75",
+        "processId": {
+          "_id": "68ca63140293dfb2b2baec24",
+          "sortOrder": 7,
+          "status": "active",
+          "name": "Linking (hand/auto)",
+          "description": "Linking",
+          "type": "Manufacturing",
+          "steps": [
+            {
+              "_id": "6943b55718142c17652e74b3",
+              "stepTitle": "na",
+              "stepDescription": "na",
+              "duration": 0,
+              "createdAt": "2025-12-18T08:03:35.488Z",
+              "updatedAt": "2025-12-18T08:03:35.488Z"
+            }
+          ],
+          "createdAt": "2025-09-17T07:28:20.113Z",
+          "updatedAt": "2025-12-18T08:03:35.488Z",
+          "__v": 1
+        }
+      },
+      {
+        "_id": "69e8b876733c29bce0094e76",
+        "processId": {
+          "_id": "68ca63140293dfb2b2baec27",
+          "sortOrder": 8,
+          "status": "active",
+          "name": "Checking",
+          "description": "Checking",
+          "type": "Manufacturing",
+          "steps": [
+            {
+              "_id": "68ca63140293dfb2b2baec28",
+              "stepTitle": "na",
+              "stepDescription": "na",
+              "duration": 0,
+              "createdAt": "2025-09-17T07:28:20.178Z",
+              "updatedAt": "2025-09-17T07:28:20.178Z"
+            }
+          ],
+          "createdAt": "2025-09-17T07:28:20.178Z",
+          "updatedAt": "2025-09-17T07:28:20.178Z",
+          "__v": 0
+        }
+      },
+      {
+        "_id": "69e8b876733c29bce0094e77",
+        "processId": {
+          "_id": "68ca63140293dfb2b2baec2a",
+          "sortOrder": 9,
+          "status": "active",
+          "name": "Washing",
+          "description": "Washing",
+          "type": "Manufacturing",
+          "steps": [
+            {
+              "_id": "68ca63140293dfb2b2baec2b",
+              "stepTitle": "na",
+              "stepDescription": "na",
+              "duration": 0,
+              "createdAt": "2025-09-17T07:28:20.241Z",
+              "updatedAt": "2025-09-17T07:28:20.241Z"
+            }
+          ],
+          "createdAt": "2025-09-17T07:28:20.241Z",
+          "updatedAt": "2025-09-17T07:28:20.241Z",
+          "__v": 0
+        }
+      },
+      {
+        "_id": "69e8b876733c29bce0094e78",
+        "processId": {
+          "_id": "68ca63140293dfb2b2baec2d",
+          "sortOrder": 10,
+          "status": "active",
+          "name": "Boarding",
+          "description": "Boarding",
+          "type": "Manufacturing",
+          "steps": [
+            {
+              "_id": "68ca63140293dfb2b2baec2e",
+              "stepTitle": "na",
+              "stepDescription": "na",
+              "duration": 0,
+              "createdAt": "2025-09-17T07:28:20.305Z",
+              "updatedAt": "2025-09-17T07:28:20.305Z"
+            }
+          ],
+          "createdAt": "2025-09-17T07:28:20.305Z",
+          "updatedAt": "2025-09-17T07:28:20.305Z",
+          "__v": 0
+        }
+      },
+      {
+        "_id": "69e8b876733c29bce0094e79",
+        "processId": {
+          "_id": "6986ecc7e44696f2b2f488d2",
+          "sortOrder": 0,
+          "status": "active",
+          "name": "Secondary Checking",
+          "type": "Manufacturing",
+          "description": "Secondary Checking",
+          "steps": [
+            {
+              "_id": "6986ecc7e44696f2b2f488d3",
+              "stepTitle": "na",
+              "stepDescription": "na",
+              "duration": 0,
+              "createdAt": "2026-02-07T07:41:59.713Z",
+              "updatedAt": "2026-02-07T07:41:59.713Z"
+            }
+          ],
+          "createdAt": "2026-02-07T07:41:59.713Z",
+          "updatedAt": "2026-02-07T07:41:59.713Z",
+          "__v": 0
+        }
+      },
+      {
+        "_id": "69e8b876733c29bce0094e7a",
+        "processId": {
+          "_id": "68ca63140293dfb2b2baec33",
+          "sortOrder": 12,
+          "status": "active",
+          "name": "Branding",
+          "description": "Branding",
+          "type": "Manufacturing",
+          "steps": [
+            {
+              "_id": "68ca63140293dfb2b2baec34",
+              "stepTitle": "na",
+              "stepDescription": "na",
+              "duration": 0,
+              "createdAt": "2025-09-17T07:28:20.434Z",
+              "updatedAt": "2025-09-17T07:28:20.434Z"
+            }
+          ],
+          "createdAt": "2025-09-17T07:28:20.434Z",
+          "updatedAt": "2025-09-17T07:28:20.434Z",
+          "__v": 0
+        }
+      },
+      {
+        "_id": "69e8b876733c29bce0094e7b",
+        "processId": {
+          "_id": "68ca63140293dfb2b2baec42",
+          "sortOrder": 21,
+          "status": "active",
+          "name": "Final Checking",
+          "description": "Packing",
+          "type": "Manufacturing",
+          "steps": [
+            {
+              "_id": "69452f3475f1ed1d469fe1a2",
+              "stepTitle": "NA",
+              "stepDescription": "NA",
+              "duration": 0,
+              "createdAt": "2025-12-19T10:55:48.049Z",
+              "updatedAt": "2025-12-19T10:55:48.049Z"
+            }
+          ],
+          "createdAt": "2025-09-17T07:28:20.753Z",
+          "updatedAt": "2025-12-19T10:55:48.050Z",
+          "__v": 4
+        }
+      },
+      {
+        "_id": "69e8b876733c29bce0094e7c",
+        "processId": {
+          "_id": "68ca63140293dfb2b2baec45",
+          "sortOrder": 16,
+          "status": "active",
+          "name": "Ready to Dispatch",
+          "description": "Ready to Dispatch",
+          "type": "Manufacturing",
+          "steps": [
+            {
+              "_id": "68ca63140293dfb2b2baec46",
+              "stepTitle": "na",
+              "stepDescription": "na",
+              "duration": 0,
+              "createdAt": "2025-09-17T07:28:20.817Z",
+              "updatedAt": "2025-09-17T07:28:20.817Z"
+            }
+          ],
+          "createdAt": "2025-09-17T07:28:20.817Z",
+          "updatedAt": "2025-09-17T07:28:20.817Z",
+          "__v": 0
+        }
+      }
+    ],
+    "rawMaterials": [],
+    "softwareCode": "PRD-MMIPI5HP-K1MXB",
+    "createdAt": "2026-03-09T04:54:10.050Z",
+    "updatedAt": "2026-04-22T12:00:54.752Z",
+    "__v": 3
+  }
+}
