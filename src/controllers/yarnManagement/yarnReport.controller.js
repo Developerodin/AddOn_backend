@@ -1,6 +1,7 @@
 import httpStatus from 'http-status';
 import catchAsync from '../../utils/catchAsync.js';
 import * as yarnReportService from '../../services/yarnManagement/yarnReport.service.js';
+import * as yarnSnapshotBoundsService from '../../services/yarnManagement/yarnSnapshotBounds.service.js';
 import * as yarnPoStorageReportService from '../../services/yarnManagement/yarnPoStorageReport.service.js';
 import * as yarnPoBoxAuditService from '../../services/yarnManagement/yarnPoBoxAudit.service.js';
 
@@ -16,6 +17,15 @@ export const getYarnReport = catchAsync(async (req, res) => {
     endDate: end_date,
   });
   res.status(httpStatus.OK).send(report);
+});
+
+/**
+ * GET /yarn-management/yarn-report/snapshot-bounds
+ * Snapshot coverage for Yarn Report date pickers (earliest/latest keys, suggested range).
+ */
+export const getYarnReportSnapshotBounds = catchAsync(async (req, res) => {
+  const payload = await yarnSnapshotBoundsService.getYarnReportSnapshotBounds();
+  res.status(httpStatus.OK).send(payload);
 });
 
 /**

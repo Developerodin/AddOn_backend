@@ -6,6 +6,13 @@ import * as yarnReportController from '../../../controllers/yarnManagement/yarnR
 const router = express.Router();
 
 router
+  .route('/snapshot-bounds')
+  .get(
+    validate(yarnReportValidation.getYarnReportSnapshotBounds),
+    yarnReportController.getYarnReportSnapshotBounds
+  );
+
+router
   .route('/')
   .get(validate(yarnReportValidation.getYarnReport), yarnReportController.getYarnReport);
 

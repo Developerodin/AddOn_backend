@@ -1,5 +1,9 @@
 import Joi from 'joi';
 
+export const getYarnReportSnapshotBounds = {
+  query: Joi.object().unknown(false),
+};
+
 export const getYarnReport = {
   query: Joi.object()
     .keys({
