@@ -198,6 +198,15 @@ export const updatePurchaseOrder = {
         })
         .optional(),
       run_pipeline: Joi.boolean().optional(),
+      // Optional GRN print metadata that gets snapshotted onto a freshly-issued
+      // GRN whenever this PATCH adds new lots. Ignored otherwise.
+      vendorInvoiceNo: Joi.string().trim().allow('', null).optional(),
+      vendorInvoiceDate: Joi.date().iso().allow(null).optional(),
+      discrepancyDetails: Joi.string().trim().allow('', null).optional(),
+      grnDate: Joi.date().iso().allow(null).optional(),
+      // Required by the GRN module when this edit touches a lot that already
+      // has an active GRN (controller validates).
+      editReason: Joi.string().trim().allow('', null).optional(),
     })
     .min(1),
 };

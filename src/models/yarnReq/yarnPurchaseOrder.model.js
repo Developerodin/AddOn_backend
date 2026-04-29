@@ -317,6 +317,20 @@ const yarnPurchaseOrderSchema = mongoose.Schema(
       default: [],
     },
     receivedBy: receivedBySchema,
+    /**
+     * Append-only list of GRN doc ids issued for this PO (originals + revisions).
+     * Latest active GRN per session is the canonical document; older revisions
+     * remain referenced for audit traceability.
+     */
+    grnHistory: {
+      type: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'YarnGrn',
+        },
+      ],
+      default: [],
+    },
   },
   {
     timestamps: { createdAt: 'createDate', updatedAt: 'lastUpdateDate' },

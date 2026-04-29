@@ -3,6 +3,7 @@ import catchAsync from '../../utils/catchAsync.js';
 import pick from '../../utils/pick.js';
 import * as yarnPurchaseOrderService from '../../services/yarnManagement/yarnPurchaseOrder.service.js';
 import * as yarnReceivingPipelineService from '../../services/yarnManagement/yarnReceivingPipeline.service.js';
+import * as yarnGrnService from '../../services/yarnManagement/yarnGrn.service.js';
 
 export const getPurchaseOrders = catchAsync(async (req, res) => {
   const query = pick(req.query, ['start_date', 'end_date', 'status_code']);
@@ -58,10 +59,53 @@ export const deletePurchaseOrder = catchAsync(async (req, res) => {
 
 export const updatePurchaseOrder = catchAsync(async (req, res) => {
   const { purchaseOrderId } = req.params;
-  const purchaseOrder = await yarnPurchaseOrderService.updatePurchaseOrderById(purchaseOrderId, req.body);
 
-  // When packListDetails or receivedLotDetails are saved: create/update boxes. Manual entry = no box weight fill, no QC auto-approve.
-  if (purchaseOrder.receivedLotDetails?.length > 0) {
+  // Snapshot lot state BEFORE the update so we can diff to detect (a) brand-new
+  // lots (=> new GRN) vs (b) edits to lots that already had a GRN (=> revision).
+  const beforePo = await yarnPurchaseOrderService.getPurchaseOrderById(purchaseOrderId);
+  const beforeLotsByNumber = new Map(
+    (beforePo?.receivedLotDetails || []).map((l) => [String(l.lotNumber).trim(), l])
+  );
+
+  await yarnPurchaseOrderService.updatePurchaseOrderById(purchaseOrderId, req.body);
+  // Re-fetch with full population so the snapshot builder has yarn names/shades.
+  const updatedPo = await yarnPurchaseOrderService.getPurchaseOrderById(purchaseOrderId);
+
+  const newLotNumbers = [];
+  const changedLotNumbers = [];
+  for (const lot of updatedPo?.receivedLotDetails || []) {
+    const key = String(lot.lotNumber).trim();
+    const prior = beforeLotsByNumber.get(key);
+    if (!prior) {
+      newLotNumbers.push(key);
+    } else if (yarnGrnService.lotMaterialChange(prior, lot)) {
+      changedLotNumbers.push(key);
+    }
+  }
+
+  const grnExtras = {
+    vendorInvoiceNo: req.body.vendorInvoiceNo,
+    vendorInvoiceDate: req.body.vendorInvoiceDate,
+    discrepancyDetails: req.body.discrepancyDetails,
+    grnDate: req.body.grnDate,
+  };
+
+  const createdGrn = newLotNumbers.length
+    ? await yarnGrnService.createGrnFromNewLots(updatedPo, newLotNumbers, req.user, grnExtras)
+    : null;
+
+  const revisedGrns = changedLotNumbers.length
+    ? await yarnGrnService.reviseAffectedGrns(
+        updatedPo,
+        changedLotNumbers,
+        req.user,
+        req.body.editReason || 'Lot data edited via PO update'
+      )
+    : [];
+
+  // When receivedLotDetails are present: create/update boxes via the existing pipeline.
+  // Manual entry = no box weight fill, no QC auto-approve (matches prior behaviour).
+  if (updatedPo?.receivedLotDetails?.length > 0) {
     const runPipeline = req.body.run_pipeline === true;
     const updatedBy = {
       username: req.user?.email || req.user?.username || 'system',
@@ -73,10 +117,10 @@ export const updatePurchaseOrder = catchAsync(async (req, res) => {
       autoApproveQc: runPipeline,
       fillBoxWeight: runPipeline,
     });
-    return res.status(httpStatus.OK).send(result);
+    return res.status(httpStatus.OK).send({ ...result, createdGrn, revisedGrns });
   }
 
-  res.status(httpStatus.OK).send(purchaseOrder);
+  res.status(httpStatus.OK).send({ purchaseOrder: updatedPo, createdGrn, revisedGrns });
 });
 
 export const updatePurchaseOrderStatus = catchAsync(async (req, res) => {
