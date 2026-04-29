@@ -77,7 +77,9 @@ export const getBoxesByStorageLocation = catchAsync(async (req, res) => {
 });
 
 export const getBoxesWithoutStorageLocation = catchAsync(async (req, res) => {
-  const boxes = await yarnBoxService.getBoxesWithoutStorageLocation();
+  const boxes = await yarnBoxService.getBoxesWithoutStorageLocation({
+    yarn_name: req.query.yarn_name,
+  });
   res.status(httpStatus.OK).send(boxes);
 });
 

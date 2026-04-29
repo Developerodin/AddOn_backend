@@ -479,11 +479,13 @@ export const getBoxesByStorageLocation = async (storageLocation) => {
 
 /**
  * Get boxes without storage location (null, undefined, or empty string).
- * Returns all matching boxes (no limit).
+ * Returns all matching boxes (no limit). Optionally filter by yarn name (case-insensitive exact match).
+ * @param {Object} [filters]
+ * @param {string} [filters.yarn_name] - Exact yarn name (case-insensitive) to scope the result.
  * @returns {Promise<Array>} Boxes without storage location
  */
-export const getBoxesWithoutStorageLocation = async () => {
-  const boxes = await YarnBox.find({
+export const getBoxesWithoutStorageLocation = async (filters = {}) => {
+  const query = {
     $and: [
       ACTIVE_BOX_FILTER,
       {
@@ -494,7 +496,15 @@ export const getBoxesWithoutStorageLocation = async () => {
         ],
       },
     ],
-  })
+  };
+
+  const yarnName = (filters.yarn_name || '').trim();
+  if (yarnName) {
+    const escaped = yarnName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    query.yarnName = { $regex: new RegExp(`^${escaped}$`, 'i') };
+  }
+
+  const boxes = await YarnBox.find(query)
     .sort({ createdAt: -1 })
     .lean();
   return boxes;
