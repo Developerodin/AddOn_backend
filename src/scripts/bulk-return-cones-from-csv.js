@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Bulk-return cones (empty) from `Cone Out data - Sheet1.csv`.
+ * Bulk-return cones (empty) from a CSV list or from `issued-cones.xlsx` (barcode column).
  *
  * Source of truth for transaction context: latest `yarn_issued` YarnTransaction that contains the
  * coneId in `conesIdsArray` (parity with issue data).
@@ -15,6 +15,8 @@
  * Usage:
  *   node src/scripts/bulk-return-cones-from-csv.js
  *   node src/scripts/bulk-return-cones-from-csv.js --csv="./Cone Out data - Sheet1.csv"
+ *   node src/scripts/bulk-return-cones-from-csv.js --csv="./issued-cones.xlsx"
+ *   node src/scripts/bulk-return-cones-from-csv.js --csv="./issued-cones.xlsx" --sheet="issued_cones" --column="barcode"
  *   node src/scripts/bulk-return-cones-from-csv.js --mongo-url="mongodb+srv://..."
  */
 
@@ -35,6 +37,7 @@ url.parse = function patchedParse(urlStr, ...args) {
 import fs from 'fs/promises';
 import path from 'path';
 import mongoose from 'mongoose';
+import XLSX from 'xlsx';
 import config from '../config/config.js';
 import logger from '../config/logger.js';
 import { bulkReturnConesFromBarcodes } from '../services/yarnManagement/yarnConeReturnBackfill.service.js';
@@ -152,6 +155,86 @@ function toCsv(rows) {
 }
 
 /**
+ * Normalize a sheet header for fuzzy matching.
+ * @param {string} k
+ * @returns {string}
+ */
+function normalizeHeaderKey(k) {
+  return String(k ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '');
+}
+
+/**
+ * Pick the barcode column from XLSX headers (issued-cones export uses `barcode`).
+ * @param {string[]} headers
+ * @returns {string|null}
+ */
+function pickBarcodeColumnFromHeaders(headers) {
+  const list = (headers || []).filter((h) => h != null && String(h).trim() !== '');
+  if (list.length === 0) return null;
+  const normalized = list.map((raw) => ({ raw, norm: normalizeHeaderKey(raw) }));
+  const preferred = ['barcode', 'conebarcode', 'cone_barcode', 'barcodestr'];
+  for (const p of preferred) {
+    const hit = normalized.find((x) => x.norm === p);
+    if (hit) return hit.raw;
+  }
+  const fuzzy = normalized.find((x) => x.norm.includes('barcode'));
+  return fuzzy ? fuzzy.raw : list[0];
+}
+
+/**
+ * Read cone barcodes from the first row-as-keys sheet of an .xlsx file.
+ * @param {string} filePath Absolute or resolved path.
+ * @param {string|null} sheetName Sheet name, or first sheet if null.
+ * @param {string|null} columnName Force this header key (exact match from row keys).
+ * @returns {string[]}
+ */
+function parseBarcodesFromXlsx(filePath, sheetName, columnName) {
+  const wb = XLSX.readFile(filePath);
+  let name = wb.SheetNames[0];
+  if (sheetName) {
+    if (wb.SheetNames.includes(sheetName)) {
+      name = sheetName;
+    } else {
+      logger.warn(
+        `Sheet "${sheetName}" not found; available: ${wb.SheetNames.join(', ')}. Using "${name}".`
+      );
+    }
+  }
+  if (!name) {
+    throw new Error('Workbook has no sheets.');
+  }
+  const sheet = wb.Sheets[name];
+  if (!sheet) {
+    throw new Error(`Sheet not found: ${name}`);
+  }
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return [];
+  }
+  const headers = Object.keys(rows[0]);
+  const col =
+    columnName && headers.includes(columnName)
+      ? columnName
+      : pickBarcodeColumnFromHeaders(headers);
+  if (!col) {
+    return [];
+  }
+  logger.info(`XLSX using sheet "${name}", column "${col}"`);
+  /** @type {string[]} */
+  const barcodes = [];
+  for (const row of rows) {
+    const v = String((row && row[col]) ?? '').trim();
+    if (v && v.toLowerCase() !== 'barcode') {
+      barcodes.push(v);
+    }
+  }
+  return barcodes;
+}
+
+/**
  * Parse CSV that is just a list of barcodes (comma/newline-separated).
  * @param {string} fileContent
  * @returns {string[]}
@@ -170,6 +253,8 @@ function parseBarcodeCsv(fileContent) {
 async function main() {
   const csvArg = parseSingleArg('--csv=');
   const outArg = parseSingleArg('--out=');
+  const sheetArg = parseSingleArg('--sheet=');
+  const columnArg = parseSingleArg('--column=');
   const csvPath = csvArg
     ? path.resolve(process.cwd(), csvArg)
     : path.resolve(process.cwd(), 'Cone Out data - Sheet1.csv');
@@ -177,14 +262,24 @@ async function main() {
     ? path.resolve(process.cwd(), outArg)
     : path.resolve(process.cwd(), 'bulk-cone-return-report.csv');
 
-  logger.info(`Reading CSV: ${csvPath}`);
-  const raw = await fs.readFile(csvPath, 'utf-8');
-  const barcodes = parseBarcodeCsv(raw);
+  const isXlsx = csvPath.toLowerCase().endsWith('.xlsx');
+  /** @type {string[]} */
+  let barcodes;
+  if (isXlsx) {
+    logger.info(`Reading XLSX: ${csvPath}`);
+    barcodes = parseBarcodesFromXlsx(csvPath, sheetArg, columnArg);
+  } else {
+    logger.info(`Reading CSV: ${csvPath}`);
+    const raw = await fs.readFile(csvPath, 'utf-8');
+    barcodes = parseBarcodeCsv(raw);
+  }
 
   if (barcodes.length === 0) {
-    logger.warn('No barcodes found in CSV. Exiting.');
+    logger.warn(`No barcodes found in ${isXlsx ? 'XLSX' : 'CSV'}. Exiting.`);
     return;
   }
+
+  logger.info(`Parsed ${barcodes.length} barcode cell(s) (duplicates allowed; service normalizes).`);
 
   await connectMongo();
 

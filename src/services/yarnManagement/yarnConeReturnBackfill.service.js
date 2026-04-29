@@ -3,6 +3,7 @@ import httpStatus from 'http-status';
 import { YarnCone, YarnTransaction, YarnCatalog } from '../../models/index.js';
 import { ProductionOrder, Article, MachineOrderAssignment } from '../../models/production/index.js';
 import ApiError from '../../utils/ApiError.js';
+import logger from '../../config/logger.js';
 import { returnYarnCone } from './yarnCone.service.js';
 import { createYarnTransaction } from './yarnTransaction.service.js';
 import { updateMachineOrderAssignmentById } from '../production/machineOrderAssignment.service.js';
@@ -366,7 +367,19 @@ export async function bulkReturnConesFromBarcodes(options) {
   const returnedConeIdStrsForTxn = [];
   const impactedPairs = new Set(); // orderId|articleId from issue txn (only for cones we’ll create txn for)
 
+  const totalToReturn = allowedIssuedCones.length;
+  logger.info(
+    `bulkReturnConesFromBarcodes: returning ${totalToReturn} cone(s) one-by-one (each hits DB); expect several minutes for large batches.`
+  );
+
+  let coneIndex = 0;
   for (const cone of allowedIssuedCones) {
+    coneIndex += 1;
+    if (coneIndex === 1 || coneIndex % 250 === 0 || coneIndex === totalToReturn) {
+      logger.info(
+        `bulkReturnConesFromBarcodes: progress ${coneIndex}/${totalToReturn} (latest barcode ${String(cone.barcode)})`
+      );
+    }
     try {
       await returnYarnCone(String(cone.barcode), {
         returnWeight: 0,
