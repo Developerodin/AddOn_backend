@@ -136,6 +136,13 @@ export const updateYarnBoxById = async (yarnBoxId, updateBody) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Yarn box not found');
   }
 
+  const before = {
+    boxId: yarnBox.boxId,
+    yarnName: yarnBox.yarnName,
+    yarnCatalogId: yarnBox.yarnCatalogId?.toString?.() ?? yarnBox.yarnCatalogId,
+    shadeCode: yarnBox.shadeCode,
+  };
+
   if (!isYarnBoxActiveForProcessing(yarnBox)) {
     throw new ApiError(
       httpStatus.BAD_REQUEST,
@@ -199,6 +206,50 @@ export const updateYarnBoxById = async (yarnBoxId, updateBody) => {
 
   Object.assign(yarnBox, updateBody);
   await yarnBox.save();
+
+  /**
+   * Keep YarnCones consistent with their parent YarnBox.
+   * Cones do NOT automatically inherit yarnName from the box unless they are individually saved.
+   * @param {Object} params
+   * @param {string} params.boxId - YarnBox.boxId (join key on YarnCone)
+   * @param {string|undefined|null} params.yarnName
+   * @param {string|undefined|null} params.yarnCatalogId
+   * @param {string|undefined|null} params.shadeCode
+   * @returns {Promise<void>}
+   */
+  const syncConesFromBox = async ({ boxId, yarnName, yarnCatalogId, shadeCode }) => {
+    if (!boxId) return;
+    const set = {};
+    if (yarnName != null) set.yarnName = yarnName;
+    if (yarnCatalogId != null) set.yarnCatalogId = yarnCatalogId;
+    if (shadeCode != null) set.shadeCode = shadeCode;
+    if (Object.keys(set).length === 0) return;
+    await YarnCone.updateMany({ boxId }, { $set: set });
+  };
+
+  const after = {
+    boxId: yarnBox.boxId,
+    yarnName: yarnBox.yarnName,
+    yarnCatalogId: yarnBox.yarnCatalogId?.toString?.() ?? yarnBox.yarnCatalogId,
+    shadeCode: yarnBox.shadeCode,
+  };
+  const yarnChanged =
+    before.boxId === after.boxId &&
+    (before.yarnName !== after.yarnName ||
+      String(before.yarnCatalogId ?? '') !== String(after.yarnCatalogId ?? '') ||
+      before.shadeCode !== after.shadeCode);
+  if (yarnChanged) {
+    try {
+      await syncConesFromBox({
+        boxId: after.boxId,
+        yarnName: after.yarnName,
+        yarnCatalogId: yarnBox.yarnCatalogId ?? null,
+        shadeCode: after.shadeCode,
+      });
+    } catch (e) {
+      console.error('[YarnBox] failed syncing cones from box:', e?.message || e);
+    }
+  }
   return yarnBox;
 };
 
