@@ -165,10 +165,8 @@ yarnBoxSchema.pre('save', async function (next) {
     this.barcode = this._id.toString();
   }
   try {
-    if (this.yarnCatalogId) {
-      const cat = await YarnCatalog.findById(this.yarnCatalogId).select('yarnName').lean();
-      if (cat?.yarnName) this.yarnName = cat.yarnName;
-    } else if (this.yarnName && this.isModified('yarnName')) {
+    // Prefer explicit yarnName edits (re-link catalog if possible), otherwise keep yarnName in sync with yarnCatalogId.
+    if (this.yarnName && this.isModified('yarnName')) {
       let catalog = await YarnCatalog.findOne({
         yarnName: this.yarnName.trim(),
         status: { $ne: 'deleted' },
@@ -186,6 +184,9 @@ yarnBoxSchema.pre('save', async function (next) {
           .lean();
       }
       if (catalog) this.yarnCatalogId = catalog._id;
+    } else if (this.yarnCatalogId) {
+      const cat = await YarnCatalog.findById(this.yarnCatalogId).select('yarnName').lean();
+      if (cat?.yarnName) this.yarnName = cat.yarnName;
     }
   } catch (e) {
     console.error('[YarnBox] catalog link:', e.message);
