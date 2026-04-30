@@ -302,6 +302,7 @@ export const getYarnEstimationByOrder = async (orderId, options = {}) => {
       orderFloorProgress: {
         plannedQuantityTotal: 0,
         knittingCompletedTotal: 0,
+        knittingM4QuantityTotal: 0,
         knittingBatchWeightTotal: 0,
       },
     };
@@ -503,6 +504,10 @@ export const getYarnEstimationByOrder = async (orderId, options = {}) => {
       (s, a) => s + toNumber(a.floorProgress?.knitting?.completed),
       0
     ),
+    knittingM4QuantityTotal: articleEstimations.reduce(
+      (s, a) => s + toNumber(a.floorProgress?.knitting?.m4Quantity),
+      0
+    ),
     knittingBatchWeightTotal: articleEstimations.reduce(
       (s, a) => s + toNumber(a.floorProgress?.knitting?.weight),
       0
@@ -530,7 +535,7 @@ export const getYarnEstimationByOrder = async (orderId, options = {}) => {
  * @param {number} [filters.limit=50]
  * @param {number} [filters.page=1]
  * @returns {Promise<Object>} Each result row includes `orderFloorProgress`:
- *   plannedQuantityTotal, knittingCompletedTotal, knittingBatchWeightTotal (sums over articles).
+ *   plannedQuantityTotal, knittingCompletedTotal, knittingM4QuantityTotal, knittingBatchWeightTotal (sums over articles).
  */
 export const getYarnEstimationSummary = async (filters = {}) => {
   const { status, search, limit = 50, page = 1 } = filters;
@@ -621,6 +626,7 @@ export const getYarnEstimationSummary = async (filters = {}) => {
         },
         plannedQuantityTotal: { $sum: { $ifNull: ['$articleDocs.plannedQuantity', 0] } },
         knittingCompletedTotal: { $sum: { $ifNull: ['$articleDocs.floorQuantities.knitting.completed', 0] } },
+        knittingM4QuantityTotal: { $sum: { $ifNull: ['$articleDocs.floorQuantities.knitting.m4Quantity', 0] } },
         knittingBatchWeightTotal: { $sum: { $ifNull: ['$articleDocs.floorQuantities.knitting.weight', 0] } },
       },
     },
@@ -634,6 +640,7 @@ export const getYarnEstimationSummary = async (filters = {}) => {
     floorProgressByOrder.set(key, {
       plannedQuantityTotal: toNumber(row.plannedQuantityTotal),
       knittingCompletedTotal: toNumber(row.knittingCompletedTotal),
+      knittingM4QuantityTotal: toNumber(row.knittingM4QuantityTotal),
       knittingBatchWeightTotal: toNumber(row.knittingBatchWeightTotal),
     });
   }
@@ -654,6 +661,7 @@ export const getYarnEstimationSummary = async (filters = {}) => {
       orderFloorProgress: floorProgressByOrder.get(key) ?? {
         plannedQuantityTotal: 0,
         knittingCompletedTotal: 0,
+        knittingM4QuantityTotal: 0,
         knittingBatchWeightTotal: 0,
       },
       issued: txn.issued,
