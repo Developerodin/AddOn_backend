@@ -14,6 +14,8 @@
  * Options:
  * - --dry-run: Preview what would be transferred without actually transferring
  * - --collections: Comma-separated list of collections to transfer (default: all)
+ * - --exclude: Comma-separated list of collections to skip (default: user_logs)
+ * - --include-user-logs: Include user_logs even though it is excluded by default
  * - --drop: Drop existing collections in Atlas before transferring (USE WITH CAUTION)
  * - --atlas-db: Atlas database name (default: Addonbackupdatabase)
  * 
@@ -56,6 +58,15 @@ const isDryRun = args.includes('--dry-run');
 const dropCollections = args.includes('--drop');
 const collectionsArg = args.find(arg => arg.startsWith('--collections='));
 const collectionsToTransfer = collectionsArg ? collectionsArg.split('=')[1].split(',') : null;
+const excludeArg = args.find(arg => arg.startsWith('--exclude='));
+const includeUserLogs = args.includes('--include-user-logs');
+
+// Default exclusions to avoid blowing up Atlas storage (512MB cap)
+const defaultExcludedCollections = includeUserLogs ? [] : ['user_logs'];
+const excludedCollections = [
+  ...defaultExcludedCollections,
+  ...(excludeArg ? excludeArg.split('=')[1].split(',').map((s) => s.trim()).filter(Boolean) : []),
+];
 
 if (!ATLAS_MONGODB_URL) {
   console.error('❌ Error: ATLAS_MONGODB_URL or MONGODB_URL environment variable is required');
@@ -247,13 +258,20 @@ const transferData = async () => {
     
     // Get all collections
     const allCollections = await getCollections(localDb.db);
-    const collections = collectionsToTransfer 
-      ? allCollections.filter(col => collectionsToTransfer.includes(col))
+    // Apply include list first (if provided), then exclusions.
+    const included = collectionsToTransfer
+      ? allCollections.filter((col) => collectionsToTransfer.includes(col))
       : allCollections;
+    const collections = excludedCollections.length
+      ? included.filter((col) => !excludedCollections.includes(col))
+      : included;
     
     if (collections.length === 0) {
       console.log('ℹ️  No collections found to transfer');
       return;
+    }
+    if (excludedCollections.length) {
+      console.log(`🚫 Excluding collection(s): ${excludedCollections.join(', ')}\n`);
     }
     
     console.log(`📋 Found ${collections.length} collection(s) to transfer:\n`);
