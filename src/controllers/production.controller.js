@@ -336,6 +336,12 @@ export const getMachineOrderAssignmentsCompletedItems = catchAsync(async (req, r
   res.send(data);
 });
 
+/** Outstanding yarn (BOM − issued) for all queue rows where yarn issue is not Completed. */
+export const getYarnIssuePendingSummary = catchAsync(async (req, res) => {
+  const data = await productionService.getYarnIssuePendingSummary();
+  res.send(data);
+});
+
 export const updateMachineOrderAssignment = catchAsync(async (req, res) => {
   const assignment = await productionService.updateMachineOrderAssignmentById(
     req.params.assignmentId,

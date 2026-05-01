@@ -27,6 +27,10 @@ router
   .get(productionController.getMachineOrderAssignmentsCompletedItems);
 
 router
+  .route('/machine-order-assignments/yarn-issue-pending-summary')
+  .get(productionController.getYarnIssuePendingSummary);
+
+router
   .route('/machine-order-assignments/:assignmentId/reset')
   .post(validate(machineOrderAssignmentValidation.resetMachineOrderAssignment), productionController.resetMachineOrderAssignment);
 

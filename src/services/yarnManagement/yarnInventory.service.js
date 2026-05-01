@@ -608,3 +608,81 @@ export const getYarnInventoryByYarnId = async (yarnId) => {
   return transformInventoryForResponse(recalculated);
 };
 
+/**
+ * Available short-term (ST rack) cone stock aggregated by yarn catalog id and by yarn name.
+ * Uses the same ST slot barcodes as live inventory (StorageSlot SHORT_TERM); excludes issued/used cones.
+ * @returns {Promise<{
+ *   byCatalogId: Record<string, { totalNetWeightKg: number; numberOfCones: number }>,
+ *   byYarnName: Record<string, { totalNetWeightKg: number; numberOfCones: number }>
+ * }>}
+ */
+export const getShortTermConeStockByYarnKeys = async () => {
+  const { stBarcodes } = await getSlotBarcodes();
+  if (!stBarcodes.length) {
+    return { byCatalogId: {}, byYarnName: {} };
+  }
+
+  const match = {
+    coneStorageId: { $in: stBarcodes },
+    issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
+  };
+
+  const byCatAgg = await YarnCone.aggregate([
+    { $match: { ...match, yarnCatalogId: { $exists: true, $ne: null } } },
+    {
+      $group: {
+        _id: '$yarnCatalogId',
+        totalNetWeightKg: {
+          $sum: { $subtract: [{ $ifNull: ['$coneWeight', 0] }, { $ifNull: ['$tearWeight', 0] }] },
+        },
+        numberOfCones: { $sum: 1 },
+      },
+    },
+  ]).allowDiskUse(true);
+
+  const byNameAgg = await YarnCone.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: {
+          $toLower: {
+            $trim: {
+              input: { $ifNull: ['$yarnName', ''] },
+            },
+          },
+        },
+        totalNetWeightKg: {
+          $sum: { $subtract: [{ $ifNull: ['$coneWeight', 0] }, { $ifNull: ['$tearWeight', 0] }] },
+        },
+        numberOfCones: { $sum: 1 },
+      },
+    },
+  ]).allowDiskUse(true);
+
+  /** @type {Record<string, { totalNetWeightKg: number; numberOfCones: number }>} */
+  const byCatalogId = {};
+  const toNumKg = (v) => Math.max(0, Number(v ?? 0));
+
+  for (const r of byCatAgg) {
+    if (r._id) {
+      byCatalogId[String(r._id)] = {
+        totalNetWeightKg: toNumKg(r.totalNetWeightKg),
+        numberOfCones: Math.max(0, Math.floor(Number(r.numberOfCones ?? 0))),
+      };
+    }
+  }
+
+  /** @type {Record<string, { totalNetWeightKg: number; numberOfCones: number }>} */
+  const byYarnName = {};
+  for (const r of byNameAgg) {
+    const key = typeof r._id === 'string' ? r._id : String(r._id ?? '');
+    if (!key) continue;
+    byYarnName[key] = {
+      totalNetWeightKg: toNumKg(r.totalNetWeightKg),
+      numberOfCones: Math.max(0, Math.floor(Number(r.numberOfCones ?? 0))),
+    };
+  }
+
+  return { byCatalogId, byYarnName };
+};
+

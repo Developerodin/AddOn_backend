@@ -18,3 +18,6 @@ export * from './report.service.js';
 
 // Machine Order Assignment Services
 export * from './machineOrderAssignment.service.js';
+
+// Yarn issue — pending requirement summary (queue lines without completed yarn issue)
+export * from './yarnIssuePendingSummary.service.js';
