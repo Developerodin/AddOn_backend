@@ -14,10 +14,14 @@
  * Options:
  * - --dry-run: Preview what would be transferred without actually transferring
  * - --collections: Comma-separated list of collections to transfer (default: all)
- * - --exclude: Comma-separated list of collections to skip (default: user_logs)
- * - --include-user-logs: Include user_logs even though it is excluded by default
+ * - --exclude: Comma-separated list of collections to skip (in addition to default skips)
+ * - --transfer-all: Transfer every collection (disables default Atlas size skips)
+ * - --include-user-logs: Alias for --transfer-all (backward compatibility)
  * - --drop: Drop existing collections in Atlas before transferring (USE WITH CAUTION)
  * - --atlas-db: Atlas database name (default: Addonbackupdatabase)
+ *
+ * Default skipped collections (heavy / log data; keeps Atlas within small tiers e.g. 512MB):
+ * useractivitylogs, machine_order_assignment_logs, stores, sales, sealsexcelmasters, user_logs (legacy)
  * 
  * Environment Variables:
  * - LOCAL_MONGODB_URL: Local MongoDB connection string
@@ -59,10 +63,24 @@ const dropCollections = args.includes('--drop');
 const collectionsArg = args.find(arg => arg.startsWith('--collections='));
 const collectionsToTransfer = collectionsArg ? collectionsArg.split('=')[1].split(',') : null;
 const excludeArg = args.find(arg => arg.startsWith('--exclude='));
-const includeUserLogs = args.includes('--include-user-logs');
+/** When true, do not skip the default high-volume collections (full mirror to Atlas). */
+const transferAllCollections =
+  args.includes('--transfer-all') || args.includes('--include-user-logs');
 
-// Default exclusions to avoid blowing up Atlas storage (512MB cap)
-const defaultExcludedCollections = includeUserLogs ? [] : ['user_logs'];
+/**
+ * Collection names skipped by default when syncing local → Atlas (Mongoose `collection` option or pluralized names).
+ * Matches: userActivityLog, machineOrderAssignmentLog, store, sales, sealsExcelMaster models; plus legacy `user_logs`.
+ */
+const DEFAULT_ATLAS_EXCLUDED_COLLECTIONS = [
+  'user_logs',
+  'useractivitylogs',
+  'machine_order_assignment_logs',
+  'stores',
+  'sales',
+  'sealsexcelmasters',
+];
+
+const defaultExcludedCollections = transferAllCollections ? [] : [...DEFAULT_ATLAS_EXCLUDED_COLLECTIONS];
 const excludedCollections = [
   ...defaultExcludedCollections,
   ...(excludeArg ? excludeArg.split('=')[1].split(',').map((s) => s.trim()).filter(Boolean) : []),
