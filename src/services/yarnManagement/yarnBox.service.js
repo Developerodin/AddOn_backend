@@ -558,6 +558,35 @@ export const getBoxesWithoutStorageLocation = async (filters = {}) => {
   const boxes = await YarnBox.find(query)
     .sort({ createdAt: -1 })
     .lean();
+
+  const poNumbers = [...new Set(boxes.map((b) => b.poNumber).filter(Boolean))];
+  if (poNumbers.length > 0) {
+    const purchaseOrders = await YarnPurchaseOrder.find({ poNumber: { $in: poNumbers } })
+      .populate({
+        path: 'supplier',
+        select: '_id brandName name',
+      })
+      .select('poNumber supplier supplierName currentStatus')
+      .lean();
+
+    const poByNumber = new Map(purchaseOrders.map((po) => [po.poNumber, po]));
+
+    for (const box of boxes) {
+      const po = poByNumber.get(box.poNumber);
+      if (po) {
+        box.purchaseOrder = {
+          poNumber: po.poNumber,
+          supplierName: po.supplierName,
+          currentStatus: po.currentStatus,
+        };
+        box.supplier = po.supplier || null;
+        if (!box.supplierName && po.supplierName) {
+          box.supplierName = po.supplierName;
+        }
+      }
+    }
+  }
+
   return boxes;
 };
 
