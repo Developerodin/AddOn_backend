@@ -9,8 +9,11 @@ const router = express.Router();
  * GET /v1/yarn-management/yarn-inventories
  * Get all yarn inventories with optional filters
  * Query params: yarn_id, yarn_name, inventory_status, overbooked, sortBy, limit, page
- * Returns: yarn_name, yarn_id, Total Weight (LTS/STS), Net Weight (LTS/STS + blocked), 
+ * Returns: yarn_name, yarn_id, Total Weight (LTS/STS), Net Weight (LTS/STS + blocked),
  *          Number of cones (LTS/STS), inventoryStatus, overbooked
+ *
+ * GET /v1/yarn-management/yarn-inventories/summary
+ * Global totals from the same aggregation (filters only; optional yarn_id/yarn_name/inventory_status/overbooked).
  */
 router
   .route('/')
@@ -23,13 +26,12 @@ router
     yarnInventoryController.createYarnInventory
   );
 
-/**
- * GET /v1/yarn-management/yarn-inventories/:inventoryId
- * Get a single yarn inventory by inventory ID
- */
 router
-  .route('/:inventoryId')
-  .get(yarnInventoryController.getYarnInventory);
+  .route('/summary')
+  .get(
+    validate(yarnInventoryValidation.getYarnInventoriesSummary),
+    yarnInventoryController.getYarnInventoriesSummary
+  );
 
 /**
  * GET /v1/yarn-management/yarn-inventories/yarn/:yarnId
@@ -38,6 +40,14 @@ router
 router
   .route('/yarn/:yarnId')
   .get(yarnInventoryController.getYarnInventoryByYarnId);
+
+/**
+ * GET /v1/yarn-management/yarn-inventories/:inventoryId
+ * Get a single yarn inventory by inventory ID
+ */
+router
+  .route('/:inventoryId')
+  .get(yarnInventoryController.getYarnInventory);
 
 export default router;
 

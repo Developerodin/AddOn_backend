@@ -17,3 +17,10 @@ cd AddOn_backend
 node src/scripts/bulk-return-cones-from-csv.js --csv="./Cone Out data - Sheet1.csv" --out="./bulk-cone-return-report.csv"
 
 bulk retrun cone and give a reprot on cons data 
+
+
+NODE_ENV=development node src/scripts/yarn-daily-snapshot-summary-by-dates.js \
+  --dates=2026-04-27,2026-04-28,2026-04-29,2026-04-30
+
+
+  

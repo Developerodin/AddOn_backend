@@ -130,16 +130,20 @@ When fallback is active:
 ```
 Report range: [start, end]  (e.g. 2026-03-03 → 2026-04-03)
 
-Opening = YarnDailyClosingSnapshot where snapshotDate = "2026-03-02"
-        = physical inventory at end-of-day 2 Mar
-        = accurate "start-of-3-Mar" opening
+Opening = YarnDailyClosingSnapshot where snapshotDate = "start_date − 1 calendar day"
 
-Period movements (unchanged):
-  pur / purRet  → from YarnPurchaseOrder in [start, end]
-  issued / returned → from YarnTransaction in [start, end]
+Closing / Balance column:
+  YarnDailyClosingSnapshot where snapshotDate = end_date (`closingKg` per yarnCatalogId)
 
-Balance = opening + pur − purRet + returned − issued
+Reconciliation variance (closingVariances) compares snapshot closing vs:
+  opening + pur − purRet + returned − issued  (yarns with PO in range)
+  opening + returned − issued                 (transactions only in range)
+  snapshot opening vs snapshot closing        (yarns idle in range; no PO, no txs)
+
+Totals: Sum `closingKg` once per yarn for that snapshot key (API `meta.summary.uniqueYarnClosingKgSum`).
+Do not sum Balance or Opening down report rows—the same kg is repeated when one yarn spans multiple shades/suppliers.
 ```
+
 
 ---
 
@@ -161,6 +165,6 @@ GET /yarn-report?start=X&end=Y
 ## Notes
 
 - **Backfill:** Historical snapshots before go-live cannot be auto-generated. Call `runYarnDailySnapshot()` manually with a modified date if needed for specific past dates, or accept fallback mode for pre-launch reports.
-- **Multi-row opening:** Opening kg is per `yarnCatalogId`. When multiple report rows share the same yarn (different shade/supplier), each row shows the same opening — this is consistent with previous behaviour but summing the opening column over-counts. This is a display/UI concern, not a data bug.
+- **Multi-row opening:** Opening kg is per `yarnCatalogId`. When multiple report rows share the same yarn (different shade/supplier), each row shows the same opening **and closing balance**. Summing the opening or balance column over-counts. Use **`meta.summary.uniqueYarnOpeningKgSum` / `uniqueYarnClosingKgSum`** (exactly-one total per yarn) or compare **`sumDisplayedOpeningAcrossRowsKg` / `sumDisplayedBalanceAcrossRowsKg`** vs those to see duplication.
 - **Idempotency:** The cron job uses `bulkWrite` with `upsert: true`, so re-running for the same date is safe.
 - **Single-instance assumption:** If running multiple server pods, only one should have `YARN_DAILY_SNAPSHOT_ENABLED=true` to avoid duplicate writes (upserts are still safe, just wasteful).

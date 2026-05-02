@@ -453,6 +453,96 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
 };
 
 /**
+ * Applies the same filtering rules as `queryYarnInventories` (post-aggregation rows).
+ *
+ * @param {Array<object>} rows
+ * @param {Object} filters
+ * @returns {Array<object>}
+ */
+const filterAggregateInventoryRows = (rows, filters = {}) => {
+  let filtered = [...rows];
+
+  if (filters.yarn_id) {
+    filtered = filtered.filter((r) => r.yarnId && r.yarnId.toString() === filters.yarn_id.toString());
+  }
+  if (filters.inventory_status) {
+    filtered = filtered.filter((r) => r.inventoryStatus === filters.inventory_status);
+  }
+  if (typeof filters.overbooked === 'boolean') {
+    filtered = filtered.filter((r) => r.overbooked === filters.overbooked);
+  }
+  return filtered;
+};
+
+/**
+ * Global stock summary matching live inventory semantics (aggregateInventoryFromStorage).
+ * No pagination; optional filters match GET /yarn-inventories query params (except page/limit).
+ *
+ * @param {Object} [filters={}]
+ * @returns {Promise<{
+ *   skuCount: number,
+ *   totals: {
+ *     longTermKg: number,
+ *     shortTermKg: number,
+ *     ltPlusShortKg: number,
+ *     unallocatedKg: number,
+ *     blockedKg: number,
+ *     grandNetKgAllBuckets: number
+ *   },
+ *   cones: { shortTerm: number, blocked: number },
+ * }>}
+ */
+export const getYarnInventoriesSummary = async (filters = {}) => {
+  const inventoryMap = await aggregateInventoryFromStorage(filters);
+  const rows = filterAggregateInventoryRows(Array.from(inventoryMap.values()), filters);
+
+  let totalLongTermKg = 0;
+  let totalShortTermKg = 0;
+  let totalUnallocatedKg = 0;
+  let totalBlockedKg = 0;
+  let totalShortTermCones = 0;
+  let totalBlockedCones = 0;
+
+  for (const inv of rows) {
+    const lt = Math.max(0, inv.longTermInventory?.totalNetWeight ?? 0);
+    const st = Math.max(0, inv.shortTermInventory?.totalNetWeight ?? 0);
+    const un = Math.max(0, inv.unallocatedInventory?.totalNetWeight ?? 0);
+    const blocked = Math.max(0, inv.blockedNetWeight ?? 0);
+    const stCones = Math.max(0, inv.shortTermInventory?.numberOfCones ?? 0);
+    const blCones = Math.max(0, inv.blockedCones ?? 0);
+
+    totalLongTermKg += lt;
+    totalShortTermKg += st;
+    totalUnallocatedKg += un;
+    totalBlockedKg += blocked;
+    totalShortTermCones += stCones;
+    totalBlockedCones += blCones;
+  }
+
+  const round3 = (n) => Math.round(Number(n || 0) * 1000) / 1000;
+  const ltPlusShort = totalLongTermKg + totalShortTermKg;
+  const grand = ltPlusShort + totalUnallocatedKg;
+
+  return {
+    skuCount: rows.length,
+    totals: {
+      longTermKg: round3(totalLongTermKg),
+      shortTermKg: round3(totalShortTermKg),
+      ltPlusShortKg: round3(ltPlusShort),
+      /** Unallocated QC-approved boxes without a storage slot (included in warehouse mass, not LT+ST) */
+      unallocatedKg: round3(totalUnallocatedKg),
+      blockedKg: round3(totalBlockedKg),
+      /** LT + ST + unallocated — physical yarn on hand (blocked is issued-out, counted separately). */
+      grandNetKgAllBuckets: round3(grand),
+    },
+    cones: {
+      shortTerm: totalShortTermCones,
+      blocked: totalBlockedCones,
+    },
+  };
+};
+
+/**
  * Query yarn inventories - computed from storage only (LT/ST zones).
  * Only counts boxes/cones with non-empty storageLocation/coneStorageId.
  * @param {Object} filters - Filter criteria
@@ -466,18 +556,8 @@ export const queryYarnInventories = async (filters = {}, options = {}) => {
 
   const inventoryMap = await aggregateInventoryFromStorage(filters);
 
-  // Convert to array and apply filters
-  let results = Array.from(inventoryMap.values());
-
-  if (filters.yarn_id) {
-    results = results.filter((r) => r.yarnId && r.yarnId.toString() === filters.yarn_id.toString());
-  }
-  if (filters.inventory_status) {
-    results = results.filter((r) => r.inventoryStatus === filters.inventory_status);
-  }
-  if (typeof filters.overbooked === 'boolean') {
-    results = results.filter((r) => r.overbooked === filters.overbooked);
-  }
+  // Convert to array and apply filters (shared with inventory summary endpoint)
+  const results = filterAggregateInventoryRows(Array.from(inventoryMap.values()), filters);
 
   const totalResults = results.length;
 

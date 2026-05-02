@@ -19,6 +19,16 @@ export const getYarnInventories = catchAsync(async (req, res) => {
 });
 
 /**
+ * Global yarn stock totals (same live aggregation as inventories list; no pagination).
+ * GET /yarn-management/yarn-inventories/summary
+ */
+export const getYarnInventoriesSummary = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['yarn_id', 'yarn_name', 'inventory_status', 'overbooked']);
+  const summary = await yarnInventoryService.getYarnInventoriesSummary(filter);
+  res.status(httpStatus.OK).send(summary);
+});
+
+/**
  * Create/initialize a new yarn inventory record
  * Automatically calculates total inventory from long-term and short-term buckets
  */

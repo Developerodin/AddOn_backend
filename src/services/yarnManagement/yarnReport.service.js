@@ -12,6 +12,14 @@ import { LT_SECTION_CODES } from '../../models/storageManagement/storageSlot.mod
 
 const toNum = (v) => Number(v ?? 0);
 
+/**
+ * Sums kg from snapshot maps keyed by yarnCatalogId (exactly-once totals).
+ * @param {Map<string, number>} map
+ * @returns {number}
+ */
+const sumSnapshotKgOncePerCatalog = (map) =>
+  [...map.values()].reduce((acc, v) => acc + toNum(v), 0);
+
 /** LT storage pattern: LT-* or B7-02/03/04/05-* */
 const LT_REGEX = new RegExp(`^(LT-|${LT_SECTION_CODES.map((s) => `${s}-`).join('|')})`, 'i');
 
@@ -259,6 +267,10 @@ const getPurchaseDataByYarnShadeSupplier = async (startDate, endDate) => {
  */
 const parseLocalDate = (dateInput) => {
   if (!dateInput) return new Date(NaN);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(dateInput).trim())) {
+    const [y, m, d] = String(dateInput).trim().split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
   if (dateInput instanceof Date && !Number.isNaN(dateInput.getTime())) {
     return new Date(dateInput.getFullYear(), dateInput.getMonth(), dateInput.getDate());
   }
@@ -348,6 +360,17 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
   const txnOnlyYarnIds = [...txnYarnIds].filter((id) => !purchaseYarnIds.has(id));
   const brandShadeMap = await getBrandAndShadeForYarns([...txnOnlyYarnIds, ...missingIds], catalogMap);
 
+  /** Yarn-level rollup for variance checks (opening/balance snapshots are per catalogId, not shade row). */
+  const purchaseTotalsByYarn = new Map();
+  for (const row of purchaseRows) {
+    if (!purchaseTotalsByYarn.has(row.yarnId)) {
+      purchaseTotalsByYarn.set(row.yarnId, { pur: 0, purRet: 0 });
+    }
+    const acc = purchaseTotalsByYarn.get(row.yarnId);
+    acc.pur += row.pur;
+    acc.purRet += row.purRet;
+  }
+
   const results = [];
 
   for (const row of purchaseRows) {
@@ -359,18 +382,7 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
     const purRet = row.purRet;
     const issued = txn.issued;
     const returned = txn.returned;
-    const formulaBalance = opening + pur - purRet;
     const balance = closingMap.get(row.yarnId) ?? 0;
-
-    const variance = Math.abs(balance - formulaBalance);
-    if (variance > VARIANCE_TOLERANCE_KG) {
-      closingVariances.push({
-        yarnName: catalog?.yarnName ?? row.yarnId,
-        snapshotClosingKg: Math.round(balance * 1000) / 1000,
-        formulaClosingKg: Math.round(formulaBalance * 1000) / 1000,
-        varianceKg: Math.round(variance * 1000) / 1000,
-      });
-    }
 
     const yarnType = catalog?.yarnType;
     const yarnSubtype = catalog?.yarnSubtype;
@@ -404,6 +416,24 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
     });
   }
 
+  for (const yarnId of purchaseTotalsByYarn.keys()) {
+    const catalog = catalogMap.get(yarnId);
+    const txn = txnMap.get(yarnId) || { store: 0, issued: 0, returned: 0 };
+    const opening = openingMap.get(yarnId) ?? 0;
+    const balance = closingMap.get(yarnId) ?? 0;
+    const agg = purchaseTotalsByYarn.get(yarnId);
+    const formulaYarnPur = opening + agg.pur - agg.purRet + txn.returned - txn.issued;
+    const varPur = Math.abs(balance - formulaYarnPur);
+    if (varPur > VARIANCE_TOLERANCE_KG) {
+      closingVariances.push({
+        yarnName: catalog?.yarnName ?? yarnId,
+        snapshotClosingKg: Math.round(balance * 1000) / 1000,
+        formulaClosingKg: Math.round(formulaYarnPur * 1000) / 1000,
+        varianceKg: Math.round(varPur * 1000) / 1000,
+      });
+    }
+  }
+
   // Include yarns with transactions but no PO in range
   for (const yarnId of txnYarnIds) {
     if (purchaseYarnIds.has(yarnId)) continue;
@@ -413,13 +443,14 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
     const opening = openingMap.get(yarnId) ?? 0;
     const balance = closingMap.get(yarnId) ?? 0;
 
-    const variance = Math.abs(balance - opening);
-    if (variance > VARIANCE_TOLERANCE_KG) {
+    const formulaBalanceTxnOnly = opening + txn.returned - txn.issued;
+    const varianceTxnOnly = Math.abs(balance - formulaBalanceTxnOnly);
+    if (varianceTxnOnly > VARIANCE_TOLERANCE_KG) {
       closingVariances.push({
         yarnName: catalog?.yarnName ?? yarnId,
         snapshotClosingKg: Math.round(balance * 1000) / 1000,
-        formulaClosingKg: Math.round(opening * 1000) / 1000,
-        varianceKg: Math.round(variance * 1000) / 1000,
+        formulaClosingKg: Math.round(formulaBalanceTxnOnly * 1000) / 1000,
+        varianceKg: Math.round(varianceTxnOnly * 1000) / 1000,
       });
     }
 
@@ -497,6 +528,13 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
     });
   }
 
+  const uniqueYarnOpeningKgSum = Math.round(sumSnapshotKgOncePerCatalog(openingMap) * 1000) / 1000;
+  const uniqueYarnClosingKgSum = Math.round(sumSnapshotKgOncePerCatalog(closingMap) * 1000) / 1000;
+  const sumDisplayedOpeningAcrossRowsKg =
+    Math.round(results.reduce((s, r) => s + r.opening, 0) * 1000) / 1000;
+  const sumDisplayedBalanceAcrossRowsKg =
+    Math.round(results.reduce((s, r) => s + r.balance, 0) * 1000) / 1000;
+
   return {
     results,
     startDate: formatDate(start),
@@ -504,6 +542,15 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
     meta: {
       openingSnapshotDate: openingSnapshotKey,
       closingSnapshotDate: closingSnapshotKey,
+      summary: {
+        uniqueYarnOpeningKgSum,
+        uniqueYarnClosingKgSum,
+        snapshotOpeningYarnCatalogCount: openingMap.size,
+        snapshotClosingYarnCatalogCount: closingMap.size,
+        reportRowCount: results.length,
+        sumDisplayedOpeningAcrossRowsKg,
+        sumDisplayedBalanceAcrossRowsKg,
+      },
       ...(closingVariances.length ? { closingVariances } : {}),
     },
   };

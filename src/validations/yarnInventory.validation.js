@@ -21,6 +21,18 @@ export const getYarnInventories = {
   }),
 };
 
+/** Same filters as GET /yarn-inventories (no pagination) — aggregates over all yarns. */
+export const getYarnInventoriesSummary = {
+  query: Joi.object()
+    .keys({
+      yarn_id: Joi.string().custom(objectId).optional(),
+      yarn_name: Joi.string().trim().optional(),
+      inventory_status: Joi.string().valid(...yarnInventoryStatuses).optional(),
+      overbooked: Joi.boolean().optional(),
+    })
+    .unknown(false),
+};
+
 export const createYarnInventory = {
   body: Joi.object()
     .keys({

@@ -4,16 +4,19 @@ export const getYarnReportSnapshotBounds = {
   query: Joi.object().unknown(false),
 };
 
+/** Match calendar keys used by YarnDailyClosingSnapshot (avoid Joi Date coercion / UTC drift). */
+const isoCalendarDate = Joi.string()
+  .pattern(/^\d{4}-\d{2}-\d{2}$/)
+  .messages({ 'string.pattern.base': '{{#label}} must be YYYY-MM-DD' });
+
 export const getYarnReport = {
   query: Joi.object()
     .keys({
-      start_date: Joi.date().iso().required(),
-      end_date: Joi.date().iso().required(),
+      start_date: isoCalendarDate.required(),
+      end_date: isoCalendarDate.required(),
     })
     .custom((value, helpers) => {
-      const start = new Date(value.start_date);
-      const end = new Date(value.end_date);
-      if (end < start) {
+      if (value.end_date < value.start_date) {
         return helpers.error('any.custom', { message: 'end_date must be >= start_date' });
       }
       return value;
