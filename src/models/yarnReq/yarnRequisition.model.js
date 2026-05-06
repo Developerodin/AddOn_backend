@@ -40,6 +40,11 @@ const yarnRequisitionSchema = mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    /** When true, this requisition is queued for yarn PO drafting (shown on Draft POs / new PO preload). */
+    draftForPo: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: { createdAt: 'created', updatedAt: 'lastUpdated' },

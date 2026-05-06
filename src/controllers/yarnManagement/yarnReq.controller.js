@@ -3,11 +3,13 @@ import catchAsync from '../../utils/catchAsync.js';
 import * as yarnReqService from '../../services/yarnManagement/yarnReq.service.js';
 
 export const getYarnRequisitionList = catchAsync(async (req, res) => {
-  const { startDate, endDate, poSent, alertStatus, page, limit, skipRecalculation } = req.query;
+  const { startDate, endDate, poSent, draftForPo, alertStatus, page, limit, skipRecalculation } =
+    req.query;
   const result = await yarnReqService.getYarnRequisitionList({
     startDate,
     endDate,
     poSent,
+    draftForPo,
     alertStatus,
     page,
     limit,
@@ -23,9 +25,17 @@ export const createYarnRequisition = catchAsync(async (req, res) => {
 
 export const updateYarnRequisitionStatus = catchAsync(async (req, res) => {
   const { yarnRequisitionId } = req.params;
-  const { poSent } = req.body;
-  const yarnRequisition = await yarnReqService.updateYarnRequisitionStatus(yarnRequisitionId, poSent);
+  const { poSent, draftForPo } = req.body;
+  const yarnRequisition = await yarnReqService.updateYarnRequisitionStatus(yarnRequisitionId, {
+    poSent,
+    draftForPo,
+  });
   res.status(httpStatus.OK).send(yarnRequisition);
+});
+
+export const clearRequisitionDraftFlags = catchAsync(async (req, res) => {
+  const result = await yarnReqService.clearRequisitionDraftFlags(req.body.requisitionIds);
+  res.status(httpStatus.OK).send(result);
 });
 
 

@@ -1,4 +1,5 @@
 import httpStatus from 'http-status';
+import mongoose from 'mongoose';
 import { YarnRequisition, YarnCatalog } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import * as yarnInventoryService from './yarnInventory.service.js';
@@ -46,17 +47,39 @@ const recalculateRequisitionFromInventory = async (requisition) => {
 };
 
 /**
+ * Parses optional booleans from query strings or primitives.
+ * @param {unknown} v
+ * @returns {boolean | undefined}
+ */
+const parseOptionalBoolean = (v) => {
+  if (typeof v === 'boolean') return v;
+  if (v === 'true') return true;
+  if (v === 'false') return false;
+  return undefined;
+};
+
+/**
  * @param {Object} params
  * @param {string} params.startDate
  * @param {string} params.endDate
- * @param {boolean} [params.poSent]
+ * @param {boolean|string} [params.poSent]
+ * @param {boolean|string} [params.draftForPo]
  * @param {string} [params.alertStatus] - filter by alert status: 'below_minimum', 'overbooked', or 'has_alert' (either)
  * @param {number} [params.page] - 1-based page number (default 1)
  * @param {number} [params.limit] - results per page (default 50, max 200)
  * @param {boolean} [params.skipRecalculation] - skip expensive per-row recalculation (for summary/count calls)
  * @returns {Promise<Object>} paginated response with results, page, limit, totalPages, totalResults, alertSummary
  */
-export const getYarnRequisitionList = async ({ startDate, endDate, poSent, alertStatus, page, limit, skipRecalculation }) => {
+export const getYarnRequisitionList = async ({
+  startDate,
+  endDate,
+  poSent,
+  draftForPo,
+  alertStatus,
+  page,
+  limit,
+  skipRecalculation,
+}) => {
   const start = new Date(startDate);
   start.setHours(0, 0, 0, 0);
   const end = new Date(endDate);
@@ -69,8 +92,14 @@ export const getYarnRequisitionList = async ({ startDate, endDate, poSent, alert
     },
   };
 
-  if (typeof poSent === 'boolean') {
-    filter.poSent = poSent;
+  const parsedPoSent = parseOptionalBoolean(poSent);
+  if (typeof parsedPoSent === 'boolean') {
+    filter.poSent = parsedPoSent;
+  }
+
+  const parsedDraft = parseOptionalBoolean(draftForPo);
+  if (typeof parsedDraft === 'boolean') {
+    filter.draftForPo = parsedDraft;
   }
 
   if (alertStatus) {
@@ -147,6 +176,7 @@ export const createYarnRequisition = async (yarnRequisitionBody) => {
   const payload = {
     ...yarnRequisitionBody,
     poSent: yarnRequisitionBody.poSent ?? false,
+    draftForPo: yarnRequisitionBody.draftForPo ?? false,
   };
   if (catalogId) payload.yarnCatalogId = catalogId;
 
@@ -156,17 +186,40 @@ export const createYarnRequisition = async (yarnRequisitionBody) => {
   return yarnRequisition;
 };
 
-export const updateYarnRequisitionStatus = async (yarnRequisitionId, poSent) => {
-  const yarnRequisition = await YarnRequisition.findById(yarnRequisitionId);
+/**
+ * @param {string} yarnRequisitionId
+ * @param {{ poSent: boolean; draftForPo?: boolean }} updates
+ */
+export const updateYarnRequisitionStatus = async (yarnRequisitionId, updates) => {
+  const $set = { poSent: updates.poSent };
+  if (typeof updates.draftForPo === 'boolean') {
+    $set.draftForPo = updates.draftForPo;
+  }
+
+  const yarnRequisition = await YarnRequisition.findOneAndUpdate(
+    { _id: yarnRequisitionId },
+    { $set },
+    { new: true, runValidators: true }
+  ).lean();
 
   if (!yarnRequisition) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Yarn requisition not found');
   }
 
-  yarnRequisition.poSent = poSent;
-  await yarnRequisition.save();
-
   return yarnRequisition;
+};
+
+/**
+ * Clears draft-queue flag after a PO is raised or discarded from draft.
+ * @param {string[]} requisitionIds Mongo ids
+ */
+export const clearRequisitionDraftFlags = async (requisitionIds) => {
+  if (!Array.isArray(requisitionIds) || requisitionIds.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'requisitionIds must be a non-empty array');
+  }
+  const objectIds = requisitionIds.map((id) => new mongoose.Types.ObjectId(id));
+  await YarnRequisition.updateMany({ _id: { $in: objectIds } }, { $set: { draftForPo: false } });
+  return { cleared: objectIds.length };
 };
 
 

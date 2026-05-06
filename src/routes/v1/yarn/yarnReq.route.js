@@ -6,6 +6,10 @@ import * as yarnReqController from '../../../controllers/yarnManagement/yarnReq.
 const router = express.Router();
 
 router
+  .route('/clear-draft')
+  .patch(validate(yarnReqValidation.clearRequisitionDraft), yarnReqController.clearRequisitionDraftFlags);
+
+router
   .route('/')
   .get(
     validate(yarnReqValidation.getYarnRequisitionList),

@@ -6,7 +6,8 @@ export const getYarnRequisitionList = {
     .keys({
       startDate: Joi.date().iso().required(),
       endDate: Joi.date().iso().required(),
-      poSent: Joi.boolean().optional(),
+      poSent: Joi.boolean().truthy('true').falsy('false').optional(),
+      draftForPo: Joi.boolean().truthy('true').falsy('false').optional(),
       alertStatus: Joi.string().valid('below_minimum', 'overbooked', 'has_alert').optional(),
       page: Joi.number().integer().min(1).optional(),
       limit: Joi.number().integer().min(1).max(200).optional(),
@@ -34,6 +35,7 @@ export const createYarnRequisition = {
       blockedQty: Joi.number().min(0).required(),
       alertStatus: Joi.string().valid('below_minimum', 'overbooked').optional(),
       poSent: Joi.boolean().default(false),
+      draftForPo: Joi.boolean().default(false),
     })
     .custom((value, helpers) => {
       const id = value.yarnCatalogId || value.yarn;
@@ -51,9 +53,16 @@ export const updateYarnRequisitionStatus = {
   }),
   body: Joi.object()
     .keys({
-      poSent: Joi.boolean().required(),
+      poSent: Joi.boolean().truthy('true').falsy('false').required(),
+      draftForPo: Joi.boolean().truthy('true').falsy('false').optional(),
     })
     .required(),
 };
 
-
+export const clearRequisitionDraft = {
+  body: Joi.object()
+    .keys({
+      requisitionIds: Joi.array().items(Joi.string().custom(objectId)).min(1).required(),
+    })
+    .required(),
+};
