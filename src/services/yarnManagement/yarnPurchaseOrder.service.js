@@ -164,13 +164,28 @@ export const createPurchaseOrder = async (purchaseOrderBody) => {
   }
 
   const statusLogs = body.statusLogs || [];
-  const currentStatus = body.currentStatus || yarnPurchaseOrderStatuses[0];
+  const currentStatus = body.currentStatus || 'submitted_to_supplier';
 
   const payload = {
     ...body,
     currentStatus,
     statusLogs,
   };
+
+  if (Array.isArray(payload.poItems)) {
+    payload.poItems = payload.poItems.map((item) => {
+      const next = { ...item };
+      const catalogRef = next.yarnCatalogId || next.yarn;
+      delete next.yarn;
+      delete next.id;
+      if (catalogRef) {
+        next.yarnCatalogId = catalogRef;
+      } else {
+        delete next.yarnCatalogId;
+      }
+      return next;
+    });
+  }
 
   const purchaseOrder = await YarnPurchaseOrder.create(payload);
   return purchaseOrder;

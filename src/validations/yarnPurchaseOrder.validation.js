@@ -5,24 +5,60 @@ import { yarnPurchaseOrderStatuses, lotStatuses } from '../models/yarnReq/yarnPu
 const statusCodeField = Joi.string().valid(...yarnPurchaseOrderStatuses);
 const lotStatusField = Joi.string().valid(...lotStatuses);
 
+/** Coerces JSON `null` (from client NaN) and missing values to a non‑negative number. */
+const nonNegativeNumberCoerced = Joi.any()
+  .custom((value, helpers) => {
+    if (value === null || value === undefined) {
+      return 0;
+    }
+    const n = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(n) || n < 0) {
+      return helpers.error('any.invalid');
+    }
+    return n;
+  })
+  .required();
+
+/** Line items as sent from API; yarn id may be missing for draft POs. */
 const poItemSchema = Joi.object()
   .keys({
-  _id: Joi.string().custom(objectId).optional(),
-  id: Joi.string().custom(objectId).optional(),
-  yarnName: Joi.string().trim(),
-  yarnCatalogId: Joi.string().custom(objectId),
-  yarn: Joi.string().custom(objectId),
-  sizeCount: Joi.string().trim().required(),
-  shadeCode: Joi.string().trim().allow('', null),
-  rate: Joi.number().min(0).required(),
-  quantity: Joi.number().min(0).required(),
-  estimatedDeliveryDate: Joi.date().iso().allow(null),
-  gstRate: Joi.number().min(0).allow(null),
-})
+    _id: Joi.string().custom(objectId).optional(),
+    id: Joi.string().custom(objectId).optional(),
+    yarnName: Joi.string().trim().allow('', null),
+    yarnCatalogId: Joi.string()
+      .allow(null, '')
+      .custom((value, helpers) => {
+        if (value === null || value === undefined || value === '') return value;
+        return objectId(value, helpers);
+      }),
+    yarn: Joi.string()
+      .allow(null, '')
+      .custom((value, helpers) => {
+        if (value === null || value === undefined || value === '') return value;
+        return objectId(value, helpers);
+      }),
+    sizeCount: Joi.string().trim().allow('', null),
+    shadeCode: Joi.string().trim().allow('', null),
+    rate: Joi.number().min(0).default(0),
+    quantity: Joi.number().min(0).default(0),
+    estimatedDeliveryDate: Joi.any()
+      .custom((value, helpers) => {
+        if (value === null || value === undefined || value === '') {
+          return null;
+        }
+        const d = new Date(value);
+        if (Number.isNaN(d.getTime())) {
+          return helpers.error('any.invalid');
+        }
+        return value;
+      })
+      .allow(null),
+    gstRate: Joi.number().min(0).allow(null),
+  })
   .custom((value, helpers) => {
     const id = value.yarnCatalogId || value.yarn;
-    if (!id) {
-      return helpers.error('any.custom', { message: 'Each PO line needs yarnCatalogId (or legacy yarn)' });
+    if (!id || id === '') {
+      return { ...value, yarnCatalogId: undefined, yarn: undefined };
     }
     return { ...value, yarnCatalogId: id };
   });
@@ -57,16 +93,32 @@ export const createPurchaseOrder = {
   body: Joi.object()
     .keys({
       poNumber: Joi.string().trim().allow('', null).optional(),
-      supplierName: Joi.string().trim().required(),
-      supplier: Joi.string().custom(objectId).required(),
-      poItems: Joi.array().items(poItemSchema).min(1).required(),
+      supplierName: Joi.string().trim().allow('', null),
+      supplier: Joi.string()
+        .allow(null, '')
+        .custom((value, helpers) => {
+          if (value === null || value === undefined || value === '') return value;
+          return objectId(value, helpers);
+        }),
+      poItems: Joi.array().items(poItemSchema).default([]),
       notes: Joi.string().trim().allow('', null),
-      subTotal: Joi.number().min(0).required(),
-      gst: Joi.number().min(0).required(),
-      total: Joi.number().min(0).required(),
+      subTotal: nonNegativeNumberCoerced,
+      gst: nonNegativeNumberCoerced,
+      total: nonNegativeNumberCoerced,
       currentStatus: statusCodeField.default('submitted_to_supplier'),
       creditDays: Joi.number().min(0).allow(null),
-      estimatedOrderDeliveryDate: Joi.date().iso().allow(null),
+      estimatedOrderDeliveryDate: Joi.any()
+        .custom((value, helpers) => {
+          if (value === null || value === undefined || value === '') {
+            return null;
+          }
+          const d = new Date(value);
+          if (Number.isNaN(d.getTime())) {
+            return helpers.error('any.invalid');
+          }
+          return value;
+        })
+        .allow(null),
       statusLogs: Joi.array()
         .items(
           Joi.object().keys({
@@ -87,8 +139,45 @@ export const createPurchaseOrder = {
       receivedLotDetails: Joi.forbidden(),
       receivedBy: Joi.forbidden(),
     })
-    .required(),
+    .required()
+    .custom((value, helpers) => {
+      if (value.currentStatus === 'draft') {
+        return value;
+      }
+      if (!value.supplier || value.supplier === '') {
+        return helpers.error('any.custom', { message: 'Supplier is required' });
+      }
+      if (!value.supplierName || !String(value.supplierName).trim()) {
+        return helpers.error('any.custom', { message: 'Supplier name is required' });
+      }
+      if (!value.poItems?.length) {
+        return helpers.error('any.custom', { message: 'At least one PO item is required' });
+      }
+      for (const item of value.poItems) {
+        const cid = item.yarnCatalogId || item.yarn;
+        if (!cid) {
+          return helpers.error('any.custom', { message: 'Each PO line needs yarnCatalogId (or legacy yarn)' });
+        }
+      }
+      return value;
+    }),
 };
+
+/** Optional coerced totals for PATCH (matches POST when JSON had null from NaN). */
+const optionalNonNegativeNumber = Joi.any()
+  .custom((value, helpers) => {
+    if (value === undefined) {
+      return undefined;
+    }
+    if (value === null) {
+      return 0;
+    }
+    const n = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(n) || n < 0) {
+      return helpers.error('any.invalid');
+    }
+    return n;
+  });
 
 export const getPurchaseOrderById = {
   params: Joi.object().keys({
@@ -116,12 +205,17 @@ export const updatePurchaseOrder = {
     .keys({
       poNumber: Joi.string().trim(),
       supplierName: Joi.string().trim(),
-      supplier: Joi.string().custom(objectId),
-      poItems: Joi.array().items(poItemSchema).min(1),
+      supplier: Joi.string()
+        .allow(null, '')
+        .custom((value, helpers) => {
+          if (value === null || value === undefined || value === '') return value;
+          return objectId(value, helpers);
+        }),
+      poItems: Joi.array().items(poItemSchema).min(0),
       notes: Joi.string().trim().allow('', null),
-      subTotal: Joi.number().min(0),
-      gst: Joi.number().min(0),
-      total: Joi.number().min(0),
+      subTotal: optionalNonNegativeNumber,
+      gst: optionalNonNegativeNumber,
+      total: optionalNonNegativeNumber,
       currentStatus: statusCodeField,
       statusLogs: Joi.array().items(
         Joi.object().keys({
@@ -138,7 +232,18 @@ export const updatePurchaseOrder = {
       ),
       goodsReceivedDate: Joi.date().iso().allow(null),
       creditDays: Joi.number().min(0).allow(null),
-      estimatedOrderDeliveryDate: Joi.date().iso().allow(null),
+      estimatedOrderDeliveryDate: Joi.any()
+        .custom((value, helpers) => {
+          if (value === null || value === undefined || value === '') {
+            return null;
+          }
+          const d = new Date(value);
+          if (Number.isNaN(d.getTime())) {
+            return helpers.error('any.invalid');
+          }
+          return value;
+        })
+        .allow(null),
       // Optional; when omitted, existing DB values are preserved (no .default so body won't overwrite with [])
       receivedLotDetails: Joi.array()
         .items(

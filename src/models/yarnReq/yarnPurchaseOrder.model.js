@@ -5,6 +5,7 @@ import Supplier from '../yarnManagement/supplier.model.js';
 import YarnCatalog from '../yarnManagement/yarnCatalog.model.js';
 
 export const yarnPurchaseOrderStatuses = [
+  'draft',
   'submitted_to_supplier',
   'in_transit',
   'goods_partially_received',
@@ -57,19 +58,18 @@ const poItemSchema = mongoose.Schema(
   {
     yarnName: {
       type: String,
-      required: true,
       trim: true,
+      default: '',
     },
     /** Canonical link to YarnCatalog (sync yarnName via script or pre-save). */
     yarnCatalogId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'YarnCatalog',
-      required: true,
     },
     sizeCount: {
       type: String,
-      required: true,
       trim: true,
+      default: '',
     },
     shadeCode: {
       type: String,
@@ -261,14 +261,10 @@ const yarnPurchaseOrderSchema = mongoose.Schema(
     supplier: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Supplier',
-      required: true,
     },
     poItems: {
       type: [poItemSchema],
-      validate: {
-        validator: (value) => Array.isArray(value) && value.length > 0,
-        message: 'At least one PO item is required',
-      },
+      default: [],
     },
     notes: {
       type: String,
@@ -340,8 +336,38 @@ const yarnPurchaseOrderSchema = mongoose.Schema(
 yarnPurchaseOrderSchema.plugin(toJSON);
 yarnPurchaseOrderSchema.plugin(paginate);
 
+/**
+ * Enforces line-item and supplier rules for non-draft POs (drafts may be incomplete).
+ */
+yarnPurchaseOrderSchema.pre('validate', function (next) {
+  if (this.currentStatus === 'draft') {
+    if (!this.supplier && (!this.supplierName || !String(this.supplierName).trim())) {
+      this.supplierName = 'Draft';
+    }
+    return next();
+  }
+  if (!this.supplier) {
+    return next(new Error('Supplier is required for non-draft purchase orders'));
+  }
+  if (!Array.isArray(this.poItems) || this.poItems.length === 0) {
+    return next(new Error('At least one PO item is required'));
+  }
+  for (const item of this.poItems) {
+    if (!item.yarnCatalogId) {
+      return next(new Error('Each PO line must be linked to a yarn catalog for non-draft orders'));
+    }
+    if (!item.yarnName || !String(item.yarnName).trim()) {
+      return next(new Error('Each PO line requires a yarn name'));
+    }
+    if (!item.sizeCount || !String(item.sizeCount).trim()) {
+      return next(new Error('Each PO line requires size/count'));
+    }
+  }
+  return next();
+});
+
 yarnPurchaseOrderSchema.pre('save', async function (next) {
-  if (this.isModified('supplier') || !this.supplierName) {
+  if (this.supplier && (this.isModified('supplier') || !this.supplierName)) {
     const supplier = await Supplier.findById(this.supplier);
     if (supplier) {
       this.supplierName = supplier.brandName || this.supplierName;
