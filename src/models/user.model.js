@@ -116,10 +116,13 @@ const userSchema = mongoose.Schema(
           'Dashboard': false,
           'Inventory': false,
           'Cataloguing': false,
+          'Analytics & reports': false,
           'Purchase Management': {
             'Requisition list': false,
             'Purchase Order': false,
             'Purchase Order Recevied': false,
+            'Draft POs': false,
+            'GRN History': false,
             'Yarn QC': false,
             'Yarn Storage': false,
           },

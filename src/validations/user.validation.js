@@ -53,10 +53,13 @@ const createUser = {
         'Dashboard': Joi.boolean(),
         'Inventory': Joi.boolean(),
         'Cataloguing': Joi.boolean(),
+        'Analytics & reports': Joi.boolean(),
         'Purchase Management': Joi.object().keys({
           'Requisition list': Joi.boolean(),
           'Purchase Order': Joi.boolean(),
           'Purchase Order Recevied': Joi.boolean(),
+          'Draft POs': Joi.boolean(),
+          'GRN History': Joi.boolean(),
           'Yarn QC': Joi.boolean(),
           'Yarn Storage': Joi.boolean()
         }),
@@ -171,10 +174,13 @@ const updateUser = {
           'Dashboard': Joi.boolean(),
           'Inventory': Joi.boolean(),
           'Cataloguing': Joi.boolean(),
+          'Analytics & reports': Joi.boolean(),
           'Purchase Management': Joi.object().keys({
             'Requisition list': Joi.boolean(),
             'Purchase Order': Joi.boolean(),
             'Purchase Order Recevied': Joi.boolean(),
+            'Draft POs': Joi.boolean(),
+            'GRN History': Joi.boolean(),
             'Yarn QC': Joi.boolean(),
             'Yarn Storage': Joi.boolean()
           }),
@@ -260,10 +266,13 @@ const updateUserNavigation = {
           'Dashboard': Joi.boolean(),
           'Inventory': Joi.boolean(),
           'Cataloguing': Joi.boolean(),
+          'Analytics & reports': Joi.boolean(),
           'Purchase Management': Joi.object().keys({
             'Requisition list': Joi.boolean(),
             'Purchase Order': Joi.boolean(),
             'Purchase Order Recevied': Joi.boolean(),
+            'Draft POs': Joi.boolean(),
+            'GRN History': Joi.boolean(),
             'Yarn QC': Joi.boolean(),
             'Yarn Storage': Joi.boolean()
           }).unknown(true),
