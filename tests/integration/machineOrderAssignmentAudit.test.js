@@ -200,6 +200,67 @@ describe('Machine order assignment audit logs', () => {
       );
       expect(await countLogs()).toBe(n);
     });
+
+    test('moving (PO,article) to another assignment preserves yarn + status and writes transfer logs', async () => {
+      const machineB = await seedMachine();
+      const assignmentA = await moaService.createMachineOrderAssignment(
+        {
+          machine: machine._id,
+          activeNeedle: '7',
+          productionOrderItems: [
+            {
+              productionOrder: poId,
+              article: articleId,
+              status: OrderStatus.IN_PROGRESS,
+              yarnIssueStatus: YarnIssueStatus.COMPLETED,
+              yarnReturnStatus: YarnReturnStatus.IN_PROGRESS,
+              priority: 1,
+            },
+          ],
+        },
+        userId
+      );
+      const assignmentB = await moaService.createMachineOrderAssignment(
+        {
+          machine: machineB._id,
+          activeNeedle: '7',
+          productionOrderItems: [],
+        },
+        userId
+      );
+      const before = await countLogs();
+
+      await moaService.updateMachineOrderAssignmentById(
+        assignmentB._id,
+        {
+          productionOrderItems: [
+            {
+              productionOrder: poId,
+              article: articleId,
+              status: OrderStatus.PENDING,
+            },
+          ],
+        },
+        userId
+      );
+
+      const refreshedA = await MachineOrderAssignment.findById(assignmentA._id);
+      expect(refreshedA.productionOrderItems.length).toBe(0);
+
+      const refreshedB = await MachineOrderAssignment.findById(assignmentB._id);
+      expect(refreshedB.productionOrderItems.length).toBe(1);
+      const row = refreshedB.productionOrderItems[0];
+      expect(String(row.status)).toBe(OrderStatus.IN_PROGRESS);
+      expect(String(row.yarnIssueStatus)).toBe(YarnIssueStatus.COMPLETED);
+      expect(String(row.yarnReturnStatus)).toBe(YarnReturnStatus.IN_PROGRESS);
+
+      const transferLogs = await MachineOrderAssignmentLog.find({
+        action: LogAction.ASSIGNMENT_ITEM_TRANSFERRED_BETWEEN_MACHINES,
+      }).sort({ createdAt: 1 });
+      expect(transferLogs.length).toBeGreaterThanOrEqual(2);
+      expect(transferLogs.every((l) => typeof l.remarks === 'string' && l.remarks.includes('→'))).toBe(true);
+      expect(await countLogs()).toBeGreaterThan(before);
+    });
   });
 
   describe('per-item endpoints', () => {

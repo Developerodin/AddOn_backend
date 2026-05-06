@@ -185,6 +185,8 @@ const LogAction = {
   ASSIGNMENT_ITEM_STATUS_CHANGED: 'Assignment Item Status Changed',
   ASSIGNMENT_ITEM_PRIORITY_CHANGED: 'Assignment Item Priority Changed',
   ASSIGNMENT_ITEM_COMPLETED_REMOVED: 'Assignment Item Completed And Removed',
+  /** PO/article queue row moved from one machine needle assignment to another (supervisor/order sync). */
+  ASSIGNMENT_ITEM_TRANSFERRED_BETWEEN_MACHINES: 'Article Transferred Between Machines',
   ASSIGNMENT_DEACTIVATED: 'Assignment Deactivated',
   /** PO/article rows removed from queue because production order was deleted or article dropped from order */
   ASSIGNMENT_SYNC_ORDER_REMOVED_FROM_QUEUE: 'Assignment Sync — Production Order Removed From Queue',

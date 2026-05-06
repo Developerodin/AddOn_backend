@@ -124,30 +124,190 @@ export const getMachineOrderAssignmentsCompletedItems = async () => {
   });
 };
 
+/** Stringify mongoose ObjectId or string id for elemMatch dedupe keys. */
+const coerceOidString = (ref) => ref?.toString?.() || ref || undefined;
+
 /**
- * Remove (productionOrder, article) pairs from all assignments except the given one.
- * Ensures an item exists on only one machine when moved.
- * @param {ObjectId} excludeAssignmentId - Assignment to keep items in
- * @param {Array<{productionOrder: ObjectId, article: ObjectId}>} items
- * @returns {Promise<number>} Number of assignments modified
+ * Build mongoose subdocument payload from a JSON snapshot (`snapshotAssignment`).
+ * Prefer full row preserved when transferring between machine assignments.
+ * @param {Record<string, unknown>|null} plainSnapshot
+ * @returns {Object|null}
  */
-const removeItemsFromOtherAssignments = async (excludeAssignmentId, items) => {
-  if (!items?.length) return 0;
+const detachedSnapshotToQueuePayload = (plainSnapshot) => {
+  if (!plainSnapshot || typeof plainSnapshot !== 'object') return null;
+  const po =
+    plainSnapshot.productionOrder?._id ??
+    plainSnapshot.productionOrder?.id ??
+    plainSnapshot.productionOrder;
+  const art = plainSnapshot.article?._id ?? plainSnapshot.article?.id ?? plainSnapshot.article;
+  if (!po || !art) return null;
+  return {
+    productionOrder: po,
+    article: art,
+    status: plainSnapshot.status ?? OrderStatus.PENDING,
+    yarnIssueStatus: plainSnapshot.yarnIssueStatus ?? YarnIssueStatus.PENDING,
+    yarnReturnStatus: plainSnapshot.yarnReturnStatus ?? YarnReturnStatus.PENDING,
+    priority: plainSnapshot.priority,
+  };
+};
+
+/**
+ * New placement on a machine when nothing was detached from elsewhere.
+ * @param {Record<string, unknown>} item - Validated PATCH body fragment
+ */
+const normalizeIncomingProductionOrderItemPayload = (item) => ({
+  productionOrder: item.productionOrder,
+  article: item.article,
+  status: item.status ?? OrderStatus.PENDING,
+  yarnIssueStatus: item.yarnIssueStatus ?? YarnIssueStatus.PENDING,
+  yarnReturnStatus: item.yarnReturnStatus ?? YarnReturnStatus.PENDING,
+  priority: item.priority,
+});
+
+/**
+ * Find rows on OTHER assignments matching (PO,article), snapshot first occurrence per key,
+ * pull from those assignments — preserves queue yarn/status fields when supervisors move machines.
+ * @param {import('mongoose').Types.ObjectId|string} excludeAssignmentId
+ * @param {Array<Record<string, unknown>>} incomingItemsMissingOnTarget
+ * @returns {Promise<{ detachedByKey: Map<string, Record<string, unknown>>, pulls: Array<Object>, modifiedCount: number }>}
+ */
+const detachQueueRowsFromOtherAssignments = async (excludeAssignmentId, incomingItemsMissingOnTarget) => {
+  const detachedByKey = new Map();
+  const pulls = [];
   let modifiedCount = 0;
-  for (const item of items) {
-    const poId = item.productionOrder?.toString?.() || item.productionOrder;
-    const artId = item.article?.toString?.() || item.article;
-    if (!poId || !artId) continue;
-    const result = await MachineOrderAssignment.updateMany(
-      {
-        _id: { $ne: excludeAssignmentId },
-        productionOrderItems: { $elemMatch: { productionOrder: poId, article: artId } },
-      },
-      { $pull: { productionOrderItems: { productionOrder: poId, article: artId } } }
-    );
-    modifiedCount += result.modifiedCount ?? 0;
+  if (!incomingItemsMissingOnTarget?.length) {
+    return { detachedByKey, pulls, modifiedCount };
   }
-  return modifiedCount;
+
+  const seenKeys = new Set();
+  /** @type {Array<{ poId: string, artId: string, key: string }>} */
+  const candidates = [];
+
+  for (const item of incomingItemsMissingOnTarget) {
+    const poId = coerceOidString(item.productionOrder);
+    const artId = coerceOidString(item.article);
+    if (!poId || !artId) continue;
+    const key = `${poId}_${artId}`;
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    candidates.push({ poId, artId, key });
+  }
+
+  for (const { poId, artId, key } of candidates) {
+    const filter = {
+      _id: { $ne: excludeAssignmentId },
+      productionOrderItems: { $elemMatch: { productionOrder: poId, article: artId } },
+    };
+
+    const docsBeforePull = await MachineOrderAssignment.find(filter)
+      .populate('productionOrderItems.productionOrder', 'orderNumber')
+      .populate('productionOrderItems.article', 'articleNumber');
+
+    for (const adoc of docsBeforePull) {
+      const rowMatch = adoc.productionOrderItems?.find(
+        (r) =>
+          String(r.productionOrder?._id ?? r.productionOrder) === String(poId) &&
+          String(r.article?._id ?? r.article) === String(artId)
+      );
+      if (!rowMatch) continue;
+      if (!detachedByKey.has(key)) {
+        const plain = snapshotAssignment(rowMatch);
+        if (plain && typeof plain === 'object') {
+          detachedByKey.set(key, plain);
+          pulls.push({
+            key,
+            fromAssignmentId: adoc._id,
+            fromMachineId: adoc.machine,
+            productionOrder: poId,
+            article: artId,
+            orderNumber:
+              plain.productionOrder?.orderNumber ??
+              (typeof plain.productionOrder === 'object' ? plain.productionOrder.orderNumber : undefined),
+            articleNumber:
+              plain.article?.articleNumber ??
+              (typeof plain.article === 'object' ? plain.article.articleNumber : undefined),
+          });
+        }
+      }
+    }
+
+    const pullResult = await MachineOrderAssignment.updateMany(filter, {
+      $pull: { productionOrderItems: { productionOrder: poId, article: artId } },
+    });
+    modifiedCount += pullResult.modifiedCount ?? 0;
+  }
+
+  return { detachedByKey, pulls, modifiedCount };
+};
+
+/**
+ * Persist dedicated transfer audit rows on source assignment and destination assignment.
+ * @param {object} opts
+ */
+const writeMachineTransferBetweenAssignmentsLogs = async ({
+  pulls,
+  destinationAssignmentId,
+  destinationMachineId,
+  userId,
+}) => {
+  if (!pulls?.length) return;
+  const midList = [...new Set(pulls.map((p) => p.fromMachineId).concat(destinationMachineId))].filter(Boolean);
+  const machineDocs = await Machine.find({ _id: { $in: midList } }).select('machineCode').lean();
+  const codeOf = new Map(machineDocs.map((m) => [String(m._id), (m.machineCode || '').trim()]));
+  const toCode = codeOf.get(String(destinationMachineId)) || String(destinationMachineId);
+  const tsIso = new Date().toISOString();
+
+  const seenOutbound = new Set();
+  const seenInbound = new Set();
+
+  for (const p of pulls) {
+    const fromCode = codeOf.get(String(p.fromMachineId)) || String(p.fromMachineId);
+    const orderLabel = p.orderNumber || String(p.productionOrder);
+    const articleLabel = p.articleNumber || String(p.article);
+    const remark = `Production order "${orderLabel}" • article "${articleLabel}": machine ${fromCode} → ${toCode} (${tsIso})`;
+
+    const outKey = `${String(p.fromAssignmentId)}-${p.key}`;
+    if (!seenOutbound.has(outKey)) {
+      seenOutbound.add(outKey);
+      await writeAssignmentAuditLog({
+        assignmentId: p.fromAssignmentId,
+        userId,
+        action: LogAction.ASSIGNMENT_ITEM_TRANSFERRED_BETWEEN_MACHINES,
+        changes: [
+          {
+            field: 'machine_transfer.source',
+            previousValue: { machineCode: fromCode },
+            newValue: { machineCode: toCode, transferredAt: tsIso },
+          },
+        ],
+        remarks: remark,
+        snapshotBefore: null,
+        snapshotAfter: null,
+        auditSource: userId ? 'user' : 'system',
+      });
+    }
+
+    const inKey = `${String(destinationAssignmentId)}-${p.key}`;
+    if (!seenInbound.has(inKey)) {
+      seenInbound.add(inKey);
+      await writeAssignmentAuditLog({
+        assignmentId: destinationAssignmentId,
+        userId,
+        action: LogAction.ASSIGNMENT_ITEM_TRANSFERRED_BETWEEN_MACHINES,
+        changes: [
+          {
+            field: 'machine_transfer.destination',
+            previousValue: { machineCode: fromCode },
+            newValue: { machineCode: toCode, transferredAt: tsIso },
+          },
+        ],
+        remarks: remark,
+        snapshotBefore: null,
+        snapshotAfter: null,
+        auditSource: userId ? 'user' : 'system',
+      });
+    }
+  }
 };
 
 /**
@@ -166,36 +326,60 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
   const previous = assignment.toObject();
   const snapshotBeforeUpdate = snapshotAssignment(assignment);
   const changes = [];
+  /** @type {Array<Record<string, unknown>>} Rows pulled from another machine this request (for dedicated transfer logs). */
+  const transferPulls = [];
 
   /** Dedupe key for productionOrderItems: same (productionOrder, article) = same queue entry */
-  const itemKey = (i) => `${(i.productionOrder && i.productionOrder.toString?.()) || i.productionOrder}_${(i.article && i.article.toString?.()) || i.article}`;
+  const itemKey = (i) =>
+    `${(i.productionOrder && i.productionOrder.toString?.()) || i.productionOrder}_${
+      (i.article && i.article.toString?.()) || i.article
+    }`;
 
   // Append items when addProductionOrderItems is sent; do not replace array in that case.
   const toAssign = { ...updateBody };
   if (toAssign.addProductionOrderItems != null) {
     const toAdd = Array.isArray(toAssign.addProductionOrderItems) ? toAssign.addProductionOrderItems : [];
-    await removeItemsFromOtherAssignments(assignmentId, toAdd);
+    const { detachedByKey: detachedAddByKey, pulls: pullsFromAdd } = await detachQueueRowsFromOtherAssignments(
+      assignment._id,
+      toAdd
+    );
+    transferPulls.push(...pullsFromAdd);
     for (const row of toAdd) {
+      const k = itemKey(row);
+      const detachedPlain = detachedAddByKey.get(k);
+      const mergedRow = detachedPlain
+        ? detachedSnapshotToQueuePayload(detachedPlain)
+        : normalizeIncomingProductionOrderItemPayload(row);
+      if (!mergedRow) continue;
       changes.push({
         field: 'productionOrderItems.added',
         previousValue: null,
-        newValue: snapshotAssignment(row),
+        newValue: snapshotAssignment(mergedRow),
       });
+      assignment.productionOrderItems.push(mergedRow);
     }
-    assignment.productionOrderItems.push(...toAdd);
     assignment.markModified('productionOrderItems');
     delete toAssign.addProductionOrderItems;
     delete toAssign.productionOrderItems;
   } else if (toAssign.productionOrderItems !== undefined && Array.isArray(toAssign.productionOrderItems)) {
-    // Merge: existing items get only their changed fields updated; new items are appended.
-    const current = assignment.productionOrderItems || [];
+    // Merge: existing items get only their changed fields updated; new rows prefer detached snapshots from other machines.
+    let current = [...(assignment.productionOrderItems || [])];
     const keyToIndex = new Map();
     current.forEach((c, idx) => {
       keyToIndex.set(itemKey(c), idx);
     });
-    const newlyAddedItems = [];
+    const incomingRows = toAssign.productionOrderItems;
+    const toDetachCandidates = incomingRows.filter((inv) => keyToIndex.get(itemKey(inv)) === undefined);
+
+    let detachedIncomingByKey = new Map();
+    if (toDetachCandidates.length > 0) {
+      const { detachedByKey, pulls } = await detachQueueRowsFromOtherAssignments(assignment._id, toDetachCandidates);
+      detachedIncomingByKey = detachedByKey;
+      transferPulls.push(...pulls);
+    }
+
     let didChange = false;
-    for (const item of toAssign.productionOrderItems) {
+    for (const item of incomingRows) {
       const k = itemKey(item);
       const existingIdx = keyToIndex.get(k);
       if (existingIdx !== undefined) {
@@ -229,19 +413,20 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
           didChange = true;
         }
       } else {
-        newlyAddedItems.push(item);
+        const detachedPlain = detachedIncomingByKey.get(k);
+        const payloadRow = detachedPlain
+          ? detachedSnapshotToQueuePayload(detachedPlain)
+          : normalizeIncomingProductionOrderItemPayload(item);
+        if (!payloadRow) continue;
         changes.push({
           field: 'productionOrderItems.added',
           previousValue: null,
-          newValue: { ...snapshotAssignment(item), queueKey: k },
+          newValue: { ...snapshotAssignment(payloadRow), queueKey: k },
         });
-        current.push(item);
+        current.push(payloadRow);
         keyToIndex.set(k, current.length - 1);
         didChange = true;
       }
-    }
-    if (newlyAddedItems.length > 0) {
-      await removeItemsFromOtherAssignments(assignmentId, newlyAddedItems);
     }
     if (didChange) {
       assignment.productionOrderItems = current;
@@ -315,6 +500,15 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
       snapshotBefore: snapshotBeforeUpdate,
       snapshotAfter: snapshotAfterUpdate,
       auditSource: userId ? 'user' : 'system',
+    });
+  }
+
+  if (transferPulls.length > 0 && fresh) {
+    await writeMachineTransferBetweenAssignmentsLogs({
+      pulls: transferPulls,
+      destinationAssignmentId: fresh._id,
+      destinationMachineId: fresh.machine,
+      userId,
     });
   }
   return fresh || assignment;

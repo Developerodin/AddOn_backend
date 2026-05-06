@@ -2,7 +2,7 @@ import Joi from 'joi';
 import { objectId } from './custom.validation.js';
 import { OrderStatus, YarnIssueStatus, YarnReturnStatus } from '../models/production/enums.js';
 
-const productionOrderItemSchema = Joi.object({
+const productionOrderItemCreateSchema = Joi.object({
   productionOrder: Joi.string().custom(objectId).required(),
   article: Joi.string().custom(objectId).required(),
   status: Joi.string()
@@ -17,11 +17,21 @@ const productionOrderItemSchema = Joi.object({
   priority: Joi.number().integer().min(1).optional(),
 });
 
+/** PATCH merge: omitting yarn/status fields leaves them untouched in service merge (never inject defaults onto partial updates). */
+const productionOrderItemPatchSchema = Joi.object({
+  productionOrder: Joi.string().custom(objectId).required(),
+  article: Joi.string().custom(objectId).required(),
+  status: Joi.string().valid(...Object.values(OrderStatus)),
+  yarnIssueStatus: Joi.string().valid(...Object.values(YarnIssueStatus)),
+  yarnReturnStatus: Joi.string().valid(...Object.values(YarnReturnStatus)),
+  priority: Joi.number().integer().min(1),
+});
+
 const createMachineOrderAssignment = {
   body: Joi.object().keys({
     machine: Joi.string().custom(objectId).required(),
     activeNeedle: Joi.string().trim().required(),
-    productionOrderItems: Joi.array().items(productionOrderItemSchema).default([]),
+    productionOrderItems: Joi.array().items(productionOrderItemCreateSchema).default([]),
     isActive: Joi.boolean().default(true),
   }),
 };
@@ -52,8 +62,8 @@ const updateMachineOrderAssignment = {
     .keys({
       machine: Joi.string().custom(objectId),
       activeNeedle: Joi.string().trim(),
-      productionOrderItems: Joi.array().items(productionOrderItemSchema),
-      addProductionOrderItems: Joi.array().items(productionOrderItemSchema),
+      productionOrderItems: Joi.array().items(productionOrderItemPatchSchema),
+      addProductionOrderItems: Joi.array().items(productionOrderItemPatchSchema),
       isActive: Joi.boolean(),
       remarks: Joi.string().allow('').optional(),
     })
