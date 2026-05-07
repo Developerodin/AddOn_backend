@@ -12,6 +12,13 @@ export const getYarnRequisitionList = {
       page: Joi.number().integer().min(1).optional(),
       limit: Joi.number().integer().min(1).max(200).optional(),
       skipRecalculation: Joi.string().valid('true', 'false').optional(),
+      yarnName: Joi.string().trim().max(200).allow('').optional(),
+      lastUpdatedFrom: Joi.date().iso().optional(),
+      lastUpdatedTo: Joi.date().iso().optional(),
+      sortBy: Joi.string()
+        .valid('yarnName', 'created', 'lastUpdated', 'minQty', 'availableQty', 'blockedQty')
+        .optional(),
+      sortOrder: Joi.string().valid('asc', 'desc').optional(),
     })
     .with('startDate', 'endDate')
     .with('endDate', 'startDate')
@@ -21,7 +28,14 @@ export const getYarnRequisitionList = {
         return helpers.error('any.invalid');
       }
       return value;
-    }, 'start and end date validation'),
+    }, 'start and end date validation')
+    .custom((value, helpers) => {
+      const { lastUpdatedFrom, lastUpdatedTo } = value;
+      if (lastUpdatedFrom && lastUpdatedTo && new Date(lastUpdatedFrom) > new Date(lastUpdatedTo)) {
+        return helpers.error('any.invalid');
+      }
+      return value;
+    }, 'lastUpdated range validation'),
 };
 
 export const createYarnRequisition = {

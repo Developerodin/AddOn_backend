@@ -3,8 +3,21 @@ import catchAsync from '../../utils/catchAsync.js';
 import * as yarnReqService from '../../services/yarnManagement/yarnReq.service.js';
 
 export const getYarnRequisitionList = catchAsync(async (req, res) => {
-  const { startDate, endDate, poSent, draftForPo, alertStatus, page, limit, skipRecalculation } =
-    req.query;
+  const {
+    startDate,
+    endDate,
+    poSent,
+    draftForPo,
+    alertStatus,
+    page,
+    limit,
+    skipRecalculation,
+    yarnName,
+    lastUpdatedFrom,
+    lastUpdatedTo,
+    sortBy,
+    sortOrder,
+  } = req.query;
   const result = await yarnReqService.getYarnRequisitionList({
     startDate,
     endDate,
@@ -14,6 +27,11 @@ export const getYarnRequisitionList = catchAsync(async (req, res) => {
     page,
     limit,
     skipRecalculation: skipRecalculation === 'true',
+    yarnName,
+    lastUpdatedFrom,
+    lastUpdatedTo,
+    sortBy,
+    sortOrder,
   });
   res.status(httpStatus.OK).send(result);
 });

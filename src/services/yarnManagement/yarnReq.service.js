@@ -58,6 +58,18 @@ const parseOptionalBoolean = (v) => {
   return undefined;
 };
 
+/** @param {string} s */
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const SORT_FIELDS = {
+  yarnName: 'yarnName',
+  created: 'created',
+  lastUpdated: 'lastUpdated',
+  minQty: 'minQty',
+  availableQty: 'availableQty',
+  blockedQty: 'blockedQty',
+};
+
 /**
  * @param {Object} params
  * @param {string} params.startDate
@@ -67,6 +79,11 @@ const parseOptionalBoolean = (v) => {
  * @param {string} [params.alertStatus] - filter by alert status: 'below_minimum', 'overbooked', or 'has_alert' (either)
  * @param {number} [params.page] - 1-based page number (default 1)
  * @param {number} [params.limit] - results per page (default 50, max 200)
+ * @param {string} [params.yarnName] - case-insensitive substring match on yarnName
+ * @param {string} [params.lastUpdatedFrom] - ISO lower bound on lastUpdated (inclusive)
+ * @param {string} [params.lastUpdatedTo] - ISO upper bound on lastUpdated (end of local day)
+ * @param {string} [params.sortBy] - one of yarnName, created, lastUpdated, minQty, availableQty, blockedQty
+ * @param {string} [params.sortOrder] - asc | desc (default desc except yarnName asc tie-break friendly)
  * @param {boolean} [params.skipRecalculation] - skip expensive per-row recalculation (for summary/count calls)
  * @returns {Promise<Object>} paginated response with results, page, limit, totalPages, totalResults, alertSummary
  */
@@ -79,6 +96,11 @@ export const getYarnRequisitionList = async ({
   page,
   limit,
   skipRecalculation,
+  yarnName,
+  lastUpdatedFrom,
+  lastUpdatedTo,
+  sortBy,
+  sortOrder,
 }) => {
   const start = new Date(startDate);
   start.setHours(0, 0, 0, 0);
@@ -110,14 +132,38 @@ export const getYarnRequisitionList = async ({
     }
   }
 
+  const trimmedYarn = typeof yarnName === 'string' ? yarnName.trim() : '';
+  if (trimmedYarn) {
+    filter.yarnName = { $regex: escapeRegex(trimmedYarn), $options: 'i' };
+  }
+
+  const luFrom = lastUpdatedFrom ? new Date(lastUpdatedFrom) : null;
+  const luToRaw = lastUpdatedTo ? new Date(lastUpdatedTo) : null;
+  const luFromOk = luFrom && !Number.isNaN(luFrom.getTime());
+  const luToOk = luToRaw && !Number.isNaN(luToRaw.getTime());
+  if (luFromOk || luToOk) {
+    filter.lastUpdated = {};
+    if (luFromOk) {
+      filter.lastUpdated.$gte = luFrom;
+    }
+    if (luToOk) {
+      const luToEnd = new Date(luToRaw);
+      luToEnd.setHours(23, 59, 59, 999);
+      filter.lastUpdated.$lte = luToEnd;
+    }
+  }
+
   const pageNum = Math.max(1, Number(page) || 1);
   const limitNum = Math.min(Math.max(1, Number(limit) || 50), 200);
   const skip = (pageNum - 1) * limitNum;
 
+  const sortField = SORT_FIELDS[sortBy] || 'lastUpdated';
+  const direction = sortOrder === 'asc' ? 1 : -1;
+
   const [yarnRequisitions, totalResults] = await Promise.all([
     YarnRequisition.find(filter)
       .populate({ path: 'yarnCatalogId', select: '_id yarnName yarnType status' })
-      .sort({ created: -1 })
+      .sort({ [sortField]: direction })
       .skip(skip)
       .limit(limitNum)
       .lean(),

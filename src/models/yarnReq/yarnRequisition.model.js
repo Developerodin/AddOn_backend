@@ -54,6 +54,10 @@ const yarnRequisitionSchema = mongoose.Schema(
 yarnRequisitionSchema.plugin(toJSON);
 yarnRequisitionSchema.plugin(paginate);
 
+yarnRequisitionSchema.index({ poSent: 1, alertStatus: 1, lastUpdated: -1 });
+yarnRequisitionSchema.index({ poSent: 1, draftForPo: 1, created: -1 });
+yarnRequisitionSchema.index({ created: -1 });
+
 yarnRequisitionSchema.pre('save', async function (next) {
   if (this.isModified('yarnCatalogId')) {
     const yarn = await YarnCatalog.findById(this.yarnCatalogId);
