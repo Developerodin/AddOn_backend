@@ -13,6 +13,25 @@ router
   );
 
 router
+  .route('/po-analytics/lines')
+  .get(validate(yarnReportValidation.getPoAnalyticsLines), yarnReportController.getPoAnalyticsLines);
+
+router
+  .route('/po-analytics')
+  .get(validate(yarnReportValidation.getPoAnalytics), yarnReportController.getPoAnalytics);
+
+router
+  .route('/yarn-closing-trend')
+  .get(validate(yarnReportValidation.getYarnClosingTrend), yarnReportController.getYarnClosingTrend);
+
+router
+  .route('/transaction-analytics')
+  .get(
+    validate(yarnReportValidation.getYarnTransactionAnalytics),
+    yarnReportController.getYarnTransactionAnalytics
+  );
+
+router
   .route('/')
   .get(validate(yarnReportValidation.getYarnReport), yarnReportController.getYarnReport);
 
