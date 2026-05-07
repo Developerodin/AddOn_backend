@@ -76,6 +76,17 @@ export const findDuplicateYarns = async () => {
 const toNumber = (v) => Math.max(0, Number(v ?? 0));
 
 /**
+ * References to "duplicate" yarn by catalog ids and/or yarnName strings stored outside YarnCatalog (operational aliases).
+ */
+const buildDupRefQuery = (allOldIds, allOldNames) => {
+  const parts = [];
+  if (allOldIds.length) parts.push({ yarnCatalogId: { $in: allOldIds } });
+  if (allOldNames.length) parts.push({ yarnName: { $in: allOldNames } });
+  if (parts.length === 0) return null;
+  return parts.length === 1 ? parts[0] : { $or: parts };
+};
+
+/**
  * Count how many documents reference old yarn IDs/names in each collection.
  * Used for dry-run previews.
  */
@@ -93,8 +104,14 @@ const countAffectedDocuments = async (allOldIds, allOldNames) => {
       }),
       YarnCone.countDocuments({ $or: [{ yarnCatalogId: { $in: allOldIds } }, { yarnName: { $in: allOldNames } }] }),
       YarnTransaction.countDocuments({ $or: [{ yarnCatalogId: { $in: allOldIds } }, { yarnName: { $in: allOldNames } }] }),
-      YarnRequisition.countDocuments({ yarnCatalogId: { $in: allOldIds } }),
-      YarnInventory.countDocuments({ yarnCatalogId: { $in: allOldIds } }),
+      (() => {
+        const q = buildDupRefQuery(allOldIds, allOldNames);
+        return q ? YarnRequisition.countDocuments(q) : Promise.resolve(0);
+      })(),
+      (() => {
+        const q = buildDupRefQuery(allOldIds, allOldNames);
+        return q ? YarnInventory.countDocuments(q) : Promise.resolve(0);
+      })(),
       Supplier.countDocuments({
         $or: [{ 'yarnDetails.yarnCatalogId': { $in: allOldIds } }, { 'yarnDetails.yarnName': { $in: allOldNames } }],
       }),
@@ -107,9 +124,14 @@ const countAffectedDocuments = async (allOldIds, allOldNames) => {
  * Merge inventory rows from duplicate yarns into the canonical yarn's inventory.
  * Handles the unique constraint on YarnInventory.yarnCatalogId.
  */
-const mergeInventories = async (canonicalOid, canonicalName, allOldIds) => {
+const mergeInventories = async (canonicalOid, canonicalName, allOldIds, allOldNames) => {
+  const dupMatch = buildDupRefQuery(allOldIds, allOldNames);
+  if (!dupMatch) {
+    return { merged: 0, deleted: 0 };
+  }
+
   const canonicalInv = await YarnInventory.findOne({ yarnCatalogId: canonicalOid });
-  const duplicateInvs = await YarnInventory.find({ yarnCatalogId: { $in: allOldIds } });
+  const duplicateInvs = await YarnInventory.find(dupMatch);
 
   if (duplicateInvs.length === 0) {
     return { merged: 0, deleted: 0 };
@@ -135,47 +157,56 @@ const mergeInventories = async (canonicalOid, canonicalName, allOldIds) => {
     canonicalInv.yarnName = canonicalName;
     await canonicalInv.save();
     await YarnInventory.updateMany({ yarnCatalogId: canonicalOid }, { $unset: { yarn: '' } });
-  } else {
-    // No canonical inventory yet; re-point the first duplicate's row
-    const firstInv = duplicateInvs[0];
-    firstInv.yarnCatalogId = canonicalOid;
-    firstInv.yarnName = canonicalName;
-
-    for (let i = 1; i < duplicateInvs.length; i++) {
-      const dupInv = duplicateInvs[i];
-      for (const bucket of ['totalInventory', 'longTermInventory', 'shortTermInventory']) {
-        if (!dupInv[bucket]) continue;
-        if (!firstInv[bucket]) {
-          firstInv[bucket] = { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, totalBlockedWeight: 0, numberOfCones: 0 };
-        }
-        firstInv[bucket].totalWeight = toNumber(firstInv[bucket].totalWeight) + toNumber(dupInv[bucket].totalWeight);
-        firstInv[bucket].totalTearWeight = toNumber(firstInv[bucket].totalTearWeight) + toNumber(dupInv[bucket].totalTearWeight);
-        firstInv[bucket].totalNetWeight = toNumber(firstInv[bucket].totalNetWeight) + toNumber(dupInv[bucket].totalNetWeight);
-        firstInv[bucket].numberOfCones = toNumber(firstInv[bucket].numberOfCones) + toNumber(dupInv[bucket].numberOfCones);
-      }
-      firstInv.blockedNetWeight = toNumber(firstInv.blockedNetWeight) + toNumber(dupInv.blockedNetWeight);
-    }
-    await firstInv.save();
-    await YarnInventory.updateMany({ yarnCatalogId: canonicalOid }, { $unset: { yarn: '' } });
+    await YarnInventory.deleteMany({ _id: { $in: duplicateInvs.map((d) => d._id) } });
+    return { merged: duplicateInvs.length, deleted: duplicateInvs.length };
   }
 
-  const deleteResult = await YarnInventory.deleteMany({ yarnCatalogId: { $in: allOldIds } });
-  return { merged: duplicateInvs.length, deleted: deleteResult.deletedCount };
+  const firstInv = duplicateInvs[0];
+  firstInv.yarnCatalogId = canonicalOid;
+  firstInv.yarnName = canonicalName;
+
+  for (let i = 1; i < duplicateInvs.length; i++) {
+    const dupInv = duplicateInvs[i];
+    for (const bucket of ['totalInventory', 'longTermInventory', 'shortTermInventory']) {
+      if (!dupInv[bucket]) continue;
+      if (!firstInv[bucket]) {
+        firstInv[bucket] = { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, totalBlockedWeight: 0, numberOfCones: 0 };
+      }
+      firstInv[bucket].totalWeight = toNumber(firstInv[bucket].totalWeight) + toNumber(dupInv[bucket].totalWeight);
+      firstInv[bucket].totalTearWeight = toNumber(firstInv[bucket].totalTearWeight) + toNumber(dupInv[bucket].totalTearWeight);
+      firstInv[bucket].totalNetWeight = toNumber(firstInv[bucket].totalNetWeight) + toNumber(dupInv[bucket].totalNetWeight);
+      firstInv[bucket].numberOfCones = toNumber(firstInv[bucket].numberOfCones) + toNumber(dupInv[bucket].numberOfCones);
+    }
+    firstInv.blockedNetWeight = toNumber(firstInv.blockedNetWeight) + toNumber(dupInv.blockedNetWeight);
+  }
+  await firstInv.save();
+  await YarnInventory.updateMany({ yarnCatalogId: canonicalOid }, { $unset: { yarn: '' } });
+
+  const restIds = duplicateInvs.slice(1).map((d) => d._id);
+  let deletedCount = duplicateInvs.length - 1;
+  if (restIds.length > 0) {
+    await YarnInventory.deleteMany({ _id: { $in: restIds } });
+  }
+  return { merged: duplicateInvs.length, deleted: deletedCount };
 };
 
 /**
  * Merge requisitions: keep canonical's requisition, delete duplicates'.
  * If canonical has no requisition, re-point the first duplicate's.
  */
-const mergeRequisitions = async (canonicalOid, canonicalName, allOldIds) => {
+const mergeRequisitions = async (canonicalOid, canonicalName, allOldIds, allOldNames) => {
   const canonicalReq = await YarnRequisition.findOne({ yarnCatalogId: canonicalOid });
+  const dupQ = buildDupRefQuery(allOldIds, allOldNames);
+  if (!dupQ) {
+    return { migrated: 0, deleted: 0 };
+  }
 
   if (canonicalReq) {
-    const deleteResult = await YarnRequisition.deleteMany({ yarnCatalogId: { $in: allOldIds } });
+    const deleteResult = await YarnRequisition.deleteMany(dupQ);
     return { migrated: 0, deleted: deleteResult.deletedCount };
   }
 
-  const firstDupReq = await YarnRequisition.findOne({ yarnCatalogId: { $in: allOldIds } });
+  const firstDupReq = await YarnRequisition.findOne(dupQ);
   if (!firstDupReq) {
     return { migrated: 0, deleted: 0 };
   }
@@ -185,7 +216,9 @@ const mergeRequisitions = async (canonicalOid, canonicalName, allOldIds) => {
   await firstDupReq.save();
   await YarnRequisition.updateOne({ _id: firstDupReq._id }, { $unset: { yarn: '' } });
 
-  const deleteResult = await YarnRequisition.deleteMany({ yarnCatalogId: { $in: allOldIds } });
+  const deleteResult = await YarnRequisition.deleteMany({
+    $and: [dupQ, { _id: { $ne: firstDupReq._id } }],
+  });
   return { migrated: 1, deleted: deleteResult.deletedCount };
 };
 
@@ -216,66 +249,85 @@ const resolveYarn = async (idOrName, label = 'Yarn') => {
 };
 
 /**
- * Resolve an array of yarn identifiers (IDs or names) to YarnCatalog documents.
- */
-const resolveYarns = async (idsOrNames, label = 'Duplicate yarn') => {
-  const docs = [];
-  const notFound = [];
-
-  for (const val of idsOrNames) {
-    try {
-      docs.push(await resolveYarn(val, label));
-    } catch {
-      notFound.push(val);
-    }
-  }
-
-  if (notFound.length > 0) {
-    throw new ApiError(httpStatus.NOT_FOUND, `${label}(s) not found in yarn catalog: ${notFound.map((n) => `"${n}"`).join(', ')}`);
-  }
-  return docs;
-};
-
-/**
- * Merge duplicate yarn catalog entries into one canonical entry.
- * Updates all references across 9 collections (yarnCatalogId + yarnName; strips legacy `yarn` where present).
- *
- * Accepts IDs or yarn names (or a mix). Names are resolved to catalog entries automatically.
+ * Merge duplicate yarn catalog entries into one canonical entry,
+ * OR repoint operational data that uses yarn names/lines missing from YarnCatalog.
  *
  * @param {Object} params
  * @param {string} [params.canonicalId] - ID of the yarn to keep
  * @param {string} [params.canonicalName] - Name of the yarn to keep (alternative to canonicalId)
- * @param {string[]} [params.duplicateIds] - IDs of yarns to merge
- * @param {string[]} [params.duplicateNames] - Names of yarns to merge (alternative to duplicateIds)
+ * @param {string[]} [params.duplicateIds] - IDs of yarns to merge (must exist as YarnCatalog)
+ * @param {string[]} [params.duplicateNames] - Names matching YarnCatalog, and/or operational-only aliases when allowDuplicateNamesNotInCatalog is true (exact yarnName match in operational collections).
+ * @param {boolean} [params.allowDuplicateNamesNotInCatalog=false] - Allow unmatched duplicateNames (migrate by name only)
  * @param {Object} options
  * @param {boolean} [options.dryRun=false] - If true, only report what would change
  * @returns {Object} Summary of updates
  */
 export const mergeYarns = async (
-  { canonicalId, canonicalName, duplicateIds, duplicateNames },
+  { canonicalId, canonicalName, duplicateIds, duplicateNames, allowDuplicateNamesNotInCatalog = false },
   { dryRun = false } = {}
 ) => {
-  // --- Resolve canonical yarn ---
   const canonical = await resolveYarn(canonicalId || canonicalName, 'Canonical yarn');
   const canonicalOid = canonical._id;
   const resolvedCanonicalName = canonical.yarnName;
 
-  // --- Resolve duplicate yarns ---
-  const rawDuplicateList = [...(duplicateIds || []), ...(duplicateNames || [])];
-  if (rawDuplicateList.length === 0) {
+  const catalogDuplicateDocsMap = new Map();
+  const operationalOnlyNames = new Set();
+
+  const rawDuplicateProvidedCount = (duplicateIds?.length ?? 0) + (duplicateNames?.length ?? 0);
+  if (rawDuplicateProvidedCount === 0) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Provide at least one duplicate yarn (duplicateIds or duplicateNames)');
   }
 
-  const duplicates = await resolveYarns(rawDuplicateList, 'Duplicate yarn');
-
-  // Filter out canonical if it accidentally appears in duplicates
-  const filteredDuplicates = duplicates.filter((d) => d._id.toString() !== canonicalOid.toString());
-  if (filteredDuplicates.length === 0) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'All provided duplicates resolve to the canonical yarn itself; nothing to merge');
+  if (duplicateIds?.length) {
+    for (const id of duplicateIds) {
+      const doc = await resolveYarn(id, 'Duplicate yarn');
+      const sid = doc._id.toString();
+      if (sid === canonicalOid.toString()) continue;
+      catalogDuplicateDocsMap.set(sid, doc);
+    }
   }
 
-  const duplicateOids = filteredDuplicates.map((d) => d._id);
-  const duplicateYarnNames = [...new Set(filteredDuplicates.map((d) => d.yarnName).filter(Boolean))];
+  if (duplicateNames?.length) {
+    for (const name of duplicateNames) {
+      const trimmed = String(name).trim();
+      if (!trimmed) continue;
+
+      try {
+        const doc = await resolveYarn(trimmed, 'Duplicate yarn');
+        const sid = doc._id.toString();
+        if (sid === canonicalOid.toString()) continue;
+        catalogDuplicateDocsMap.set(sid, doc);
+      } catch (e) {
+        if (allowDuplicateNamesNotInCatalog) {
+          if (trimmed.toLowerCase() === resolvedCanonicalName.toLowerCase()) {
+            throw new ApiError(
+              httpStatus.BAD_REQUEST,
+              `Operational duplicate yarn name cannot match canonical yarn name: "${trimmed}"`
+            );
+          }
+          operationalOnlyNames.add(trimmed);
+        } else {
+          throw e;
+        }
+      }
+    }
+  }
+
+  const filteredCatalogDuplicates = [...catalogDuplicateDocsMap.values()];
+  const duplicateOids = filteredCatalogDuplicates.map((d) => d._id);
+  const duplicateYarnNamesFromCatalog = [...new Set(filteredCatalogDuplicates.map((d) => d.yarnName).filter(Boolean))];
+  const operationalOnlyDuplicateNames = [...operationalOnlyNames];
+
+  const duplicateYarnNames = [...new Set([...duplicateYarnNamesFromCatalog, ...operationalOnlyDuplicateNames])].filter(
+    (n) => n.toLowerCase() !== resolvedCanonicalName.toLowerCase()
+  );
+
+  if (filteredCatalogDuplicates.length === 0 && operationalOnlyDuplicateNames.length === 0) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'All provided duplicates resolve to the canonical yarn itself; nothing to merge'
+    );
+  }
 
   const report = {
     dryRun,
@@ -283,6 +335,8 @@ export const mergeYarns = async (
     canonicalName: resolvedCanonicalName,
     duplicateIds: duplicateOids.map((id) => id.toString()),
     duplicateNames: duplicateYarnNames,
+    operationalOnlyDuplicateNames,
+    allowDuplicateNamesNotInCatalog,
     updates: {},
   };
 
@@ -356,11 +410,11 @@ export const mergeYarns = async (
   report.updates.yarnTransactions = txResult.modifiedCount;
 
   // 6. YarnRequisition: merge/delete duplicates
-  const reqResult = await mergeRequisitions(canonicalOid, resolvedCanonicalName, duplicateOids);
+  const reqResult = await mergeRequisitions(canonicalOid, resolvedCanonicalName, duplicateOids, duplicateYarnNames);
   report.updates.yarnRequisitions = reqResult;
 
   // 7. YarnInventory: merge inventory rows (unique yarnCatalogId)
-  const invResult = await mergeInventories(canonicalOid, resolvedCanonicalName, duplicateOids);
+  const invResult = await mergeInventories(canonicalOid, resolvedCanonicalName, duplicateOids, duplicateYarnNames);
   report.updates.yarnInventories = invResult;
 
   // 8. Supplier: yarnDetails[].yarnCatalogId + yarnName
@@ -396,7 +450,7 @@ export const mergeYarns = async (
 /**
  * Bulk merge: process an array of merge operations in sequence.
  *
- * @param {Array<Object>} merges - Each item: { canonicalId?, canonicalName?, duplicateIds?, duplicateNames? }
+ * @param {Array<Object>} merges - Each item: { canonicalId?, canonicalName?, duplicateIds?, duplicateNames?, allowDuplicateNamesNotInCatalog? }
  * @param {Object} options
  * @param {boolean} [options.dryRun=false]
  * @returns {Object} Aggregated results
@@ -415,6 +469,7 @@ export const bulkMergeYarns = async (merges, { dryRun = false } = {}) => {
           canonicalName: entry.canonicalName,
           duplicateIds: entry.duplicateIds,
           duplicateNames: entry.duplicateNames,
+          allowDuplicateNamesNotInCatalog: entry.allowDuplicateNamesNotInCatalog === true,
         },
         { dryRun }
       );

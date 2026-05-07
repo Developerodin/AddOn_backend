@@ -81,6 +81,8 @@ export const mergeYarns = {
       canonicalName: Joi.string().trim(),
       duplicateIds: Joi.array().items(Joi.string().custom(objectId)).min(1).max(100),
       duplicateNames: Joi.array().items(Joi.string().trim()).min(1).max(100),
+      /** When true, duplicateNames not found as YarnCatalog rows are migrated by yarnName anywhere in the system. */
+      allowDuplicateNamesNotInCatalog: Joi.boolean().default(false),
       dryRun: Joi.boolean().default(false),
     })
     .or('canonicalId', 'canonicalName')
@@ -96,6 +98,7 @@ const mergeItemSchema = Joi.object()
     canonicalName: Joi.string().trim(),
     duplicateIds: Joi.array().items(Joi.string().custom(objectId)).min(1).max(100),
     duplicateNames: Joi.array().items(Joi.string().trim()).min(1).max(100),
+    allowDuplicateNamesNotInCatalog: Joi.boolean().default(false),
   })
   .or('canonicalId', 'canonicalName')
   .or('duplicateIds', 'duplicateNames');

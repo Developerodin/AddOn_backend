@@ -46,9 +46,10 @@ export const findDuplicateYarns = catchAsync(async (req, res) => {
 });
 
 export const mergeYarns = catchAsync(async (req, res) => {
-  const { canonicalId, canonicalName, duplicateIds, duplicateNames, dryRun } = req.body;
+  const { canonicalId, canonicalName, duplicateIds, duplicateNames, allowDuplicateNamesNotInCatalog, dryRun } =
+    req.body;
   const report = await yarnMergeService.mergeYarns(
-    { canonicalId, canonicalName, duplicateIds, duplicateNames },
+    { canonicalId, canonicalName, duplicateIds, duplicateNames, allowDuplicateNamesNotInCatalog },
     { dryRun }
   );
   res.send({
