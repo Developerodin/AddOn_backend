@@ -3,7 +3,15 @@ import toJSON from '../plugins/toJSON.plugin.js';
 import paginate from '../plugins/paginate.plugin.js';
 import YarnCatalog from '../yarnManagement/yarnCatalog.model.js';
 
-export const yarnTransactionTypes = ['yarn_issued', 'yarn_blocked', 'yarn_stocked', 'internal_transfer', 'yarn_returned'];
+export const yarnTransactionTypes = [
+  'yarn_issued',
+  'yarn_issued_linking',
+  'yarn_issued_sampling',
+  'yarn_blocked',
+  'yarn_stocked',
+  'internal_transfer',
+  'yarn_returned',
+];
 
 const yarnTransactionSchema = mongoose.Schema(
   {
@@ -87,6 +95,11 @@ const yarnTransactionSchema = mongoose.Schema(
     timestamps: true,
   }
 );
+
+// List + sort by date scoped by type (floor issue history, reports, etc.)
+yarnTransactionSchema.index({ transactionType: 1, transactionDate: -1 });
+// Order-scoped history
+yarnTransactionSchema.index({ orderId: 1, transactionDate: -1 }, { sparse: true });
 
 yarnTransactionSchema.pre('save', async function (next) {
   if (this.yarnCatalogId && (this.isModified('yarnCatalogId') || !this.yarnName)) {

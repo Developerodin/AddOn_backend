@@ -74,7 +74,23 @@ export const getYarnTransactions = {
   query: Joi.object().keys({
     start_date: Joi.date().iso().optional(),
     end_date: Joi.date().iso().optional(),
-    transaction_type: transactionTypeField.optional(),
+    transaction_type: Joi.string()
+      .optional()
+      .custom((value, helpers) => {
+        if (value === undefined || value === null || value === '') {
+          return value;
+        }
+        const parts = String(value)
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+        for (const p of parts) {
+          if (!yarnTransactionTypes.includes(p)) {
+            return helpers.error('any.only', { valids: yarnTransactionTypes });
+          }
+        }
+        return value;
+      }),
     yarn_id: Joi.string().custom(objectId).optional(),
     yarn_name: Joi.string().trim().optional(),
     order_id: Joi.string().custom(objectId).optional(),
@@ -82,6 +98,14 @@ export const getYarnTransactions = {
     article_id: Joi.string().custom(objectId).optional(),
     article_number: Joi.string().trim().optional(),
     group_by: Joi.string().valid('article', 'yarn').optional(),
+    page: Joi.number().integer().min(1).optional(),
+    limit: Joi.number().integer().min(1).max(100).optional(),
+    paged: Joi.alternatives()
+      .try(Joi.boolean(), Joi.string().valid('0', '1', 'true', 'false'))
+      .optional(),
+    light: Joi.alternatives()
+      .try(Joi.boolean(), Joi.string().valid('0', '1', 'true', 'false'))
+      .optional(),
   }),
 };
 

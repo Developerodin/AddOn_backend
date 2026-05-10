@@ -67,6 +67,12 @@ router
     yarnConeController.bulkSetConeStorageLocation
   );
 
+router.post(
+  '/issue-for-floor',
+  validate(yarnConeValidation.issueConeForFloor),
+  yarnConeController.issueConeForFloor
+);
+
 router
   .route('/:yarnConeId')
   .patch(

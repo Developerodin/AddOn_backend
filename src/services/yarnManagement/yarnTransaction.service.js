@@ -67,7 +67,7 @@ const recalcTotalInventory = (inventory) => {
  * The API accepts camelCase convenience fields (e.g. totalWeight) and maps them
  * into the schema-specific properties. Block transactions rely on totalBlockedWeight.
  */
-const normaliseTransactionPayload = (inputBody) => {
+export const normaliseTransactionPayload = (inputBody) => {
   const body = { ...inputBody };
   const isBlocked = body.transactionType === 'yarn_blocked';
 
@@ -161,7 +161,9 @@ const updateInventoryBuckets = (inventory, transaction) => {
   };
 
   switch (transaction.transactionType) {
-    case 'yarn_issued': {
+    case 'yarn_issued':
+    case 'yarn_issued_linking':
+    case 'yarn_issued_sampling': {
       // Physical yarn leaves short-term storage; blocked reservations are released.
       applyDelta(
         inventory.shortTermInventory,
@@ -305,7 +307,7 @@ const validateBlockedDoesNotExceedInventory = (inventory, transaction) => {
  * or without a session (standalone MongoDB). On standalone, we run the same steps so the feature
  * works; writes are not atomic, so a mid-failure can leave partial state.
  */
-const runCreateTransactionLogic = async (session, normalisedPayload) => {
+export const runCreateTransactionLogic = async (session, normalisedPayload) => {
   const opts = session ? { session } : {};
   const withSession = (q) => (session ? q.session(session) : q);
 
@@ -392,11 +394,26 @@ export const getYarnTransactionById = async (transactionId) => {
   return transaction;
 };
 
+/**
+ * Escapes user input for safe use inside MongoDB `$regex`.
+ * @param {string} str
+ * @returns {string}
+ */
+const escapeRegex = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 export const queryYarnTransactions = async (filters = {}) => {
   const mongooseFilter = {};
 
   if (filters.transaction_type) {
-    mongooseFilter.transactionType = filters.transaction_type;
+    const parts = String(filters.transaction_type)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (parts.length === 1) {
+      mongooseFilter.transactionType = parts[0];
+    } else if (parts.length > 1) {
+      mongooseFilter.transactionType = { $in: parts };
+    }
   }
 
   if (filters.yarn_id) {
@@ -404,7 +421,10 @@ export const queryYarnTransactions = async (filters = {}) => {
   }
 
   if (filters.yarn_name) {
-    mongooseFilter.yarnName = { $regex: filters.yarn_name, $options: 'i' };
+    const trimmed = String(filters.yarn_name).trim();
+    if (trimmed) {
+      mongooseFilter.yarnName = { $regex: escapeRegex(trimmed), $options: 'i' };
+    }
   }
 
   if (filters.order_id) {
@@ -437,17 +457,60 @@ export const queryYarnTransactions = async (filters = {}) => {
     }
   }
 
-  const transactions = await YarnTransaction.find(mongooseFilter)
-    .populate({
-      path: 'yarnCatalogId',
-      select: '_id yarnName yarnType status',
-    })
-    .populate({ path: 'orderId', select: 'orderNumber' })
-    .populate({ path: 'articleId', select: 'articleNumber orderId machineId' })
-    .populate({ path: 'machineId', select: 'machineCode machineNumber model floor' })
-    .sort({ transactionDate: -1 })
-    .lean();
+  const light =
+    filters.light === true ||
+    filters.light === 'true' ||
+    filters.light === '1' ||
+    filters.light === 1;
 
+  /** Fields needed for floor-issue history / exports (skip heavy joins). */
+  const LIGHT_SELECT =
+    '_id transactionType transactionDate yarnName transactionNetWeight transactionTotalWeight transactionTearWeight transactionConeCount conesIdsArray createdAt';
+
+  const applyPopulateAndSort = (q) => {
+    let chain = light ? q.select(LIGHT_SELECT) : q;
+    chain = chain.sort({ transactionDate: -1 });
+    if (light) {
+      return chain.populate({ path: 'conesIdsArray', select: 'barcode boxId yarnName' });
+    }
+    return chain
+      .populate({
+        path: 'yarnCatalogId',
+        select: '_id yarnName yarnType status',
+      })
+      .populate({ path: 'orderId', select: 'orderNumber' })
+      .populate({ path: 'articleId', select: 'articleNumber orderId machineId' })
+      .populate({ path: 'machineId', select: 'machineCode machineNumber model floor' })
+      .populate({ path: 'conesIdsArray', select: 'barcode boxId yarnName' });
+  };
+
+  const paged =
+    filters.paged === true ||
+    filters.paged === 'true' ||
+    filters.paged === '1' ||
+    filters.paged === 1;
+
+  if (paged) {
+    const page = Math.max(1, parseInt(String(filters.page), 10) || 1);
+    const limitRaw = parseInt(String(filters.limit), 10) || 20;
+    const limit = Math.min(Math.max(limitRaw, 1), 100);
+    const skip = (page - 1) * limit;
+
+    const [results, totalResults] = await Promise.all([
+      applyPopulateAndSort(YarnTransaction.find(mongooseFilter)).skip(skip).limit(limit).lean(),
+      YarnTransaction.countDocuments(mongooseFilter),
+    ]);
+
+    return {
+      results,
+      page,
+      limit,
+      totalResults,
+      totalPages: Math.max(1, Math.ceil(totalResults / limit)),
+    };
+  }
+
+  const transactions = await applyPopulateAndSort(YarnTransaction.find(mongooseFilter)).lean();
   return transactions;
 };
 

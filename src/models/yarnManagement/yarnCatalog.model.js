@@ -177,6 +177,16 @@ const yarnCatalogSchema = mongoose.Schema(
       type: Number,
       min: 0,
     },
+    /** Optional: linking flag for catalog workflows */
+    linking: {
+      type: Boolean,
+      default: false,
+    },
+    /** Optional: sampling flag for catalog workflows */
+    sampling: {
+      type: Boolean,
+      default: false,
+    },
     status: {
       type: String,
       enum: ['active', 'inactive', 'suspended'],

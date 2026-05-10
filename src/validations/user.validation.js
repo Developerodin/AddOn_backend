@@ -1,6 +1,18 @@
 import Joi from 'joi';
 import { password, objectId } from './custom.validation.js';
 
+const yarnIssueNavigationSchema = Joi.alternatives().try(
+  Joi.boolean(),
+  Joi.object()
+    .keys({
+      'Issue for orders': Joi.boolean(),
+      'Linking & sampling': Joi.boolean(),
+      Linking: Joi.boolean(),
+      Sampling: Joi.boolean(),
+    })
+    .unknown(true)
+);
+
 
 const createUser = {
   body: Joi.object().keys({
@@ -63,7 +75,7 @@ const createUser = {
           'Yarn QC': Joi.boolean(),
           'Yarn Storage': Joi.boolean()
         }),
-        'Yarn Issue': Joi.boolean(),
+        'Yarn Issue': yarnIssueNavigationSchema,
         'Yarn Return': Joi.boolean(),
         'Yarn Master': Joi.object().keys({
           'Brand': Joi.boolean(),
@@ -184,7 +196,7 @@ const updateUser = {
             'Yarn QC': Joi.boolean(),
             'Yarn Storage': Joi.boolean()
           }),
-          'Yarn Issue': Joi.boolean(),
+          'Yarn Issue': yarnIssueNavigationSchema,
           'Yarn Return': Joi.boolean(),
           'Yarn Master': Joi.object().keys({
             'Brand': Joi.boolean(),
@@ -276,7 +288,7 @@ const updateUserNavigation = {
             'Yarn QC': Joi.boolean(),
             'Yarn Storage': Joi.boolean()
           }).unknown(true),
-          'Yarn Issue': Joi.boolean(),
+          'Yarn Issue': yarnIssueNavigationSchema,
           'Yarn Return': Joi.boolean(),
           'Yarn Master': Joi.object().keys({
             'Brand': Joi.boolean(),

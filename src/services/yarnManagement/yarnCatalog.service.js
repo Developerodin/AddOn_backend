@@ -379,6 +379,8 @@ export const bulkImportYarnCatalogs = async (yarnCatalogs, batchSize = 50) => {
               remark: yarnCatalogData.remark?.trim() || undefined,
               hsnCode: yarnCatalogData.hsnCode?.trim()?.toUpperCase() || undefined,
               minQuantity: yarnCatalogData.minQuantity !== undefined ? Number(yarnCatalogData.minQuantity) : undefined,
+              linking: typeof yarnCatalogData.linking === 'boolean' ? yarnCatalogData.linking : undefined,
+              sampling: typeof yarnCatalogData.sampling === 'boolean' ? yarnCatalogData.sampling : undefined,
               status: yarnCatalogData.status || 'active',
             };
 

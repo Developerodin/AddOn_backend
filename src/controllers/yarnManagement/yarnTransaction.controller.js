@@ -9,10 +9,35 @@ export const createYarnTransaction = catchAsync(async (req, res) => {
 });
 
 export const getYarnTransactions = catchAsync(async (req, res) => {
-  const filters = pick(req.query, ['start_date', 'end_date', 'transaction_type', 'yarn_id', 'yarn_name', 'order_id', 'orderno', 'article_id', 'article_number', 'group_by']);
+  const filters = pick(req.query, [
+    'start_date',
+    'end_date',
+    'transaction_type',
+    'yarn_id',
+    'yarn_name',
+    'order_id',
+    'orderno',
+    'article_id',
+    'article_number',
+    'group_by',
+    'page',
+    'limit',
+    'paged',
+    'light',
+  ]);
   const groupBy = req.query.group_by; // 'article' or 'yarn' or undefined
-  
+
   const transactions = await yarnTransactionService.queryYarnTransactions(filters);
+
+  if (
+    transactions &&
+    typeof transactions === 'object' &&
+    !Array.isArray(transactions) &&
+    Array.isArray(transactions.results)
+  ) {
+    return res.status(httpStatus.OK).send(transactions);
+  }
+
   const hasOrderFilter = filters.orderno || filters.order_id;
 
   // If orderno or order_id is provided, default to grouping by article (since orders are created with articles)

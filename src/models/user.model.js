@@ -126,7 +126,10 @@ const userSchema = mongoose.Schema(
             'Yarn QC': false,
             'Yarn Storage': false,
           },
-          'Yarn Issue': false,
+          'Yarn Issue': {
+            'Issue for orders': false,
+            'Linking & sampling': false,
+          },
           'Yarn Return': false,
           'Yarn Master': {
             'Brand': false,

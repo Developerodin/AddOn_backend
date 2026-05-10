@@ -134,7 +134,20 @@ const getTransactionTotalsInRange = async (startDate, endDate) => {
       $group: {
         _id: '$yarnCatalogId',
         store: { $sum: { $cond: [{ $eq: ['$transactionType', 'yarn_stocked'] }, '$transactionNetWeight', 0] } },
-        issued: { $sum: { $cond: [{ $eq: ['$transactionType', 'yarn_issued'] }, '$transactionNetWeight', 0] } },
+        issued: {
+          $sum: {
+            $cond: [
+              {
+                $in: [
+                  '$transactionType',
+                  ['yarn_issued', 'yarn_issued_linking', 'yarn_issued_sampling'],
+                ],
+              },
+              '$transactionNetWeight',
+              0,
+            ],
+          },
+        },
         returned: { $sum: { $cond: [{ $eq: ['$transactionType', 'yarn_returned'] }, '$transactionNetWeight', 0] } },
       },
     },

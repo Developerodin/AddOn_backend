@@ -3,6 +3,12 @@ import catchAsync from '../../utils/catchAsync.js';
 import pick from '../../utils/pick.js';
 import * as yarnConeService from '../../services/yarnManagement/yarnCone.service.js';
 
+import * as yarnConeFloorIssueService from '../../services/yarnManagement/yarnConeFloorIssue.service.js';
+
+export const issueConeForFloor = catchAsync(async (req, res) => {
+  const result = await yarnConeFloorIssueService.issueConeForFloor(req.body);
+  res.status(httpStatus.OK).send(result);
+});
 export const createYarnCone = catchAsync(async (req, res) => {
   const yarnCone = await yarnConeService.createYarnCone(req.body);
   res.status(httpStatus.CREATED).send(yarnCone);

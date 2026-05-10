@@ -58,7 +58,10 @@ export const DEFAULT_NAVIGATION = {
       'Yarn QC': false,
       'Yarn Storage': false
     },
-    'Yarn Issue': false,
+    'Yarn Issue': {
+      'Issue for orders': false,
+      'Linking & sampling': false
+    },
     'Yarn Return': false,
     'Yarn Master': {
       'Brand': false,
@@ -147,7 +150,10 @@ export const ROLE_NAVIGATION_TEMPLATES = {
         'Yarn QC': true,
         'Yarn Storage': true
       },
-      'Yarn Issue': true,
+      'Yarn Issue': {
+        'Issue for orders': true,
+        'Linking & sampling': true
+      },
       'Yarn Return': true,
       'Yarn Master': {
         'Brand': true,
@@ -231,7 +237,10 @@ export const ROLE_NAVIGATION_TEMPLATES = {
         'Yarn QC': false,
         'Yarn Storage': false
       },
-      'Yarn Issue': false,
+      'Yarn Issue': {
+        'Issue for orders': false,
+        'Linking & sampling': false
+      },
       'Yarn Return': false,
       'Yarn Master': {
         'Brand': false,
@@ -399,6 +408,22 @@ export const validateNavigationStructure = (navigation) => {
       for (const purchaseKey of purchaseManagementKeys) {
         if (!(purchaseKey in navigation['Yarn Management']['Purchase Management']) || typeof navigation['Yarn Management']['Purchase Management'][purchaseKey] !== 'boolean') {
           console.error(`Validation failed: Yarn Management.Purchase Management.${purchaseKey} is missing or not a boolean`);
+          return false;
+        }
+      }
+    } else if (key === 'Yarn Issue') {
+      const yi = navigation['Yarn Management']['Yarn Issue'];
+      if (yi === true || yi === false) {
+        continue;
+      }
+      if (!yi || typeof yi !== 'object') {
+        console.error('Validation failed: Yarn Management.Yarn Issue is missing or not an object');
+        return false;
+      }
+      const yarnIssueAllowedKeys = new Set(['Issue for orders', 'Linking & sampling', 'Linking', 'Sampling']);
+      for (const [yk, val] of Object.entries(yi)) {
+        if (!yarnIssueAllowedKeys.has(yk) || typeof val !== 'boolean') {
+          console.error(`Validation failed: Yarn Management.Yarn Issue.${yk} invalid`);
           return false;
         }
       }

@@ -12,6 +12,17 @@ const userRefSchema = Joi.object()
   })
   .optional();
 
+export const issueConeForFloor = {
+  body: Joi.object()
+    .keys({
+      barcode: Joi.string().trim().required(),
+      floor: Joi.string().valid('linking', 'sampling').required(),
+      totalWeight: Joi.number().min(0).required(),
+      totalTearWeight: Joi.number().min(0).default(0),
+    })
+    .required(),
+};
+
 export const createYarnCone = {
   body: Joi.object()
     .keys({
