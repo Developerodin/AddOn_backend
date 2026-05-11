@@ -1,5 +1,6 @@
 import { YarnBox, YarnCone } from '../../models/index.js';
 import { yarnConeUnavailableIssueStatuses } from '../../models/yarnReq/yarnCone.model.js';
+import { activeYarnBoxMatch, activeYarnConeMatch } from './yarnStockActiveFilters.js';
 
 const toNum = (v) => Number(v ?? 0);
 
@@ -49,7 +50,7 @@ export async function getPoBoxesAndShortTermConesReport({ poNumber }) {
   }
 
   const [boxes, stCones] = await Promise.all([
-    YarnBox.find({ poNumber: normalizedPo })
+    YarnBox.find({ poNumber: normalizedPo, ...activeYarnBoxMatch })
       .select('boxId poNumber yarnName shadeCode lotNumber boxWeight tearweight storageLocation storedStatus')
       .sort({ createdAt: 1 })
       .lean(),
@@ -57,6 +58,7 @@ export async function getPoBoxesAndShortTermConesReport({ poNumber }) {
       poNumber: normalizedPo,
       coneStorageId: { $exists: true, $nin: [null, ''] },
       issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
+      ...activeYarnConeMatch,
     })
       .select('boxId barcode coneStorageId coneWeight tearWeight')
       .sort({ createdAt: 1 })

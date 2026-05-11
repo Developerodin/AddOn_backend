@@ -4,6 +4,8 @@ import { YarnPurchaseOrder, YarnBox, YarnCone } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import { yarnPurchaseOrderStatuses, lotStatuses } from '../../models/yarnReq/yarnPurchaseOrder.model.js';
 import * as supplierService from './supplier.service.js';
+import { syncInventoriesFromStorageForCatalogIds } from './yarnInventory.service.js';
+import { activeYarnBoxMatch, activeYarnConeMatch } from './yarnStockActiveFilters.js';
 
 /**
  * Enriches each PO line item with yarn subtype and colour for Excel/API consumers.
@@ -407,7 +409,7 @@ export const updateLotStatusAndQcApprove = async (poNumber, lotNumber, lotStatus
     actionMessage = 'QC rejected';
   }
 
-  const boxes = await YarnBox.find({ poNumber, lotNumber });
+  const boxes = await YarnBox.find({ poNumber, lotNumber, ...activeYarnBoxMatch });
 
   if (boxes.length > 0 && qcStatus) {
     // Prepare QC update fields
@@ -430,14 +432,11 @@ export const updateLotStatusAndQcApprove = async (poNumber, lotNumber, lotStatus
     }
 
     // Update all boxes for this lot
-    await YarnBox.updateMany(
-      { poNumber, lotNumber },
-      { $set: qcUpdateFields }
-    );
+    await YarnBox.updateMany({ poNumber, lotNumber, ...activeYarnBoxMatch }, { $set: qcUpdateFields });
   }
 
   // Fetch updated boxes
-  const updatedBoxes = await YarnBox.find({ poNumber, lotNumber });
+  const updatedBoxes = await YarnBox.find({ poNumber, lotNumber, ...activeYarnBoxMatch });
 
   const message = qcStatus
     ? `Successfully updated lot status to ${lotStatus} and ${actionMessage} ${updatedBoxes.length} boxes for lot ${lotNumber}`
@@ -453,8 +452,8 @@ export const updateLotStatusAndQcApprove = async (poNumber, lotNumber, lotStatus
 };
 
 /**
- * Delete a lot by poNumber and lotNumber.
- * Order: 1) Delete all cones (poNumber + boxId in lot's boxes), 2) Delete all boxes (poNumber + lotNumber), 3) Remove lot from PO receivedLotDetails.
+ * Archive/delete a lot by poNumber and lotNumber (soft-delete boxes/cones for inventory parity with vendor return).
+ * Order: 1) Archive active cones for lot boxIds, 2) Archive active boxes, 3) Remove lot from PO receivedLotDetails.
  * @param {string} poNumber - PO number
  * @param {string} lotNumber - Lot number
  * @returns {Promise<{ purchaseOrder, deletedConesCount, deletedBoxesCount, message }>}
@@ -476,17 +475,53 @@ export const deleteLotByPoAndLotNumber = async (poNumber, lotNumber) => {
     throw new ApiError(httpStatus.NOT_FOUND, `Lot ${lot} not found in received lot details`);
   }
 
-  const boxes = await YarnBox.find({ poNumber: po, lotNumber: lot }).select('boxId').lean();
+  const boxes = await YarnBox.find({
+    poNumber: po,
+    lotNumber: lot,
+    ...activeYarnBoxMatch,
+  })
+    .select('boxId yarnCatalogId')
+    .lean();
   const boxIds = boxes.map((b) => b.boxId);
 
-  const conesResult = await YarnCone.deleteMany({
+  const conesLean = await YarnCone.find({
     poNumber: po,
     boxId: { $in: boxIds },
-  });
-  const deletedConesCount = conesResult.deletedCount ?? 0;
+    ...activeYarnConeMatch,
+  })
+    .select('yarnCatalogId')
+    .lean();
+  const catalogIdSet = new Set();
+  for (const b of boxes) {
+    if (b.yarnCatalogId) catalogIdSet.add(String(b.yarnCatalogId));
+  }
+  for (const c of conesLean) {
+    if (c.yarnCatalogId) catalogIdSet.add(String(c.yarnCatalogId));
+  }
 
-  const boxesResult = await YarnBox.deleteMany({ poNumber: po, lotNumber: lot });
-  const deletedBoxesCount = boxesResult.deletedCount ?? 0;
+  const archivedAt = new Date();
+  const coneArchive = {
+    returnedToVendorAt: archivedAt,
+    issueStatus: 'returned_to_vendor',
+    coneStorageId: null,
+  };
+  const boxArchive = {
+    returnedToVendorAt: archivedAt,
+    storageLocation: null,
+    storedStatus: false,
+  };
+
+  const conesResult = await YarnCone.updateMany(
+    { poNumber: po, boxId: { $in: boxIds }, ...activeYarnConeMatch },
+    { $set: coneArchive }
+  );
+  const deletedConesCount = conesResult.modifiedCount ?? 0;
+
+  const boxesResult = await YarnBox.updateMany(
+    { poNumber: po, lotNumber: lot, ...activeYarnBoxMatch },
+    { $set: boxArchive }
+  );
+  const deletedBoxesCount = boxesResult.modifiedCount ?? 0;
 
   await YarnPurchaseOrder.updateOne(
     { poNumber: po },
@@ -497,11 +532,13 @@ export const deleteLotByPoAndLotNumber = async (poNumber, lotNumber) => {
     .populate({ path: 'poItems.yarnCatalogId', select: '_id yarnName' })
     .lean();
 
+  await syncInventoriesFromStorageForCatalogIds([...catalogIdSet]);
+
   return {
     purchaseOrder: updatedPo,
     deletedConesCount,
     deletedBoxesCount,
-    message: `Lot ${lot} deleted: ${deletedConesCount} cones, ${deletedBoxesCount} boxes removed; lot removed from PO.`,
+    message: `Lot ${lot} removed: ${deletedConesCount} cone(s), ${deletedBoxesCount} box(es) archived; lot removed from PO.`,
   };
 };
 

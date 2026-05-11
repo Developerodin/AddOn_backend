@@ -153,6 +153,13 @@ const yarnBoxSchema = mongoose.Schema(
       default: false,
     },
     coneData: coneDataSchema,
+    /** Set when stock is returned to supplier — row kept for audit; excluded from active stock queries. */
+    returnedToVendorAt: { type: Date, default: null },
+    vendorReturnId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'YarnPoVendorReturn',
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -214,6 +221,9 @@ yarnBoxSchema.pre('save', async function (next) {
  * This ensures inventory is updated automatically when boxes are stored
  */
 yarnBoxSchema.post('save', async function (doc) {
+  if (doc.returnedToVendorAt != null) {
+    return;
+  }
   // Only process if box is stored in long-term storage with QC approval
   const isLongTermStorage = doc.storageLocation && LT_STORAGE_PATTERN.test(doc.storageLocation);
   const isStored = doc.storedStatus === true;
@@ -371,6 +381,7 @@ yarnBoxSchema.post('save', async function (doc) {
 yarnBoxSchema.index({ storageLocation: 1, storedStatus: 1 });
 yarnBoxSchema.index({ yarnName: 1, storageLocation: 1 });
 yarnBoxSchema.index({ boxId: 1 });
+yarnBoxSchema.index({ poNumber: 1, returnedToVendorAt: 1 });
 
 yarnBoxSchema.plugin(toJSON);
 yarnBoxSchema.plugin(paginate);

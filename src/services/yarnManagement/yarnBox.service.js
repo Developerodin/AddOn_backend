@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { YarnBox, YarnCone, YarnPurchaseOrder } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import { LT_SECTION_CODES } from '../../models/storageManagement/storageSlot.model.js';
+import { activeYarnBoxMatch, activeYarnConeMatch } from './yarnStockActiveFilters.js';
 
 const LT_STORAGE_PATTERN = new RegExp(`^(LT-|${LT_SECTION_CODES.map((s) => `${s}-`).join('|')})`, 'i');
 // Hide only boxes that are explicitly consumed (fully converted to cones and emptied).
@@ -12,6 +13,7 @@ const ACTIVE_BOX_FILTER = {
     { 'coneData.conesIssued': { $ne: true } },
     { boxWeight: { $gt: 0 } },
   ],
+  ...activeYarnBoxMatch,
 };
 
 /**
@@ -21,6 +23,7 @@ const ACTIVE_BOX_FILTER = {
  * @returns {boolean}
  */
 export const isYarnBoxActiveForProcessing = (box) => {
+  if (box?.returnedToVendorAt) return false;
   const conesIssued = box?.coneData?.conesIssued === true;
   const w = Number(box?.boxWeight ?? 0);
   return !conesIssued || w > 0;
@@ -31,7 +34,7 @@ export const createYarnBox = async (yarnBoxBody) => {
     const autoBoxId = `BOX-${Date.now()}`;
     yarnBoxBody.boxId = autoBoxId;
   } else {
-    const existingBox = await YarnBox.findOne({ boxId: yarnBoxBody.boxId });
+    const existingBox = await YarnBox.findOne({ boxId: yarnBoxBody.boxId, ...activeYarnBoxMatch });
     if (existingBox) {
       throw new ApiError(httpStatus.BAD_REQUEST, 'Box ID already exists');
     }
@@ -39,7 +42,7 @@ export const createYarnBox = async (yarnBoxBody) => {
 
   // Only check for existing barcode if provided (otherwise it will be auto-generated)
   if (yarnBoxBody.barcode) {
-    const existingBarcode = await YarnBox.findOne({ barcode: yarnBoxBody.barcode });
+    const existingBarcode = await YarnBox.findOne({ barcode: yarnBoxBody.barcode, ...activeYarnBoxMatch });
     if (existingBarcode) {
       throw new ApiError(httpStatus.BAD_REQUEST, 'Barcode already exists');
     }
@@ -79,9 +82,11 @@ export const getYarnBoxByBarcode = async (barcode, options = {}) => {
 
   // Cone barcodes are ObjectId-shaped strings; resolve parent box by boxId (always, for ST/process flows)
   if (!yarnBox) {
-    const cone = await YarnCone.findOne({ barcode: trimmed }).select('boxId').lean();
+    const coneQuery =
+      includeInactive === true ? { barcode: trimmed } : { barcode: trimmed, ...activeYarnConeMatch };
+    const cone = await YarnCone.findOne(coneQuery).select('boxId').lean();
     if (cone?.boxId) {
-      yarnBox = await YarnBox.findOne({ boxId: cone.boxId }).lean();
+      yarnBox = await YarnBox.findOne({ boxId: cone.boxId, ...activePart }).lean();
     }
   }
 
@@ -156,6 +161,7 @@ export const updateYarnBoxById = async (yarnBoxId, updateBody) => {
   const hasShortTermCones = await YarnCone.exists({
     boxId: yarnBox.boxId,
     coneStorageId: { $exists: true, $nin: [null, ''] },
+    ...activeYarnConeMatch,
   });
   if (hasShortTermCones) {
     const willSetStorageLocation =
@@ -191,14 +197,22 @@ export const updateYarnBoxById = async (yarnBoxId, updateBody) => {
   }
 
   if (updateBody.boxId && updateBody.boxId !== yarnBox.boxId) {
-    const existingBox = await YarnBox.findOne({ boxId: updateBody.boxId, _id: { $ne: yarnBoxId } });
+    const existingBox = await YarnBox.findOne({
+      boxId: updateBody.boxId,
+      _id: { $ne: yarnBoxId },
+      ...activeYarnBoxMatch,
+    });
     if (existingBox) {
       throw new ApiError(httpStatus.BAD_REQUEST, 'Box ID already exists');
     }
   }
 
   if (updateBody.barcode && updateBody.barcode !== yarnBox.barcode) {
-    const existingBarcode = await YarnBox.findOne({ barcode: updateBody.barcode, _id: { $ne: yarnBoxId } });
+    const existingBarcode = await YarnBox.findOne({
+      barcode: updateBody.barcode,
+      _id: { $ne: yarnBoxId },
+      ...activeYarnBoxMatch,
+    });
     if (existingBarcode) {
       throw new ApiError(httpStatus.BAD_REQUEST, 'Barcode already exists');
     }
@@ -224,7 +238,7 @@ export const updateYarnBoxById = async (yarnBoxId, updateBody) => {
     if (yarnCatalogId != null) set.yarnCatalogId = yarnCatalogId;
     if (shadeCode != null) set.shadeCode = shadeCode;
     if (Object.keys(set).length === 0) return;
-    await YarnCone.updateMany({ boxId }, { $set: set });
+    await YarnCone.updateMany({ boxId, ...activeYarnConeMatch }, { $set: set });
   };
 
   const after = {
@@ -357,7 +371,7 @@ export const bulkCreateYarnBoxes = async (bulkData) => {
     }
 
     // Check if boxes already exist for this specific lot
-    const existingCount = await YarnBox.countDocuments({ poNumber, lotNumber });
+    const existingCount = await YarnBox.countDocuments({ poNumber, lotNumber, ...activeYarnBoxMatch });
     
     if (existingCount > 0) {
       // Skip this lot - boxes already exist
@@ -397,9 +411,10 @@ export const bulkCreateYarnBoxes = async (bulkData) => {
 
   // If no boxes to create (all lots already exist), return early
   if (boxesToCreate.length === 0) {
-    const existingBoxes = await YarnBox.find({ 
-      poNumber, 
-      lotNumber: { $in: Object.keys(existingBoxesByLot) } 
+    const existingBoxes = await YarnBox.find({
+      poNumber,
+      lotNumber: { $in: Object.keys(existingBoxesByLot) },
+      ...activeYarnBoxMatch,
     }).sort({ createdAt: -1 });
     
     return {
@@ -462,6 +477,7 @@ export const bulkMatchUpdateYarnBoxes = async (payload) => {
       shadeCode: (item.shadeCode || '').trim(),
       boxWeight: Number(item.boxWeight),
       numberOfCones: Number(item.numberOfCones),
+      ...activeYarnBoxMatch,
     };
     const newBarcode = (item.barcode || '').trim();
     const newBoxId = (item.boxId || '').trim();
@@ -478,14 +494,22 @@ export const bulkMatchUpdateYarnBoxes = async (payload) => {
 
     const box = boxes[0];
     if (newBarcode !== box.barcode) {
-      const existingBarcode = await YarnBox.findOne({ barcode: newBarcode, _id: { $ne: box._id } });
+      const existingBarcode = await YarnBox.findOne({
+        barcode: newBarcode,
+        _id: { $ne: box._id },
+        ...activeYarnBoxMatch,
+      });
       if (existingBarcode) {
         failed.push({ index: i, match: matchFilter, reason: 'barcode_already_exists', barcode: newBarcode });
         continue;
       }
     }
     if (newBoxId !== box.boxId) {
-      const existingBoxId = await YarnBox.findOne({ boxId: newBoxId, _id: { $ne: box._id } });
+      const existingBoxId = await YarnBox.findOne({
+        boxId: newBoxId,
+        _id: { $ne: box._id },
+        ...activeYarnBoxMatch,
+      });
       if (existingBoxId) {
         failed.push({ index: i, match: matchFilter, reason: 'box_id_already_exists', boxId: newBoxId });
         continue;
@@ -626,6 +650,7 @@ export const bulkSetBoxStorageLocation = async (payload) => {
           { storageLocation: '' },
         ],
       },
+      activeYarnBoxMatch,
     ],
   };
 
@@ -646,8 +671,8 @@ export const updateQcStatusByPoNumber = async (poNumber, qcStatus, qcData = {}) 
     throw new ApiError(httpStatus.BAD_REQUEST, `Status must be one of: ${validStatuses.join(', ')}`);
   }
 
-  // Find all boxes for this PO number
-  const boxes = await YarnBox.find({ poNumber });
+  // Find all active (non–vendor-returned) boxes for this PO number
+  const boxes = await YarnBox.find({ poNumber, ...activeYarnBoxMatch });
   
   if (boxes.length === 0) {
     throw new ApiError(httpStatus.NOT_FOUND, `No boxes found for PO number: ${poNumber}`);
@@ -673,14 +698,11 @@ export const updateQcStatusByPoNumber = async (poNumber, qcStatus, qcData = {}) 
     updateFields['qcData.mediaUrl'] = qcData.mediaUrl;
   }
 
-  // Update QC data for all boxes
-  const updateResult = await YarnBox.updateMany(
-    { poNumber },
-    { $set: updateFields }
-  );
+  // Update QC data for active boxes only
+  const updateResult = await YarnBox.updateMany({ poNumber, ...activeYarnBoxMatch }, { $set: updateFields });
 
   // Fetch updated boxes
-  const updatedBoxes = await YarnBox.find({ poNumber });
+  const updatedBoxes = await YarnBox.find({ poNumber, ...activeYarnBoxMatch });
 
   // If QC was approved, trigger inventory sync for boxes stored in long-term storage
   // Note: updateMany doesn't trigger post-save hooks, so we need to handle this manually
@@ -726,7 +748,11 @@ export const resetBoxesWeightToZeroIfStConesPresent = async ({ poNumber, dryRun 
     throw new ApiError(httpStatus.BAD_REQUEST, 'poNumber is required');
   }
 
-  const boxes = await YarnBox.find({ poNumber: normalizedPo, boxWeight: { $gt: 0 } })
+  const boxes = await YarnBox.find({
+    poNumber: normalizedPo,
+    boxWeight: { $gt: 0 },
+    ...activeYarnBoxMatch,
+  })
     .select('_id boxId boxWeight numberOfCones coneData storageLocation storedStatus')
     .lean();
 
@@ -750,6 +776,7 @@ export const resetBoxesWeightToZeroIfStConesPresent = async ({ poNumber, dryRun 
     const stConeCount = await YarnCone.countDocuments({
       boxId,
       coneStorageId: { $exists: true, $nin: [null, ''] },
+      ...activeYarnConeMatch,
     });
 
     if (stConeCount > 0 && stConeCount >= expectedCones) {
@@ -812,6 +839,7 @@ export const backfillLtBoxWeightFromStCones = async ({ dryRun = false, limit, on
   const coneMatch = {
     coneStorageId: { $exists: true, $nin: [null, ''] },
     coneWeight: { $gt: 0 },
+    ...activeYarnConeMatch,
     ...(normalizedOnly ? { boxId: normalizedOnly } : {}),
   };
 
@@ -852,6 +880,7 @@ export const backfillLtBoxWeightFromStCones = async ({ dryRun = false, limit, on
     boxId: { $in: boxIds },
     boxWeight: { $gt: 0 },
     storageLocation: { $exists: true, $ne: '' },
+    ...activeYarnBoxMatch,
   }).select('_id boxId boxWeight initialBoxWeight storageLocation storedStatus coneData');
 
   if (max > 0) q = q.limit(max);

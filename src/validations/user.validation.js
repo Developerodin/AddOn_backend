@@ -71,6 +71,7 @@ const createUser = {
           'Purchase Order': Joi.boolean(),
           'Purchase Order Recevied': Joi.boolean(),
           'Draft POs': Joi.boolean(),
+          'PO Return': Joi.boolean(),
           'GRN History': Joi.boolean(),
           'Yarn QC': Joi.boolean(),
           'Yarn Storage': Joi.boolean()
@@ -192,6 +193,7 @@ const updateUser = {
             'Purchase Order': Joi.boolean(),
             'Purchase Order Recevied': Joi.boolean(),
             'Draft POs': Joi.boolean(),
+            'PO Return': Joi.boolean(),
             'GRN History': Joi.boolean(),
             'Yarn QC': Joi.boolean(),
             'Yarn Storage': Joi.boolean()
@@ -284,6 +286,7 @@ const updateUserNavigation = {
             'Purchase Order': Joi.boolean(),
             'Purchase Order Recevied': Joi.boolean(),
             'Draft POs': Joi.boolean(),
+            'PO Return': Joi.boolean(),
             'GRN History': Joi.boolean(),
             'Yarn QC': Joi.boolean(),
             'Yarn Storage': Joi.boolean()

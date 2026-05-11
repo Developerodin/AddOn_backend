@@ -7,9 +7,13 @@ import {
   yarnConeReturnStatuses,
   yarnConeUnavailableIssueStatuses,
 } from '../../models/yarnReq/yarnCone.model.js';
+import { activeYarnConeMatch, activeYarnBoxMatch } from './yarnStockActiveFilters.js';
 
 export const createYarnCone = async (yarnConeBody) => {
-  const existingBarcode = await YarnCone.findOne({ barcode: yarnConeBody.barcode });
+  const existingBarcode = await YarnCone.findOne({
+    barcode: yarnConeBody.barcode,
+    ...activeYarnConeMatch,
+  });
   if (existingBarcode) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Barcode already exists');
   }
@@ -32,8 +36,19 @@ export const updateYarnConeById = async (yarnConeId, updateBody) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Yarn cone not found');
   }
 
+  if (yarnCone.returnedToVendorAt) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'This yarn cone is archived (vendor return) and cannot be updated.'
+    );
+  }
+
   if (updateBody.barcode && updateBody.barcode !== yarnCone.barcode) {
-    const existingBarcode = await YarnCone.findOne({ barcode: updateBody.barcode, _id: { $ne: yarnConeId } });
+    const existingBarcode = await YarnCone.findOne({
+      barcode: updateBody.barcode,
+      _id: { $ne: yarnConeId },
+      ...activeYarnConeMatch,
+    });
     if (existingBarcode) {
       throw new ApiError(httpStatus.BAD_REQUEST, 'Barcode already exists');
     }
@@ -52,16 +67,38 @@ export const updateYarnConeById = async (yarnConeId, updateBody) => {
   return yarnCone;
 };
 
-export const getYarnConeByBarcode = async (barcode) => {
-  const yarnCone = await YarnCone.findOne({ barcode })
+/**
+ * Load a yarn cone by barcode.
+ * @param {string} barcode - Cone barcode
+ * @param {{ includeInactive?: boolean|string }} [options] - When true, include vendor-returned (archived) cones
+ * @returns {Promise<Object>}
+ */
+export const getYarnConeByBarcode = async (barcode, options = {}) => {
+  const trimmed = String(barcode || '').trim();
+  const includeInactive =
+    options.includeInactive === true ||
+    options.includeInactive === 'true' ||
+    options.includeInactive === '1';
+  const activePart = includeInactive ? {} : activeYarnConeMatch;
+
+  let yarnCone = await YarnCone.findOne({ barcode: trimmed, ...activePart })
     .populate({
       path: 'yarnCatalogId',
       select: '_id yarnName yarnType status',
     })
     .lean();
 
+  if (!yarnCone && includeInactive) {
+    yarnCone = await YarnCone.findOne({ barcode: trimmed })
+      .populate({
+        path: 'yarnCatalogId',
+        select: '_id yarnName yarnType status',
+      })
+      .lean();
+  }
+
   if (!yarnCone) {
-    throw new ApiError(httpStatus.NOT_FOUND, `Yarn cone with barcode ${barcode} not found`);
+    throw new ApiError(httpStatus.NOT_FOUND, `Yarn cone with barcode ${trimmed} not found`);
   }
 
   return yarnCone;
@@ -85,6 +122,7 @@ export const getShortTermConesByBoxId = async (boxId) => {
     boxId: trimmed,
     coneStorageId: { $exists: true, $nin: [null, ''] },
     issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
+    ...activeYarnConeMatch,
   })
     .populate({ path: 'yarnCatalogId', select: '_id yarnName yarnType status' })
     .sort({ createdAt: -1 })
@@ -102,6 +140,7 @@ export const getConesByStorageLocation = async (storageLocation) => {
   const escaped = String(storageLocation).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const cones = await YarnCone.find({
     coneStorageId: { $regex: new RegExp(`^${escaped}$`, 'i') },
+    ...activeYarnConeMatch,
   })
     .populate({ path: 'yarnCatalogId', select: '_id yarnName yarnType status' })
     .sort({ createdAt: -1 })
@@ -116,6 +155,7 @@ export const getConesByStorageLocation = async (storageLocation) => {
  */
 export const getConesWithoutStorageLocation = async () => {
   const cones = await YarnCone.find({
+    ...activeYarnConeMatch,
     $or: [
       { coneStorageId: { $exists: false } },
       { coneStorageId: null },
@@ -164,6 +204,7 @@ export const bulkSetConeStorageLocation = async (payload) => {
           { coneStorageId: '' },
         ],
       },
+      activeYarnConeMatch,
     ],
   };
 
@@ -180,7 +221,8 @@ export const bulkSetConeStorageLocation = async (payload) => {
 };
 
 export const queryYarnCones = async (filters = {}) => {
-  const mongooseFilter = {};
+  const includeInactive = filters.include_inactive === true || filters.include_inactive === 'true';
+  const mongooseFilter = includeInactive ? {} : { ...activeYarnConeMatch };
 
   if (filters.po_number) {
     mongooseFilter.poNumber = filters.po_number;
@@ -238,17 +280,17 @@ export const queryYarnCones = async (filters = {}) => {
 };
 
 export const generateConesByBox = async (boxId, options = {}) => {
-  const yarnBox = await YarnBox.findOne({ boxId });
+  const yarnBox = await YarnBox.findOne({ boxId, ...activeYarnBoxMatch });
 
   if (!yarnBox) {
     throw new ApiError(httpStatus.NOT_FOUND, `Yarn box not found for boxId: ${boxId}`);
   }
 
-  const existingConeCount = await YarnCone.countDocuments({ boxId: yarnBox.boxId });
+  const existingConeCount = await YarnCone.countDocuments({ boxId: yarnBox.boxId, ...activeYarnConeMatch });
   const force = Boolean(options.force);
 
   if (existingConeCount > 0 && !force) {
-    const existingCones = await YarnCone.find({ boxId: yarnBox.boxId }).lean();
+    const existingCones = await YarnCone.find({ boxId: yarnBox.boxId, ...activeYarnConeMatch }).lean();
     const boxData = yarnBox.toObject();
 
     return {
@@ -260,7 +302,7 @@ export const generateConesByBox = async (boxId, options = {}) => {
   }
 
   if (existingConeCount > 0 && force) {
-    await YarnCone.deleteMany({ boxId: yarnBox.boxId });
+    await YarnCone.deleteMany({ boxId: yarnBox.boxId, ...activeYarnConeMatch });
   }
 
   const numberOfCones =
@@ -374,7 +416,7 @@ export const generateConesByBox = async (boxId, options = {}) => {
  */
 export const returnYarnCone = async (barcode, returnData = {}) => {
   // Find cone by barcode
-  const yarnCone = await YarnCone.findOne({ barcode });
+  const yarnCone = await YarnCone.findOne({ barcode, ...activeYarnConeMatch });
   
   if (!yarnCone) {
     throw new ApiError(httpStatus.NOT_FOUND, `Yarn cone with barcode ${barcode} not found`);

@@ -96,6 +96,11 @@ const yarnTransactionSchema = mongoose.Schema(
       trim: true,
       lowercase: true,
     },
+    /** Floor-issue batch (linking/sampling); links rows from POST /yarn-cones/floor-issue-batch. */
+    issueBatchId: {
+      type: String,
+      trim: true,
+    },
   },
   {
     timestamps: true,
@@ -104,6 +109,8 @@ const yarnTransactionSchema = mongoose.Schema(
 
 // List + sort by date scoped by type (floor issue history, reports, etc.)
 yarnTransactionSchema.index({ transactionType: 1, transactionDate: -1 });
+yarnTransactionSchema.index({ issueBatchId: 1, yarnCatalogId: 1, transactionType: 1 });
+yarnTransactionSchema.index({ issueBatchId: 1, transactionDate: -1 }, { sparse: true });
 // Order-scoped history
 yarnTransactionSchema.index({ orderId: 1, transactionDate: -1 }, { sparse: true });
 

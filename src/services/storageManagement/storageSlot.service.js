@@ -8,6 +8,7 @@ import {
   ST_SECTION_CODE,
 } from '../../models/storageManagement/storageSlot.model.js';
 import { yarnConeUnavailableIssueStatuses } from '../../models/yarnReq/yarnCone.model.js';
+import { activeYarnBoxMatch, activeYarnConeMatch } from '../yarnManagement/yarnStockActiveFilters.js';
 
 const FLOORS_PER_SECTION = 4;
 const MAX_RACKS_PER_ADD = 50;
@@ -168,6 +169,7 @@ export const getStorageSlotsWithContents = async (zone, query = {}) => {
   const boxes = await YarnBox.find({
     storageLocation: { $in: barcodes },
     storedStatus: true,
+    ...activeYarnBoxMatch,
   }).lean();
 
   // Filter out boxes whose cones are FULLY transferred to ST (box effectively empty).
@@ -181,6 +183,7 @@ export const getStorageSlotsWithContents = async (zone, query = {}) => {
       $match: {
         boxId: { $in: boxIds },
         coneStorageId: { $exists: true, $nin: [null, ''] },
+        ...activeYarnConeMatch,
       },
     },
     { $group: { _id: '$boxId', totalConeWeight: { $sum: '$coneWeight' } } },
@@ -206,6 +209,7 @@ export const getStorageSlotsWithContents = async (zone, query = {}) => {
   const cones = await YarnCone.find({
     coneStorageId: { $in: barcodes },
     issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
+    ...activeYarnConeMatch,
   }).lean();
   for (const cone of cones) {
     const loc = cone.coneStorageId;
@@ -306,7 +310,11 @@ export const getStorageContentsByBarcode = async (barcode) => {
   if (zoneCode === STORAGE_ZONES.LONG_TERM) {
     // For long-term storage, return yarn boxes
     // Exclude boxes that have cones in ST storage (boxes are empty, removed from LT)
-    const allBoxes = await YarnBox.find({ storageLocation: barcode, storedStatus: true })
+    const allBoxes = await YarnBox.find({
+      storageLocation: barcode,
+      storedStatus: true,
+      ...activeYarnBoxMatch,
+    })
       .sort({ createdAt: -1 })
       .lean();
 
@@ -318,6 +326,7 @@ export const getStorageContentsByBarcode = async (barcode) => {
       const conesInST = await YarnCone.countDocuments({
         boxId: box.boxId,
         coneStorageId: { $exists: true, $nin: [null, ''] },
+        ...activeYarnConeMatch,
       });
       
       // Only include box if it has no cones in ST (box still has yarn in it)
@@ -382,6 +391,7 @@ export const getStorageContentsByBarcode = async (barcode) => {
     const yarnCones = await YarnCone.find({
       coneStorageId: barcode,
       issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
+      ...activeYarnConeMatch,
     })
       .sort({ createdAt: -1 })
       .lean();
@@ -541,7 +551,7 @@ export const bulkAssignBoxesToSlots = async (payload) => {
       continue;
     }
 
-    const boxes = await YarnBox.find({ barcode: { $in: barcodes } });
+    const boxes = await YarnBox.find({ barcode: { $in: barcodes }, ...activeYarnBoxMatch });
     const foundBarcodes = new Set(boxes.map((b) => b.barcode));
     const missingBarcodes = barcodes.filter((b) => !foundBarcodes.has(b));
 

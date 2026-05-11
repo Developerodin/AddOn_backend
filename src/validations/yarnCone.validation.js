@@ -12,11 +12,21 @@ const userRefSchema = Joi.object()
   })
   .optional();
 
+export const createFloorIssueBatch = {
+  body: Joi.object()
+    .keys({
+      floor: Joi.string().valid('linking', 'sampling').required(),
+    })
+    .required(),
+};
+
 export const issueConeForFloor = {
   body: Joi.object()
     .keys({
       barcode: Joi.string().trim().required(),
       floor: Joi.string().valid('linking', 'sampling').required(),
+      /** Server-generated batch id from POST /yarn-cones/floor-issue-batch */
+      issueBatchId: Joi.string().trim().hex().length(24).required(),
       totalWeight: Joi.number().min(0).required(),
       totalTearWeight: Joi.number().min(0).default(0),
     })

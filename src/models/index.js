@@ -26,9 +26,11 @@ import YarnPurchaseOrder from './yarnReq/yarnPurchaseOrder.model.js';
 import YarnBox from './yarnReq/yarnBox.model.js';
 import YarnCone from './yarnReq/yarnCone.model.js';
 import YarnTransaction from './yarnReq/yarnTransaction.model.js';
+import YarnFloorIssueBatch from './yarnReq/yarnFloorIssueBatch.model.js';
 import YarnInventory from './yarnReq/yarnInventory.model.js';
 import YarnDailyClosingSnapshot from './yarnReq/yarnDailyClosingSnapshot.model.js';
 import YarnGrn from './yarnReq/yarnGrn.model.js';
+import YarnPoVendorReturn from './yarnReq/yarnPoVendorReturn.model.js';
 import StorageSlot from './storageManagement/storageSlot.model.js';
 import Vendor from './vendor.model.js';
 import VendorManagement from './vendorManagement/vendorManagement.model.js';
@@ -65,9 +67,11 @@ export {
   YarnBox,
   YarnCone,
   YarnTransaction,
+  YarnFloorIssueBatch,
   YarnInventory,
   YarnDailyClosingSnapshot,
   YarnGrn,
+  YarnPoVendorReturn,
   StorageSlot,
   Vendor,
   VendorManagement,

@@ -14,6 +14,8 @@ export const yarnPurchaseOrderStatuses = [
   'po_rejected',
   'po_accepted',
   'po_accepted_partially',
+  /** All physical stock for this PO removed via vendor return; ERP cancel still tracked separately. */
+  'returned_to_vendor',
 ];
 
 export const lotStatuses = [
@@ -331,6 +333,28 @@ const yarnPurchaseOrderSchema = mongoose.Schema(
         },
       ],
       default: [],
+    },
+    /** Set when a vendor return is finalized — admin completes cancellation in ERP separately. */
+    vendorReturnRequiresErpCancellation: {
+      type: Boolean,
+      default: false,
+    },
+    lastVendorReturnCancellationIntent: {
+      type: String,
+      enum: ['partial', 'full_po'],
+    },
+    lastVendorReturnId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'YarnPoVendorReturn',
+    },
+    /** Replacement PO reference after goods are received back from supplier. */
+    linkedReplacementPoNumber: {
+      type: String,
+      trim: true,
+    },
+    returnReferenceNotes: {
+      type: String,
+      trim: true,
     },
   },
   {

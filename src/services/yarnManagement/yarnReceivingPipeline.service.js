@@ -1,4 +1,5 @@
 import { YarnBox } from '../../models/index.js';
+import { activeYarnBoxMatch } from './yarnStockActiveFilters.js';
 import * as yarnPurchaseOrderService from './yarnPurchaseOrder.service.js';
 import * as yarnBoxService from './yarnBox.service.js';
 
@@ -291,7 +292,11 @@ export const updateBoxDetails = async ({ poNumber, lots }) => {
   const lotNumbers = (lots || []).map((l) => (l.lotNumber || '').trim()).filter(Boolean);
   const boxesByLot =
     lotNumbers.length > 0
-      ? await YarnBox.find({ poNumber, lotNumber: { $in: lotNumbers } })
+      ? await YarnBox.find({
+          poNumber,
+          lotNumber: { $in: lotNumbers },
+          ...activeYarnBoxMatch,
+        })
           .sort({ lotNumber: 1, createdAt: 1 })
           .lean()
       : [];
@@ -515,7 +520,11 @@ export const runReceivingPipelineForPo = async ({
     const lotNumbers = lots.map((l) => (l.lotNumber || '').trim()).filter(Boolean);
     const boxesByLot =
       lotNumbers.length > 0
-        ? await YarnBox.find({ poNumber, lotNumber: { $in: lotNumbers } })
+        ? await YarnBox.find({
+          poNumber,
+          lotNumber: { $in: lotNumbers },
+          ...activeYarnBoxMatch,
+        })
             .sort({ lotNumber: 1, createdAt: 1 })
             .lean()
         : [];
@@ -738,7 +747,7 @@ export const processFromExistingPo = async ({
     };
 
     // Check if boxes already exist for this PO (idempotency - don't duplicate)
-    const existingBoxes = await YarnBox.countDocuments({ poNumber });
+    const existingBoxes = await YarnBox.countDocuments({ poNumber, ...activeYarnBoxMatch });
     if (existingBoxes > 0) {
       result.message = `PO ${poNumber} already has ${existingBoxes} boxes. Skipping box creation.`;
       result.purchaseOrder = await yarnPurchaseOrderService.getPurchaseOrderById(purchaseOrderId);
@@ -762,7 +771,11 @@ export const processFromExistingPo = async ({
     const lotNumbers = lots.map((l) => l.lotNumber).filter(Boolean);
     const boxesByLot =
       lotNumbers.length > 0
-        ? await YarnBox.find({ poNumber, lotNumber: { $in: lotNumbers } })
+        ? await YarnBox.find({
+          poNumber,
+          lotNumber: { $in: lotNumbers },
+          ...activeYarnBoxMatch,
+        })
             .sort({ lotNumber: 1, createdAt: 1 })
             .lean()
         : [];

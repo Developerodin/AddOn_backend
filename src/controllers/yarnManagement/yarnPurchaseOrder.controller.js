@@ -4,6 +4,7 @@ import pick from '../../utils/pick.js';
 import * as yarnPurchaseOrderService from '../../services/yarnManagement/yarnPurchaseOrder.service.js';
 import * as yarnReceivingPipelineService from '../../services/yarnManagement/yarnReceivingPipeline.service.js';
 import * as yarnGrnService from '../../services/yarnManagement/yarnGrn.service.js';
+import * as yarnPoVendorReturnService from '../../services/yarnManagement/yarnPoVendorReturn.service.js';
 
 export const getPurchaseOrders = catchAsync(async (req, res) => {
   const query = pick(req.query, ['start_date', 'end_date', 'status_code']);
@@ -197,4 +198,72 @@ export const deleteLot = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(result);
 });
 
+/**
+ * Authenticated user for vendor-return audit trails.
+ * @param {import('express').Request} req
+ * @returns {{ username: string, userId: string }}
+ */
+const vendorReturnActor = (req) => ({
+  username: req.user?.email || req.user?.username || 'system',
+  userId: req.user?.id || req.user?._id?.toString?.() || '',
+});
 
+/**
+ * POST vendor return session (scan workflow).
+ */
+export const createVendorReturnSessionController = catchAsync(async (req, res) => {
+  const session = await yarnPoVendorReturnService.createVendorReturnSession({
+    poNumber: req.body.poNumber,
+    remark: req.body.remark,
+    cancellationIntent: req.body.cancellationIntent,
+    user: vendorReturnActor(req),
+  });
+  res.status(httpStatus.CREATED).send(session);
+});
+
+/**
+ * POST add scanned cone barcode to pending list.
+ */
+export const scanVendorReturnSessionBarcode = catchAsync(async (req, res) => {
+  const payload = await yarnPoVendorReturnService.scanVendorReturnBarcode({
+    sessionId: req.params.sessionId,
+    barcode: req.body.barcode,
+  });
+  res.status(httpStatus.OK).send(payload);
+});
+
+/**
+ * DELETE remove a pending barcode from session.
+ */
+export const removeVendorReturnSessionBarcode = catchAsync(async (req, res) => {
+  const session = await yarnPoVendorReturnService.removePendingVendorReturnBarcode({
+    sessionId: req.params.sessionId,
+    barcode: req.query.barcode,
+  });
+  res.status(httpStatus.OK).send(session);
+});
+
+/**
+ * POST finalize vendor return (archive cones, PO patch, inventory sync).
+ */
+export const finalizeVendorReturnSessionController = catchAsync(async (req, res) => {
+  const result = await yarnPoVendorReturnService.finalizeVendorReturnSession({
+    sessionId: req.params.sessionId,
+    idempotencyKey: req.body?.idempotencyKey,
+    user: vendorReturnActor(req),
+  });
+  const status = result.idempotent ? httpStatus.OK : httpStatus.CREATED;
+  res.status(status).send(result);
+});
+
+/**
+ * GET vendor return history (completed returns).
+ */
+export const getVendorReturnHistory = catchAsync(async (req, res) => {
+  const { po_number: poNumber, limit } = req.query;
+  const rows = await yarnPoVendorReturnService.listVendorReturns({
+    poNumber,
+    limit: limit != null ? Number(limit) : undefined,
+  });
+  res.status(httpStatus.OK).send(rows);
+});

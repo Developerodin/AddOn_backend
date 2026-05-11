@@ -19,6 +19,7 @@ export const getYarnTransactions = catchAsync(async (req, res) => {
     'orderno',
     'article_id',
     'article_number',
+    'issue_batch_id',
     'group_by',
     'page',
     'limit',

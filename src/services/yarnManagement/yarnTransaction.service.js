@@ -80,6 +80,10 @@ export const normaliseTransactionPayload = (inputBody) => {
   const numberOfCones = body.numberOfCones ?? body.transactionConeCount;
 
   const catalogId = pickYarnCatalogId(body);
+  const rawBatchId = body.issueBatchId;
+  const issueBatchId =
+    typeof rawBatchId === 'string' && rawBatchId.trim() ? rawBatchId.trim() : undefined;
+
   const payload = {
     yarnCatalogId: catalogId,
     yarnName: body.yarnName,
@@ -99,6 +103,7 @@ export const normaliseTransactionPayload = (inputBody) => {
     conesIdsArray: body.conesIdsArray || [],
     fromStorageLocation: body.fromStorageLocation,
     toStorageLocation: body.toStorageLocation,
+    ...(issueBatchId ? { issueBatchId } : {}),
   };
 
   if (isBlocked) {
@@ -457,6 +462,13 @@ export const queryYarnTransactions = async (filters = {}) => {
     }
   }
 
+  if (filters.issue_batch_id) {
+    const ib = String(filters.issue_batch_id).trim();
+    if (ib) {
+      mongooseFilter.issueBatchId = ib;
+    }
+  }
+
   const light =
     filters.light === true ||
     filters.light === 'true' ||
@@ -465,7 +477,7 @@ export const queryYarnTransactions = async (filters = {}) => {
 
   /** Fields needed for floor-issue history / exports (skip heavy joins). */
   const LIGHT_SELECT =
-    '_id transactionType transactionDate yarnName transactionNetWeight transactionTotalWeight transactionTearWeight transactionConeCount conesIdsArray issuedByEmail createdAt';
+    '_id transactionType transactionDate yarnName transactionNetWeight transactionTotalWeight transactionTearWeight transactionConeCount conesIdsArray issuedByEmail issueBatchId createdAt';
 
   const applyPopulateAndSort = (q) => {
     let chain = light ? q.select(LIGHT_SELECT) : q;

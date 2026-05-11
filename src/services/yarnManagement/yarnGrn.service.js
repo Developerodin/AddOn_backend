@@ -2,6 +2,7 @@ import httpStatus from 'http-status';
 import mongoose from 'mongoose';
 import { YarnGrn, YarnPurchaseOrder, YarnBox } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
+import { activeYarnBoxMatch } from './yarnStockActiveFilters.js';
 import {
   buildSnapshot,
   computeSnapshotDiff,
@@ -458,7 +459,11 @@ export const countBoxesForGrn = async (grn) => {
   if (!grn?.poNumber || !Array.isArray(grn.lots) || grn.lots.length === 0) return 0;
   const lotNumbers = grn.lots.map((l) => l.lotNumber).filter(Boolean);
   if (!lotNumbers.length) return 0;
-  return YarnBox.countDocuments({ poNumber: grn.poNumber, lotNumber: { $in: lotNumbers } });
+  return YarnBox.countDocuments({
+    poNumber: grn.poNumber,
+    lotNumber: { $in: lotNumbers },
+    ...activeYarnBoxMatch,
+  });
 };
 
 export { lotMaterialChange };

@@ -97,6 +97,7 @@ export const getYarnTransactions = {
     orderno: Joi.string().trim().optional(),
     article_id: Joi.string().custom(objectId).optional(),
     article_number: Joi.string().trim().optional(),
+    issue_batch_id: Joi.string().trim().optional(),
     group_by: Joi.string().valid('article', 'yarn').optional(),
     page: Joi.number().integer().min(1).optional(),
     limit: Joi.number().integer().min(1).max(100).optional(),

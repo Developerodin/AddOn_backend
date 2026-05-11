@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { YarnBox, YarnCone, YarnTransaction } from '../../models/index.js';
 import { LT_SECTION_CODES } from '../../models/storageManagement/storageSlot.model.js';
 import { yarnConeUnavailableIssueStatuses } from '../../models/yarnReq/yarnCone.model.js';
+import { activeYarnBoxMatch, activeYarnConeMatch } from './yarnStockActiveFilters.js';
 
 const toNum = (v) => Number(v ?? 0);
 const LT_STORAGE_PATTERN = new RegExp(`^(LT-|${LT_SECTION_CODES.map((s) => `${s}-`).join('|')})`, 'i');
@@ -21,7 +22,7 @@ export async function getPoBoxAuditReport({ poNumber }) {
   const normalizedPo = String(poNumber || '').trim();
   if (!normalizedPo) throw new Error('poNumber is required');
 
-  const boxes = await YarnBox.find({ poNumber: normalizedPo })
+  const boxes = await YarnBox.find({ poNumber: normalizedPo, ...activeYarnBoxMatch })
     .select('boxId poNumber lotNumber yarnName shadeCode boxWeight tearweight grossWeight storageLocation storedStatus coneData createdAt updatedAt')
     .sort({ createdAt: 1 })
     .lean();
@@ -36,6 +37,7 @@ export async function getPoBoxAuditReport({ poNumber }) {
           boxId: { $in: boxIds },
           coneStorageId: { $exists: true, $nin: [null, ''] },
           issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
+          ...activeYarnConeMatch,
         },
       },
       {

@@ -68,6 +68,12 @@ router
   );
 
 router.post(
+  '/floor-issue-batch',
+  validate(yarnConeValidation.createFloorIssueBatch),
+  yarnConeController.createFloorIssueBatch
+);
+
+router.post(
   '/issue-for-floor',
   validate(yarnConeValidation.issueConeForFloor),
   yarnConeController.issueConeForFloor

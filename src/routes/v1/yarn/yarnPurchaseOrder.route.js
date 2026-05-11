@@ -6,6 +6,38 @@ import * as yarnPurchaseOrderController from '../../../controllers/yarnManagemen
 const router = express.Router();
 
 router
+  .route('/vendor-return/history')
+  .get(
+    validate(yarnPurchaseOrderValidation.vendorReturnHistory),
+    yarnPurchaseOrderController.getVendorReturnHistory
+  );
+
+router
+  .route('/vendor-return/sessions')
+  .post(
+    validate(yarnPurchaseOrderValidation.vendorReturnSessionCreate),
+    yarnPurchaseOrderController.createVendorReturnSessionController
+  );
+
+router
+  .route('/vendor-return/sessions/:sessionId/scan')
+  .post(
+    validate(yarnPurchaseOrderValidation.vendorReturnSessionScan),
+    yarnPurchaseOrderController.scanVendorReturnSessionBarcode
+  )
+  .delete(
+    validate(yarnPurchaseOrderValidation.vendorReturnSessionRemoveScan),
+    yarnPurchaseOrderController.removeVendorReturnSessionBarcode
+  );
+
+router
+  .route('/vendor-return/sessions/:sessionId/finalize')
+  .post(
+    validate(yarnPurchaseOrderValidation.vendorReturnSessionFinalize),
+    yarnPurchaseOrderController.finalizeVendorReturnSessionController
+  );
+
+router
   .route('/')
   .get(
     validate(yarnPurchaseOrderValidation.getPurchaseOrders),

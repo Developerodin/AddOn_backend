@@ -403,4 +403,57 @@ export const deleteLot = {
     .required(),
 };
 
+/** POST start vendor-return scan session */
+export const vendorReturnSessionCreate = {
+  body: Joi.object()
+    .keys({
+      poNumber: Joi.string().trim().required(),
+      remark: Joi.string().trim().allow('', null).optional().default(''),
+      cancellationIntent: Joi.string().valid('partial', 'full_po').required(),
+    })
+    .required(),
+};
 
+/** POST append barcode to session */
+export const vendorReturnSessionScan = {
+  params: Joi.object().keys({
+    sessionId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object()
+    .keys({
+      barcode: Joi.string().trim().required(),
+    })
+    .required(),
+};
+
+/** DELETE pending barcode */
+export const vendorReturnSessionRemoveScan = {
+  params: Joi.object().keys({
+    sessionId: Joi.string().custom(objectId).required(),
+  }),
+  query: Joi.object().keys({
+    barcode: Joi.string().trim().required(),
+  }),
+};
+
+/** POST finalize session */
+export const vendorReturnSessionFinalize = {
+  params: Joi.object().keys({
+    sessionId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object()
+    .keys({
+      idempotencyKey: Joi.string().trim().max(200).optional(),
+    })
+    .default({}),
+};
+
+/** GET vendor return history */
+export const vendorReturnHistory = {
+  query: Joi.object()
+    .keys({
+      po_number: Joi.string().trim().optional(),
+      limit: Joi.number().integer().min(1).max(200).optional(),
+    })
+    .required(),
+};

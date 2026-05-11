@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { YarnBox, YarnCone, YarnCatalog } from '../../models/index.js';
 import { yarnConeUnavailableIssueStatuses } from '../../models/yarnReq/yarnCone.model.js';
+import { activeYarnBoxMatch, activeYarnConeMatch } from './yarnStockActiveFilters.js';
 
 const toNum = (v) => Number(v ?? 0);
 
@@ -11,11 +12,16 @@ const toNum = (v) => Number(v ?? 0);
 export const getYarnIdsWithPhysicalStock = async () => {
   const ids = new Set();
   const [boxNames, boxCatalogIds, coneYarns, catalogAll] = await Promise.all([
-    YarnBox.distinct('yarnName', { boxWeight: { $gt: 0 } }),
-    YarnBox.distinct('yarnCatalogId', { boxWeight: { $gt: 0 }, yarnCatalogId: { $exists: true, $ne: null } }),
+    YarnBox.distinct('yarnName', { boxWeight: { $gt: 0 }, ...activeYarnBoxMatch }),
+    YarnBox.distinct('yarnCatalogId', {
+      boxWeight: { $gt: 0 },
+      yarnCatalogId: { $exists: true, $ne: null },
+      ...activeYarnBoxMatch,
+    }),
     YarnCone.distinct('yarnCatalogId', {
       coneStorageId: { $exists: true, $nin: [null, ''] },
       issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
+      ...activeYarnConeMatch,
     }),
     YarnCatalog.find({}).select('_id yarnName').lean(),
   ]);
@@ -49,7 +55,7 @@ export const computePhysicalKgMap = async (yarnIds, catalogMap) => {
     if (c?.yarnName) yarnNameToId.set(c.yarnName.trim().toLowerCase(), id);
   });
 
-  const allBoxes = await YarnBox.find({ boxWeight: { $gt: 0 } })
+  const allBoxes = await YarnBox.find({ boxWeight: { $gt: 0 }, ...activeYarnBoxMatch })
     .select('yarnName boxWeight tearweight')
     .lean();
 
@@ -65,6 +71,7 @@ export const computePhysicalKgMap = async (yarnIds, catalogMap) => {
     yarnCatalogId: { $in: objectIds },
     coneStorageId: { $exists: true, $nin: [null, ''] },
     issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
+    ...activeYarnConeMatch,
   })
     .select('yarnCatalogId coneWeight tearWeight')
     .lean();

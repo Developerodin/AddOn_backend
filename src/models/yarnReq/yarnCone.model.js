@@ -5,15 +5,14 @@ import YarnCatalog from '../yarnManagement/yarnCatalog.model.js';
 import YarnInventory from './yarnInventory.model.js';
 import YarnBox from './yarnBox.model.js';
 
-export const yarnConeIssueStatuses = ['issued', 'not_issued', 'used'];
+export const yarnConeIssueStatuses = ['issued', 'not_issued', 'used', 'returned_to_vendor'];
 export const yarnConeReturnStatuses = ['returned', 'not_returned'];
 
 /**
- * Issue statuses considered to make a cone unavailable for the short-term
- * inventory pool: issued cones are out for production; used cones are
- * empty-returned and cannot be reused.
+ * Issue statuses that exclude a cone from the short-term inventory pool:
+ * issued (floor), used (empty), returned_to_vendor (shipped back to supplier).
  */
-export const yarnConeUnavailableIssueStatuses = ['issued', 'used'];
+export const yarnConeUnavailableIssueStatuses = ['issued', 'used', 'returned_to_vendor'];
 
 const issuedBySchema = mongoose.Schema(
   {
@@ -123,6 +122,13 @@ const yarnConeSchema = mongoose.Schema(
       trim: true,
       unique: true,
     },
+    /** Set when stock is returned to supplier — row kept for audit; excluded from active stock queries. */
+    returnedToVendorAt: { type: Date, default: null },
+    vendorReturnId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'YarnPoVendorReturn',
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -168,6 +174,9 @@ yarnConeSchema.pre('save', async function (next) {
  * (Any non-empty coneStorageId = cone is in short-term / slot storage.)
  */
 yarnConeSchema.post('save', async function (doc) {
+  if (doc.returnedToVendorAt != null) {
+    return;
+  }
   const hasStorage = doc.coneStorageId != null && String(doc.coneStorageId).trim() !== '';
   const isAvailable = !yarnConeUnavailableIssueStatuses.includes(doc.issueStatus);
   const hasWeight = doc.coneWeight && doc.coneWeight > 0;
@@ -247,6 +256,7 @@ yarnConeSchema.post('save', async function (doc) {
       coneStorageId: { $exists: true, $nin: [null, ''] },
       issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
       yarnCatalogId: yarnCatalog._id,
+      returnedToVendorAt: null,
     }).lean();
 
     let stTotalWeight = 0;
@@ -295,11 +305,12 @@ yarnConeSchema.post('save', async function (doc) {
     // If cone has storage and has a boxId, reduce LT remaining weight and possibly mark box as fully transferred.
     if (doc.boxId && hasStorage) {
       try {
-        const box = await YarnBox.findOne({ boxId: doc.boxId });
+        const box = await YarnBox.findOne({ boxId: doc.boxId, returnedToVendorAt: null });
         if (box) {
           const conesInST = await mongoose.model('YarnCone').find({
             boxId: doc.boxId,
             coneStorageId: { $exists: true, $nin: [null, ''] },
+            returnedToVendorAt: null,
           }).lean();
           const totalConesInST = conesInST.length;
           const totalConeWeight = conesInST.reduce((sum, c) => sum + (c.coneWeight || 0), 0);
@@ -343,6 +354,7 @@ yarnConeSchema.index({ coneStorageId: 1, issueStatus: 1 });
 yarnConeSchema.index({ yarnName: 1, coneStorageId: 1 });
 yarnConeSchema.index({ boxId: 1, coneStorageId: 1 });
 yarnConeSchema.index({ yarnCatalogId: 1, coneStorageId: 1, issueStatus: 1 });
+yarnConeSchema.index({ poNumber: 1, returnedToVendorAt: 1 });
 
 yarnConeSchema.plugin(toJSON);
 yarnConeSchema.plugin(paginate);

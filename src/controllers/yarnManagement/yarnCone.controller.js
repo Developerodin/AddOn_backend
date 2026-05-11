@@ -6,6 +6,18 @@ import * as yarnConeService from '../../services/yarnManagement/yarnCone.service
 
 import * as yarnConeFloorIssueService from '../../services/yarnManagement/yarnConeFloorIssue.service.js';
 
+export const createFloorIssueBatch = catchAsync(async (req, res) => {
+  const email = req.user?.email;
+  if (!email) {
+    throw new ApiError(httpStatus.UNAUTHORIZED, 'Authentication required to create a floor issue batch.');
+  }
+  const batch = await yarnConeFloorIssueService.createFloorIssueBatch({
+    floor: req.body.floor,
+    issuedByEmail: email,
+  });
+  res.status(httpStatus.CREATED).send(batch);
+});
+
 export const issueConeForFloor = catchAsync(async (req, res) => {
   const email = req.user?.email;
   if (!email) {

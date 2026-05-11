@@ -6,6 +6,7 @@ import pick from '../../utils/pick.js';
 import { pickYarnCatalogId } from '../../utils/yarnCatalogRef.js';
 import { STORAGE_ZONES, ST_SECTION_CODE, LT_SECTION_CODES } from '../../models/storageManagement/storageSlot.model.js';
 import { yarnConeUnavailableIssueStatuses } from '../../models/yarnReq/yarnCone.model.js';
+import { activeYarnBoxMatch, activeYarnConeMatch } from './yarnStockActiveFilters.js';
 
 /** LT: legacy LT-* OR slot barcodes B7-02-, B7-03-, B7-04-, B7-05- (from StorageSlot) */
 const LT_STORAGE_REGEX = { $regex: new RegExp(`^(LT-|${LT_SECTION_CODES.map((s) => `${s}-`).join('|')})`, 'i') };
@@ -100,6 +101,7 @@ const recalculateInventoryFromStorage = async (inventory) => {
     storageLocation: LT_STORAGE_REGEX,
     storedStatus: true,
     'qcData.status': 'qc_approved',
+    ...activeYarnBoxMatch,
   };
   const ltBoxes = await YarnBox.find(ltBoxQuery).lean();
 
@@ -119,6 +121,7 @@ const recalculateInventoryFromStorage = async (inventory) => {
   const stConeQuery = {
     coneStorageId: { $exists: true, $nin: [null, ''] },
     issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
+    ...activeYarnConeMatch,
   };
   if (yarnId) {
     stConeQuery.$or = [{ yarnCatalogId: yarnId }, { yarnName: inventory.yarnName }];
@@ -147,6 +150,7 @@ const recalculateInventoryFromStorage = async (inventory) => {
     storedStatus: true,
     'qcData.status': 'qc_approved',
     boxId: { $nin: Array.from(boxIdsWithCones) },
+    ...activeYarnBoxMatch,
   };
   const stBoxes = await YarnBox.find(stBoxQuery).lean();
   for (const box of stBoxes) {
@@ -207,6 +211,37 @@ const recalculateInventoryFromStorage = async (inventory) => {
 };
 
 /**
+ * Recalculate and persist YarnInventory from live boxes/cones for each catalog id
+ * (e.g. after vendor return or lot delete).
+ *
+ * @param {Array<import('mongoose').Types.ObjectId|string>} yarnCatalogIds
+ * @returns {Promise<void>}
+ */
+export const syncInventoriesFromStorageForCatalogIds = async (yarnCatalogIds) => {
+  const unique = [
+    ...new Set((yarnCatalogIds || []).map((id) => (id != null ? String(id) : '')).filter((id) => id && mongoose.Types.ObjectId.isValid(id))),
+  ];
+  for (const id of unique) {
+    let inventory = await YarnInventory.findOne({ yarnCatalogId: id });
+    if (!inventory) {
+      const yarnCatalog = await YarnCatalog.findById(id).select('yarnName').lean();
+      if (!yarnCatalog) continue;
+      inventory = await YarnInventory.create({
+        yarnCatalogId: id,
+        yarnName: yarnCatalog.yarnName || '',
+        totalInventory: { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, numberOfCones: 0 },
+        longTermInventory: { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, numberOfCones: 0 },
+        shortTermInventory: { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, numberOfCones: 0 },
+        blockedNetWeight: 0,
+        inventoryStatus: 'in_stock',
+        overbooked: false,
+      });
+    }
+    await recalculateInventoryFromStorage(inventory);
+  }
+};
+
+/**
  * Compute total net weight and blocked weight from storage (boxes + cones) for a yarn.
  * Uses aggregation pipelines — 3 parallel queries instead of fetching every doc.
  * @param {ObjectId} yarnId - Yarn catalog ID
@@ -222,7 +257,15 @@ export const computeInventoryFromStorage = async (yarnId) => {
 
   const [ltBoxAgg, stConeAgg, inventory] = await Promise.all([
     YarnBox.aggregate([
-      { $match: { yarnName: nameRegex, storageLocation: LT_STORAGE_REGEX.$regex, storedStatus: true, 'qcData.status': 'qc_approved' } },
+      {
+        $match: {
+          yarnName: nameRegex,
+          storageLocation: LT_STORAGE_REGEX.$regex,
+          storedStatus: true,
+          'qcData.status': 'qc_approved',
+          ...activeYarnBoxMatch,
+        },
+      },
       { $group: { _id: null, netWeight: { $sum: { $subtract: [{ $ifNull: ['$boxWeight', 0] }, { $ifNull: ['$tearweight', 0] }] } } } },
     ]),
     YarnCone.aggregate([
@@ -231,6 +274,7 @@ export const computeInventoryFromStorage = async (yarnId) => {
           $or: [{ yarnCatalogId: mongoose.Types.ObjectId.createFromHexString(String(yarnId)) }, { yarnName: nameRegex }],
           coneStorageId: { $exists: true, $nin: [null, ''] },
           issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
+          ...activeYarnConeMatch,
         },
       },
       {
@@ -258,6 +302,7 @@ export const computeInventoryFromStorage = async (yarnId) => {
           storedStatus: true,
           'qcData.status': 'qc_approved',
           boxId: { $nin: boxIdsWithCones },
+          ...activeYarnBoxMatch,
         },
       },
       { $group: { _id: null, netWeight: { $sum: { $subtract: [{ $ifNull: ['$boxWeight', 0] }, { $ifNull: ['$tearweight', 0] }] } } } },
@@ -293,7 +338,7 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
 
   // Pre-aggregate cone weights per boxId (used to detect fully-transferred LT boxes)
   const coneWeightByBoxPipeline = [
-    { $match: { coneStorageId: { $exists: true, $nin: [null, ''] } } },
+    { $match: { coneStorageId: { $exists: true, $nin: [null, ''] }, ...activeYarnConeMatch } },
     { $group: { _id: '$boxId', totalConeWeight: { $sum: { $ifNull: ['$coneWeight', 0] } } } },
   ];
 
@@ -304,6 +349,7 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
         coneStorageId: { $in: stBarcodes },
         issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
         ...yarnNameMatch,
+        ...activeYarnConeMatch,
       },
     },
     {
@@ -323,6 +369,7 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
       $match: {
         issueStatus: 'issued',
         ...yarnNameMatch,
+        ...activeYarnConeMatch,
       },
     },
     {
@@ -349,6 +396,7 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
         // Avoid counting placeholder rows without weights.
         boxWeight: { $gt: 0 },
         ...yarnNameMatch,
+        ...activeYarnBoxMatch,
       },
     },
     {
@@ -360,7 +408,7 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
     },
   ];
 
-  const ltBoxQuery = { storageLocation: { $in: ltBarcodes }, storedStatus: true, ...yarnNameMatch };
+  const ltBoxQuery = { storageLocation: { $in: ltBarcodes }, storedStatus: true, ...yarnNameMatch, ...activeYarnBoxMatch };
 
   const [coneWeightAgg, ltBoxes, stConeAgg, blockedConeAgg, unallocatedBoxAgg] = await Promise.all([
     YarnCone.aggregate(coneWeightByBoxPipeline).allowDiskUse(true),
@@ -705,6 +753,7 @@ export const getShortTermConeStockByYarnKeys = async () => {
   const match = {
     coneStorageId: { $in: stBarcodes },
     issueStatus: { $nin: yarnConeUnavailableIssueStatuses },
+    ...activeYarnConeMatch,
   };
 
   const byCatAgg = await YarnCone.aggregate([

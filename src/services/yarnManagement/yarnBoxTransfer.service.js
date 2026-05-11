@@ -2,6 +2,7 @@ import httpStatus from 'http-status';
 import mongoose from 'mongoose';
 import { YarnBox, YarnCatalog, YarnTransaction, YarnInventory, YarnCone } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
+import { activeYarnBoxMatch, activeYarnConeMatch } from './yarnStockActiveFilters.js';
 import * as yarnTransactionService from './yarnTransaction.service.js';
 
 /**
@@ -49,7 +50,7 @@ export const transferBoxes = async (transferData) => {
   }
 
   // Find all boxes
-  const boxes = await YarnBox.find({ boxId: { $in: boxIds } });
+  const boxes = await YarnBox.find({ boxId: { $in: boxIds }, ...activeYarnBoxMatch });
 
   if (boxes.length !== boxIds.length) {
     const foundIds = boxes.map(b => b.boxId);
@@ -133,6 +134,7 @@ export const transferBoxes = async (transferData) => {
       const conesInST = await YarnCone.find({
         boxId: { $in: boxIdsForYarn },
         coneStorageId: { $exists: true, $nin: [null, ''] },
+        ...activeYarnConeMatch,
       }).lean();
       
       const actualConeCount = conesInST.length;
@@ -164,6 +166,7 @@ export const transferBoxes = async (transferData) => {
         const conesForThisBox = await YarnCone.find({
           boxId: box.boxId,
           coneStorageId: { $exists: true, $nin: [null, ''] },
+          ...activeYarnConeMatch,
         }).lean();
         const coneCount = conesForThisBox.length;
         const totalConeWeight = conesForThisBox.reduce((sum, c) => sum + (c.coneWeight || 0), 0);
@@ -265,6 +268,7 @@ export const getStorageLocationHistory = async (storageLocation) => {
   const boxes = await YarnBox.find({
     storageLocation,
     storedStatus: true,
+    ...activeYarnBoxMatch,
   }).lean();
 
   // Group by yarn
