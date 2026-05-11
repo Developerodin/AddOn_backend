@@ -407,6 +407,9 @@ export const updateLotStatusAndQcApprove = async (poNumber, lotNumber, lotStatus
   } else if (lotStatus === 'lot_rejected') {
     qcStatus = 'qc_rejected';
     actionMessage = 'QC rejected';
+  } else if (lotStatus === 'lot_returned_to_vendor') {
+    qcStatus = 'qc_rejected';
+    actionMessage = 'Lot marked return to vendor (QC)';
   }
 
   const boxes = await YarnBox.find({ poNumber, lotNumber, ...activeYarnBoxMatch });

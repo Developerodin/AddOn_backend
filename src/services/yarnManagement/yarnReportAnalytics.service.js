@@ -137,7 +137,7 @@ const summarizeOnePo = (po, ctx) => {
 
   const lots = po.receivedLotDetails || [];
   const lotCount = lots.length;
-  const lotsByStatus = { lot_pending: 0, lot_qc_pending: 0, lot_rejected: 0, lot_accepted: 0 };
+  const lotsByStatus = { lot_pending: 0, lot_qc_pending: 0, lot_rejected: 0, lot_accepted: 0, lot_returned_to_vendor: 0 };
   for (const lot of lots) {
     if (lotsByStatus[lot.status] !== undefined) lotsByStatus[lot.status] += 1;
   }
@@ -242,6 +242,7 @@ export const getPoAnalytics = async (params) => {
     lot_qc_pending: 0,
     lot_rejected: 0,
     lot_accepted: 0,
+    lot_returned_to_vendor: 0,
   };
 
   const summCtx = { start, end, dateMode: params.dateMode, yarnCatalogId };
@@ -262,6 +263,7 @@ export const getPoAnalytics = async (params) => {
     lotsSummary.lot_qc_pending += m.lotsByStatus.lot_qc_pending;
     lotsSummary.lot_rejected += m.lotsByStatus.lot_rejected;
     lotsSummary.lot_accepted += m.lotsByStatus.lot_accepted;
+    lotsSummary.lot_returned_to_vendor += m.lotsByStatus.lot_returned_to_vendor ?? 0;
 
     const supId = po.supplier?.toString?.() ?? '';
     const supName = (po.supplierName || '').trim() || 'Unknown';

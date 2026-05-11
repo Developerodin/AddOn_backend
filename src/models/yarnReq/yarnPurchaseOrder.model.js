@@ -23,6 +23,8 @@ export const lotStatuses = [
   'lot_qc_pending',
   'lot_rejected',
   'lot_accepted',
+  /** QC decision: ship back to supplier; lot row kept on PO for audit. */
+  'lot_returned_to_vendor',
 ];
 
 const statusLogSchema = mongoose.Schema(
