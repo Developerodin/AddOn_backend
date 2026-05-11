@@ -82,16 +82,21 @@ const mergeWorkflowIntoFilter = (filter, workflowStage) => {
   const stage = workflowStage.trim();
   if (stage === 'dismissed') return;
 
+  // Mirrors frontend deriveRequisitionWorkflowStage: no linked PO, not on a draft bucket,
+  // no attached draft id. (Do not filter on poSent — UI stage ignores it; strict `false`
+  // also misses legacy docs where boolean fields were never stored.)
   if (stage === 'in_requisition') {
-    filter.linkedPurchaseOrderId = { $exists: false };
-    filter.poSent = false;
-    filter.draftForPo = false;
-    filter.attachedDraftPoId = { $exists: false };
+    filter.linkedPurchaseOrderId = null;
+    filter.draftForPo = { $ne: true };
+    filter.attachedDraftPoId = null;
     return;
   }
   if (stage === 'sent_to_draft') {
-    filter.linkedPurchaseOrderId = { $exists: false };
-    filter.$or = [{ draftForPo: true }, { attachedDraftPoId: { $exists: true } }];
+    filter.linkedPurchaseOrderId = null;
+    filter.$or = [
+      { draftForPo: true },
+      { attachedDraftPoId: { $exists: true, $ne: null } },
+    ];
     return;
   }
   if (stage === 'order_placed') {
