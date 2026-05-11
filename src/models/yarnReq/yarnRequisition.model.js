@@ -45,6 +45,34 @@ const yarnRequisitionSchema = mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    /** User-chosen supplier for drafting (manual per-row). */
+    preferredSupplierId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Supplier',
+    },
+    /** Snapshot of supplier name at selection time for list/search without populate. */
+    preferredSupplierName: {
+      type: String,
+      trim: true,
+    },
+    /** Soft-dismiss: hides from workflows; inventory upsert skips this row for updates. */
+    dismissed: {
+      type: Boolean,
+      default: false,
+    },
+    dismissedAt: {
+      type: Date,
+    },
+    /** Set when a PO submitted to supplier includes this staged line—client “Order placed”. */
+    linkedPurchaseOrderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'YarnPurchaseOrder',
+    },
+    /** Lines merged onto an existing draft PO for this supplier (dequeued from global queue). */
+    attachedDraftPoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'YarnPurchaseOrder',
+    },
   },
   {
     timestamps: { createdAt: 'created', updatedAt: 'lastUpdated' },
@@ -56,6 +84,10 @@ yarnRequisitionSchema.plugin(paginate);
 
 yarnRequisitionSchema.index({ poSent: 1, alertStatus: 1, lastUpdated: -1 });
 yarnRequisitionSchema.index({ poSent: 1, draftForPo: 1, created: -1 });
+yarnRequisitionSchema.index({ preferredSupplierId: 1, dismissed: 1 });
+yarnRequisitionSchema.index({ dismissed: 1, created: -1 });
+yarnRequisitionSchema.index({ linkedPurchaseOrderId: 1 });
+yarnRequisitionSchema.index({ attachedDraftPoId: 1 });
 yarnRequisitionSchema.index({ created: -1 });
 
 yarnRequisitionSchema.pre('save', async function (next) {

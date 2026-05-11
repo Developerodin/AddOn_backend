@@ -59,6 +59,8 @@ export const getSuppliers = {
     brandName: Joi.string(),
     email: Joi.string(),
     status: Joi.string(),
+    /** Partial, case-insensitive match on supplier yarnDetails.yarnName */
+    yarnName: Joi.string().trim().allow(''),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),

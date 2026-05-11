@@ -272,7 +272,7 @@ const updateInventoryStatusAndMaybeRaiseRequisition = async (
   if (session) updateOptions.session = session;
 
   await YarnRequisition.findOneAndUpdate(
-    { yarnCatalogId: inventory.yarnCatalogId, poSent: false },
+    { yarnCatalogId: inventory.yarnCatalogId, poSent: false, dismissed: { $ne: true } },
     {
       yarnCatalogId: inventory.yarnCatalogId,
       yarnName: inventory.yarnName,

@@ -1,9 +1,13 @@
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
-import { YarnRequisition, YarnCatalog } from '../../models/index.js';
+import { YarnRequisition, YarnCatalog, Supplier } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import * as yarnInventoryService from './yarnInventory.service.js';
 import { pickYarnCatalogId } from '../../utils/yarnCatalogRef.js';
+import {
+  findLatestDraftPurchaseOrderForSupplier,
+  mergeRequisitionLineIntoDraftPo,
+} from './yarnRequisitionDraftMerge.helper.js';
 
 const computeAlertStatus = (minQty, availableQty, blockedQty) => {
   if (availableQty < minQty) {
@@ -61,6 +65,39 @@ const parseOptionalBoolean = (v) => {
 /** @param {string} s */
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/** @returns {mongoose.Types.ObjectId | null} */
+const toObjectId = (id) => {
+  if (!id || typeof id !== 'string') return null;
+  return mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : null;
+};
+
+/**
+ * Applies client workflow-stage filter (mutates `filter`). Call after base `created` bounds.
+ * @param {Record<string, unknown>} filter Mongo match object
+ * @param {string} [workflowStage] in_requisition | sent_to_draft | order_placed | dismissed
+ */
+const mergeWorkflowIntoFilter = (filter, workflowStage) => {
+  if (!workflowStage || typeof workflowStage !== 'string') return;
+  const stage = workflowStage.trim();
+  if (stage === 'dismissed') return;
+
+  if (stage === 'in_requisition') {
+    filter.linkedPurchaseOrderId = { $exists: false };
+    filter.poSent = false;
+    filter.draftForPo = false;
+    filter.attachedDraftPoId = { $exists: false };
+    return;
+  }
+  if (stage === 'sent_to_draft') {
+    filter.linkedPurchaseOrderId = { $exists: false };
+    filter.$or = [{ draftForPo: true }, { attachedDraftPoId: { $exists: true } }];
+    return;
+  }
+  if (stage === 'order_placed') {
+    filter.linkedPurchaseOrderId = { $exists: true, $ne: null };
+  }
+};
+
 const SORT_FIELDS = {
   yarnName: 'yarnName',
   created: 'created',
@@ -85,6 +122,10 @@ const SORT_FIELDS = {
  * @param {string} [params.sortBy] - one of yarnName, created, lastUpdated, minQty, availableQty, blockedQty
  * @param {string} [params.sortOrder] - asc | desc (default desc except yarnName asc tie-break friendly)
  * @param {boolean} [params.skipRecalculation] - skip expensive per-row recalculation (for summary/count calls)
+ * @param {string} [params.workflowStage] - in_requisition | sent_to_draft | order_placed | dismissed
+ * @param {boolean|string} [params.includeDismissed] - when true keep dismissed rows in results
+ * @param {string} [params.preferredSupplierId] - ObjectId hex for supplier equality
+ * @param {string} [params.supplierName] - case-insensitive substring on preferredSupplierName
  * @returns {Promise<Object>} paginated response with results, page, limit, totalPages, totalResults, alertSummary
  */
 export const getYarnRequisitionList = async ({
@@ -101,6 +142,10 @@ export const getYarnRequisitionList = async ({
   lastUpdatedTo,
   sortBy,
   sortOrder,
+  workflowStage,
+  includeDismissed,
+  preferredSupplierId,
+  supplierName,
 }) => {
   const start = new Date(startDate);
   start.setHours(0, 0, 0, 0);
@@ -113,6 +158,30 @@ export const getYarnRequisitionList = async ({
       $lte: end,
     },
   };
+
+  const workflow = typeof workflowStage === 'string' ? workflowStage.trim() : '';
+  if (workflow === 'dismissed') {
+    filter.dismissed = true;
+  } else {
+    const inclDismissed = parseOptionalBoolean(includeDismissed);
+    if (!inclDismissed) {
+      filter.dismissed = { $ne: true };
+    }
+    mergeWorkflowIntoFilter(filter, workflow);
+  }
+
+  const supplierOid = preferredSupplierId ? toObjectId(String(preferredSupplierId).trim()) : null;
+  if (supplierOid) {
+    filter.preferredSupplierId = supplierOid;
+  }
+
+  const trimmedSupplierSearch = typeof supplierName === 'string' ? supplierName.trim() : '';
+  if (trimmedSupplierSearch) {
+    filter.preferredSupplierName = {
+      $regex: escapeRegex(trimmedSupplierSearch),
+      $options: 'i',
+    };
+  }
 
   const parsedPoSent = parseOptionalBoolean(poSent);
   if (typeof parsedPoSent === 'boolean') {
@@ -163,6 +232,7 @@ export const getYarnRequisitionList = async ({
   const [yarnRequisitions, totalResults] = await Promise.all([
     YarnRequisition.find(filter)
       .populate({ path: 'yarnCatalogId', select: '_id yarnName yarnType status' })
+      .populate({ path: 'preferredSupplierId', select: '_id brandName' })
       .sort({ [sortField]: direction })
       .skip(skip)
       .limit(limitNum)
@@ -232,39 +302,135 @@ export const createYarnRequisition = async (yarnRequisitionBody) => {
   return yarnRequisition;
 };
 
+async function populateRequisitionResponse(id) {
+  return YarnRequisition.findById(id)
+    .populate({ path: 'yarnCatalogId', select: '_id yarnName yarnType status' })
+    .populate({ path: 'preferredSupplierId', select: '_id brandName' })
+    .lean();
+}
+
 /**
+ * PATCH requisition vendor and/or workflow (optional merge into supplier’s newest draft PO).
  * @param {string} yarnRequisitionId
- * @param {{ poSent: boolean; draftForPo?: boolean }} updates
+ * @param {Object} updates
  */
-export const updateYarnRequisitionStatus = async (yarnRequisitionId, updates) => {
-  const $set = { poSent: updates.poSent };
-  if (typeof updates.draftForPo === 'boolean') {
-    $set.draftForPo = updates.draftForPo;
-  }
-
-  const yarnRequisition = await YarnRequisition.findOneAndUpdate(
-    { _id: yarnRequisitionId },
-    { $set },
-    { new: true, runValidators: true }
-  ).lean();
-
-  if (!yarnRequisition) {
+export const patchYarnRequisition = async (yarnRequisitionId, updates = {}) => {
+  const doc = await YarnRequisition.findById(yarnRequisitionId);
+  if (!doc) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Yarn requisition not found');
   }
+  if (doc.dismissed) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Dismissed requisition cannot be edited');
+  }
 
-  return yarnRequisition;
+  const wantsStaging = updates.poSent === true && updates.draftForPo === true;
+
+  if (updates.preferredSupplierId !== undefined) {
+    if (!updates.preferredSupplierId) {
+      doc.preferredSupplierId = undefined;
+      doc.preferredSupplierName = '';
+    } else {
+      const oid = toObjectId(String(updates.preferredSupplierId));
+      if (!oid) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid preferredSupplierId');
+      }
+      doc.preferredSupplierId = oid;
+    }
+  }
+
+  if (typeof updates.preferredSupplierName === 'string') {
+    doc.preferredSupplierName = updates.preferredSupplierName.trim();
+  }
+
+  const idWasSetToSupplier =
+    updates.preferredSupplierId &&
+    String(updates.preferredSupplierId).trim() !== '' &&
+    mongoose.Types.ObjectId.isValid(String(updates.preferredSupplierId).trim());
+  if (
+    doc.preferredSupplierId &&
+    idWasSetToSupplier &&
+    typeof updates.preferredSupplierName !== 'string'
+  ) {
+    const sup = await Supplier.findById(doc.preferredSupplierId).select('brandName').lean();
+    if (sup?.brandName) {
+      doc.preferredSupplierName = sup.brandName;
+    }
+  }
+
+  if (wantsStaging) {
+    if (doc.preferredSupplierId) {
+      const draftPo = await findLatestDraftPurchaseOrderForSupplier(doc.preferredSupplierId);
+      if (draftPo) {
+        await mergeRequisitionLineIntoDraftPo(draftPo, doc);
+        doc.poSent = true;
+        doc.draftForPo = false;
+        doc.attachedDraftPoId = draftPo._id;
+      } else {
+        doc.poSent = true;
+        doc.draftForPo = true;
+        doc.attachedDraftPoId = undefined;
+      }
+    } else {
+      doc.poSent = true;
+      doc.draftForPo = true;
+      doc.attachedDraftPoId = undefined;
+    }
+  } else if (typeof updates.poSent === 'boolean' || typeof updates.draftForPo === 'boolean') {
+    if (typeof updates.poSent === 'boolean') doc.poSent = updates.poSent;
+    if (typeof updates.draftForPo === 'boolean') doc.draftForPo = updates.draftForPo;
+  }
+
+  await doc.save();
+  return populateRequisitionResponse(doc._id);
+};
+
+/**
+ * @deprecated Use patchYarnRequisition (same behavior for legacy callers).
+ */
+export const updateYarnRequisitionStatus = patchYarnRequisition;
+
+/**
+ * Soft-dismiss — removes row from operational lists unless explicitly filtered by dismissed workflow.
+ * @param {string} yarnRequisitionId
+ */
+export const dismissYarnRequisition = async (yarnRequisitionId) => {
+  const doc = await YarnRequisition.findById(yarnRequisitionId);
+  if (!doc) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Yarn requisition not found');
+  }
+  doc.dismissed = true;
+  doc.dismissedAt = new Date();
+  doc.draftForPo = false;
+  await doc.save();
+  return populateRequisitionResponse(doc._id);
 };
 
 /**
  * Clears draft-queue flag after a PO is raised or discarded from draft.
  * @param {string[]} requisitionIds Mongo ids
+ * @param {string} [linkedPurchaseOrderId] when submit finalizes an order tied to staged lines
  */
-export const clearRequisitionDraftFlags = async (requisitionIds) => {
+export const clearRequisitionDraftFlags = async (requisitionIds, linkedPurchaseOrderId = null) => {
   if (!Array.isArray(requisitionIds) || requisitionIds.length === 0) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'requisitionIds must be a non-empty array');
   }
   const objectIds = requisitionIds.map((id) => new mongoose.Types.ObjectId(id));
-  await YarnRequisition.updateMany({ _id: { $in: objectIds } }, { $set: { draftForPo: false } });
+
+  /** @type {{ $set: Record<string, unknown>; $unset?: Record<string, string> }} */
+  const op = {
+    $set: { draftForPo: false },
+    $unset: { attachedDraftPoId: '' },
+  };
+
+  const linkedOid =
+    typeof linkedPurchaseOrderId === 'string' && linkedPurchaseOrderId.trim()
+      ? toObjectId(linkedPurchaseOrderId.trim())
+      : null;
+  if (linkedOid) {
+    op.$set.linkedPurchaseOrderId = linkedOid;
+  }
+
+  await YarnRequisition.updateMany({ _id: { $in: objectIds } }, op);
   return { cleared: objectIds.length };
 };
 

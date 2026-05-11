@@ -54,6 +54,12 @@ const poItemSchema = Joi.object()
       })
       .allow(null),
     gstRate: Joi.number().min(0).allow(null),
+    sourceRequisitionId: Joi.string()
+      .allow(null, '')
+      .custom((value, helpers) => {
+        if (value === null || value === undefined || value === '') return value;
+        return objectId(value, helpers);
+      }),
   })
   .custom((value, helpers) => {
     const id = value.yarnCatalogId || value.yarn;

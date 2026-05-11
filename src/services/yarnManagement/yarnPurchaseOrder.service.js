@@ -229,6 +229,7 @@ export const updatePurchaseOrderById = async (purchaseOrderId, updateBody) => {
       'quantity',
       'estimatedDeliveryDate',
       'gstRate',
+      'sourceRequisitionId',
     ];
     const newPoItems = safeUpdate.poItems.map((inc) => {
       const incId = toId(inc);

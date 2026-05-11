@@ -19,6 +19,12 @@ export const getYarnRequisitionList = {
         .valid('yarnName', 'created', 'lastUpdated', 'minQty', 'availableQty', 'blockedQty')
         .optional(),
       sortOrder: Joi.string().valid('asc', 'desc').optional(),
+      workflowStage: Joi.string()
+        .valid('in_requisition', 'sent_to_draft', 'order_placed', 'dismissed')
+        .optional(),
+      includeDismissed: Joi.boolean().truthy('true').falsy('false').optional(),
+      preferredSupplierId: Joi.string().custom(objectId).optional(),
+      supplierName: Joi.string().trim().max(200).allow('').optional(),
     })
     .with('startDate', 'endDate')
     .with('endDate', 'startDate')
@@ -61,22 +67,40 @@ export const createYarnRequisition = {
     .required(),
 };
 
-export const updateYarnRequisitionStatus = {
+export const patchYarnRequisition = {
   params: Joi.object().keys({
     yarnRequisitionId: Joi.string().custom(objectId).required(),
   }),
   body: Joi.object()
     .keys({
-      poSent: Joi.boolean().truthy('true').falsy('false').required(),
+      poSent: Joi.boolean().truthy('true').falsy('false').optional(),
       draftForPo: Joi.boolean().truthy('true').falsy('false').optional(),
+      preferredSupplierId: Joi.string()
+        .allow(null, '')
+        .custom((value, helpers) => {
+          if (value === null || value === undefined || value === '') return value;
+          return objectId(value, helpers);
+        }),
+      preferredSupplierName: Joi.string().trim().max(200).allow('').optional(),
     })
+    .min(1)
     .required(),
+};
+
+/** @deprecated alias */
+export const updateYarnRequisitionStatus = patchYarnRequisition;
+
+export const dismissRequisition = {
+  params: Joi.object().keys({
+    yarnRequisitionId: Joi.string().custom(objectId).required(),
+  }),
 };
 
 export const clearRequisitionDraft = {
   body: Joi.object()
     .keys({
       requisitionIds: Joi.array().items(Joi.string().custom(objectId)).min(1).required(),
+      linkedPurchaseOrderId: Joi.string().custom(objectId).optional(),
     })
     .required(),
 };

@@ -20,13 +20,17 @@ router
     yarnReqController.createYarnRequisition
   );
 
+router.route('/:yarnRequisitionId/dismiss').patch(
+  validate(yarnReqValidation.dismissRequisition),
+  yarnReqController.dismissYarnRequisition
+);
+
 router
   .route('/:yarnRequisitionId/status')
   .patch(
-    validate(yarnReqValidation.updateYarnRequisitionStatus),
-    yarnReqController.updateYarnRequisitionStatus
+    validate(yarnReqValidation.patchYarnRequisition),
+    yarnReqController.patchYarnRequisition
   );
 
 export default router;
-
 

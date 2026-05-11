@@ -10,7 +10,7 @@ export const createSupplier = catchAsync(async (req, res) => {
 });
 
 export const getSuppliers = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['brandName', 'email', 'status']);
+  const filter = pick(req.query, ['brandName', 'email', 'status', 'yarnName']);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
   const result = await supplierService.querySuppliers(filter, options);
   res.send(result);

@@ -96,6 +96,11 @@ const poItemSchema = mongoose.Schema(
       type: Number,
       min: 0,
     },
+    /** Optional link back to yarn requisition rows merged from the requisition list. */
+    sourceRequisitionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'YarnRequisition',
+    },
   },
   { _id: true }
 );

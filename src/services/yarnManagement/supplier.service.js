@@ -674,8 +674,15 @@ export const createSupplier = async (supplierBody) => {
 };
 
 /**
+ * Escape a string for safe use inside a MongoDB $regex (literal substring match).
+ * @param {string} value - User-provided search text
+ * @returns {string}
+ */
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
  * Query for suppliers
- * @param {Object} filter - Mongo filter
+ * @param {Object} filter - Mongo filter (may include brandName, email, status, yarnName)
  * @param {Object} options - Query options
  * @param {string} [options.sortBy] - Sort option in the format: sortField:(desc|asc)
  * @param {number} [options.limit] - Maximum number of results per page (default = 10)
@@ -687,7 +694,19 @@ export const querySuppliers = async (filter, options) => {
   if (filter.brandName) {
     filter.brandName = { $regex: filter.brandName, $options: 'i' };
   }
-  
+
+  if (filter.yarnName && String(filter.yarnName).trim()) {
+    const yarnPattern = escapeRegex(String(filter.yarnName).trim());
+    delete filter.yarnName;
+    filter.yarnDetails = {
+      $elemMatch: {
+        yarnName: { $regex: yarnPattern, $options: 'i' },
+      },
+    };
+  } else if (filter.yarnName !== undefined) {
+    delete filter.yarnName;
+  }
+
   // No need to populate - yarnDetails are now embedded objects
   const suppliers = await Supplier.paginate(filter, options);
   return suppliers;

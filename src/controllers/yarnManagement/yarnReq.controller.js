@@ -17,6 +17,10 @@ export const getYarnRequisitionList = catchAsync(async (req, res) => {
     lastUpdatedTo,
     sortBy,
     sortOrder,
+    workflowStage,
+    includeDismissed,
+    preferredSupplierId,
+    supplierName,
   } = req.query;
   const result = await yarnReqService.getYarnRequisitionList({
     startDate,
@@ -32,6 +36,10 @@ export const getYarnRequisitionList = catchAsync(async (req, res) => {
     lastUpdatedTo,
     sortBy,
     sortOrder,
+    workflowStage,
+    includeDismissed,
+    preferredSupplierId,
+    supplierName,
   });
   res.status(httpStatus.OK).send(result);
 });
@@ -41,19 +49,23 @@ export const createYarnRequisition = catchAsync(async (req, res) => {
   res.status(httpStatus.CREATED).send(yarnRequisition);
 });
 
-export const updateYarnRequisitionStatus = catchAsync(async (req, res) => {
+/** PATCH supplier + optional staging (“Send to PO draft”) with supplier draft merge semantics. */
+export const patchYarnRequisition = catchAsync(async (req, res) => {
   const { yarnRequisitionId } = req.params;
-  const { poSent, draftForPo } = req.body;
-  const yarnRequisition = await yarnReqService.updateYarnRequisitionStatus(yarnRequisitionId, {
-    poSent,
-    draftForPo,
-  });
-  res.status(httpStatus.OK).send(yarnRequisition);
+  const updated = await yarnReqService.patchYarnRequisition(yarnRequisitionId, req.body);
+  res.status(httpStatus.OK).send(updated);
+});
+
+/** Soft-dismiss a requisition row. */
+export const dismissYarnRequisition = catchAsync(async (req, res) => {
+  const { yarnRequisitionId } = req.params;
+  const updated = await yarnReqService.dismissYarnRequisition(yarnRequisitionId);
+  res.status(httpStatus.OK).send(updated);
 });
 
 export const clearRequisitionDraftFlags = catchAsync(async (req, res) => {
-  const result = await yarnReqService.clearRequisitionDraftFlags(req.body.requisitionIds);
+  const { requisitionIds, linkedPurchaseOrderId } = req.body;
+  const result = await yarnReqService.clearRequisitionDraftFlags(requisitionIds, linkedPurchaseOrderId);
   res.status(httpStatus.OK).send(result);
 });
-
 
