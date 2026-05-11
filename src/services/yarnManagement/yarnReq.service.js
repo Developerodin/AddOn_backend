@@ -5,6 +5,7 @@ import ApiError from '../../utils/ApiError.js';
 import * as yarnInventoryService from './yarnInventory.service.js';
 import { pickYarnCatalogId } from '../../utils/yarnCatalogRef.js';
 import {
+  createDraftPurchaseOrderForRequisition,
   findLatestDraftPurchaseOrderForSupplier,
   mergeRequisitionLineIntoDraftPo,
 } from './yarnRequisitionDraftMerge.helper.js';
@@ -358,29 +359,33 @@ export const patchYarnRequisition = async (yarnRequisitionId, updates = {}) => {
   }
 
   if (wantsStaging) {
-    if (doc.preferredSupplierId) {
-      const draftPo = await findLatestDraftPurchaseOrderForSupplier(doc.preferredSupplierId);
-      if (draftPo) {
-        await mergeRequisitionLineIntoDraftPo(draftPo, doc);
-        doc.poSent = true;
-        doc.draftForPo = false;
-        doc.attachedDraftPoId = draftPo._id;
-      } else {
-        doc.poSent = true;
-        doc.draftForPo = true;
-        doc.attachedDraftPoId = undefined;
-      }
-    } else {
+    if (!doc.preferredSupplierId) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Preferred supplier is required to send to draft PO');
+    }
+    const draftPo = await findLatestDraftPurchaseOrderForSupplier(doc.preferredSupplierId);
+    if (draftPo) {
+      await mergeRequisitionLineIntoDraftPo(draftPo, doc);
       doc.poSent = true;
-      doc.draftForPo = true;
-      doc.attachedDraftPoId = undefined;
+      doc.draftForPo = false;
+      doc.attachedDraftPoId = draftPo._id;
+    } else {
+      const newDraftPo = await createDraftPurchaseOrderForRequisition(doc);
+      doc.poSent = true;
+      doc.draftForPo = false;
+      doc.attachedDraftPoId = newDraftPo._id;
     }
   } else if (typeof updates.poSent === 'boolean' || typeof updates.draftForPo === 'boolean') {
     if (typeof updates.poSent === 'boolean') doc.poSent = updates.poSent;
     if (typeof updates.draftForPo === 'boolean') doc.draftForPo = updates.draftForPo;
   }
 
-  await doc.save();
+  const vendorOnlyPatch =
+    !wantsStaging &&
+    updates.poSent === undefined &&
+    updates.draftForPo === undefined &&
+    (updates.preferredSupplierId !== undefined || typeof updates.preferredSupplierName === 'string');
+
+  await doc.save(vendorOnlyPatch ? { timestamps: false } : {});
   return populateRequisitionResponse(doc._id);
 };
 

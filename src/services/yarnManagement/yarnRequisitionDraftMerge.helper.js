@@ -1,4 +1,6 @@
+import { Supplier } from '../../models/index.js';
 import YarnPurchaseOrder from '../../models/yarnReq/yarnPurchaseOrder.model.js';
+import { createPurchaseOrder } from './yarnPurchaseOrder.service.js';
 
 const toPositiveNumber = (v) => Math.max(0, Number(v ?? 0));
 
@@ -70,4 +72,51 @@ export const mergeRequisitionLineIntoDraftPo = async (draftPo, requisitionDoc) =
   draftPo.markModified('poItems');
   await draftPo.save();
   return { mergedQty: idx >= 0, lineAppended: idx < 0 };
+};
+
+/**
+ * Creates a new draft purchase order with one line derived from a yarn requisition (no existing draft for that supplier).
+ * Rare race: two simultaneous first-line staging calls for the same vendor may create two drafts; downstream merges use the newest draft.
+ * @param {mongoose.Document} requisitionDoc YarnRequisition with preferredSupplierId and yarn line fields set
+ * @returns {Promise<mongoose.Document>} Persisted YarnPurchaseOrder with currentStatus draft
+ */
+export const createDraftPurchaseOrderForRequisition = async (requisitionDoc) => {
+  const supplierId = requisitionDoc.preferredSupplierId;
+  if (!supplierId) {
+    throw new Error('createDraftPurchaseOrderForRequisition requires preferredSupplierId');
+  }
+
+  let supplierName = String(requisitionDoc.preferredSupplierName || '').trim();
+  if (!supplierName) {
+    const sup = await Supplier.findById(supplierId).select('brandName').lean();
+    supplierName = sup?.brandName ? String(sup.brandName).trim() : 'Draft';
+  }
+
+  const incomingName = String(requisitionDoc.yarnName || '').trim();
+  const qtyIncrement = resolveStagedQty(requisitionDoc);
+
+  const created = await createPurchaseOrder({
+    supplierName,
+    supplier: supplierId,
+    poItems: [
+      {
+        yarnName: incomingName || 'Pending yarn',
+        yarnCatalogId: requisitionDoc.yarnCatalogId,
+        sourceRequisitionId: requisitionDoc._id,
+        sizeCount: '(pending)',
+        shadeCode: undefined,
+        rate: 0,
+        quantity: qtyIncrement,
+        estimatedDeliveryDate: undefined,
+        gstRate: 0,
+      },
+    ],
+    subTotal: 0,
+    gst: 0,
+    total: 0,
+    currentStatus: 'draft',
+    creditDays: 0,
+  });
+
+  return created;
 };
