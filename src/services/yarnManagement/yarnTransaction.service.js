@@ -465,7 +465,7 @@ export const queryYarnTransactions = async (filters = {}) => {
 
   /** Fields needed for floor-issue history / exports (skip heavy joins). */
   const LIGHT_SELECT =
-    '_id transactionType transactionDate yarnName transactionNetWeight transactionTotalWeight transactionTearWeight transactionConeCount conesIdsArray createdAt';
+    '_id transactionType transactionDate yarnName transactionNetWeight transactionTotalWeight transactionTearWeight transactionConeCount conesIdsArray issuedByEmail createdAt';
 
   const applyPopulateAndSort = (q) => {
     let chain = light ? q.select(LIGHT_SELECT) : q;

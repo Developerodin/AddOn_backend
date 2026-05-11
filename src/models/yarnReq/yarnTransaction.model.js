@@ -90,6 +90,12 @@ const yarnTransactionSchema = mongoose.Schema(
       type: String,
       trim: true,
     },
+    /** Authenticated user email when the transaction is created (e.g. linking/sampling floor issue); set server-side only. */
+    issuedByEmail: {
+      type: String,
+      trim: true,
+      lowercase: true,
+    },
   },
   {
     timestamps: true,

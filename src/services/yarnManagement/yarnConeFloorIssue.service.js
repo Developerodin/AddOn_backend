@@ -21,10 +21,10 @@ const isStandaloneTransactionError = (err) =>
 /**
  * Issues one cone to linking or sampling with inventory + transaction + cone update in one Mongo transaction when supported.
  *
- * @param {{ barcode: string, floor: 'linking'|'sampling', totalWeight: number, totalTearWeight?: number }} params
+ * @param {{ barcode: string, floor: 'linking'|'sampling', totalWeight: number, totalTearWeight?: number, issuedByEmail?: string }} params
  * @returns {Promise<{ transaction: import('mongoose').Document, cone: import('mongoose').Document | null }>}
  */
-export const issueConeForFloor = async ({ barcode, floor, totalWeight, totalTearWeight }) => {
+export const issueConeForFloor = async ({ barcode, floor, totalWeight, totalTearWeight, issuedByEmail }) => {
   const trimmed = String(barcode || '').trim();
   if (!trimmed) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Barcode is required');
@@ -86,7 +86,7 @@ export const issueConeForFloor = async ({ barcode, floor, totalWeight, totalTear
   const transactionType = floor === 'linking' ? 'yarn_issued_linking' : 'yarn_issued_sampling';
   const yarnName = cone.yarnName || catalog.yarnName || '';
 
-  const normalisedPayload = normaliseTransactionPayload({
+  const basePayload = normaliseTransactionPayload({
     yarnCatalogId: cone.yarnCatalogId.toString(),
     yarnName,
     transactionType,
@@ -97,6 +97,10 @@ export const issueConeForFloor = async ({ barcode, floor, totalWeight, totalTear
     numberOfCones: 1,
     conesIdsArray: [cone._id],
   });
+  const issuer = typeof issuedByEmail === 'string' ? issuedByEmail.trim() : '';
+  const normalisedPayload = issuer
+    ? { ...basePayload, issuedByEmail: issuer.toLowerCase() }
+    : basePayload;
 
   const coneId = /** @type {mongoose.Types.ObjectId} */ (cone._id);
 

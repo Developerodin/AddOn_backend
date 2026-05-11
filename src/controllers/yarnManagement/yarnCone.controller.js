@@ -1,12 +1,17 @@
 import httpStatus from 'http-status';
 import catchAsync from '../../utils/catchAsync.js';
 import pick from '../../utils/pick.js';
+import ApiError from '../../utils/ApiError.js';
 import * as yarnConeService from '../../services/yarnManagement/yarnCone.service.js';
 
 import * as yarnConeFloorIssueService from '../../services/yarnManagement/yarnConeFloorIssue.service.js';
 
 export const issueConeForFloor = catchAsync(async (req, res) => {
-  const result = await yarnConeFloorIssueService.issueConeForFloor(req.body);
+  const email = req.user?.email;
+  if (!email) {
+    throw new ApiError(httpStatus.UNAUTHORIZED, 'Authentication required to issue cones for linking or sampling.');
+  }
+  const result = await yarnConeFloorIssueService.issueConeForFloor({ ...req.body, issuedByEmail: email });
   res.status(httpStatus.OK).send(result);
 });
 export const createYarnCone = catchAsync(async (req, res) => {
