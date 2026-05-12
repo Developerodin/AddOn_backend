@@ -552,8 +552,15 @@ export const getBoxesByStorageLocation = async (storageLocation) => {
   return boxes;
 };
 
+/** Matches “no slot”: trim(storageLocation) === '' — aligned with `unallocatedBoxPipeline` in yarnInventory.service.js */
+const UNALLOCATED_STORAGE_LOCATION_MATCH = {
+  $expr: {
+    $eq: [{ $trim: { input: { $ifNull: ['$storageLocation', ''] } } }, ''],
+  },
+};
+
 /**
- * Get boxes without storage location (null, undefined, or empty string).
+ * Get boxes without storage location (null, undefined, empty, or whitespace-only).
  * Returns all matching boxes (no limit). Optionally filter by yarn name (case-insensitive exact match).
  * @param {Object} [filters]
  * @param {string} [filters.yarn_name] - Exact yarn name (case-insensitive) to scope the result.
@@ -561,16 +568,7 @@ export const getBoxesByStorageLocation = async (storageLocation) => {
  */
 export const getBoxesWithoutStorageLocation = async (filters = {}) => {
   const query = {
-    $and: [
-      ACTIVE_BOX_FILTER,
-      {
-        $or: [
-          { storageLocation: { $exists: false } },
-          { storageLocation: null },
-          { storageLocation: '' },
-        ],
-      },
-    ],
+    $and: [ACTIVE_BOX_FILTER, UNALLOCATED_STORAGE_LOCATION_MATCH],
   };
 
   const yarnName = (filters.yarn_name || '').trim();

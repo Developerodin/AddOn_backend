@@ -18,6 +18,15 @@ let _slotBarcodeCache = { lt: null, st: null, expiresAt: 0 };
 const SLOT_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
+ * Trim + de-dupe slot barcodes. Drops whitespace-only values so they cannot act as both
+ * “LT slot” and “empty / unallocated” in the same rollup.
+ * @param {Array<string|undefined|null>} codes
+ * @returns {string[]}
+ */
+const normalizeSlotBarcodeList = (codes) =>
+  [...new Set(codes.map((s) => String(s ?? '').trim()).filter((s) => s.length > 0))];
+
+/**
  * @returns {Promise<{ ltBarcodes: string[], stBarcodes: string[] }>}
  */
 const getSlotBarcodes = async () => {
@@ -28,8 +37,8 @@ const getSlotBarcodes = async () => {
     StorageSlot.find({ zoneCode: STORAGE_ZONES.LONG_TERM, isActive: true }).select('barcode label').lean(),
     StorageSlot.find({ zoneCode: STORAGE_ZONES.SHORT_TERM, isActive: true }).select('barcode label').lean(),
   ]);
-  const ltBarcodes = ltSlots.map((s) => s.barcode || s.label).filter(Boolean);
-  const stBarcodes = stSlots.map((s) => s.barcode || s.label).filter(Boolean);
+  const ltBarcodes = normalizeSlotBarcodeList(ltSlots.map((s) => s.barcode || s.label));
+  const stBarcodes = normalizeSlotBarcodeList(stSlots.map((s) => s.barcode || s.label));
   _slotBarcodeCache = { lt: ltBarcodes, st: stBarcodes, expiresAt: Date.now() + SLOT_CACHE_TTL_MS };
   return { ltBarcodes, stBarcodes };
 };
@@ -381,22 +390,18 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
     },
   ];
 
-  // Unallocated boxes: boxes without a storage location.
-  // IMPORTANT: these are typically `storedStatus=false` until allocated, so do NOT require storedStatus=true here.
-  // Note: boxWeight is treated as net for inventory bucketing in this service.
+  // Unallocated boxes: no slot after trim (same semantics as GET /yarn-boxes/without-storage-location).
+  // Using $trim prevents overlap with LT when storageLocation is padding/whitespace while still listed in ltBarcodes.
+  // IMPORTANT: typically `storedStatus=false` until allocated — do NOT require storedStatus=true here.
   const unallocatedBoxPipeline = [
     {
       $match: {
-        $or: [
-          { storageLocation: { $exists: false } },
-          { storageLocation: null },
-          { storageLocation: { $in: ['', ' '] } },
-          { storageLocation: { $regex: /^\s*$/ } },
-        ],
-        // Avoid counting placeholder rows without weights.
-        boxWeight: { $gt: 0 },
         ...yarnNameMatch,
         ...activeYarnBoxMatch,
+        boxWeight: { $gt: 0 },
+        $expr: {
+          $eq: [{ $trim: { input: { $ifNull: ['$storageLocation', ''] } } }, ''],
+        },
       },
     },
     {
@@ -408,7 +413,17 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
     },
   ];
 
-  const ltBoxQuery = { storageLocation: { $in: ltBarcodes }, storedStatus: true, ...yarnNameMatch, ...activeYarnBoxMatch };
+  const ltBoxQuery =
+    ltBarcodes.length === 0
+      ? { _id: { $exists: false } }
+      : {
+          storedStatus: true,
+          ...yarnNameMatch,
+          ...activeYarnBoxMatch,
+          $expr: {
+            $in: [{ $trim: { input: { $ifNull: ['$storageLocation', ''] } } }, ltBarcodes],
+          },
+        };
 
   const [coneWeightAgg, ltBoxes, stConeAgg, blockedConeAgg, unallocatedBoxAgg] = await Promise.all([
     YarnCone.aggregate(coneWeightByBoxPipeline).allowDiskUse(true),
