@@ -335,6 +335,12 @@ const getYarnAndShadeForLotFromPo = (po, lotNumber) => {
   return { yarnName, shadeCode };
 };
 
+/**
+ * Create yarn boxes per lot. For each lot, only inserts the gap: max(0, requested numberOfBoxes − existing active boxes).
+ * Does not delete boxes when requested count is lower than existing.
+ * @param {{ poNumber: string, lotDetails: Array<{ lotNumber: string, numberOfBoxes: number }> }} bulkData
+ * @returns {Promise<Object>} createdCount, boxes, skippedLots, etc.
+ */
 export const bulkCreateYarnBoxes = async (bulkData) => {
   const { lotDetails, poNumber } = bulkData;
 
@@ -353,7 +359,7 @@ export const bulkCreateYarnBoxes = async (bulkData) => {
     // Non-fatal: we'll use placeholder yarnName if PO not found
   }
 
-  // Check each lot individually and create boxes only for lots that don't exist
+  // Per lot: create only missing boxes (requested total minus existing active boxes).
   const existingBoxesByLot = {};
   const skippedLots = [];
   const boxesToCreate = [];
@@ -370,16 +376,21 @@ export const bulkCreateYarnBoxes = async (bulkData) => {
       );
     }
 
-    // Check if boxes already exist for this specific lot
     const existingCount = await YarnBox.countDocuments({ poNumber, lotNumber, ...activeYarnBoxMatch });
-    
-    if (existingCount > 0) {
-      // Skip this lot - boxes already exist
-      existingBoxesByLot[lotNumber] = existingCount;
+    const desiredCount = numberOfBoxes;
+    const additionalNeeded = Math.max(0, desiredCount - existingCount);
+
+    existingBoxesByLot[lotNumber] = existingCount;
+
+    if (additionalNeeded === 0) {
       skippedLots.push({
         lotNumber,
-        numberOfBoxes: existingCount,
-        reason: 'Boxes already exist for this lot',
+        existingCount,
+        requestedCount: desiredCount,
+        reason:
+          existingCount > desiredCount
+            ? `Lot has ${existingCount} box(es); requested ${desiredCount} — no new boxes created (existing boxes retained)`
+            : 'Requested box count already satisfied for this lot',
       });
       continue;
     }
@@ -389,10 +400,8 @@ export const bulkCreateYarnBoxes = async (bulkData) => {
       : { yarnName: null, shadeCode: null };
     const yarnName = (resolvedYarnName && resolvedYarnName.trim()) || `Yarn-${poNumber}`;
 
-    // Create boxes for this lot
-    for (let i = 0; i < numberOfBoxes; i++) {
+    for (let i = 0; i < additionalNeeded; i++) {
       const boxId = `BOX-${poNumber}-${lotNumber}-${baseTimestamp}-${boxCounter}`;
-      // Generate unique barcode using ObjectId (insertMany doesn't trigger pre-save hooks)
       const uniqueBarcode = new mongoose.Types.ObjectId().toString();
 
       const boxPayload = {
@@ -409,38 +418,45 @@ export const bulkCreateYarnBoxes = async (bulkData) => {
     }
   }
 
-  // If no boxes to create (all lots already exist), return early
+  const allLotNumbers = [...new Set(lotDetails.map((l) => l.lotNumber))];
+
   if (boxesToCreate.length === 0) {
-    const existingBoxes = await YarnBox.find({
-      poNumber,
-      lotNumber: { $in: Object.keys(existingBoxesByLot) },
-      ...activeYarnBoxMatch,
-    }).sort({ createdAt: -1 });
-    
+    const existingBoxes =
+      allLotNumbers.length > 0
+        ? await YarnBox.find({
+            poNumber,
+            lotNumber: { $in: allLotNumbers },
+            ...activeYarnBoxMatch,
+          }).sort({ createdAt: -1 })
+        : [];
+
     return {
-      message: `All lots already have boxes for PO ${poNumber}`,
+      message: `No new boxes needed for PO ${poNumber} (all lots at or above requested count)`,
       existingBoxesByLot,
       skippedLots,
       boxes: existingBoxes,
       created: false,
+      createdCount: 0,
     };
   }
 
-  // Create boxes for lots that don't exist
   const createdBoxes = await YarnBox.insertMany(boxesToCreate);
   const totalBoxes = createdBoxes.length;
-  
-  // Build response with created and skipped lots info
-  const createdLots = lotDetails
-    .filter((lot) => !existingBoxesByLot[lot.lotNumber])
-    .map((lot) => ({
-      lotNumber: lot.lotNumber,
-      numberOfBoxes: lot.numberOfBoxes,
-    }));
+
+  const additionalByLot = new Map();
+  for (const row of boxesToCreate) {
+    const ln = row.lotNumber;
+    additionalByLot.set(ln, (additionalByLot.get(ln) || 0) + 1);
+  }
+
+  const createdLots = [...additionalByLot.entries()].map(([ln, n]) => ({
+    lotNumber: ln,
+    numberOfBoxes: n,
+  }));
 
   const hasSkippedLots = skippedLots.length > 0;
   const message = hasSkippedLots
-    ? `Created ${totalBoxes} boxes for ${createdLots.length} lot(s), skipped ${skippedLots.length} lot(s) that already have boxes`
+    ? `Created ${totalBoxes} new box(es) across ${createdLots.length} lot(s); ${skippedLots.length} lot(s) needed no new boxes`
     : `Successfully created ${totalBoxes} boxes for PO ${poNumber}`;
   
   return {
@@ -977,6 +993,83 @@ export const backfillLtBoxWeightFromStCones = async ({ dryRun = false, limit, on
     skipped,
     touchedBoxIds,
   };
+};
+
+/**
+ * Whether a yarn box may be archived as an unused PO-receive placeholder.
+ * Mirrors process-page rules: no gross/box weights, no cones, not stored, still active for processing.
+ * @param {object} box - YarnBox document or lean object
+ * @returns {string|null} Reason string if not eligible, otherwise null
+ */
+export const getUnusedPlaceholderArchiveBlockReason = (box) => {
+  if (!box) return 'Box not found';
+  if (box.returnedToVendorAt) return 'Already removed';
+  if (!isYarnBoxActiveForProcessing(box)) return 'Not active for processing';
+  if (box.storedStatus === true) return 'Box is stored';
+  if (box.storageLocation && String(box.storageLocation).trim() !== '') return 'Has storage location';
+  if (box.coneData?.conesIssued === true) return 'Cones already issued for this box';
+  if (Number(box.boxWeight ?? 0) > 0) return 'Box weight already recorded';
+  if (Number(box.grossWeight ?? 0) > 0) return 'Gross weight already recorded';
+  return null;
+};
+
+/**
+ * Permanently delete unused placeholder boxes (must pass same guards as before) and decrement PO lot box counts.
+ * @param {string[]} yarnBoxMongoIds - YarnBox document _id values (hex strings)
+ * @returns {Promise<{ archived: string[], failed: Array<{ id: string, reason: string }> }>} - `archived` holds ids successfully deleted (name kept for API compatibility)
+ */
+export const archiveUnusedPlaceholderYarnBoxesByIds = async (yarnBoxMongoIds) => {
+  const ids = Array.isArray(yarnBoxMongoIds) ? yarnBoxMongoIds : [];
+  const archived = [];
+  const failed = [];
+
+  for (const rawId of ids) {
+    const idStr = String(rawId || '').trim();
+    if (!idStr || !mongoose.Types.ObjectId.isValid(idStr)) {
+      failed.push({ id: idStr || '(empty)', reason: 'Invalid box id' });
+      continue;
+    }
+
+    const oid = new mongoose.Types.ObjectId(idStr);
+    const box = await YarnBox.findById(oid).lean();
+    const block = getUnusedPlaceholderArchiveBlockReason(box);
+    if (block) {
+      failed.push({ id: idStr, reason: block });
+      continue;
+    }
+
+    const hasActiveCones = await YarnCone.exists({
+      boxId: box.boxId,
+      ...activeYarnConeMatch,
+    });
+    if (hasActiveCones) {
+      failed.push({ id: idStr, reason: 'Box has yarn cones recorded' });
+      continue;
+    }
+
+    const del = await YarnBox.deleteOne({ _id: oid });
+    if (!del.deletedCount) {
+      failed.push({ id: idStr, reason: 'Box could not be deleted' });
+      continue;
+    }
+
+    const lotTrim = box.lotNumber != null ? String(box.lotNumber).trim() : '';
+    if (lotTrim && box.poNumber) {
+      await YarnPurchaseOrder.updateOne(
+        { poNumber: box.poNumber },
+        {
+          $inc: { 'receivedLotDetails.$[lot].numberOfBoxes': -1 },
+        },
+        {
+          arrayFilters: [{ 'lot.lotNumber': lotTrim }],
+        }
+      );
+    }
+
+    archived.push(idStr);
+  }
+
+  return { archived, failed };
 };
 
 

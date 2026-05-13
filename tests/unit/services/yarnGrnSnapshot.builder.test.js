@@ -151,12 +151,14 @@ describe('yarnGrnSnapshot.builder', () => {
       const po = buildPo();
       const supplier = buildSupplierSnapshot(po);
       const items = [{ amount: 1000, quantity: 10, gstRate: 5 }];
-      const t = computeTotals(items, po, supplier);
+      const t = computeTotals(items, supplier);
       expect(t.subTotal).toBe(1000);
       expect(t.totalQty).toBe(10);
+      expect(t.gst).toBeCloseTo(50);
+      expect(t.grandTotal).toBeCloseTo(1050);
       expect(t.taxLabel).toBe('GST 5.0%');
-      expect(t.sgst).toBeCloseTo(po.gst / 2);
-      expect(t.cgst).toBeCloseTo(po.gst / 2);
+      expect(t.sgst).toBeCloseTo(25);
+      expect(t.cgst).toBeCloseTo(25);
       expect(t.igst).toBe(0);
       expect(t.amountInWords).toMatch(/Rupees/);
     });
@@ -165,11 +167,12 @@ describe('yarnGrnSnapshot.builder', () => {
       const po = buildPo();
       po.supplier.state = 'Delhi';
       const supplier = buildSupplierSnapshot(po);
-      const t = computeTotals([{ amount: 100, quantity: 1, gstRate: 5 }], po, supplier);
+      const t = computeTotals([{ amount: 100, quantity: 1, gstRate: 5 }], supplier);
       expect(t.taxLabel).toBe('IGST 5.0%');
       expect(t.sgst).toBe(0);
       expect(t.cgst).toBe(0);
-      expect(t.igst).toBeCloseTo(po.gst);
+      expect(t.igst).toBeCloseTo(5);
+      expect(t.grandTotal).toBeCloseTo(105);
     });
   });
 

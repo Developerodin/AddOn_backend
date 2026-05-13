@@ -100,4 +100,10 @@ export const backfillLtBoxWeightFromStCones = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(result);
 });
 
+export const archiveUnusedPlaceholderYarnBoxes = catchAsync(async (req, res) => {
+  const { yarn_box_ids: yarnBoxIds } = req.body;
+  const result = await yarnBoxService.archiveUnusedPlaceholderYarnBoxesByIds(yarnBoxIds);
+  res.status(httpStatus.OK).send(result);
+});
+
 

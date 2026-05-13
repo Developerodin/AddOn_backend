@@ -257,6 +257,7 @@ export const updatePurchaseOrder = {
             lotNumber: Joi.string().trim().required(),
             numberOfCones: Joi.number().min(0).allow(null),
             totalWeight: Joi.number().min(0).allow(null),
+            netWeight: Joi.number().min(0).allow(null),
             numberOfBoxes: Joi.number().min(0).allow(null),
             poItems: Joi.array()
               .items(

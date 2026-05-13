@@ -187,6 +187,18 @@ export const backfillLtBoxWeightFromStCones = {
     .required(),
 };
 
+export const archiveUnusedPlaceholderYarnBoxes = {
+  body: Joi.object()
+    .keys({
+      yarn_box_ids: Joi.array()
+        .items(Joi.string().custom(objectId))
+        .min(1)
+        .max(100)
+        .required(),
+    })
+    .required(),
+};
+
 export const getYarnBoxes = {
   query: Joi.object().keys({
     po_number: Joi.string().trim().optional(),

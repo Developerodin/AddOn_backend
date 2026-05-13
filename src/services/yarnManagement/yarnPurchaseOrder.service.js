@@ -1,6 +1,6 @@
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
-import { YarnPurchaseOrder, YarnBox, YarnCone } from '../../models/index.js';
+import { YarnPurchaseOrder, YarnBox, YarnCone, YarnRequisition } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import { yarnPurchaseOrderStatuses, lotStatuses } from '../../models/yarnReq/yarnPurchaseOrder.model.js';
 import * as supplierService from './supplier.service.js';
@@ -283,11 +283,82 @@ export const updatePurchaseOrderById = async (purchaseOrderId, updateBody) => {
   return purchaseOrder;
 };
 
+/**
+ * Delete a yarn PO permanently. Allowed for `draft`, `submitted_to_supplier`, and `in_transit`.
+ * Deleting a draft releases linked requisitions (attached draft / source line) back to the requisition list.
+ * @param {string} purchaseOrderId - Mongo _id
+ * @returns {Promise<object>} Removed document
+ */
 export const deletePurchaseOrderById = async (purchaseOrderId) => {
   const purchaseOrder = await YarnPurchaseOrder.findById(purchaseOrderId);
 
   if (!purchaseOrder) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Purchase order not found');
+  }
+
+  const deletableStatuses = ['draft', 'submitted_to_supplier', 'in_transit'];
+  if (!deletableStatuses.includes(purchaseOrder.currentStatus)) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Purchase order cannot be deleted in its current status'
+    );
+  }
+
+  if (purchaseOrder.currentStatus === 'draft') {
+    const poOid = purchaseOrder._id;
+    /** Full reset so rows return to “In requisition” and leave the PO draft queue drawer. */
+    const releaseDraftTiedRequisitions = {
+      $set: {
+        poSent: false,
+        draftForPo: false,
+      },
+      $unset: {
+        attachedDraftPoId: '',
+      },
+    };
+
+    const sourceReqOids = [];
+    const catalogIdStrings = new Set();
+    for (const item of purchaseOrder.poItems || []) {
+      const sid = item.sourceRequisitionId;
+      if (sid && mongoose.Types.ObjectId.isValid(String(sid))) {
+        sourceReqOids.push(new mongoose.Types.ObjectId(String(sid)));
+      }
+      const cid = item.yarnCatalogId;
+      if (cid && mongoose.Types.ObjectId.isValid(String(cid))) {
+        catalogIdStrings.add(String(cid));
+      }
+    }
+
+    const primaryOr = [{ attachedDraftPoId: poOid }];
+    if (sourceReqOids.length > 0) {
+      primaryOr.push({ _id: { $in: sourceReqOids } });
+    }
+    await YarnRequisition.updateMany({ $or: primaryOr }, releaseDraftTiedRequisitions);
+
+    await YarnRequisition.updateMany(
+      { linkedPurchaseOrderId: poOid },
+      {
+        $set: { poSent: false, draftForPo: false },
+        $unset: { attachedDraftPoId: '', linkedPurchaseOrderId: '' },
+      }
+    );
+
+    const supplierRaw = purchaseOrder.supplier;
+    const supStr = supplierRaw?._id ? String(supplierRaw._id) : supplierRaw != null ? String(supplierRaw) : '';
+    if (supStr && mongoose.Types.ObjectId.isValid(supStr) && catalogIdStrings.size > 0) {
+      const supOid = new mongoose.Types.ObjectId(supStr);
+      const catOids = [...catalogIdStrings].map((id) => new mongoose.Types.ObjectId(id));
+      await YarnRequisition.updateMany(
+        {
+          preferredSupplierId: supOid,
+          yarnCatalogId: { $in: catOids },
+          linkedPurchaseOrderId: null,
+          $or: [{ attachedDraftPoId: poOid }, { draftForPo: true }],
+        },
+        releaseDraftTiedRequisitions
+      );
+    }
   }
 
   await purchaseOrder.deleteOne();

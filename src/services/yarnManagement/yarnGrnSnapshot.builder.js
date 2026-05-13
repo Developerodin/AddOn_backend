@@ -83,6 +83,7 @@ const buildLotsSnapshot = (po, lotNumbers) => {
       lotNumber: trimSafe(lot.lotNumber),
       numberOfCones: toNumber(lot.numberOfCones),
       totalWeight: toNumber(lot.totalWeight),
+      netWeight: toNumber(lot.netWeight),
       numberOfBoxes: toNumber(lot.numberOfBoxes),
       poItems: (lot.poItems || []).map((entry) => {
         const refId = entry?.poItem?.toString?.() || (typeof entry?.poItem === 'string' ? entry.poItem : '');
@@ -207,30 +208,34 @@ const numberToWords = (num) => {
 };
 
 /**
- * Compute the totals block (sub-total, GST split, grand total) using the
- * snapshot items and supplier state. Mirrors the math from the existing
- * client-side handlePrintOrderSummary so paper output matches byte-for-byte.
- * @param {Array<Object>} items
- * @param {Object} po
+ * Compute the totals block (sub-total, GST split, grand total) from snapshot
+ * line items only so a partial GRN never inherits the full PO's `total` / `gst`.
+ * Tax is summed per line: amount × (gstRate / 100). Supplier state drives SGST+CGST vs IGST.
+ * @param {Array<Object>} items - printed rows (received qty × rate per line)
  * @param {Object} supplier - already-built supplier snapshot (for state)
  */
-const computeTotals = (items, po, supplier) => {
+const computeTotals = (items, supplier) => {
   const subTotal = items.reduce((s, it) => s + toNumber(it.amount), 0);
   const totalQty = items.reduce((s, it) => s + toNumber(it.quantity), 0);
 
   const supplierState = (supplier?.state || '').toLowerCase();
   const sameState = SUPPLIER_HOME_STATES.has(supplierState);
 
-  const avgGstRate = items.length
-    ? items.reduce((s, it) => s + toNumber(it.gstRate || 18), 0) / items.length
-    : 0;
+  const totalGst = items.reduce((s, it) => {
+    const amt = toNumber(it.amount);
+    const ratePct = toNumber(it.gstRate);
+    return s + (amt * ratePct) / 100;
+  }, 0);
 
-  const totalGst = toNumber(po?.gst);
   const sgst = sameState ? totalGst / 2 : 0;
   const cgst = sameState ? totalGst / 2 : 0;
   const igst = sameState ? 0 : totalGst;
 
-  const grandTotal = toNumber(po?.total) || subTotal + totalGst;
+  const grandTotal = subTotal + totalGst;
+
+  const avgGstRate = items.length
+    ? items.reduce((s, it) => s + toNumber(it.gstRate || 0), 0) / items.length
+    : 0;
 
   const taxLabel = sameState
     ? `GST ${avgGstRate.toFixed(1)}%`
@@ -267,6 +272,7 @@ const lotMaterialChange = (prior, current) => {
   if (!prior || !current) return Boolean(prior) !== Boolean(current);
   if (toNumber(prior.numberOfCones) !== toNumber(current.numberOfCones)) return true;
   if (toNumber(prior.totalWeight) !== toNumber(current.totalWeight)) return true;
+  if (toNumber(prior.netWeight) !== toNumber(current.netWeight)) return true;
   if (toNumber(prior.numberOfBoxes) !== toNumber(current.numberOfBoxes)) return true;
 
   const priorMap = new Map(
@@ -308,6 +314,7 @@ const computeSnapshotDiff = (before, after) => {
     const a = afterLots.get(k);
     cmp(`lots.${k}.numberOfCones`, b?.numberOfCones, a?.numberOfCones);
     cmp(`lots.${k}.totalWeight`, b?.totalWeight, a?.totalWeight);
+    cmp(`lots.${k}.netWeight`, b?.netWeight, a?.netWeight);
     cmp(`lots.${k}.numberOfBoxes`, b?.numberOfBoxes, a?.numberOfBoxes);
   }
   return diff;
@@ -324,7 +331,7 @@ const buildSnapshot = (po, lotNumbers) => {
   const consignee = buildConsigneeSnapshot();
   const lots = buildLotsSnapshot(po, lotNumbers);
   const items = buildItemsSnapshot(po, lots);
-  const totals = computeTotals(items, po, supplier);
+  const totals = computeTotals(items, supplier);
   return { supplier, consignee, lots, items, totals };
 };
 

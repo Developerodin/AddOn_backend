@@ -124,6 +124,11 @@ const receivedLotDetailsSchema = mongoose.Schema(
       type: Number,
       min: 0,
     },
+    /** Net weight (kg); gross weight is `totalWeight`. */
+    netWeight: {
+      type: Number,
+      min: 0,
+    },
     numberOfBoxes: {
       type: Number,
       min: 0,

@@ -64,6 +64,13 @@ router
   );
 
 router
+  .route('/archive-unused-placeholders')
+  .post(
+    validate(yarnBoxValidation.archiveUnusedPlaceholderYarnBoxes),
+    yarnBoxController.archiveUnusedPlaceholderYarnBoxes
+  );
+
+router
   .route('/backfill-lt-weight-from-st-cones')
   .post(
     validate(yarnBoxValidation.backfillLtBoxWeightFromStCones),

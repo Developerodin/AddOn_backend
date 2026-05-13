@@ -41,7 +41,10 @@ const grnLotSchema = mongoose.Schema(
   {
     lotNumber: { type: String, required: true, trim: true },
     numberOfCones: { type: Number, default: 0, min: 0 },
+    /** Gross weight (kg); mirrors PO receivedLotDetails.totalWeight */
     totalWeight: { type: Number, default: 0, min: 0 },
+    /** Net weight (kg); mirrors PO receivedLotDetails.netWeight */
+    netWeight: { type: Number, default: 0, min: 0 },
     numberOfBoxes: { type: Number, default: 0, min: 0 },
     poItems: { type: [grnLotPoItemSchema], default: [] },
     voided: { type: Boolean, default: false },

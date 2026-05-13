@@ -233,6 +233,7 @@ export const addLotDetails = async ({ poNumber, lots }) => {
       lotNumber: (lot.lotNumber || '').trim(),
       numberOfCones: Number(lot.numberOfCones) || 0,
       totalWeight: Number(lot.totalWeight) || 0,
+      netWeight: Number(lot.netWeight) || 0,
       numberOfBoxes: Number(lot.numberOfBoxes) || 1,
       poItems,
       status: 'lot_pending',
@@ -452,6 +453,7 @@ export const runReceivingPipelineForPo = async ({
       lotNumber: (lot.lotNumber || '').trim(),
       numberOfCones: Number(lot.numberOfCones) || 0,
       totalWeight: Number(lot.totalWeight) || 0,
+      netWeight: Number(lot.netWeight) || 0,
       numberOfBoxes: Number(lot.numberOfBoxes) || 1,
       poItems,
       status: 'lot_pending',
@@ -679,6 +681,7 @@ export const processFromExistingPo = async ({
     lotNumber: (lot.lotNumber || '').trim(),
     numberOfCones: Number(lot.numberOfCones) || 0,
     totalWeight: Number(lot.totalWeight) || 0,
+    netWeight: Number(lot.netWeight) || 0,
     numberOfBoxes: Math.max(1, Number(lot.numberOfBoxes) || 1),
     poItems: (lot.poItems || []).map((item) => ({
       poItem: typeof item.poItem === 'string' ? item.poItem : item.poItem?.toString?.(),
@@ -746,21 +749,7 @@ export const processFromExistingPo = async ({
       }
     };
 
-    // Check if boxes already exist for this PO (idempotency - don't duplicate)
-    const existingBoxes = await YarnBox.countDocuments({ poNumber, ...activeYarnBoxMatch });
-    if (existingBoxes > 0) {
-      result.message = `PO ${poNumber} already has ${existingBoxes} boxes. Skipping box creation.`;
-      result.purchaseOrder = await yarnPurchaseOrderService.getPurchaseOrderById(purchaseOrderId);
-      result.success = true;
-      // Always run QC auto-approve when enabled (no checkDataMatch - user confirmed by clicking Process)
-      if (autoApproveQc) {
-        await runQcAutoApprove();
-        result.message += ' QC auto-approved.';
-      }
-      return result;
-    }
-
-    // Step 3: Create boxes
+    // Step 3: Create boxes (bulkCreate adds only missing boxes per lot when lot numberOfBoxes increases)
     const bulkResult = await yarnBoxService.bulkCreateYarnBoxes({
       poNumber,
       lotDetails: lotDetailsForBulk,
