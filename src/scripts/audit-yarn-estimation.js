@@ -15,6 +15,7 @@
  *   node src/scripts/audit-yarn-estimation.js ORD-000005 --json # raw JSON output
  */
 
+import './lib/mongoUrlParsePatch.js';
 import mongoose from 'mongoose';
 import config from '../config/config.js';
 import { YarnTransaction } from '../models/index.js';

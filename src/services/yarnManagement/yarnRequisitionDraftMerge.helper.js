@@ -53,13 +53,29 @@ export const mergeRequisitionLineIntoDraftPo = async (draftPo, requisitionDoc) =
 
   if (idx >= 0) {
     const row = draftPo.poItems[idx];
-    row.quantity = toPositiveNumber(row.quantity) + qtyIncrement;
+    const prevQty = toPositiveNumber(row.quantity);
+    row.quantity = prevQty + qtyIncrement;
     if (incomingName && !String(row.yarnName || '').trim()) row.yarnName = incomingName;
+    if (!Array.isArray(row.stagedFromRequisitions)) {
+      row.stagedFromRequisitions = [];
+    }
+    // One-time backfill when an older PO line only had sourceRequisitionId (pre–per-row splits).
+    if (row.stagedFromRequisitions.length === 0 && row.sourceRequisitionId && prevQty > 0) {
+      row.stagedFromRequisitions.push({
+        requisitionId: row.sourceRequisitionId,
+        quantity: prevQty,
+      });
+    }
+    row.stagedFromRequisitions.push({
+      requisitionId: requisitionDoc._id,
+      quantity: qtyIncrement,
+    });
   } else {
     draftPo.poItems.push({
       yarnName: incomingName || 'Pending yarn',
       yarnCatalogId,
       sourceRequisitionId: requisitionDoc._id,
+      stagedFromRequisitions: [{ requisitionId: requisitionDoc._id, quantity: qtyIncrement }],
       sizeCount: '(pending)',
       shadeCode: undefined,
       rate: 0,
@@ -103,6 +119,7 @@ export const createDraftPurchaseOrderForRequisition = async (requisitionDoc) => 
         yarnName: incomingName || 'Pending yarn',
         yarnCatalogId: requisitionDoc.yarnCatalogId,
         sourceRequisitionId: requisitionDoc._id,
+        stagedFromRequisitions: [{ requisitionId: requisitionDoc._id, quantity: qtyIncrement }],
         sizeCount: '(pending)',
         shadeCode: undefined,
         rate: 0,

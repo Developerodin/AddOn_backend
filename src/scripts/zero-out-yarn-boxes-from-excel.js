@@ -16,8 +16,9 @@
  * Excel expectations:
  *   Table must include columns "Barcode" and/or "Box ID" (case-insensitive), or synonyms "Yarn Box Barcode", "Yarn Box ID".
  *   Either barcode or Box ID per row works; YarnBox lookup prefers barcode then boxId.
- *   If banners or blanks sit above the header row (e.g. Unallocated Stock.xlsx): pass `--header-row=<Excel row>`
- *   pointing at the header row ("Yarn Name", "Barcode", …).
+ *   If banners sit above the table (e.g. this project’s “Box in System but not in Hand.xlsx”): the script **auto-detects**
+ *   the header row by scanning for columns named Barcode and/or Box ID. Override with `--header-row=<N>` (1-based Excel row)
+ *   if detection picks the wrong row.
  *
  * Usage:
  *   node src/scripts/zero-out-yarn-boxes-from-excel.js --file=./issues-in-boxes.xlsx --dry-run
@@ -29,7 +30,7 @@
  * Flags:
  *   --file=PATH        Path to the .xlsx file (required).
  *   --sheet=NAME       Sheet name (defaults to first sheet).
- *   --header-row=N     Excel row number (1-based) where header cells live (e.g. 4 when rows 1–3 are banners / blanks).
+ *   --header-row=N     Optional. Force 1-based Excel row of headers; if omitted, the sheet is scanned for Barcode/Box ID columns.
  *   --dry-run          Default. Resolves rows and prints the plan without writing.
  *   --apply            Required to actually write changes.
  *   --report=PATH      Optional CSV report path (defaults to ./zero-out-report-<ts>.csv).
@@ -133,29 +134,61 @@ async function connectMongo() {
 }
 
 /**
- * Read rows from the workbook, normalizing column names.
- * When `headerExcelRow` is set (1-based Excel row), SheetJS parses that row as headers (for files with preamble rows above the table).
+ * Load one worksheet from an .xlsx file.
  * @param {string} filePath
- * @param {string|null} sheetName
- * @param {number|null} headerExcelRow
- * @returns {{ barcode: string, boxId: string, rowIndex: number }[]}
+ * @param {string|null} sheetName Sheet name or null for first sheet.
+ * @returns {{ sheet: import('xlsx').WorkSheet, sheetLabel: string }}
  */
-function readRowsFromExcel(filePath, sheetName, headerExcelRow) {
+function loadWorksheet(filePath, sheetName) {
   if (!fs.existsSync(filePath)) {
     throw new Error(`Excel file not found: ${filePath}`);
   }
   const wb = XLSX.readFile(filePath);
-  const sheet = sheetName ? wb.Sheets[sheetName] : wb.Sheets[wb.SheetNames[0]];
+  const sheetLabel = sheetName || wb.SheetNames[0];
+  const sheet = wb.Sheets[sheetLabel];
   if (!sheet) {
-    throw new Error(`Sheet not found. Available: ${wb.SheetNames.join(', ')}`);
+    throw new Error(`Sheet not found: "${sheetLabel}". Available: ${wb.SheetNames.join(', ')}`);
   }
-  const opts = { defval: null, raw: false };
-  if (headerExcelRow != null) opts.range = headerExcelRow - 1;
+  return { sheet, sheetLabel };
+}
 
+/**
+ * Find the 1-based Excel row that contains column headers (Barcode / Box ID) when the sheet has banner rows above the table.
+ * @param {import('xlsx').WorkSheet} sheet
+ * @param {number} [maxScan=50]
+ * @returns {number|null} Header row index, or null if not found.
+ */
+function detectBarcodeHeaderExcelRow(sheet, maxScan = 50) {
+  for (let hr = 1; hr <= maxScan; hr += 1) {
+    const json = XLSX.utils.sheet_to_json(sheet, {
+      defval: null,
+      raw: false,
+      range: hr - 1,
+    });
+    if (!json.length) continue;
+    const keys = Object.keys(json[0]).map((k) => String(k).trim().toLowerCase());
+    const set = new Set(keys);
+    const hasBarcode =
+      set.has('barcode') || set.has('yarn box barcode') || set.has('box barcode');
+    const hasBoxId =
+      set.has('box id') || set.has('boxid') || set.has('box_id') || set.has('yarn box id');
+    if (hasBarcode || hasBoxId) {
+      return hr;
+    }
+  }
+  return null;
+}
+
+/**
+ * Read yarn-box identifier rows from a sheet; normalizes column names.
+ * @param {import('xlsx').WorkSheet} sheet
+ * @param {number} headerExcelRow 1-based Excel row used as keys (Barcode, Box ID, …).
+ * @returns {{ barcode: string, boxId: string, rowIndex: number }[]}
+ */
+function readRowsFromSheet(sheet, headerExcelRow) {
+  const opts = { defval: null, raw: false, range: headerExcelRow - 1 };
   const json = XLSX.utils.sheet_to_json(sheet, opts);
-  /** @type {number} */
-  let firstDataExcelRowOneBased =
-    headerExcelRow != null ? headerExcelRow + 1 : 2;
+  const firstDataExcelRowOneBased = headerExcelRow + 1;
 
   return json.map((row, idx) => {
     const norm = {};
@@ -253,14 +286,26 @@ async function main() {
     process.exit(1);
   }
 
-  const headerExcelRow = parseOptionalHeaderExcelRow();
+  const headerRowFromCli = parseOptionalHeaderExcelRow();
   logger.info(`Mode: ${APPLY ? 'APPLY (writes will happen)' : 'DRY RUN (no writes)'}`);
 
-  const rows = readRowsFromExcel(FILE_PATH, SHEET_NAME, headerExcelRow);
+  const { sheet, sheetLabel } = loadWorksheet(FILE_PATH, SHEET_NAME);
+  let headerExcelRow = headerRowFromCli;
+  if (headerExcelRow == null) {
+    headerExcelRow = detectBarcodeHeaderExcelRow(sheet);
+    if (headerExcelRow == null) {
+      throw new Error(
+        'Could not detect header row: no column named Barcode or Box ID in the first 50 rows. Set --header-row=N to the Excel row that contains those headers.'
+      );
+    }
+    logger.info(`Detected Excel header row: ${headerExcelRow}`);
+  } else {
+    logger.info(`Using Excel header row from --header-row: ${headerExcelRow}`);
+  }
+
+  const rows = readRowsFromSheet(sheet, headerExcelRow);
   logger.info(
-    `Read ${rows.length} row(s) from ${path.basename(FILE_PATH)}${SHEET_NAME ? ` [${SHEET_NAME}]` : ''}${
-      headerExcelRow ? ` headerRow=${headerExcelRow}` : ''
-    }`
+    `Read ${rows.length} row(s) from ${path.basename(FILE_PATH)} [${sheetLabel}] headerRow=${headerExcelRow}`
   );
 
   if (rows.length === 0) {

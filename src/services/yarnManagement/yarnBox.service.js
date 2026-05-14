@@ -575,8 +575,20 @@ const UNALLOCATED_STORAGE_LOCATION_MATCH = {
   },
 };
 
+/** Omit placeholder boxes with no measurable weight (CSV/UI unallocated exports use this endpoint). */
+const HAS_POSITIVE_BOX_OR_GROSS_WEIGHT = {
+  $expr: {
+    $or: [
+      { $gt: [{ $ifNull: ['$boxWeight', 0] }, 0] },
+      { $gt: [{ $ifNull: ['$grossWeight', 0] }, 0] },
+    ],
+  },
+};
+
 /**
- * Get boxes without storage location (null, undefined, empty, or whitespace-only).
+ * Get boxes without storage location (null, undefined, empty, or whitespace-only),
+ * excluding rows where both boxWeight and grossWeight are absent or zero
+ * (placeholders still allowed by ACTIVE_BOX_FILTER are omitted from this listing).
  * Returns all matching boxes (no limit). Optionally filter by yarn name (case-insensitive exact match).
  * @param {Object} [filters]
  * @param {string} [filters.yarn_name] - Exact yarn name (case-insensitive) to scope the result.
@@ -584,7 +596,7 @@ const UNALLOCATED_STORAGE_LOCATION_MATCH = {
  */
 export const getBoxesWithoutStorageLocation = async (filters = {}) => {
   const query = {
-    $and: [ACTIVE_BOX_FILTER, UNALLOCATED_STORAGE_LOCATION_MATCH],
+    $and: [ACTIVE_BOX_FILTER, UNALLOCATED_STORAGE_LOCATION_MATCH, HAS_POSITIVE_BOX_OR_GROSS_WEIGHT],
   };
 
   const yarnName = (filters.yarn_name || '').trim();
