@@ -114,6 +114,14 @@ export const getYarnIssuedByOrder = {
   params: Joi.object().keys({
     orderno: Joi.string().trim().required(),
   }),
+  query: Joi.object().keys({
+    include_returns: Joi.alternatives()
+      .try(Joi.boolean(), Joi.string().trim().valid('', 'true', 'false', '0', '1', 'yes', 'no'))
+      .optional(),
+    include_floor_issue: Joi.alternatives()
+      .try(Joi.boolean(), Joi.string().trim().valid('', 'true', 'false', '0', '1', 'yes', 'no'))
+      .optional(),
+  }),
 };
 
 export const getAllYarnIssued = {
@@ -121,6 +129,21 @@ export const getAllYarnIssued = {
     start_date: Joi.date().iso().optional(),
     end_date: Joi.date().iso().optional(),
   }),
+};
+
+/** Per-article yarn issue/return cone merge for Yarn Return UI; requires PO id + article id or article_number. */
+export const getArticleReturnSlice = {
+  query: Joi.object()
+    .keys({
+      order_id: Joi.string().custom(objectId).required(),
+      article_id: Joi.string().custom(objectId).optional(),
+      article_number: Joi.string().trim().optional(),
+    })
+    .or('article_id', 'article_number')
+    .messages({
+      'object.missing':
+        '"article_id" is required unless "article_number" is provided (legacy rows)',
+    }),
 };
 
 export const getYarnTransactionById = {

@@ -31,6 +31,13 @@ router
   );
 
 router
+  .route('/article-return-slice')
+  .get(
+    validate(yarnTransactionValidation.getArticleReturnSlice),
+    yarnTransactionController.getArticleReturnSlice
+  );
+
+router
   .route('/:transactionId')
   .get(
     validate(yarnTransactionValidation.getYarnTransactionById),

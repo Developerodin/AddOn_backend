@@ -1,7 +1,13 @@
 import mongoose from 'mongoose';
 import httpStatus from 'http-status';
-import { YarnTransaction, YarnInventory, YarnCatalog, YarnRequisition } from '../../models/index.js';
-import { ProductionOrder, Article } from '../../models/production/index.js';
+import { YarnTransaction, YarnInventory, YarnCatalog, YarnRequisition, YarnCone } from '../../models/index.js';
+import {
+  ProductionOrder,
+  Article,
+  MachineOrderAssignment,
+  ArticleLog,
+  LogAction,
+} from '../../models/production/index.js';
 import Product from '../../models/product.model.js';
 import ApiError from '../../utils/ApiError.js';
 import { pickYarnCatalogId } from '../../utils/yarnCatalogRef.js';
@@ -526,6 +532,303 @@ export const queryYarnTransactions = async (filters = {}) => {
   return transactions;
 };
 
+const ARTICLE_SLICE_ISSUE_TYPES = ['yarn_issued', 'yarn_issued_linking', 'yarn_issued_sampling'];
+
+/**
+ * @param {unknown} coneRef
+ * @returns {string|null}
+ */
+const coneDocIdFromRef = (coneRef) => {
+  if (coneRef == null || coneRef === '') return null;
+  if (typeof coneRef === 'object' && coneRef !== null && '_id' in coneRef) {
+    const id = /** @type {{ _id?: unknown }} */ (coneRef)._id;
+    return mongoose.Types.ObjectId.isValid(id) ? String(id) : null;
+  }
+  return mongoose.Types.ObjectId.isValid(coneRef) ? String(coneRef) : null;
+};
+
+/** @param {unknown} value */
+const toIsoStringOrNull = (value) => {
+  if (value == null || value === '') return null;
+  const d = value instanceof Date ? value : new Date(/** @type {string | number | Date} */ (value));
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+};
+
+/**
+ * When knitting output is transferred to linking, creation of this log equals “knitting done” timing for BI/UI.
+ *
+ * @param {string} articleIdStr
+ * @returns {Promise<string|null>}
+ */
+const resolveKnittingCompletedAtIso = async (articleIdStr) => {
+  const fromKnit = [{ fromFloor: { $regex: /^knitting$/i } }];
+  /** @type {Record<string, unknown>|null} */
+  const transferOut = await ArticleLog.findOne({
+    articleId: articleIdStr,
+    action: LogAction.TRANSFERRED_TO_LINKING,
+    $or: fromKnit,
+  })
+    .sort({ timestamp: -1, date: -1, createdAt: -1 })
+    .select('timestamp date createdAt')
+    .lean();
+
+  if (transferOut) {
+    const ts =
+      /** @type {Date | undefined} */ (transferOut.timestamp) ??
+      /** @type {Date | undefined} */ (transferOut.date) ??
+      /** @type {Date | undefined} */ (transferOut.createdAt);
+    const iso = toIsoStringOrNull(ts);
+    if (iso) return iso;
+  }
+
+  return null;
+};
+
+/**
+ * Read path: issued + returned yarn transactions for one PO + article, merged to cone-level Awaiting/Returned.
+ * Matches legacy `orderno` rows the same way as `getYarnIssuedByOrder` / `queryYarnTransactions` + `order_id`.
+ *
+ * @param {{ orderId: string; articleId?: string; articleNumber?: string }} params
+ */
+export const getArticleReturnSlice = async ({ orderId, articleId, articleNumber }) => {
+  const poIdStr = String(orderId ?? '').trim();
+  if (!mongoose.Types.ObjectId.isValid(poIdStr)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid order_id');
+  }
+  const poOid = new mongoose.Types.ObjectId(poIdStr);
+
+  const po = await ProductionOrder.findById(poOid).select('_id orderNumber currentFloor').lean();
+  if (!po) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Production order not found');
+  }
+
+  const ordRe = new RegExp(`^${escapeRegex(String(po.orderNumber ?? '').trim())}$`, 'i');
+  const orderScope = { $or: [{ orderId: po._id }, { orderno: ordRe }] };
+
+  const sliceTypes = [...ARTICLE_SLICE_ISSUE_TYPES, 'yarn_returned'];
+  const mongooseFilter = {
+    $and: [{ ...orderScope }, { transactionType: { $in: sliceTypes } }],
+  };
+
+  const transactions = await YarnTransaction.find(mongooseFilter)
+    .populate({
+      path: 'yarnCatalogId',
+      select: '_id yarnName yarnType status',
+    })
+    .populate({ path: 'orderId', select: 'orderNumber' })
+    .populate({ path: 'articleId', select: 'articleNumber orderId machineId' })
+    .populate({ path: 'machineId', select: 'machineCode machineNumber model floor' })
+    .populate({
+      path: 'conesIdsArray',
+      select: 'barcode boxId yarnName _id articleId',
+      populate: { path: 'articleId', select: 'articleNumber' },
+    })
+    .sort({ transactionDate: -1 })
+    .lean();
+
+  let articleDoc = null;
+  const aidTrim = articleId ? String(articleId).trim() : '';
+  if (aidTrim && mongoose.Types.ObjectId.isValid(aidTrim)) {
+    articleDoc = await Article.findOne({
+      _id: new mongoose.Types.ObjectId(aidTrim),
+      orderId: po._id,
+    })
+      .select('articleNumber knittingCode completedAt machineId _id')
+      .lean();
+  }
+
+  const numTrim = articleNumber ? String(articleNumber).trim() : '';
+  if (!articleDoc && numTrim) {
+    const numRe = new RegExp(`^${escapeRegex(numTrim)}$`, 'i');
+    articleDoc = await Article.findOne({
+      orderId: po._id,
+      articleNumber: numRe,
+    })
+      .select('articleNumber knittingCode completedAt machineId _id')
+      .lean();
+  }
+
+  if (!articleDoc) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Article not found for this production order');
+  }
+
+  const groups = await groupTransactionsByArticle(transactions, { orderId: po._id });
+
+  const targetKey = String(articleDoc.articleNumber ?? '').trim().toLowerCase();
+  /** @type {Record<string, unknown>[]|undefined} */
+  const matchingGroupTx = groups.find((g) => String(g.articleNumber ?? '').trim().toLowerCase() === targetKey)
+    ?.transactions;
+
+  const articleTxList = Array.isArray(matchingGroupTx) ? matchingGroupTx : [];
+
+  /** @type {Map<string, { id: string; barcode: string; yarnName: string; status: 'Awaiting' | 'Returned' }>} */
+  const coneById = new Map();
+
+  const issueTypesSet = new Set(ARTICLE_SLICE_ISSUE_TYPES);
+  /** Oldest-first so the first barcode/yarn captured matches typical “issued” snapshots */
+  const chronIssue = [...articleTxList].filter((t) => issueTypesSet.has(t.transactionType));
+  chronIssue.sort((a, b) => {
+    const da = new Date(a.transactionDate || 0).getTime();
+    const db = new Date(b.transactionDate || 0).getTime();
+    return da - db;
+  });
+
+  for (const tx of chronIssue) {
+    const arr = tx.conesIdsArray;
+    if (!Array.isArray(arr)) continue;
+    for (const cref of arr) {
+      const id = coneDocIdFromRef(cref);
+      if (!id || coneById.has(id)) continue;
+      const obj = typeof cref === 'object' && cref !== null ? cref : {};
+      const yarnFromCone =
+        'yarnName' in obj && obj.yarnName != null && String(obj.yarnName).trim() !== ''
+          ? String(obj.yarnName)
+          : '';
+      const barcode = 'barcode' in obj && obj.barcode != null ? String(obj.barcode) : '';
+      coneById.set(id, {
+        id,
+        barcode,
+        yarnName: yarnFromCone || String(tx.yarnName || ''),
+        status: /** @type {const} */ ('Awaiting'),
+      });
+    }
+  }
+
+  /** Newest-first returns win if a cone appears in multiple returns */
+  const chronReturn = [...articleTxList].filter((t) => t.transactionType === 'yarn_returned');
+  chronReturn.sort((a, b) => {
+    const da = new Date(a.transactionDate || 0).getTime();
+    const db = new Date(b.transactionDate || 0).getTime();
+    return db - da;
+  });
+
+  for (const tx of chronReturn) {
+    const arr = tx.conesIdsArray;
+    if (!Array.isArray(arr)) continue;
+    for (const cref of arr) {
+      const id = coneDocIdFromRef(cref);
+      if (!id || !coneById.has(id)) continue;
+      const row = coneById.get(id);
+      if (!row) continue;
+      row.status = /** @type {const} */ ('Returned');
+      const obj = typeof cref === 'object' && cref !== null ? cref : {};
+      const yarnFromCone =
+        'yarnName' in obj && obj.yarnName != null && String(obj.yarnName).trim() !== ''
+          ? String(obj.yarnName)
+          : '';
+      const barcode = 'barcode' in obj && obj.barcode != null ? String(obj.barcode) : '';
+      if (yarnFromCone && !row.yarnName) row.yarnName = yarnFromCone;
+      if (barcode && !row.barcode) row.barcode = barcode;
+    }
+  }
+
+  const cones = [...coneById.values()].sort((a, b) =>
+    String(a.yarnName || '').localeCompare(String(b.yarnName || ''))
+  );
+
+  let pendingConeCount = 0;
+  let returnedConeCount = 0;
+  /** @type {Set<string>} */
+  const yarnNameSet = new Set();
+  for (const c of cones) {
+    if (c.status === 'Returned') returnedConeCount += 1;
+    else pendingConeCount += 1;
+    const yn = String(c.yarnName || '').trim();
+    if (yn) yarnNameSet.add(yn);
+  }
+  const yarnNames = [...yarnNameSet].sort((a, b) => a.localeCompare(b)).join(', ');
+
+  let statusSummary = /** @type {'None'|'Awaiting'|'Partial'|'Returned'} */ ('None');
+  if (pendingConeCount > 0 && returnedConeCount > 0) statusSummary = 'Partial';
+  else if (pendingConeCount > 0 && returnedConeCount === 0) statusSummary = 'Awaiting';
+  else if (pendingConeCount === 0 && returnedConeCount > 0) statusSummary = 'Returned';
+
+  let assignment =
+    /** @type {import('mongoose').LeanDocument<{ machine?: Record<string, unknown> }>|null} */ (
+      await MachineOrderAssignment.findOne({
+        isActive: true,
+        productionOrderItems: {
+          $elemMatch: { productionOrder: po._id, article: articleDoc._id },
+        },
+      })
+        .populate({
+          path: 'machine',
+          select: 'floor assignedSupervisor',
+          populate: { path: 'assignedSupervisor', select: 'name email' },
+        })
+        .select('machine')
+        .sort({ updatedAt: -1 })
+        .lean()
+    );
+
+  if (!assignment?.machine) {
+    assignment =
+      /** @type {typeof assignment} */
+      (
+        await MachineOrderAssignment.findOne({
+          productionOrderItems: {
+            $elemMatch: { productionOrder: po._id, article: articleDoc._id },
+          },
+        })
+          .populate({
+            path: 'machine',
+            select: 'floor assignedSupervisor',
+            populate: { path: 'assignedSupervisor', select: 'name email' },
+          })
+          .select('machine')
+          .sort({ updatedAt: -1 })
+          .lean()
+      );
+  }
+
+  /** @type {Record<string, unknown>|undefined} */
+  const mach = assignment && typeof assignment.machine === 'object' ? assignment.machine : undefined;
+  const floor =
+    (mach?.floor != null && String(mach.floor).trim() !== '' && String(mach.floor)) ||
+    (po.currentFloor != null ? String(po.currentFloor) : '');
+
+  /** @type {Record<string, unknown>|undefined} */
+  const supervisor =
+    mach && typeof mach.assignedSupervisor === 'object' && mach.assignedSupervisor !== null
+      ? /** @type {Record<string, unknown>} */ (mach.assignedSupervisor)
+      : undefined;
+  const knittingSupervisor =
+    (supervisor?.name != null && String(supervisor.name).trim()) ||
+    (supervisor?.email != null && String(supervisor.email).trim()) ||
+    'N/A';
+
+  const knittingCompletedFromLog = await resolveKnittingCompletedAtIso(String(articleDoc._id));
+  const knittingCompletedAt =
+    knittingCompletedFromLog ??
+    toIsoStringOrNull(articleDoc.completedAt);
+
+  const conesOut = cones.map((c) => ({
+    id: c.id,
+    barcode: c.barcode,
+    yarnName: c.yarnName || '',
+    status: c.status,
+    articleId: String(articleDoc._id),
+    articleNumber: articleDoc.articleNumber,
+  }));
+
+  return {
+    orderId: String(po._id),
+    /** Visible production order number (e.g. ORD-…), not article `knittingCode`. */
+    productionOrder: String(po.orderNumber ?? '').trim(),
+    floor,
+    knittingCompletedAt,
+    knittingSupervisor,
+    articleId: String(articleDoc._id),
+    articleNumber: articleDoc.articleNumber,
+    yarnNames,
+    status: statusSummary,
+    pendingConeCount,
+    returnedConeCount,
+    cones: conesOut,
+  };
+};
+
 /**
  * Enriches yarn transactions with article information by matching yarns to articles via BOM
  * @param {Array} transactions - Array of yarn transactions
@@ -601,6 +904,75 @@ export const groupTransactionsByArticle = async (transactions, orderRef) => {
     }
   }
 
+  /**
+   * When BOM match fails: use embedded articleNumber or articleId (populate or plain ObjectId) on this PO.
+   * @param {object} transaction
+   * @param {{ _id: unknown; articleNumber?: string | null }[]} orderArticles
+   * @returns {string|null}
+   */
+  const resolveArticleNumberFromTransaction = (transaction, orderArticles) => {
+    const top = transaction?.articleNumber != null ? String(transaction.articleNumber).trim() : '';
+    if (top) return top;
+
+    const aid = transaction.articleId;
+    if (aid && typeof aid === 'object') {
+      const fromPop = aid.articleNumber != null ? String(aid.articleNumber).trim() : '';
+      if (fromPop) return fromPop;
+      const id = '_id' in aid ? aid._id : null;
+      if (id != null) {
+        const hit = orderArticles.find((a) => String(a._id) === String(id));
+        if (hit?.articleNumber) return String(hit.articleNumber).trim();
+      }
+    } else if (aid != null) {
+      const hit = orderArticles.find((a) => String(a._id) === String(aid));
+      if (hit?.articleNumber) return String(hit.articleNumber).trim();
+    }
+    return null;
+  };
+
+  /** Map YarnCone._id → article factory code for articles on this order (fallback when txn has no article). */
+  const coneIdToArticleNumber = new Map();
+  const coneOidHex = new Set();
+  for (const t of transactions) {
+    const arr = t.conesIdsArray;
+    if (!Array.isArray(arr)) continue;
+    for (const item of arr) {
+      const id =
+        item && typeof item === 'object' && item !== null && '_id' in item ? item._id : item;
+      if (id != null && mongoose.Types.ObjectId.isValid(id)) {
+        coneOidHex.add(String(id));
+      }
+    }
+  }
+  if (coneOidHex.size > 0) {
+    const cones = await YarnCone.find({
+      _id: { $in: [...coneOidHex].map((h) => new mongoose.Types.ObjectId(h)) },
+    })
+      .select('articleId')
+      .lean();
+    for (const c of cones) {
+      if (!c?._id || !c?.articleId) continue;
+      const hit = articles.find((a) => String(a._id) === String(c.articleId));
+      if (hit?.articleNumber) {
+        coneIdToArticleNumber.set(String(c._id), String(hit.articleNumber).trim());
+      }
+    }
+  }
+
+  /**
+   * @param {object} transaction
+   * @returns {string|null}
+   */
+  const articleNumberFromConeIds = (transaction) => {
+    const arr = transaction.conesIdsArray;
+    if (!Array.isArray(arr) || arr.length === 0) return null;
+    const first = arr[0];
+    const id =
+      first && typeof first === 'object' && first !== null && '_id' in first ? first._id : first;
+    if (id == null) return null;
+    return coneIdToArticleNumber.get(String(id)) ?? null;
+  };
+
   // Group transactions by article
   const groupedByArticle = {};
   const unmatchedTransactions = [];
@@ -609,16 +981,64 @@ export const groupTransactionsByArticle = async (transactions, orderRef) => {
     const transactionYarnName = transaction.yarnName;
     let matched = false;
 
-    // Try to match transaction to article via BOM
-    for (const [articleNumber, { yarnNames, articleInfo }] of articleYarnMap.entries()) {
-      if (yarnNames.has(transactionYarnName)) {
-        if (!groupedByArticle[articleNumber]) {
-          groupedByArticle[articleNumber] = {
-            articleNumber: articleNumber,
+    /**
+     * Prefer explicit order/article on the transaction before BOM yarn-name routing.
+     * Otherwise two articles on the same PO with overlapping BOM yarn names can steal
+     * each other's rows, and the UI shows wrong pending counts per article.
+     */
+    const explicitArticleNumber = resolveArticleNumberFromTransaction(transaction, articles);
+    const canonicalArticle = explicitArticleNumber
+      ? articles.find(
+          (a) =>
+            String(a.articleNumber).trim().toLowerCase() === String(explicitArticleNumber).trim().toLowerCase()
+        )
+      : null;
+    if (explicitArticleNumber && canonicalArticle) {
+      const key = canonicalArticle.articleNumber;
+
+      if (!groupedByArticle[key]) {
+        groupedByArticle[key] = {
+          articleNumber: key,
+          articleInfo: {
+            plannedQuantity: canonicalArticle.plannedQuantity,
+            status: canonicalArticle.status,
+            progress: canonicalArticle.progress,
+          },
+          transactions: [],
+          totals: {
+            transactionNetWeight: 0,
+            transactionTotalWeight: 0,
+            transactionTearWeight: 0,
+            transactionConeCount: 0,
+          },
+        };
+      }
+
+      groupedByArticle[key].transactions.push(transaction);
+      groupedByArticle[key].totals.transactionNetWeight += transaction.transactionNetWeight || 0;
+      groupedByArticle[key].totals.transactionTotalWeight += transaction.transactionTotalWeight || 0;
+      groupedByArticle[key].totals.transactionTearWeight += transaction.transactionTearWeight || 0;
+      groupedByArticle[key].totals.transactionConeCount += transaction.transactionConeCount || 0;
+      matched = true;
+    }
+
+    if (!matched) {
+      const coneArticle = articleNumberFromConeIds(transaction);
+      const canonicalFromCone = coneArticle
+        ? articles.find(
+            (a) =>
+              String(a.articleNumber).trim().toLowerCase() === String(coneArticle).trim().toLowerCase()
+          )
+        : null;
+      if (coneArticle && canonicalFromCone) {
+        const key = canonicalFromCone.articleNumber;
+        if (!groupedByArticle[key]) {
+          groupedByArticle[key] = {
+            articleNumber: key,
             articleInfo: {
-              plannedQuantity: articleInfo.plannedQuantity,
-              status: articleInfo.status,
-              progress: articleInfo.progress,
+              plannedQuantity: canonicalFromCone.plannedQuantity,
+              status: canonicalFromCone.status,
+              progress: canonicalFromCone.progress,
             },
             transactions: [],
             totals: {
@@ -626,41 +1046,49 @@ export const groupTransactionsByArticle = async (transactions, orderRef) => {
               transactionTotalWeight: 0,
               transactionTearWeight: 0,
               transactionConeCount: 0,
-            }
+            },
           };
         }
-        
-        groupedByArticle[articleNumber].transactions.push(transaction);
-        groupedByArticle[articleNumber].totals.transactionNetWeight += transaction.transactionNetWeight || 0;
-        groupedByArticle[articleNumber].totals.transactionTotalWeight += transaction.transactionTotalWeight || 0;
-        groupedByArticle[articleNumber].totals.transactionTearWeight += transaction.transactionTearWeight || 0;
-        groupedByArticle[articleNumber].totals.transactionConeCount += transaction.transactionConeCount || 0;
+        groupedByArticle[key].transactions.push(transaction);
+        groupedByArticle[key].totals.transactionNetWeight += transaction.transactionNetWeight || 0;
+        groupedByArticle[key].totals.transactionTotalWeight += transaction.transactionTotalWeight || 0;
+        groupedByArticle[key].totals.transactionTearWeight += transaction.transactionTearWeight || 0;
+        groupedByArticle[key].totals.transactionConeCount += transaction.transactionConeCount || 0;
         matched = true;
-        break;
       }
     }
 
-    // If transaction has articleNumber but wasn't matched via BOM, use the articleNumber from transaction
-    if (!matched && transaction.articleNumber) {
-      if (!groupedByArticle[transaction.articleNumber]) {
-        groupedByArticle[transaction.articleNumber] = {
-          articleNumber: transaction.articleNumber,
-          articleInfo: null,
-          transactions: [],
-          totals: {
-            transactionNetWeight: 0,
-            transactionTotalWeight: 0,
-            transactionTearWeight: 0,
-            transactionConeCount: 0,
+    // Try to match transaction to article via BOM (when not already attributed explicitly)
+    if (!matched) {
+      for (const [articleNumber, { yarnNames, articleInfo }] of articleYarnMap.entries()) {
+        if (yarnNames.has(transactionYarnName)) {
+          if (!groupedByArticle[articleNumber]) {
+            groupedByArticle[articleNumber] = {
+              articleNumber: articleNumber,
+              articleInfo: {
+                plannedQuantity: articleInfo.plannedQuantity,
+                status: articleInfo.status,
+                progress: articleInfo.progress,
+              },
+              transactions: [],
+              totals: {
+                transactionNetWeight: 0,
+                transactionTotalWeight: 0,
+                transactionTearWeight: 0,
+                transactionConeCount: 0,
+              }
+            };
           }
-        };
+          
+          groupedByArticle[articleNumber].transactions.push(transaction);
+          groupedByArticle[articleNumber].totals.transactionNetWeight += transaction.transactionNetWeight || 0;
+          groupedByArticle[articleNumber].totals.transactionTotalWeight += transaction.transactionTotalWeight || 0;
+          groupedByArticle[articleNumber].totals.transactionTearWeight += transaction.transactionTearWeight || 0;
+          groupedByArticle[articleNumber].totals.transactionConeCount += transaction.transactionConeCount || 0;
+          matched = true;
+          break;
+        }
       }
-      groupedByArticle[transaction.articleNumber].transactions.push(transaction);
-      groupedByArticle[transaction.articleNumber].totals.transactionNetWeight += transaction.transactionNetWeight || 0;
-      groupedByArticle[transaction.articleNumber].totals.transactionTotalWeight += transaction.transactionTotalWeight || 0;
-      groupedByArticle[transaction.articleNumber].totals.transactionTearWeight += transaction.transactionTearWeight || 0;
-      groupedByArticle[transaction.articleNumber].totals.transactionConeCount += transaction.transactionConeCount || 0;
-      matched = true;
     }
 
     if (!matched) {
@@ -722,18 +1150,51 @@ const groupTransactionsByArticleNumber = (transactions) => {
 };
 
 /**
- * Gets all yarn_issued transactions for a specific order number.
- * Returns transactions grouped by articleNumber if available, otherwise by yarnName.
- * If groupByArticle is true, returns data grouped by article; otherwise returns flat array.
+ * Gets yarn transactions for a production order (by visible orderNumber / ORD-xxx).
+ * Default: only `yarn_issued`. Use `includeReturns` / `includeFloorIssue` to widen types.
+ *
+ * Matches `orderId` on the resolved ProductionOrder **or** `orderno` case-insensitive (legacy rows).
+ *
+ * @param {string} orderno
+ * @param {boolean} groupByArticle
+ * @param {{ includeReturns?: boolean; includeFloorIssue?: boolean }} [options]
  */
-export const getYarnIssuedByOrder = async (orderno, groupByArticle = false) => {
-  const transactions = await YarnTransaction.find({
-    orderno: orderno,
-    transactionType: 'yarn_issued',
-  })
+export const getYarnIssuedByOrder = async (orderno, groupByArticle = false, options = {}) => {
+  const { includeReturns = false, includeFloorIssue = false } = options || {};
+
+  /** @type {string[]} */
+  const types = ['yarn_issued'];
+  if (includeFloorIssue) {
+    types.push('yarn_issued_linking', 'yarn_issued_sampling');
+  }
+  if (includeReturns) {
+    types.push('yarn_returned');
+  }
+
+  const trimmed = String(orderno ?? '').trim();
+  const ordRe = new RegExp(`^${escapeRegex(trimmed)}$`, 'i');
+
+  let order = await ProductionOrder.findOne({ orderNumber: trimmed }).select('_id orderNumber').lean();
+  if (!order) {
+    order = await ProductionOrder.findOne({ orderNumber: ordRe }).select('_id orderNumber').lean();
+  }
+
+  const orderScope = order ? { $or: [{ orderId: order._id }, { orderno: ordRe }] } : { orderno: ordRe };
+
+  const mongooseFilter = {
+    $and: [{ ...orderScope }, { transactionType: { $in: types } }],
+  };
+
+  const transactions = await YarnTransaction.find(mongooseFilter)
     .populate({
       path: 'yarnCatalogId',
       select: '_id yarnName yarnType status',
+    })
+    .populate({ path: 'orderId', select: 'orderNumber' })
+    .populate({ path: 'articleId', select: 'articleNumber orderId machineId' })
+    .populate({
+      path: 'conesIdsArray',
+      select: 'barcode boxId yarnName _id',
     })
     .sort({ transactionDate: -1 })
     .lean();

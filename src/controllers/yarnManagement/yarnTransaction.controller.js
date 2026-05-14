@@ -90,7 +90,18 @@ export const getYarnTransactions = catchAsync(async (req, res) => {
 
 export const getYarnIssuedByOrder = catchAsync(async (req, res) => {
   const { orderno } = req.params;
-  const transactions = await yarnTransactionService.getYarnIssuedByOrder(orderno);
+
+  const truthy = (v) => {
+    const s = String(v ?? '')
+      .trim()
+      .toLowerCase();
+    return s === 'true' || s === '1' || s === 'yes';
+  };
+
+  const transactions = await yarnTransactionService.getYarnIssuedByOrder(orderno, false, {
+    includeReturns: truthy(req.query.include_returns),
+    includeFloorIssue: truthy(req.query.include_floor_issue),
+  });
   res.status(httpStatus.OK).send(transactions);
 });
 
@@ -98,6 +109,15 @@ export const getAllYarnIssued = catchAsync(async (req, res) => {
   const filters = pick(req.query, ['start_date', 'end_date']);
   const transactions = await yarnTransactionService.getAllYarnIssued(filters);
   res.status(httpStatus.OK).send(transactions);
+});
+
+export const getArticleReturnSlice = catchAsync(async (req, res) => {
+  const slice = await yarnTransactionService.getArticleReturnSlice({
+    orderId: req.query.order_id,
+    articleId: req.query.article_id,
+    articleNumber: req.query.article_number,
+  });
+  res.status(httpStatus.OK).send(slice);
 });
 
 export const getYarnTransactionById = catchAsync(async (req, res) => {
