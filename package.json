@@ -54,6 +54,7 @@
     "sync:yarn-labels-from-catalog": "cross-env NODE_ENV=development node src/scripts/sync-yarn-labels-from-catalog.js",
     "verify:yarn-catalog-names": "cross-env NODE_ENV=development node src/scripts/verify-yarn-catalog-yarn-names.js",
     "boxes:zero-out-from-excel": "cross-env NODE_ENV=development node src/scripts/zero-out-yarn-boxes-from-excel.js",
+    "cones:mark-used-from-excel": "cross-env NODE_ENV=development node src/scripts/mark-yarn-cones-used-from-excel.js",
     "prepare": "husky install"
   },
   "keywords": [
