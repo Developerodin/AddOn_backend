@@ -1,6 +1,7 @@
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
 import { YarnRequisition, YarnCatalog, Supplier } from '../../models/index.js';
+import YarnPurchaseOrder from '../../models/yarnReq/yarnPurchaseOrder.model.js';
 import ApiError from '../../utils/ApiError.js';
 import * as yarnInventoryService from './yarnInventory.service.js';
 import { pickYarnCatalogId } from '../../utils/yarnCatalogRef.js';
@@ -111,6 +112,72 @@ const SORT_FIELDS = {
   minQty: 'minQty',
   availableQty: 'availableQty',
   blockedQty: 'blockedQty',
+};
+
+/**
+ * Resolves kg quantity each requisition contributes on its attached draft PO (when status is still draft).
+ * Uses `stagedFromRequisitions` when present, else falls back to matching `sourceRequisitionId` line quantity.
+ * @param {Array<Record<string, unknown>>} requisitionRows - lean YarnRequisition docs
+ * @returns {Promise<Array<Record<string, unknown> & { draftPoQuantity: number | null }>>}
+ */
+const attachDraftPoQuantities = async (requisitionRows) => {
+  const oidList = [];
+  const seen = new Set();
+  for (const row of requisitionRows) {
+    const att = row.attachedDraftPoId;
+    if (!att) continue;
+    const raw = att._id ?? att;
+    const key = raw?.toString?.();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    oidList.push(raw instanceof mongoose.Types.ObjectId ? raw : new mongoose.Types.ObjectId(String(raw)));
+  }
+  if (oidList.length === 0) {
+    return requisitionRows.map((r) => ({ ...r, draftPoQuantity: null }));
+  }
+
+  const orders = await YarnPurchaseOrder.find({ _id: { $in: oidList } })
+    .select('poItems currentStatus')
+    .lean();
+  const poById = new Map(orders.map((o) => [o._id.toString(), o]));
+
+  return requisitionRows.map((req) => {
+    const att = req.attachedDraftPoId;
+    if (!att) {
+      return { ...req, draftPoQuantity: null };
+    }
+    const poKey = (att._id ?? att).toString();
+    const po = poById.get(poKey);
+    if (!po || po.currentStatus !== 'draft') {
+      return { ...req, draftPoQuantity: null };
+    }
+    const reqId = (req._id ?? req.id)?.toString?.();
+    if (!reqId) {
+      return { ...req, draftPoQuantity: null };
+    }
+
+    let draftPoQuantity = null;
+    for (const item of po.poItems || []) {
+      const staged = item.stagedFromRequisitions;
+      if (Array.isArray(staged) && staged.length > 0) {
+        const hit = staged.find((s) => {
+          const rid = s.requisitionId?._id ?? s.requisitionId;
+          return rid != null && String(rid) === reqId;
+        });
+        if (hit && typeof hit.quantity === 'number') {
+          draftPoQuantity = hit.quantity;
+          break;
+        }
+      }
+      const sr = item.sourceRequisitionId;
+      const sid = sr?._id != null ? String(sr._id) : sr != null ? String(sr) : '';
+      if (sid === reqId) {
+        draftPoQuantity = typeof item.quantity === 'number' ? item.quantity : null;
+        break;
+      }
+    }
+    return { ...req, draftPoQuantity };
+  });
 };
 
 /**
@@ -261,6 +328,8 @@ export const getYarnRequisitionList = async ({
       })
     );
   }
+
+  results = await attachDraftPoQuantities(results);
 
   const alertSummary = await YarnRequisition.aggregate([
     { $match: filter },

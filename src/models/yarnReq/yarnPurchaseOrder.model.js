@@ -105,6 +105,27 @@ const poItemSchema = mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'YarnRequisition',
     },
+    /**
+     * Per-requisition quantities merged onto this line (new staging writes here; supports mergedSameYarn).
+     * @see mergeRequisitionLineIntoDraftPo
+     */
+    stagedFromRequisitions: {
+      type: [
+        {
+          requisitionId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'YarnRequisition',
+            required: true,
+          },
+          quantity: {
+            type: Number,
+            required: true,
+            min: 0,
+          },
+        },
+      ],
+      default: undefined,
+    },
   },
   { _id: true }
 );
