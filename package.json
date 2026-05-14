@@ -33,6 +33,7 @@
     "report:yarn-stocked": "cross-env NODE_ENV=development node src/scripts/report-yarn-stocked.js",
     "report:yarn-boxes-po": "cross-env NODE_ENV=development node src/scripts/report-yarn-boxes-by-po.js",
     "report:yarn-box-excel-mismatch": "cross-env NODE_ENV=development node src/scripts/report-yarn-box-excel-mismatch.js --file=\"./7+2 Boxes Mis Match.xlsx\"",
+    "report:cone-issue-from-xlsx": "cross-env NODE_ENV=development node src/scripts/report-cone-issue-from-xlsx.js --xlsx=\"./Short Term Yarn Return.xlsx\"",
     "report:yarn-storage-opening": "cross-env NODE_ENV=development node src/scripts/report-yarn-storage-opening.js",
     "report:yarn-snapshot-coverage": "cross-env NODE_ENV=development node src/scripts/report-yarn-daily-snapshot-coverage.js",
     "summarize:yarn-inventory": "cross-env NODE_ENV=development node src/scripts/yarn-inventory-summary.js",

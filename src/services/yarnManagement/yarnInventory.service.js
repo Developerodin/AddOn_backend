@@ -393,22 +393,37 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
   // Unallocated boxes: no slot after trim (same semantics as GET /yarn-boxes/without-storage-location).
   // Using $trim prevents overlap with LT when storageLocation is padding/whitespace while still listed in ltBarcodes.
   // IMPORTANT: typically `storedStatus=false` until allocated — do NOT require storedStatus=true here.
+  const effectiveUnallocatedKg = {
+    $cond: [
+      { $gt: [{ $ifNull: ['$boxWeight', 0] }, 0] },
+      { $ifNull: ['$boxWeight', 0] },
+      { $ifNull: ['$grossWeight', 0] },
+    ],
+  };
+
   const unallocatedBoxPipeline = [
     {
       $match: {
         ...yarnNameMatch,
         ...activeYarnBoxMatch,
-        boxWeight: { $gt: 0 },
         $expr: {
-          $eq: [{ $trim: { input: { $ifNull: ['$storageLocation', ''] } } }, ''],
+          $and: [
+            { $eq: [{ $trim: { input: { $ifNull: ['$storageLocation', ''] } } }, ''] },
+            {
+              $or: [
+                { $gt: [{ $ifNull: ['$boxWeight', 0] }, 0] },
+                { $gt: [{ $ifNull: ['$grossWeight', 0] }, 0] },
+              ],
+            },
+          ],
         },
       },
     },
     {
       $group: {
         _id: { $trim: { input: { $ifNull: ['$yarnName', 'Unknown'] } } },
-        totalWeight: { $sum: { $ifNull: ['$boxWeight', 0] } },
-        totalNetWeight: { $sum: { $ifNull: ['$boxWeight', 0] } },
+        totalWeight: { $sum: effectiveUnallocatedKg },
+        totalNetWeight: { $sum: effectiveUnallocatedKg },
       },
     },
   ];
