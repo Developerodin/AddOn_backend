@@ -14,18 +14,22 @@
  *   - initialBoxWeight -> kept as-is (audit trail of the original LT weight)
  *
  * Excel expectations:
- *   First sheet has columns "Barcode" and/or "Box ID" (case-insensitive).
- *   Either one is enough per row; we resolve a YarnBox using whichever is present.
+ *   Table must include columns "Barcode" and/or "Box ID" (case-insensitive), or synonyms "Yarn Box Barcode", "Yarn Box ID".
+ *   Either barcode or Box ID per row works; YarnBox lookup prefers barcode then boxId.
+ *   If banners or blanks sit above the header row (e.g. Unallocated Stock.xlsx): pass `--header-row=<Excel row>`
+ *   pointing at the header row ("Yarn Name", "Barcode", …).
  *
  * Usage:
  *   node src/scripts/zero-out-yarn-boxes-from-excel.js --file=./issues-in-boxes.xlsx --dry-run
  *   node src/scripts/zero-out-yarn-boxes-from-excel.js --file=./issues-in-boxes.xlsx --apply
  *   node src/scripts/zero-out-yarn-boxes-from-excel.js --file=./foo.xlsx --apply --sheet="BoxIds Need to be Zeroed"
  *   node src/scripts/zero-out-yarn-boxes-from-excel.js --file=./foo.xlsx --apply --report=./zero-out-report.csv
+ *   node src/scripts/zero-out-yarn-boxes-from-excel.js --file=./Unallocated\ Stock.xlsx --sheet="Unallocated Stock" --header-row=4 --dry-run
  *
  * Flags:
  *   --file=PATH        Path to the .xlsx file (required).
  *   --sheet=NAME       Sheet name (defaults to first sheet).
+ *   --header-row=N     Excel row number (1-based) where header cells live (e.g. 4 when rows 1–3 are banners / blanks).
  *   --dry-run          Default. Resolves rows and prints the plan without writing.
  *   --apply            Required to actually write changes.
  *   --report=PATH      Optional CSV report path (defaults to ./zero-out-report-<ts>.csv).
@@ -68,8 +72,22 @@ function getArg(prefix) {
 const FILE_PATH = getArg('--file=');
 const SHEET_NAME = getArg('--sheet=');
 const REPORT_PATH = getArg('--report=');
+const HEADER_ROW_RAW = getArg('--header-row=');
 const APPLY = process.argv.includes('--apply');
 const DRY_RUN = !APPLY || process.argv.includes('--dry-run');
+
+/**
+ * Parse optional 1-based Excel header row (--header-row=N).
+ * @returns {number|null}
+ */
+function parseOptionalHeaderExcelRow() {
+  if (HEADER_ROW_RAW == null || HEADER_ROW_RAW === '') return null;
+  const n = Number(HEADER_ROW_RAW);
+  if (!Number.isFinite(n) || n < 1 || !Number.isInteger(n)) {
+    throw new Error(`Invalid --header-row=${HEADER_ROW_RAW}; use an integer Excel row ≥ 1 (e.g. 4)`);
+  }
+  return n;
+}
 
 /**
  * Strip wrapping quotes / BOM / stray CR from a Mongo URL string.
@@ -116,11 +134,13 @@ async function connectMongo() {
 
 /**
  * Read rows from the workbook, normalizing column names.
+ * When `headerExcelRow` is set (1-based Excel row), SheetJS parses that row as headers (for files with preamble rows above the table).
  * @param {string} filePath
  * @param {string|null} sheetName
+ * @param {number|null} headerExcelRow
  * @returns {{ barcode: string, boxId: string, rowIndex: number }[]}
  */
-function readRowsFromExcel(filePath, sheetName) {
+function readRowsFromExcel(filePath, sheetName, headerExcelRow) {
   if (!fs.existsSync(filePath)) {
     throw new Error(`Excel file not found: ${filePath}`);
   }
@@ -129,16 +149,32 @@ function readRowsFromExcel(filePath, sheetName) {
   if (!sheet) {
     throw new Error(`Sheet not found. Available: ${wb.SheetNames.join(', ')}`);
   }
-  const json = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: false });
+  const opts = { defval: null, raw: false };
+  if (headerExcelRow != null) opts.range = headerExcelRow - 1;
+
+  const json = XLSX.utils.sheet_to_json(sheet, opts);
+  /** @type {number} */
+  let firstDataExcelRowOneBased =
+    headerExcelRow != null ? headerExcelRow + 1 : 2;
+
   return json.map((row, idx) => {
     const norm = {};
     for (const [k, v] of Object.entries(row)) {
       norm[String(k).trim().toLowerCase()] = v == null ? '' : String(v).trim();
     }
     return {
-      rowIndex: idx + 2, // +1 for header, +1 for 1-based
-      barcode: norm['barcode'] || norm['box barcode'] || '',
-      boxId: norm['box id'] || norm['boxid'] || norm['box_id'] || '',
+      rowIndex: firstDataExcelRowOneBased + idx,
+      barcode:
+        norm['barcode'] ||
+        norm['box barcode'] ||
+        norm['yarn box barcode'] ||
+        '',
+      boxId:
+        norm['box id'] ||
+        norm['boxid'] ||
+        norm['box_id'] ||
+        norm['yarn box id'] ||
+        '',
     };
   });
 }
@@ -212,15 +248,20 @@ async function main() {
   if (!FILE_PATH) {
     // eslint-disable-next-line no-console
     console.error(
-      'Usage: node src/scripts/zero-out-yarn-boxes-from-excel.js --file=<path.xlsx> [--sheet=NAME] [--dry-run|--apply] [--report=PATH]'
+      'Usage: node src/scripts/zero-out-yarn-boxes-from-excel.js --file=<path.xlsx> [--sheet=NAME] [--header-row=N] [--dry-run|--apply] [--report=PATH]'
     );
     process.exit(1);
   }
 
+  const headerExcelRow = parseOptionalHeaderExcelRow();
   logger.info(`Mode: ${APPLY ? 'APPLY (writes will happen)' : 'DRY RUN (no writes)'}`);
 
-  const rows = readRowsFromExcel(FILE_PATH, SHEET_NAME);
-  logger.info(`Read ${rows.length} row(s) from ${path.basename(FILE_PATH)}${SHEET_NAME ? ` [${SHEET_NAME}]` : ''}`);
+  const rows = readRowsFromExcel(FILE_PATH, SHEET_NAME, headerExcelRow);
+  logger.info(
+    `Read ${rows.length} row(s) from ${path.basename(FILE_PATH)}${SHEET_NAME ? ` [${SHEET_NAME}]` : ''}${
+      headerExcelRow ? ` headerRow=${headerExcelRow}` : ''
+    }`
+  );
 
   if (rows.length === 0) {
     logger.warn('No rows found. Exiting.');
