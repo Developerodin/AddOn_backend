@@ -23,17 +23,8 @@
  * Override URL only if needed: `--mongo-url=mongodb+srv://...`
  */
 
-// Node 25+ url.parse + mongodb 3.x driver compatibility (see other scripts).
-import url from 'url';
-const _origUrlParse = url.parse;
-url.parse = function patchedParse(urlStr, ...args) {
-  try {
-    return _origUrlParse.call(this, urlStr, ...args);
-  } catch {
-    const firstHost = String(urlStr).replace(/(@[^,/]+),([^/])/, '$1/$2');
-    return _origUrlParse.call(this, firstHost, ...args);
-  }
-};
+// Node 25+ url.parse + mongodb 3.x driver compatibility — must load before mongoose (see lib).
+import './lib/mongoUrlParsePatch.js';
 
 import mongoose from 'mongoose';
 import config from '../config/config.js';
