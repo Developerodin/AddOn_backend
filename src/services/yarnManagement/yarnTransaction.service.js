@@ -11,6 +11,7 @@ import {
 import Product from '../../models/product.model.js';
 import ApiError from '../../utils/ApiError.js';
 import { pickYarnCatalogId } from '../../utils/yarnCatalogRef.js';
+import { loadLatestIssueTransactionContextForCone } from './yarnCone.service.js';
 
 /**
  * Produces an inventory bucket with all numeric values initialised to zero.
@@ -586,8 +587,21 @@ const resolveKnittingCompletedAtIso = async (articleIdStr) => {
 };
 
 /**
- * Read path: issued + returned yarn transactions for one PO + article, merged to cone-level Awaiting/Returned.
+ * Read path: issued + returned yarn transactions for one PO + article, merged to cone-level status.
  * Matches legacy `orderno` rows the same way as `getYarnIssuedByOrder` / `queryYarnTransactions` + `order_id`.
+ *
+ * Cones still `Awaiting` after txn merge are checked against YarnCone: `issueStatus: used` +
+ * `returnStatus: not_returned` means yarn was fully consumed / zero-weight bypass — treat as `Consumed`
+ * (not pending return), consistent with shop floor when no `yarn_returned` row exists.
+ *
+ * Cones still listed after txn grouping are filtered by **latest yarn issue txn** per cone: if that txn
+ * resolves to a different PO/article than this slice, the cone is dropped (fixes wrong `conesIdsArray`
+ * or BOM routing attaching another order’s cone to this article).
+ *
+ * **YarnCone reconciliation:** pending return (`Awaiting`) requires `issueStatus === 'issued'`. Cones with
+ * `issueStatus: used` + `returnStatus: not_returned` are `Consumed` (zero-weight / bypass without txn). Cones
+ * with any other non-issued state (e.g. `not_issued` after return/bypass when no `yarn_returned` row) are
+ * `Closed` so they are not counted as pending even though issue history exists.
  *
  * @param {{ orderId: string; articleId?: string; articleNumber?: string }} params
  */
@@ -662,7 +676,7 @@ export const getArticleReturnSlice = async ({ orderId, articleId, articleNumber 
 
   const articleTxList = Array.isArray(matchingGroupTx) ? matchingGroupTx : [];
 
-  /** @type {Map<string, { id: string; barcode: string; yarnName: string; status: 'Awaiting' | 'Returned' }>} */
+  /** @type {Map<string, { id: string; barcode: string; yarnName: string; status: 'Awaiting' | 'Returned' | 'Consumed' | 'Closed' }>} */
   const coneById = new Map();
 
   const issueTypesSet = new Set(ARTICLE_SLICE_ISSUE_TYPES);
@@ -695,6 +709,20 @@ export const getArticleReturnSlice = async ({ orderId, articleId, articleNumber 
     }
   }
 
+  /** Remove cones whose authoritative latest issue txn is a different PO/article than this slice. */
+  const sliceOrderIdStr = String(po._id);
+  const sliceArticleIdStr = String(articleDoc._id);
+  const candidateIds = [...coneById.keys()];
+  const latestCtxList = await Promise.all(candidateIds.map((coneKey) => loadLatestIssueTransactionContextForCone(coneKey)));
+  for (let i = 0; i < candidateIds.length; i += 1) {
+    const coneKey = candidateIds[i];
+    const ctx = latestCtxList[i];
+    if (!ctx?.orderId || !ctx?.articleId) continue;
+    if (String(ctx.orderId) !== sliceOrderIdStr || String(ctx.articleId) !== sliceArticleIdStr) {
+      coneById.delete(coneKey);
+    }
+  }
+
   /** Newest-first returns win if a cone appears in multiple returns */
   const chronReturn = [...articleTxList].filter((t) => t.transactionType === 'yarn_returned');
   chronReturn.sort((a, b) => {
@@ -723,26 +751,60 @@ export const getArticleReturnSlice = async ({ orderId, articleId, articleNumber 
     }
   }
 
+  /**
+   * Align with live YarnCone: only `issueStatus: issued` can be pending return. Bypass / return flows that
+   * reset the cone without a `yarn_returned` txn leave `not_issued` (or `used` + not_returned); do not count
+   * those as Awaiting.
+   */
+  const awaitingConeIds = [...coneById.entries()]
+    .filter(([, row]) => row.status === 'Awaiting')
+    .map(([id]) => id)
+    .filter((id) => mongoose.Types.ObjectId.isValid(id));
+  if (awaitingConeIds.length) {
+    const coneDocs = await YarnCone.find({
+      _id: { $in: awaitingConeIds.map((id) => new mongoose.Types.ObjectId(id)) },
+    })
+      .select('issueStatus returnStatus')
+      .lean();
+    const docById = new Map(coneDocs.map((d) => [String(d._id), d]));
+    for (const id of awaitingConeIds) {
+      const row = coneById.get(id);
+      if (!row || row.status !== 'Awaiting') continue;
+      const doc = docById.get(id);
+      if (!doc) continue;
+      if (doc.issueStatus === 'used' && doc.returnStatus === 'not_returned') {
+        row.status = /** @type {const} */ ('Consumed');
+      } else if (doc.issueStatus !== 'issued') {
+        row.status = /** @type {const} */ ('Closed');
+      }
+    }
+  }
+
   const cones = [...coneById.values()].sort((a, b) =>
     String(a.yarnName || '').localeCompare(String(b.yarnName || ''))
   );
 
   let pendingConeCount = 0;
   let returnedConeCount = 0;
+  let consumedConeCount = 0;
+  let clearedConeCount = 0;
   /** @type {Set<string>} */
   const yarnNameSet = new Set();
   for (const c of cones) {
     if (c.status === 'Returned') returnedConeCount += 1;
+    else if (c.status === 'Consumed') consumedConeCount += 1;
+    else if (c.status === 'Closed') clearedConeCount += 1;
     else pendingConeCount += 1;
     const yn = String(c.yarnName || '').trim();
     if (yn) yarnNameSet.add(yn);
   }
   const yarnNames = [...yarnNameSet].sort((a, b) => a.localeCompare(b)).join(', ');
 
+  const closedConeCount = returnedConeCount + consumedConeCount + clearedConeCount;
   let statusSummary = /** @type {'None'|'Awaiting'|'Partial'|'Returned'} */ ('None');
-  if (pendingConeCount > 0 && returnedConeCount > 0) statusSummary = 'Partial';
-  else if (pendingConeCount > 0 && returnedConeCount === 0) statusSummary = 'Awaiting';
-  else if (pendingConeCount === 0 && returnedConeCount > 0) statusSummary = 'Returned';
+  if (pendingConeCount > 0 && closedConeCount > 0) statusSummary = 'Partial';
+  else if (pendingConeCount > 0 && closedConeCount === 0) statusSummary = 'Awaiting';
+  else if (pendingConeCount === 0 && closedConeCount > 0) statusSummary = 'Returned';
 
   let assignment =
     /** @type {import('mongoose').LeanDocument<{ machine?: Record<string, unknown> }>|null} */ (
@@ -825,6 +887,8 @@ export const getArticleReturnSlice = async ({ orderId, articleId, articleNumber 
     status: statusSummary,
     pendingConeCount,
     returnedConeCount,
+    consumedConeCount,
+    clearedConeCount,
     cones: conesOut,
   };
 };

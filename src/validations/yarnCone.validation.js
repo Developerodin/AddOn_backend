@@ -133,6 +133,13 @@ export const getYarnConeByBarcode = {
   params: Joi.object().keys({
     barcode: Joi.string().trim().required(),
   }),
+  query: Joi.object()
+    .keys({
+      /** When set together with expected_article_id, response includes matchesExpectedReturnContext from yarn issue history. */
+      expected_order_id: Joi.string().custom(objectId).optional(),
+      expected_article_id: Joi.string().custom(objectId).optional(),
+    })
+    .optional(),
 };
 
 export const getShortTermConesByBoxId = {
@@ -184,6 +191,10 @@ export const returnYarnCone = {
       returnBy: userRefSchema.optional(),
       returnDate: Joi.date().iso().optional(),
       coneStorageId: Joi.string().trim().optional(),
+      /** Yarn Return screen: validates against issue txns and repairs stale cone order/article when needed. */
+      orderId: Joi.string().custom(objectId).optional(),
+      productionOrderId: Joi.string().custom(objectId).optional(),
+      articleId: Joi.string().custom(objectId).optional(),
     })
     .optional(),
 };

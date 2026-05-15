@@ -57,7 +57,14 @@ export const getYarnCones = catchAsync(async (req, res) => {
 
 export const getYarnConeByBarcode = catchAsync(async (req, res) => {
   const { barcode } = req.params;
-  const yarnCone = await yarnConeService.getYarnConeByBarcode(barcode);
+  const { expected_order_id, expected_article_id } = pick(req.query, [
+    'expected_order_id',
+    'expected_article_id',
+  ]);
+  const yarnCone = await yarnConeService.getYarnConeByBarcode(barcode, {
+    expectedOrderId: expected_order_id,
+    expectedArticleId: expected_article_id,
+  });
   res.status(httpStatus.OK).send(yarnCone);
 });
 
@@ -80,7 +87,10 @@ export const returnYarnCone = catchAsync(async (req, res) => {
     'returnWeight',
     'returnBy',
     'returnDate',
-    'coneStorageId'
+    'coneStorageId',
+    'orderId',
+    'productionOrderId',
+    'articleId',
   ]);
   
   const result = await yarnConeService.returnYarnCone(barcode, returnData);

@@ -6,6 +6,9 @@
  * Data source: YarnCone with issueStatus === 'issued', matching ProductionOrder._id
  * and Article._id (article must belong to that order).
  *
+ * Operational “pending yarn return” for the UI is aligned with GET …/article-return-slice
+ * (pendingConeCount), which also reads YarnCone.issueStatus — not raw issue-txn counts alone.
+ *
  * Usage:
  *   cross-env NODE_ENV=development node src/scripts/list-issued-cones-by-order-article.js ORD-000053 A5632
  *   cross-env NODE_ENV=development node src/scripts/list-issued-cones-by-order-article.js ORD-000053 A5632 --json

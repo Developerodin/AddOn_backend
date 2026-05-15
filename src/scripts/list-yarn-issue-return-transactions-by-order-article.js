@@ -5,6 +5,10 @@
  * based on YarnTransaction (`transactionType`, `orderId` / `orderno`, `articleId` / `articleNumber`)
  * and optional `conesIdsArray`.
  *
+ * This is **ledger/history**: issue rows remain even after cones are returned or bypass-cleared on
+ * YarnCone without a matching `yarn_returned` txn. For “how many still need return” use
+ * GET …/article-return-slice (pendingConeCount), not this script’s row counts alone.
+ *
  * Default transaction types:
  *   yarn_issued, yarn_issued_linking, yarn_issued_sampling, yarn_returned
  *
