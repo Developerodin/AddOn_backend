@@ -174,15 +174,12 @@ export const transferBoxes = async (transferData) => {
           returnedToVendorAt: { $exists: true, $ne: null },
         }).lean();
         const coneCount = conesForThisBox.length;
-        const { remaining, fullyTransferred, baseWeight } = computeLtRemainingBoxWeight(
+        const { remaining, fullyTransferred } = computeLtRemainingBoxWeight(
           box,
           conesForThisBox,
           conesReturnedVendor
         );
 
-        if (box.initialBoxWeight == null || Number(box.initialBoxWeight) <= 0) {
-          box.initialBoxWeight = baseWeight;
-        }
         box.boxWeight = remaining;
 
         if (fullyTransferred) {

@@ -318,16 +318,12 @@ yarnConeSchema.post('save', async function (doc) {
             returnedToVendorAt: { $exists: true, $ne: null },
           }).lean();
           const totalConesInST = conesInST.length;
-          const { remaining, fullyTransferred, baseWeight } = computeLtRemainingBoxWeight(
+          const { remaining, fullyTransferred } = computeLtRemainingBoxWeight(
             box,
             conesInST,
             conesReturnedVendor
           );
 
-          // Keep initialBoxWeight stable once inferred.
-          if (box.initialBoxWeight == null || Number(box.initialBoxWeight) <= 0) {
-            box.initialBoxWeight = baseWeight;
-          }
           box.boxWeight = remaining;
           if (fullyTransferred) {
             box.storageLocation = undefined; // unset so field is removed from document

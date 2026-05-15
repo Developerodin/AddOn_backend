@@ -9,6 +9,40 @@ import { LT_SECTION_CODES } from '../storageManagement/storageSlot.model.js';
 /** Matches LT: legacy LT-* OR slot barcodes B7-02-, B7-03-, B7-04-, B7-05- */
 const LT_STORAGE_PATTERN = new RegExp(`^(LT-|${LT_SECTION_CODES.map((s) => `${s}-`).join('|')})`, 'i');
 
+/**
+ * Sets {@link YarnBox#initialBoxWeight} once: first meaningful gross net box weight, without using
+ * later reductions (e.g. cone sync) as the "initial" value.
+ * @param {mongoose.Document} doc - YarnBox instance being saved
+ */
+/* eslint-disable no-param-reassign -- mutating Mongoose document paths */
+function applyInitialBoxWeightSnapshot(doc) {
+  const existingInitial = Number(doc.initialBoxWeight ?? 0);
+  const hasLockedInitial = Number.isFinite(existingInitial) && existingInitial > 0;
+  const bwRaw = doc.boxWeight;
+  const bw = bwRaw != null && bwRaw !== '' ? Number(bwRaw) : NaN;
+  if (hasLockedInitial || !Number.isFinite(bw) || bw <= 0) {
+    return;
+  }
+  if (doc.isNew) {
+    doc.initialBoxWeight = bw;
+    return;
+  }
+  if (doc.isModified('boxWeight')) {
+    // eslint-disable-next-line no-underscore-dangle -- Mongoose change-tracking state
+    const def = doc.$__?.activePaths?.states?.default;
+    let prior = 0;
+    if (def && Object.prototype.hasOwnProperty.call(def, 'boxWeight')) {
+      const pv = def.boxWeight;
+      prior = pv != null && pv !== '' ? Number(pv) : 0;
+    }
+    if (!Number.isFinite(prior)) prior = 0;
+    doc.initialBoxWeight = prior <= 0 ? bw : prior;
+    return;
+  }
+  doc.initialBoxWeight = bw;
+}
+/* eslint-enable no-param-reassign */
+
 const qcDataSchema = mongoose.Schema(
   {
     user: {
@@ -117,8 +151,8 @@ const yarnBoxSchema = mongoose.Schema(
       min: 0,
     },
     /**
-     * Snapshot of the box weight when it is first stored in long-term (LT) storage.
-     * Used to derive "remaining in LT" as cones are moved to short-term (ST).
+     * Immutable snapshot of the first positive net {@link YarnBox#boxWeight} ever saved on this document.
+     * Used for audit and LT→ST remaining math; never inferred or overwritten after first capture.
      */
     initialBoxWeight: {
       type: Number,
@@ -202,14 +236,9 @@ yarnBoxSchema.pre('save', async function (next) {
     return next(new Error('YarnBox requires yarnName or a valid yarnCatalogId'));
   }
 
-  // Capture initial LT weight once (for partial transfers LT→ST).
+  // One-time snapshot of original entered/stored box weight (never overwritten later).
   try {
-    const isLongTermStorage = this.storageLocation && LT_STORAGE_PATTERN.test(this.storageLocation);
-    const isStored = this.storedStatus === true;
-    const hasWeight = this.boxWeight != null && Number(this.boxWeight) > 0;
-    if (isLongTermStorage && isStored && hasWeight && (this.initialBoxWeight == null || Number(this.initialBoxWeight) <= 0)) {
-      this.initialBoxWeight = Number(this.boxWeight);
-    }
+    applyInitialBoxWeightSnapshot(this);
   } catch (e) {
     console.error('[YarnBox] initialBoxWeight capture:', e.message);
   }

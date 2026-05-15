@@ -17,38 +17,53 @@ const ACTIVE_BOX_FILTER = {
 };
 
 /**
- * Whether a box matches the default GET /yarn-boxes list filter (editable on PO receive process).
- * True when cones are not marked issued, or the box still has positive weight.
+ * True when the box had an initial net weight snapshot and current net weight is zero or less
+ * (material fully taken from the box — read-only on PO process).
+ * @param {Object} box - YarnBox document or plain object
+ * @returns {boolean}
+ */
+const isFullyUsedAfterInitialCapture = (box) => {
+  const initialRaw = box?.initialBoxWeight;
+  const initial = initialRaw != null && initialRaw !== '' ? Number(initialRaw) : NaN;
+  const w = Number(box?.boxWeight ?? 0);
+  return Number.isFinite(initial) && initial > 0 && Number.isFinite(w) && w <= 0;
+};
+
+/**
+ * Whether a box may be edited on PO receive / process flows (`isActiveForProcessing` on API when `include_inactive`).
+ * Excludes vendor returns and boxes that are fully used after an `initialBoxWeight` snapshot (net weight zero).
+ * Default GET /yarn-boxes visibility still uses {@link ACTIVE_BOX_FILTER}.
  * @param {Object} box - YarnBox document or plain object
  * @returns {boolean}
  */
 export const isYarnBoxActiveForProcessing = (box) => {
   if (box?.returnedToVendorAt) return false;
-  const conesIssued = box?.coneData?.conesIssued === true;
-  const w = Number(box?.boxWeight ?? 0);
-  return !conesIssued || w > 0;
+  if (isFullyUsedAfterInitialCapture(box)) return false;
+  return true;
 };
 
 export const createYarnBox = async (yarnBoxBody) => {
-  if (!yarnBoxBody.boxId) {
+  const body = { ...yarnBoxBody };
+  delete body.initialBoxWeight;
+  if (!body.boxId) {
     const autoBoxId = `BOX-${Date.now()}`;
-    yarnBoxBody.boxId = autoBoxId;
+    body.boxId = autoBoxId;
   } else {
-    const existingBox = await YarnBox.findOne({ boxId: yarnBoxBody.boxId, ...activeYarnBoxMatch });
+    const existingBox = await YarnBox.findOne({ boxId: body.boxId, ...activeYarnBoxMatch });
     if (existingBox) {
       throw new ApiError(httpStatus.BAD_REQUEST, 'Box ID already exists');
     }
   }
 
   // Only check for existing barcode if provided (otherwise it will be auto-generated)
-  if (yarnBoxBody.barcode) {
-    const existingBarcode = await YarnBox.findOne({ barcode: yarnBoxBody.barcode, ...activeYarnBoxMatch });
+  if (body.barcode) {
+    const existingBarcode = await YarnBox.findOne({ barcode: body.barcode, ...activeYarnBoxMatch });
     if (existingBarcode) {
       throw new ApiError(httpStatus.BAD_REQUEST, 'Barcode already exists');
     }
   }
 
-  const yarnBox = await YarnBox.create(yarnBoxBody);
+  const yarnBox = await YarnBox.create(body);
   return yarnBox;
 };
 
@@ -149,9 +164,12 @@ export const updateYarnBoxById = async (yarnBoxId, updateBody) => {
   };
 
   if (!isYarnBoxActiveForProcessing(yarnBox)) {
+    const reason = yarnBox.returnedToVendorAt
+      ? 'returned to vendor'
+      : 'fully used (initial weight recorded, current net weight is zero)';
     throw new ApiError(
       httpStatus.BAD_REQUEST,
-      'This yarn box is read-only (inactive or fully transferred) and cannot be updated.'
+      `This yarn box is read-only (${reason}) and cannot be updated.`
     );
   }
 
@@ -218,7 +236,10 @@ export const updateYarnBoxById = async (yarnBoxId, updateBody) => {
     }
   }
 
-  Object.assign(yarnBox, updateBody);
+  const update = { ...updateBody };
+  delete update.initialBoxWeight;
+
+  Object.assign(yarnBox, update);
   await yarnBox.save();
 
   /**
@@ -975,8 +996,6 @@ export const backfillLtBoxWeightFromStCones = async ({ dryRun = false, limit, on
           $set: {
             boxWeight: 0,
             storedStatus: false,
-            initialBoxWeight:
-              box.initialBoxWeight == null || Number(box.initialBoxWeight) <= 0 ? baseWeight : box.initialBoxWeight,
             coneData: {
               ...(box.coneData && typeof box.coneData === 'object' ? box.coneData : {}),
               conesIssued: true,
@@ -989,7 +1008,6 @@ export const backfillLtBoxWeightFromStCones = async ({ dryRun = false, limit, on
       : {
           $set: {
             boxWeight: remaining,
-            ...(box.initialBoxWeight == null || Number(box.initialBoxWeight) <= 0 ? { initialBoxWeight: baseWeight } : {}),
           },
         };
 
@@ -1009,14 +1027,14 @@ export const backfillLtBoxWeightFromStCones = async ({ dryRun = false, limit, on
 
 /**
  * Whether a yarn box may be archived as an unused PO-receive placeholder.
- * Mirrors process-page rules: no gross/box weights, no cones, not stored, still active for processing.
+ * Mirrors process-page rules: no gross/box weights, no cones, not stored; vendor-returned excluded above.
  * @param {object} box - YarnBox document or lean object
  * @returns {string|null} Reason string if not eligible, otherwise null
  */
 export const getUnusedPlaceholderArchiveBlockReason = (box) => {
   if (!box) return 'Box not found';
   if (box.returnedToVendorAt) return 'Already removed';
-  if (!isYarnBoxActiveForProcessing(box)) return 'Not active for processing';
+  if (!isYarnBoxActiveForProcessing(box)) return 'Fully used (read-only)';
   if (box.storedStatus === true) return 'Box is stored';
   if (box.storageLocation && String(box.storageLocation).trim() !== '') return 'Has storage location';
   if (box.coneData?.conesIssued === true) return 'Cones already issued for this box';
