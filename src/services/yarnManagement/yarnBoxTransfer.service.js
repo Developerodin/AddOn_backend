@@ -4,6 +4,7 @@ import { YarnBox, YarnCatalog, YarnTransaction, YarnInventory, YarnCone } from '
 import ApiError from '../../utils/ApiError.js';
 import { activeYarnBoxMatch, activeYarnConeMatch } from './yarnStockActiveFilters.js';
 import * as yarnTransactionService from './yarnTransaction.service.js';
+import { computeLtRemainingBoxWeight } from './yarnBoxLtRemaining.helper.js';
 
 /**
  * Transfer boxes between storage locations
@@ -168,15 +169,16 @@ export const transferBoxes = async (transferData) => {
           coneStorageId: { $exists: true, $nin: [null, ''] },
           ...activeYarnConeMatch,
         }).lean();
+        const conesReturnedVendor = await YarnCone.find({
+          boxId: box.boxId,
+          returnedToVendorAt: { $exists: true, $ne: null },
+        }).lean();
         const coneCount = conesForThisBox.length;
-        const totalConeWeight = conesForThisBox.reduce((sum, c) => sum + (c.coneWeight || 0), 0);
-        const initial = box.initialBoxWeight != null ? Number(box.initialBoxWeight) : 0;
-        const boxWeightNow = Number(box.boxWeight ?? 0);
-        const inferredBase =
-          boxWeightNow >= totalConeWeight ? boxWeightNow : boxWeightNow + totalConeWeight;
-        const baseWeight = initial > 0 ? initial : inferredBase;
-        const remaining = Math.max(0, baseWeight - (totalConeWeight || 0));
-        const fullyTransferred = coneCount > 0 && remaining <= 0.001;
+        const { remaining, fullyTransferred, baseWeight } = computeLtRemainingBoxWeight(
+          box,
+          conesForThisBox,
+          conesReturnedVendor
+        );
 
         if (box.initialBoxWeight == null || Number(box.initialBoxWeight) <= 0) {
           box.initialBoxWeight = baseWeight;

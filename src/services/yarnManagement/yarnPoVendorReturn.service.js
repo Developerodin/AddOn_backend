@@ -5,7 +5,7 @@ import YarnPurchaseOrder from '../../models/yarnReq/yarnPurchaseOrder.model.js';
 import YarnCone from '../../models/yarnReq/yarnCone.model.js';
 import YarnBox from '../../models/yarnReq/yarnBox.model.js';
 import ApiError from '../../utils/ApiError.js';
-import { activeYarnConeMatch, activeYarnBoxMatch } from './yarnStockActiveFilters.js';
+import { activeYarnConeMatch } from './yarnStockActiveFilters.js';
 import { syncInventoriesFromStorageForCatalogIds } from './yarnInventory.service.js';
 
 /**
@@ -31,48 +31,6 @@ function normaliseActor(u) {
     user = new mongoose.Types.ObjectId(String(u.userId));
   }
   return { user, username };
-}
-
-/**
- * Refreshes parent box LT/ST remaining weight after cone set changes (vendor return uses same rules as YarnCone post-save).
- *
- * @param {string} boxId
- * @returns {Promise<void>}
- */
-async function refreshBoxRemainingAfterConeChange(boxId) {
-  const trimmed = String(boxId || '').trim();
-  if (!trimmed) return;
-
-  const box = await YarnBox.findOne({ boxId: trimmed, ...activeYarnBoxMatch });
-  if (!box) return;
-
-  const conesInST = await YarnCone.find({
-    boxId: trimmed,
-    coneStorageId: { $exists: true, $nin: [null, ''] },
-    ...activeYarnConeMatch,
-  }).lean();
-
-  const totalConeWeight = conesInST.reduce((sum, c) => sum + (c.coneWeight || 0), 0);
-  const initial = box.initialBoxWeight != null ? Number(box.initialBoxWeight) : 0;
-  const boxWeightNow = Number(box.boxWeight ?? 0);
-  const inferredBase = boxWeightNow >= totalConeWeight ? boxWeightNow : boxWeightNow + totalConeWeight;
-  const baseWeight = initial > 0 ? initial : inferredBase;
-  const remaining = Math.max(0, baseWeight - (totalConeWeight || 0));
-  const fullyTransferred = conesInST.length > 0 && remaining <= 0.001;
-
-  if (box.initialBoxWeight == null || Number(box.initialBoxWeight) <= 0) {
-    box.initialBoxWeight = baseWeight;
-  }
-  box.boxWeight = remaining;
-  if (fullyTransferred) {
-    box.storageLocation = undefined;
-    box.storedStatus = false;
-    if (!box.coneData) box.coneData = {};
-    box.coneData.conesIssued = true;
-    box.coneData.numberOfCones = conesInST.length;
-    box.coneData.coneIssueDate = new Date();
-  }
-  await box.save();
 }
 
 /**
@@ -266,6 +224,7 @@ export const removePendingVendorReturnBarcode = async (params) => {
 
 /**
  * Finalizes vendor return: archives cones, updates PO, syncs inventory.
+ * Does not mutate {@link YarnBox#boxWeight}; only cone rows and PO/inventory reflect the return.
  *
  * @param {{ sessionId: string, user?: { userId?: string, username?: string }, idempotencyKey?: string }} params
  * @returns {Promise<{ vendorReturn: object, purchaseOrder: object, idempotent?: boolean }>}
@@ -301,7 +260,6 @@ export const finalizeVendorReturnSession = async (params) => {
   /** @type {Array<object>} */
   const linePayloads = [];
   const catalogIdSet = new Set();
-  const boxIdSet = new Set();
 
   for (const barcode of pending) {
     const cone = await loadActiveConeForVendorReturn(barcode);
@@ -326,7 +284,6 @@ export const finalizeVendorReturnSession = async (params) => {
     });
 
     if (cone.yarnCatalogId) catalogIdSet.add(String(cone.yarnCatalogId));
-    if (cone.boxId) boxIdSet.add(String(cone.boxId));
   }
 
   const now = new Date();
@@ -441,10 +398,6 @@ export const finalizeVendorReturnSession = async (params) => {
   }
 
   await syncInventoriesFromStorageForCatalogIds([...catalogIdSet]);
-
-  for (const bid of boxIdSet) {
-    await refreshBoxRemainingAfterConeChange(bid);
-  }
 
   const populated = await YarnPoVendorReturn.findById(session._id).lean();
   const purchaseOrderAfter = await YarnPurchaseOrder.findOne({ poNumber });

@@ -4,6 +4,7 @@ import paginate from '../plugins/paginate.plugin.js';
 import YarnCatalog from '../yarnManagement/yarnCatalog.model.js';
 import YarnInventory from './yarnInventory.model.js';
 import YarnBox from './yarnBox.model.js';
+import { computeLtRemainingBoxWeight } from '../../services/yarnManagement/yarnBoxLtRemaining.helper.js';
 
 export const yarnConeIssueStatuses = ['issued', 'not_issued', 'used', 'returned_to_vendor'];
 export const yarnConeReturnStatuses = ['returned', 'not_returned'];
@@ -312,17 +313,16 @@ yarnConeSchema.post('save', async function (doc) {
             coneStorageId: { $exists: true, $nin: [null, ''] },
             returnedToVendorAt: null,
           }).lean();
+          const conesReturnedVendor = await mongoose.model('YarnCone').find({
+            boxId: doc.boxId,
+            returnedToVendorAt: { $exists: true, $ne: null },
+          }).lean();
           const totalConesInST = conesInST.length;
-          const totalConeWeight = conesInST.reduce((sum, c) => sum + (c.coneWeight || 0), 0);
-          const initial = box.initialBoxWeight != null ? Number(box.initialBoxWeight) : 0;
-          const boxWeightNow = Number(box.boxWeight ?? 0);
-          // For legacy boxes (initialBoxWeight missing), treat current boxWeight as the original LT weight.
-          // Only if boxWeightNow looks like an already-decremented remaining weight (rare), infer base as remaining + moved.
-          const inferredBase =
-            boxWeightNow >= totalConeWeight ? boxWeightNow : boxWeightNow + totalConeWeight;
-          const baseWeight = initial > 0 ? initial : inferredBase;
-          const remaining = Math.max(0, baseWeight - (totalConeWeight || 0));
-          const fullyTransferred = totalConesInST > 0 && remaining <= 0.001;
+          const { remaining, fullyTransferred, baseWeight } = computeLtRemainingBoxWeight(
+            box,
+            conesInST,
+            conesReturnedVendor
+          );
 
           // Keep initialBoxWeight stable once inferred.
           if (box.initialBoxWeight == null || Number(box.initialBoxWeight) <= 0) {
