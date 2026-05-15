@@ -6,9 +6,11 @@
  * Usage:
  *   NODE_ENV=development node src/scripts/fix-container-activeitem-qty.js --_id=699865138112b2ead70340c2 --value=67
  *   NODE_ENV=development node src/scripts/fix-container-activeitem-qty.js --_id=699865138112b2ead70340c2 --value=67 --write
+ *   NODE_ENV=development node src/scripts/fix-container-activeitem-qty.js --_id=699865138112b2ead70340e1 --value=129 --expect-quantity=5431 --write
  *
  * Optional:
  *   --index=0            Which activeItems[] row to update (default: 0)
+ *   --expect-quantity=5431  Abort unless current qty at that index matches (safety)
  *   --mongo-url=...      Override MongoDB URL
  *
  * Notes:
@@ -142,6 +144,7 @@ async function main() {
 
   const value = parseFiniteNumber(readArg('value') ?? '67', 'value');
   const index = parseFiniteNumber(readArg('index') ?? '0', 'index');
+  const expectQtyRaw = readArg('expect-quantity');
   const write = process.argv.includes('--write');
 
   if (!Number.isInteger(index) || index < 0) {
@@ -159,6 +162,16 @@ async function main() {
   const before = snapshotContainer(doc);
   if (index >= before.activeItemsLen) {
     throw new Error(`Container has ${before.activeItemsLen} activeItems; cannot update index ${index}.`);
+  }
+
+  if (expectQtyRaw !== null) {
+    const expected = parseFiniteNumber(expectQtyRaw, 'expect-quantity');
+    const actual = before.activeItems[index]?.quantity;
+    if (actual !== expected) {
+      throw new Error(
+        `expect-quantity mismatch at index ${index}: expected ${expected}, got ${actual}. Use correct --index or fix data.`,
+      );
+    }
   }
 
   const updatePath = `activeItems.${index}.quantity`;
