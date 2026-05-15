@@ -6,7 +6,7 @@ import pick from '../../utils/pick.js';
 import { pickYarnCatalogId } from '../../utils/yarnCatalogRef.js';
 import { STORAGE_ZONES, ST_SECTION_CODE, LT_SECTION_CODES } from '../../models/storageManagement/storageSlot.model.js';
 import { yarnConeUnavailableIssueStatuses } from '../../models/yarnReq/yarnCone.model.js';
-import { activeYarnBoxMatch, activeYarnConeMatch } from './yarnStockActiveFilters.js';
+import { activeYarnBoxMatch, activeYarnBoxListingMatch, activeYarnConeMatch } from './yarnStockActiveFilters.js';
 
 /** LT: legacy LT-* OR slot barcodes B7-02-, B7-03-, B7-04-, B7-05- (from StorageSlot) */
 const LT_STORAGE_REGEX = { $regex: new RegExp(`^(LT-|${LT_SECTION_CODES.map((s) => `${s}-`).join('|')})`, 'i') };
@@ -393,11 +393,12 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
   // Unallocated boxes: no slot after trim (same semantics as GET /yarn-boxes/without-storage-location).
   // Using $trim prevents overlap with LT when storageLocation is padding/whitespace while still listed in ltBarcodes.
   // IMPORTANT: typically `storedStatus=false` until allocated — do NOT require storedStatus=true here.
+  /** Unallocated kg uses net box weight only (no grossWeight fallback). */
   const effectiveUnallocatedKg = {
     $cond: [
       { $gt: [{ $ifNull: ['$boxWeight', 0] }, 0] },
       { $ifNull: ['$boxWeight', 0] },
-      { $ifNull: ['$grossWeight', 0] },
+      0,
     ],
   };
 
@@ -405,16 +406,11 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
     {
       $match: {
         ...yarnNameMatch,
-        ...activeYarnBoxMatch,
+        ...activeYarnBoxListingMatch,
         $expr: {
           $and: [
             { $eq: [{ $trim: { input: { $ifNull: ['$storageLocation', ''] } } }, ''] },
-            {
-              $or: [
-                { $gt: [{ $ifNull: ['$boxWeight', 0] }, 0] },
-                { $gt: [{ $ifNull: ['$grossWeight', 0] }, 0] },
-              ],
-            },
+            { $gt: [{ $ifNull: ['$boxWeight', 0] }, 0] },
           ],
         },
       },

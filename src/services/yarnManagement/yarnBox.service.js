@@ -3,18 +3,16 @@ import mongoose from 'mongoose';
 import { YarnBox, YarnCone, YarnPurchaseOrder } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import { LT_SECTION_CODES } from '../../models/storageManagement/storageSlot.model.js';
-import { activeYarnBoxMatch, activeYarnConeMatch } from './yarnStockActiveFilters.js';
+import {
+  activeYarnBoxListingMatch,
+  activeYarnBoxMatch,
+  activeYarnConeMatch,
+} from './yarnStockActiveFilters.js';
 
 const LT_STORAGE_PATTERN = new RegExp(`^(LT-|${LT_SECTION_CODES.map((s) => `${s}-`).join('|')})`, 'i');
 // Hide only boxes that are explicitly consumed (fully converted to cones and emptied).
 // Freshly created placeholders can still have 0/missing boxWeight and should remain visible.
-const ACTIVE_BOX_FILTER = {
-  $or: [
-    { 'coneData.conesIssued': { $ne: true } },
-    { boxWeight: { $gt: 0 } },
-  ],
-  ...activeYarnBoxMatch,
-};
+const ACTIVE_BOX_FILTER = activeYarnBoxListingMatch;
 
 /**
  * True when the box had an initial net weight snapshot and current net weight is zero or less
@@ -596,20 +594,14 @@ const UNALLOCATED_STORAGE_LOCATION_MATCH = {
   },
 };
 
-/** Omit placeholder boxes with no measurable weight (CSV/UI unallocated exports use this endpoint). */
-const HAS_POSITIVE_BOX_OR_GROSS_WEIGHT = {
-  $expr: {
-    $or: [
-      { $gt: [{ $ifNull: ['$boxWeight', 0] }, 0] },
-      { $gt: [{ $ifNull: ['$grossWeight', 0] }, 0] },
-    ],
-  },
+/** Unallocated listings roll up boxWeight only; require positive net box weight. */
+const HAS_POSITIVE_BOX_WEIGHT = {
+  $expr: { $gt: [{ $ifNull: ['$boxWeight', 0] }, 0] },
 };
 
 /**
  * Get boxes without storage location (null, undefined, empty, or whitespace-only),
- * excluding rows where both boxWeight and grossWeight are absent or zero
- * (placeholders still allowed by ACTIVE_BOX_FILTER are omitted from this listing).
+ * excluding rows with no positive boxWeight (gross alone does not count).
  * Returns all matching boxes (no limit). Optionally filter by yarn name (case-insensitive exact match).
  * @param {Object} [filters]
  * @param {string} [filters.yarn_name] - Exact yarn name (case-insensitive) to scope the result.
@@ -617,7 +609,7 @@ const HAS_POSITIVE_BOX_OR_GROSS_WEIGHT = {
  */
 export const getBoxesWithoutStorageLocation = async (filters = {}) => {
   const query = {
-    $and: [ACTIVE_BOX_FILTER, UNALLOCATED_STORAGE_LOCATION_MATCH, HAS_POSITIVE_BOX_OR_GROSS_WEIGHT],
+    $and: [ACTIVE_BOX_FILTER, UNALLOCATED_STORAGE_LOCATION_MATCH, HAS_POSITIVE_BOX_WEIGHT],
   };
 
   const yarnName = (filters.yarn_name || '').trim();
