@@ -21,7 +21,7 @@
  * - --atlas-db: Atlas database name (default: Addonbackupdatabase)
  *
  * Default skipped collections (heavy / log data; keeps Atlas within small tiers e.g. 512MB):
- * useractivitylogs, machine_order_assignment_logs, stores, sales, sealsexcelmasters, user_logs (legacy)
+ * useractivitylogs, stores, sales, sealsexcelmasters, user_logs (legacy)
  * 
  * Environment Variables:
  * - LOCAL_MONGODB_URL: Local MongoDB connection string
@@ -69,12 +69,12 @@ const transferAllCollections =
 
 /**
  * Collection names skipped by default when syncing local → Atlas (Mongoose `collection` option or pluralized names).
- * Matches: userActivityLog, machineOrderAssignmentLog, store, sales, sealsExcelMaster models; plus legacy `user_logs`.
+ * Matches: userActivityLog, store, sales, sealsExcelMaster models; plus legacy `user_logs`.
+ * machine_order_assignment_logs is transferred by default.
  */
 const DEFAULT_ATLAS_EXCLUDED_COLLECTIONS = [
   'user_logs',
   'useractivitylogs',
-  'machine_order_assignment_logs',
   'stores',
   'sales',
   'sealsexcelmasters',
