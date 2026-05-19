@@ -58,6 +58,8 @@
     "verify:yarn-catalog-names": "cross-env NODE_ENV=development node src/scripts/verify-yarn-catalog-yarn-names.js",
     "boxes:zero-out-from-excel": "cross-env NODE_ENV=development node src/scripts/zero-out-yarn-boxes-from-excel.js",
     "cones:mark-used-from-excel": "cross-env NODE_ENV=development node src/scripts/mark-yarn-cones-used-from-excel.js",
+    "yarn:st-return-allocate": "cross-env NODE_ENV=development node src/scripts/process-short-term-yarn-return-allocate.js",
+    "yarn:st-return-allocate:dry-run": "cross-env NODE_ENV=development node src/scripts/process-short-term-yarn-return-allocate.js --dry-run",
     "prepare": "husky install"
   },
   "keywords": [
