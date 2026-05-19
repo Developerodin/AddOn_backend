@@ -104,6 +104,16 @@ async function main() {
   if (!mongoUrl) throw new Error('MONGODB_URL missing');
   await mongoose.connect(mongoUrl, { useNewUrlParser: true, useUnifiedTopology: true });
 
+  const dbName = mongoose.connection?.name || '(unknown)';
+  const dbHost = (() => {
+    try {
+      const u = new URL(mongoUrl.replace(/^mongodb(\+srv)?:\/\//, 'https://'));
+      return u.hostname || '(unknown host)';
+    } catch {
+      return '(parse failed)';
+    }
+  })();
+
   const barcodes = rows.map((r) => r.cone_barcode).filter(Boolean);
   const cones = await YarnCone.find({ barcode: { $in: barcodes } })
     .select('barcode coneWeight coneStorageId issueStatus returnStatus orderId articleId')
@@ -124,6 +134,10 @@ async function main() {
 
   /** @type {Record<string, number>} */
   const counts = { ok: 0, mismatch: 0, missing: 0 };
+  /** @type {Record<string, number>} */
+  const issueKindCounts = {};
+  /** @type {string[]} */
+  const sampleMismatchLines = [];
   const lines = [verifyHeaders.join(',')];
 
   for (const row of rows) {
@@ -173,6 +187,13 @@ async function main() {
 
     if (issues.length) {
       counts.mismatch += 1;
+      for (const iss of issues) {
+        const kind = iss.split(':')[0].trim();
+        issueKindCounts[kind] = (issueKindCounts[kind] || 0) + 1;
+      }
+      if (sampleMismatchLines.length < 5) {
+        sampleMismatchLines.push(`${row.cone_barcode}: ${issues.join('; ')}`);
+      }
       lines.push(
         [
           row.cone_barcode,
@@ -212,11 +233,29 @@ async function main() {
   await fs.writeFile(outPath, `${lines.join('\n')}\n`, 'utf-8');
 
   console.log('\n=== ST Yarn Return Allocate — DB Verification ===');
+  console.log(`MongoDB:      ${dbHost} / db "${dbName}"`);
+  console.log(`CSV:          ${csvPath}`);
   console.log(`CSV rows:     ${rows.length}`);
   console.log(`OK:           ${counts.ok}`);
   console.log(`Mismatch:     ${counts.mismatch}`);
   console.log(`Missing:      ${counts.missing}`);
   console.log(`Report:       ${outPath}`);
+
+  if (counts.mismatch > 0) {
+    console.log('\nMismatch breakdown (issue type → count):');
+    for (const [kind, n] of Object.entries(issueKindCounts).sort((a, b) => b[1] - a[1])) {
+      console.log(`  ${kind}: ${n}`);
+    }
+    console.log('\nSample mismatches:');
+    for (const s of sampleMismatchLines) console.log(`  - ${s}`);
+    if (counts.ok < rows.length * 0.5) {
+      console.log(
+        '\n⚠️  Most cones do not match — allocate script likely was NOT run against this database.'
+      );
+      console.log('   On this server run: npm run yarn:st-return-allocate');
+      console.log('   Then re-run this verify script.');
+    }
+  }
 
   await mongoose.disconnect();
   if (counts.mismatch > 0 || counts.missing > 0) process.exitCode = 1;

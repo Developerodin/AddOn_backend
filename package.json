@@ -60,6 +60,7 @@
     "cones:mark-used-from-excel": "cross-env NODE_ENV=development node src/scripts/mark-yarn-cones-used-from-excel.js",
     "yarn:st-return-allocate": "cross-env NODE_ENV=development node src/scripts/process-short-term-yarn-return-allocate.js",
     "yarn:st-return-allocate:dry-run": "cross-env NODE_ENV=development node src/scripts/process-short-term-yarn-return-allocate.js --dry-run",
+    "yarn:st-return-allocate:verify": "cross-env NODE_ENV=development node src/scripts/verify-short-term-yarn-return-allocate.js",
     "prepare": "husky install"
   },
   "keywords": [
