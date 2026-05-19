@@ -1,6 +1,7 @@
 import httpStatus from 'http-status';
 import ApiError from '../../utils/ApiError.js';
 import Machine from '../../models/machine.model.js';
+import YarnCone from '../../models/yarnReq/yarnCone.model.js';
 import MachineOrderAssignment, { isItemFullyCompleted } from '../../models/production/machineOrderAssignment.model.js';
 import MachineOrderAssignmentLog from '../../models/production/machineOrderAssignmentLog.model.js';
 import { LogAction, OrderStatus, YarnIssueStatus, YarnReturnStatus } from '../../models/production/enums.js';
@@ -351,6 +352,13 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
         ? detachedSnapshotToQueuePayload(detachedPlain)
         : normalizeIncomingProductionOrderItemPayload(row);
       if (!mergedRow) continue;
+      if (String(mergedRow.yarnReturnStatus) === YarnReturnStatus.COMPLETED) {
+        await assertYarnReturnCompletedAllowed(
+          mergedRow.productionOrder,
+          mergedRow.article,
+          mergedRow.yarnReturnStatus
+        );
+      }
       changes.push({
         field: 'productionOrderItems.added',
         previousValue: null,
@@ -405,6 +413,11 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
           didChange = true;
         }
         if (item.yarnReturnStatus !== undefined && String(existing.yarnReturnStatus) !== String(item.yarnReturnStatus)) {
+          await assertYarnReturnCompletedAllowed(
+            existing.productionOrder,
+            existing.article,
+            item.yarnReturnStatus
+          );
           existing.yarnReturnStatus = item.yarnReturnStatus;
           didChange = true;
         }
@@ -418,6 +431,13 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
           ? detachedSnapshotToQueuePayload(detachedPlain)
           : normalizeIncomingProductionOrderItemPayload(item);
         if (!payloadRow) continue;
+        if (String(payloadRow.yarnReturnStatus) === YarnReturnStatus.COMPLETED) {
+          await assertYarnReturnCompletedAllowed(
+            payloadRow.productionOrder,
+            payloadRow.article,
+            payloadRow.yarnReturnStatus
+          );
+        }
         changes.push({
           field: 'productionOrderItems.added',
           previousValue: null,
@@ -724,6 +744,38 @@ export const updateProductionOrderItemYarnIssueStatusById = async (assignmentId,
 };
 
 /**
+ * Count yarn cones still issued to a production order + article (must be 0 before yarn return Completed).
+ * @param {import('mongoose').Types.ObjectId|string} orderId
+ * @param {import('mongoose').Types.ObjectId|string} articleId
+ * @returns {Promise<number>}
+ */
+export const countIssuedYarnConesForOrderArticle = async (orderId, articleId) => {
+  if (!orderId || !articleId) return 0;
+  return YarnCone.countDocuments({
+    orderId,
+    articleId,
+    issueStatus: 'issued',
+  });
+};
+
+/**
+ * Rejects marking yarn return Completed while cones remain issued for that order/article.
+ * @param {import('mongoose').Types.ObjectId|string} orderId
+ * @param {import('mongoose').Types.ObjectId|string} articleId
+ * @param {string} newStatus
+ */
+export const assertYarnReturnCompletedAllowed = async (orderId, articleId, newStatus) => {
+  if (String(newStatus) !== YarnReturnStatus.COMPLETED) return;
+  const remaining = await countIssuedYarnConesForOrderArticle(orderId, articleId);
+  if (remaining > 0) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Cannot mark yarn return Completed: ${remaining} yarn cone(s) are still issued for this order/article. Return all cones on the Yarn Return screen first.`
+    );
+  }
+};
+
+/**
  * Update yarn return status of a single productionOrderItem.
  * @param {ObjectId} assignmentId
  * @param {ObjectId} itemId
@@ -746,6 +798,7 @@ export const updateProductionOrderItemYarnReturnStatusById = async (assignmentId
   if (!newStatus || !Object.values(YarnReturnStatus).includes(String(newStatus))) {
     throw new ApiError(httpStatus.BAD_REQUEST, `yarnReturnStatus must be one of: ${Object.values(YarnReturnStatus).join(', ')}`);
   }
+  await assertYarnReturnCompletedAllowed(item.productionOrder, item.article, newStatus);
   const previous = item.yarnReturnStatus;
   item.yarnReturnStatus = newStatus;
   assignment.markModified('productionOrderItems');
