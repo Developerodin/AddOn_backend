@@ -69,6 +69,17 @@ export const getYarnBoxByBarcode = {
   }),
 };
 
+export const getBoxTrackerByBarcode = {
+  params: Joi.object().keys({
+    barcode: Joi.string().trim().required(),
+  }),
+  query: Joi.object().keys({
+    include_inactive: Joi.alternatives()
+      .try(Joi.boolean(), Joi.string().valid('true', 'false', '1', '0'))
+      .optional(),
+  }),
+};
+
 export const updateYarnBox = {
   params: Joi.object().keys({
     yarnBoxId: Joi.string().custom(objectId).required(),

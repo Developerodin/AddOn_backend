@@ -2,6 +2,7 @@ import express from 'express';
 import validate from '../../../middlewares/validate.js';
 import * as yarnConeValidation from '../../../validations/yarnCone.validation.js';
 import * as yarnConeController from '../../../controllers/yarnManagement/yarnCone.controller.js';
+import * as yarnTrackerController from '../../../controllers/yarnManagement/yarnTracker.controller.js';
 
 const router = express.Router();
 
@@ -37,6 +38,13 @@ router.post(
   validate(yarnConeValidation.generateConesByBox),
   yarnConeController.generateConesByBox
 );
+
+router
+  .route('/barcode/:barcode/tracker')
+  .get(
+    validate(yarnConeValidation.getConeTrackerByBarcode),
+    yarnTrackerController.getConeTrackerByBarcode
+  );
 
 router
   .route('/barcode/:barcode')

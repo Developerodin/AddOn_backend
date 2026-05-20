@@ -2,6 +2,7 @@ import express from 'express';
 import validate from '../../../middlewares/validate.js';
 import * as yarnBoxValidation from '../../../validations/yarnBox.validation.js';
 import * as yarnBoxController from '../../../controllers/yarnManagement/yarnBox.controller.js';
+import * as yarnTrackerController from '../../../controllers/yarnManagement/yarnTracker.controller.js';
 
 const router = express.Router();
 
@@ -35,6 +36,13 @@ router
   .patch(
     validate(yarnBoxValidation.updateQcStatusByPoNumber),
     yarnBoxController.updateQcStatusByPoNumber
+  );
+
+router
+  .route('/barcode/:barcode/tracker')
+  .get(
+    validate(yarnBoxValidation.getBoxTrackerByBarcode),
+    yarnTrackerController.getBoxTrackerByBarcode
   );
 
 router

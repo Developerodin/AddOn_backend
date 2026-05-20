@@ -142,6 +142,17 @@ export const getYarnConeByBarcode = {
     .optional(),
 };
 
+export const getConeTrackerByBarcode = {
+  params: Joi.object().keys({
+    barcode: Joi.string().trim().required(),
+  }),
+  query: Joi.object().keys({
+    include_inactive: Joi.alternatives()
+      .try(Joi.boolean(), Joi.string().valid('true', 'false', '1', '0'))
+      .optional(),
+  }),
+};
+
 export const getShortTermConesByBoxId = {
   params: Joi.object().keys({
     boxId: Joi.string().trim().required(),
