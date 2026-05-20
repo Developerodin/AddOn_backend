@@ -578,11 +578,10 @@ export const getOrdersByFloor = async (floor, filter, options) => {
     return true;
   });
 
+  // Keep mongoose-paginate totals; post-filter only affects the current page's rows.
   return {
     ...orders,
     results: filteredResults,
-    totalResults: filteredResults.length,
-    totalPages: Math.ceil(filteredResults.length / (options.limit || 10))
   };
 };
 
