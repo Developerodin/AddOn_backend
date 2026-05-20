@@ -9,35 +9,32 @@ import ApiError from '../../utils/ApiError.js';
  * @param {Object} options
  * @returns {Promise<QueryResult>}
  */
-export const getArticleLogs = async (articleId, filter, options) => {
-  // Handle both string and ObjectId formats for articleId
+export const getArticleLogs = async (articleId, filter = {}, options = {}) => {
+  const articleIdStr = articleId?.toString?.() ?? String(articleId);
+  const { dateFrom, dateTo, action, floor } = filter;
+
   const logFilter = {
-    $or: [
-      { articleId: articleId.toString() },
-      { articleId: articleId }
-    ],
-    ...filter
+    $or: [{ articleId: articleIdStr }, { articleId }],
   };
 
-  // Add date range filter
-  if (filter.dateFrom || filter.dateTo) {
+  if (dateFrom || dateTo) {
     logFilter.timestamp = {};
-    if (filter.dateFrom) {
-      logFilter.timestamp.$gte = new Date(filter.dateFrom);
-    }
-    if (filter.dateTo) {
-      logFilter.timestamp.$lte = new Date(filter.dateTo);
-    }
+    if (dateFrom) logFilter.timestamp.$gte = new Date(dateFrom);
+    if (dateTo) logFilter.timestamp.$lte = new Date(dateTo);
   }
 
-  // Add action filter
-  if (filter.action) {
-    logFilter.action = filter.action;
+  if (action) logFilter.action = action;
+
+  if (floor) {
+    logFilter.$and = [
+      ...(logFilter.$and || []),
+      { $or: [{ fromFloor: floor }, { toFloor: floor }] },
+    ];
   }
 
   const logs = await ArticleLog.paginate(logFilter, {
     ...options,
-    sortBy: 'timestamp:desc'
+    sortBy: options.sortBy || 'timestamp:desc',
   });
 
   return logs;
@@ -50,39 +47,32 @@ export const getArticleLogs = async (articleId, filter, options) => {
  * @param {Object} options
  * @returns {Promise<QueryResult>}
  */
-export const getOrderLogs = async (orderId, filter, options) => {
+export const getOrderLogs = async (orderId, filter = {}, options = {}) => {
+  const orderIdStr = orderId?.toString?.() ?? String(orderId);
+  const { dateFrom, dateTo, action, floor } = filter;
+
   const logFilter = {
-    orderId,
-    ...filter
+    $or: [{ orderId: orderIdStr }, { orderId }],
   };
 
-  // Add date range filter
-  if (filter.dateFrom || filter.dateTo) {
+  if (dateFrom || dateTo) {
     logFilter.timestamp = {};
-    if (filter.dateFrom) {
-      logFilter.timestamp.$gte = new Date(filter.dateFrom);
-    }
-    if (filter.dateTo) {
-      logFilter.timestamp.$lte = new Date(filter.dateTo);
-    }
+    if (dateFrom) logFilter.timestamp.$gte = new Date(dateFrom);
+    if (dateTo) logFilter.timestamp.$lte = new Date(dateTo);
   }
 
-  // Add action filter
-  if (filter.action) {
-    logFilter.action = filter.action;
-  }
+  if (action) logFilter.action = action;
 
-  // Add floor filter
-  if (filter.floor) {
-    logFilter.$or = [
-      { fromFloor: filter.floor },
-      { toFloor: filter.floor }
+  if (floor) {
+    logFilter.$and = [
+      ...(logFilter.$and || []),
+      { $or: [{ fromFloor: floor }, { toFloor: floor }] },
     ];
   }
 
   const logs = await ArticleLog.paginate(logFilter, {
     ...options,
-    sortBy: 'timestamp:desc'
+    sortBy: options.sortBy || 'timestamp:desc',
   });
 
   return logs;

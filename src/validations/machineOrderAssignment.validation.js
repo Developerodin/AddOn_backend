@@ -200,10 +200,24 @@ const getAssignmentLogsByUser = {
   }),
 };
 
+const getMachinePendingQuantity = {
+  params: Joi.object().keys({
+    machineId: Joi.string().custom(objectId).required(),
+  }),
+};
+
+const getMachinePendingQuantities = {
+  query: Joi.object().keys({
+    machineIds: Joi.string().trim().required(),
+  }),
+};
+
 export {
   createMachineOrderAssignment,
   getMachineOrderAssignments,
   getMachineOrderAssignment,
+  getMachinePendingQuantity,
+  getMachinePendingQuantities,
   updateMachineOrderAssignment,
   updateProductionOrderItemPriority,
   updateProductionOrderItemPriorities,

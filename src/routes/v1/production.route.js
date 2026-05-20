@@ -31,6 +31,20 @@ router
   .get(productionController.getYarnIssuePendingSummary);
 
 router
+  .route('/machine-order-assignments/machines/pending-quantities')
+  .get(
+    validate(machineOrderAssignmentValidation.getMachinePendingQuantities),
+    productionController.getMachinePendingQuantities
+  );
+
+router
+  .route('/machine-order-assignments/machines/:machineId/pending-quantity')
+  .get(
+    validate(machineOrderAssignmentValidation.getMachinePendingQuantity),
+    productionController.getMachinePendingQuantity
+  );
+
+router
   .route('/machine-order-assignments/:assignmentId/reset')
   .post(validate(machineOrderAssignmentValidation.resetMachineOrderAssignment), productionController.resetMachineOrderAssignment);
 

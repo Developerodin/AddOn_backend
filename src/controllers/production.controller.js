@@ -200,7 +200,7 @@ export const getArticleWiseData = catchAsync(async (req, res) => {
 
 export const getArticleLogs = catchAsync(async (req, res) => {
   const { articleId } = req.params;
-  const allowedFilterFields = ['dateFrom', 'dateTo', 'action', 'limit', 'offset'];
+  const allowedFilterFields = ['dateFrom', 'dateTo', 'action', 'floor'];
   const filter = pick(req.query, allowedFilterFields);
   
   const allowedOptions = ['sortBy', 'limit', 'page'];
@@ -339,6 +339,22 @@ export const getMachineOrderAssignmentsCompletedItems = catchAsync(async (req, r
 /** Outstanding yarn (BOM − issued) for all queue rows where yarn issue is not Completed. */
 export const getYarnIssuePendingSummary = catchAsync(async (req, res) => {
   const data = await productionService.getYarnIssuePendingSummary();
+  res.send(data);
+});
+
+/** Pending knitting quantity for one machine (active assignment queue). */
+export const getMachinePendingQuantity = catchAsync(async (req, res) => {
+  const data = await productionService.getMachinePendingQuantityById(req.params.machineId);
+  res.send(data);
+});
+
+/** Pending knitting quantities for multiple machines (machine picker drawer). */
+export const getMachinePendingQuantities = catchAsync(async (req, res) => {
+  const machineIds = String(req.query.machineIds || '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+  const data = await productionService.getMachinePendingQuantitiesByIds(machineIds);
   res.send(data);
 });
 

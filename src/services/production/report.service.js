@@ -486,9 +486,47 @@ const getQualityTrend = async (floor, startDate, endDate) => {
 };
 
 /**
+ * Escapes a string for safe use inside a MongoDB `$regex` pattern (literal substring match).
+ * @param {string} raw - User-provided search text
+ * @returns {string} Escaped pattern fragment
+ */
+const escapeRegexLiteral = (raw) => raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Builds a Mongo clause for documents belonging to the current page's distinct `articleNumber` keys.
+ * @param {Array} pageKeys - `_id` values from `$group: { _id: '$articleNumber' }`
+ * @returns {Object} Fragment to combine with `$and` alongside the base report match
+ */
+const buildArticleNumberPageClause = (pageKeys) => {
+  const normalized = pageKeys.map((k) => (k === undefined ? null : k));
+  const nonBlank = [...new Set(normalized.filter((k) => k != null && k !== ''))];
+  const hasBlank = normalized.some((k) => k === null || k === '');
+  if (!hasBlank) {
+    return { articleNumber: { $in: nonBlank } };
+  }
+  if (nonBlank.length === 0) {
+    return {
+      $or: [
+        { articleNumber: null },
+        { articleNumber: '' },
+        { articleNumber: { $exists: false } },
+      ],
+    };
+  }
+  return {
+    $or: [
+      { articleNumber: { $in: nonBlank } },
+      { articleNumber: null },
+      { articleNumber: '' },
+      { articleNumber: { $exists: false } },
+    ],
+  };
+};
+
+/**
  * Get production data grouped by article (factoryCode/articleNumber).
- * For each article number: all POs it appears on, quantity per PO, status, logs.
- * @param {Object} filter - { articleNumber } optional, to get single article
+ * Paginates by distinct article number in the database and only loads logs for the current page.
+ * @param {Object} filter - { articleNumber, search, knittingCode, status, orderNumber }
  * @param {Object} options - { limit, page, logsPerArticle }
  * @returns {Promise<Object>} { results, page, limit, totalPages, total }
  */
@@ -496,71 +534,107 @@ export const getArticleWiseData = async (filter = {}, options = {}) => {
   const { articleNumber: filterArticleNumber, knittingCode: filterKnittingCode, search, status, orderNumber } = filter;
   const limit = Math.min(parseInt(options.limit, 10) || 50, 100);
   const page = parseInt(options.page, 10) || 1;
-  const logsPerArticle = Math.min(parseInt(options.logsPerArticle, 10) || 20, 100);
+  const logsPerArticleRaw = parseInt(options.logsPerArticle, 10);
+  const logsPerArticle =
+    Number.isFinite(logsPerArticleRaw) && logsPerArticleRaw >= 0
+      ? Math.min(logsPerArticleRaw, 100)
+      : 20;
 
   const match = {};
   if (filterArticleNumber) {
     match.articleNumber = filterArticleNumber;
   } else if (search && typeof search === 'string' && search.trim()) {
-    const searchRegex = { $regex: search.trim(), $options: 'i' };
+    const trimmed = search.trim();
+    const searchRegex = { $regex: escapeRegexLiteral(trimmed), $options: 'i' };
     match.$or = [{ articleNumber: searchRegex }, { knittingCode: searchRegex }];
   }
   if (filterKnittingCode && typeof filterKnittingCode === 'string' && filterKnittingCode.trim()) {
-    match.knittingCode = { $regex: filterKnittingCode.trim(), $options: 'i' };
+    match.knittingCode = { $regex: escapeRegexLiteral(filterKnittingCode.trim()), $options: 'i' };
   }
   if (status) match.status = status;
   if (orderNumber && typeof orderNumber === 'string' && orderNumber.trim()) {
     const orders = await ProductionOrder.find({
-      orderNumber: { $regex: orderNumber.trim(), $options: 'i' }
-    }).select('_id').lean();
+      orderNumber: { $regex: escapeRegexLiteral(orderNumber.trim()), $options: 'i' },
+    })
+      .select('_id')
+      .lean();
     const orderIds = orders.map((o) => o._id);
     if (orderIds.length === 0) {
       return { results: [], page, limit, totalPages: 0, total: 0 };
     }
     match.orderId = { $in: orderIds };
   } else {
-    // Only include articles that are linked to an order
     match.orderId = { $exists: true, $ne: null };
   }
 
-  const articles = await Article.find(match)
+  const groupStages = [{ $match: match }, { $group: { _id: '$articleNumber' } }];
+
+  const [countRows, pageGroups] = await Promise.all([
+    Article.aggregate([...groupStages, { $count: 'total' }]),
+    Article.aggregate([
+      ...groupStages,
+      { $sort: { _id: 1 } },
+      { $skip: (page - 1) * limit },
+      { $limit: limit },
+    ]),
+  ]);
+
+  const total = countRows[0]?.total || 0;
+  const totalPages = Math.ceil(total / limit) || 1;
+  const pageKeys = pageGroups.map((g) => g._id);
+
+  if (pageKeys.length === 0) {
+    return {
+      results: [],
+      page,
+      limit,
+      totalPages: total === 0 ? 0 : totalPages,
+      total,
+    };
+  }
+
+  const pageClause = buildArticleNumberPageClause(pageKeys);
+  const articles = await Article.find({
+    $and: [match, pageClause],
+  })
     .populate('orderId', 'orderNumber status priority currentFloor orderNote createdAt')
     .populate('machineId', 'machineCode machineNumber model floor')
     .sort({ articleNumber: 1, createdAt: -1 })
     .lean();
 
-  const articleIds = articles.map((a) => (a._id && a._id.toString()) || a.id);
-  const allLogs = await ArticleLog.find({ articleId: { $in: articleIds } })
-    .sort({ timestamp: -1 })
-    .lean();
-
   const logsByArticleId = {};
-  for (const log of allLogs) {
-    const aid = log.articleId && log.articleId.toString();
-    if (!aid) continue;
-    if (!logsByArticleId[aid]) logsByArticleId[aid] = [];
-    if (logsByArticleId[aid].length < logsPerArticle) {
-      logsByArticleId[aid].push({
-        id: log.id,
-        action: log.action,
-        quantity: log.quantity,
-        fromFloor: log.fromFloor,
-        toFloor: log.toFloor,
-        remarks: log.remarks,
-        timestamp: log.timestamp,
-        date: log.date,
-        userId: log.userId,
-        previousValue: log.previousValue,
-        newValue: log.newValue,
-        qualityStatus: log.qualityStatus
-      });
+  if (logsPerArticle > 0) {
+    const articleIds = articles.map((a) => (a._id && a._id.toString()) || a.id);
+    const allLogs = await ArticleLog.find({ articleId: { $in: articleIds } })
+      .sort({ timestamp: -1 })
+      .lean();
+
+    for (const log of allLogs) {
+      const aid = log.articleId && log.articleId.toString();
+      if (!aid) continue;
+      if (!logsByArticleId[aid]) logsByArticleId[aid] = [];
+      if (logsByArticleId[aid].length < logsPerArticle) {
+        logsByArticleId[aid].push({
+          id: log.id,
+          action: log.action,
+          quantity: log.quantity,
+          fromFloor: log.fromFloor,
+          toFloor: log.toFloor,
+          remarks: log.remarks,
+          timestamp: log.timestamp,
+          date: log.date,
+          userId: log.userId,
+          previousValue: log.previousValue,
+          newValue: log.newValue,
+          qualityStatus: log.qualityStatus,
+        });
+      }
     }
   }
 
   const byArticleNumber = {};
   for (const a of articles) {
     const orderId = a.orderId;
-    // Skip articles not linked to any order (defensive: query already filters, this catches edge cases)
     if (orderId == null || orderId === undefined) continue;
 
     const key = a.articleNumber;
@@ -571,7 +645,7 @@ export const getArticleWiseData = async (filter = {}, options = {}) => {
       byArticleNumber[key] = {
         factoryCode: key,
         articleNumber: key,
-        orders: []
+        orders: [],
       };
     }
 
@@ -596,21 +670,21 @@ export const getArticleWiseData = async (filter = {}, options = {}) => {
       floorQuantities: a.floorQuantities,
       startedAt: a.startedAt,
       completedAt: a.completedAt,
-      logs: logsByArticleId[articleIdStr] || []
+      logs: logsByArticleId[articleIdStr] || [],
     });
   }
 
-  const list = Object.values(byArticleNumber);
-  const total = list.length;
-  const totalPages = Math.ceil(total / limit) || 1;
-  const start = (page - 1) * limit;
-  const results = list.slice(start, start + limit);
+  const results = [];
+  for (const g of pageGroups) {
+    const row = byArticleNumber[g._id];
+    if (row) results.push(row);
+  }
 
   return {
     results,
     page,
     limit,
     totalPages,
-    total
+    total,
   };
 };

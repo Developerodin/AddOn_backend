@@ -377,7 +377,7 @@ const getArticleWiseData = {
     orderNumber: Joi.string().min(1).max(50),
     limit: Joi.number().integer().min(1).max(100),
     page: Joi.number().integer().min(1),
-    logsPerArticle: Joi.number().integer().min(1).max(100),
+    logsPerArticle: Joi.number().integer().min(0).max(100),
   }),
 };
 
@@ -432,10 +432,11 @@ const getArticleLogs = {
     dateFrom: Joi.date(),
     dateTo: Joi.date(),
     action: Joi.string(),
-    limit: Joi.number().integer(),
+    floor: Joi.string(),
+    limit: Joi.number().integer().min(1).max(1000),
     offset: Joi.number().integer(),
     sortBy: Joi.string(),
-    page: Joi.number().integer()
+    page: Joi.number().integer().min(1),
   }),
 };
 
