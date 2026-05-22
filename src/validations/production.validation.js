@@ -32,7 +32,7 @@ const getProductionOrders = {
   query: Joi.object().keys({
     orderNumber: Joi.string(),
     priority: Joi.string().valid('Urgent', 'High', 'Medium', 'Low'),
-    status: Joi.string().valid('Pending', 'In Progress', 'Completed', 'On Hold', 'Cancelled'),
+    status: Joi.string().valid('Pending', 'In Progress', 'Completed', 'On Hold', 'Short Close', 'Cancelled'),
     currentFloor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse', 'Dispatch'),
     customerId: Joi.string().custom(objectId),
     customerName: Joi.string(),
@@ -60,7 +60,7 @@ const updateProductionOrder = {
     .keys({
       orderNumber: Joi.string(),
       priority: Joi.string().valid('Urgent', 'High', 'Medium', 'Low'),
-      status: Joi.string().valid('Pending', 'In Progress', 'Completed', 'On Hold', 'Cancelled'),
+      status: Joi.string().valid('Pending', 'In Progress', 'Completed', 'On Hold', 'Short Close', 'Cancelled'),
       orderNote: Joi.string(),
       customerId: Joi.string().custom(objectId),
       customerName: Joi.string(),
@@ -98,7 +98,7 @@ const getFloorOrders = {
     floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse', 'Dispatch').required(),
   }),
   query: Joi.object().keys({
-    status: Joi.string().valid('Pending', 'In Progress', 'Completed', 'On Hold', 'Cancelled'),
+    status: Joi.string().valid('Pending', 'In Progress', 'Completed', 'On Hold', 'Short Close', 'Cancelled'),
     priority: Joi.string().valid('Urgent', 'High', 'Medium', 'Low'),
     search: Joi.string(),
     machineId: Joi.string().custom(objectId),
@@ -115,7 +115,7 @@ const getDispatchPendingWarehousePrintOrders = {
     floor: Joi.string().valid('Dispatch').required(),
   }),
   query: Joi.object().keys({
-    status: Joi.string().valid('Pending', 'In Progress', 'Completed', 'On Hold', 'Cancelled'),
+    status: Joi.string().valid('Pending', 'In Progress', 'Completed', 'On Hold', 'Short Close', 'Cancelled'),
     priority: Joi.string().valid('Urgent', 'High', 'Medium', 'Low'),
     search: Joi.string(),
     machineId: Joi.string().custom(objectId),
@@ -373,7 +373,7 @@ const getArticleWiseData = {
     articleNumber: Joi.string().min(1).max(20),
     knittingCode: Joi.string().min(1).max(50).optional(),
     search: Joi.string().min(1).max(50),
-    status: Joi.string().valid('Pending', 'In Progress', 'Completed', 'On Hold', 'Cancelled'),
+    status: Joi.string().valid('Pending', 'In Progress', 'Completed', 'On Hold', 'Short Close', 'Cancelled'),
     orderNumber: Joi.string().min(1).max(50),
     limit: Joi.number().integer().min(1).max(100),
     page: Joi.number().integer().min(1),

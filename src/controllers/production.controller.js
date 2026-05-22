@@ -400,7 +400,8 @@ export const updateMachineOrderItemStatus = catchAsync(async (req, res) => {
     req.params.assignmentId,
     req.params.itemId,
     req.body,
-    req.user?._id
+    req.user?._id,
+    req.user?.role
   );
   res.send(assignment);
 });

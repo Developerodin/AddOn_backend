@@ -9,6 +9,7 @@ const OrderStatus = {
   IN_PROGRESS: 'In Progress',
   COMPLETED: 'Completed',
   ON_HOLD: 'On Hold',
+  SHORT_CLOSE: 'Short Close',
   CANCELLED: 'Cancelled'
 };
 
@@ -104,6 +105,7 @@ const LogAction = {
   ORDER_UPDATED: 'Order Updated',
   ORDER_CANCELLED: 'Order Cancelled',
   ORDER_PUT_ON_HOLD: 'Order Put On Hold',
+  ASSIGNMENT_ITEM_SHORT_CLOSED: 'Assignment Item Short Closed',
   ORDER_RESUMED: 'Order Resumed',
   ORDER_COMPLETED: 'Order Completed',
   

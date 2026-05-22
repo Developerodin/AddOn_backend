@@ -79,6 +79,7 @@ const machineOrderAssignmentSchema = new mongoose.Schema(
 const STATUSES_WITH_NO_PRIORITY = [
   OrderStatus.CANCELLED,
   OrderStatus.ON_HOLD,
+  OrderStatus.SHORT_CLOSE,
   OrderStatus.COMPLETED,
 ];
 
@@ -128,8 +129,11 @@ function assignMissingPriorities(items) {
  */
 /** Exported for services that must mirror pre-save removal / audit (same rule as pre-save hook). */
 export function isItemFullyCompleted(item) {
+  const status = String(item?.status);
+  const knittingDone =
+    status === OrderStatus.COMPLETED || status === OrderStatus.SHORT_CLOSE;
   return (
-    String(item?.status) === OrderStatus.COMPLETED &&
+    knittingDone &&
     String(item?.yarnIssueStatus) === YarnIssueStatus.COMPLETED &&
     String(item?.yarnReturnStatus) === YarnReturnStatus.COMPLETED
   );

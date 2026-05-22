@@ -71,7 +71,7 @@ export const getMachineOrderAssignmentById = async (assignmentId) => {
 const TOP_ITEMS_LIMIT = 2;
 
 /** Item statuses that exclude an order from top-items (once all items are in these, order is hidden). */
-const EXCLUDED_ITEM_STATUSES = [OrderStatus.COMPLETED, OrderStatus.ON_HOLD];
+const EXCLUDED_ITEM_STATUSES = [OrderStatus.COMPLETED, OrderStatus.ON_HOLD, OrderStatus.SHORT_CLOSE];
 
 /**
  * Get all machine order assignments that have at least one productionOrderItem with
@@ -101,26 +101,41 @@ export const getMachineOrderAssignmentsTopItems = async () => {
 };
 
 /**
- * Get all machine order assignments that have at least one productionOrderItem with
- * yarnIssueStatus Completed and status Completed. Returns each assignment with all such items (no priority, no limit).
- * @returns {Promise<Object[]>} Array of assignment objects with productionOrderItems = all completed items only
+ * Get machine order assignments that have completed knitting items or short-closed items ready for yarn return.
+ * Completed: status Completed + yarnIssue Completed.
+ * Short Close: status Short Close + yarn was issued (yarnIssue not Pending).
+ * @returns {Promise<Object[]>}
  */
 export const getMachineOrderAssignmentsCompletedItems = async () => {
   const assignments = await MachineOrderAssignment.find({
     'productionOrderItems.0': { $exists: true },
-    'productionOrderItems.yarnIssueStatus': YarnIssueStatus.COMPLETED,
-    'productionOrderItems.status': OrderStatus.COMPLETED,
     isActive: true,
+    productionOrderItems: {
+      $elemMatch: {
+        $or: [
+          { status: OrderStatus.COMPLETED, yarnIssueStatus: YarnIssueStatus.COMPLETED },
+          {
+            status: OrderStatus.SHORT_CLOSE,
+            yarnIssueStatus: { $ne: YarnIssueStatus.PENDING },
+          },
+        ],
+      },
+    },
   })
     .populate('machine')
     .populate('productionOrderItems.productionOrder')
     .populate('productionOrderItems.article')
     .lean();
   return assignments.map((doc) => {
-    const items = (doc.productionOrderItems || []).filter(
-      (i) =>
-        String(i.yarnIssueStatus) === YarnIssueStatus.COMPLETED && String(i.status) === OrderStatus.COMPLETED
-    );
+    const items = (doc.productionOrderItems || []).filter((i) => {
+      if (String(i.status) === OrderStatus.COMPLETED) {
+        return String(i.yarnIssueStatus) === YarnIssueStatus.COMPLETED;
+      }
+      if (String(i.status) === OrderStatus.SHORT_CLOSE) {
+        return String(i.yarnIssueStatus) !== YarnIssueStatus.PENDING;
+      }
+      return false;
+    });
     return { ...doc, productionOrderItems: items };
   });
 };
@@ -581,6 +596,9 @@ export const updateProductionOrderItemPriorityById = async (assignmentId, itemId
     .populate('productionOrderItems.article');
 };
 
+/** Roles allowed to short-close an assignment item (admin/super_admin only). */
+const SHORT_CLOSE_ALLOWED_ROLES = new Set(['admin', 'super_admin']);
+
 /**
  * Update status of a single productionOrderItem. Only one item per assignment can be "In Progress"
  * at a time: user must change the current In Progress item to another status before setting a
@@ -589,9 +607,10 @@ export const updateProductionOrderItemPriorityById = async (assignmentId, itemId
  * @param {ObjectId} itemId - _id of the item in productionOrderItems
  * @param {Object} body - { status: OrderStatus [, yarnIssueStatus: YarnIssueStatus ] } - yarnIssueStatus applied first when both sent
  * @param {ObjectId} [userId]
+ * @param {string} [userRole]
  * @returns {Promise<MachineOrderAssignment>}
  */
-export const updateProductionOrderItemStatusById = async (assignmentId, itemId, body, userId) => {
+export const updateProductionOrderItemStatusById = async (assignmentId, itemId, body, userId, userRole) => {
   const assignment = await MachineOrderAssignment.findById(assignmentId);
   if (!assignment) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Machine order assignment not found');
@@ -608,6 +627,22 @@ export const updateProductionOrderItemStatusById = async (assignmentId, itemId, 
   }
   const previousStatus = item.status;
   const previousYarnIssueStatus = item.yarnIssueStatus;
+  const previousYarnReturnStatus = item.yarnReturnStatus;
+
+  if (String(newStatus) === OrderStatus.SHORT_CLOSE) {
+    if (!SHORT_CLOSE_ALLOWED_ROLES.has(String(userRole))) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Only admin or super_admin can short close an assignment item');
+    }
+    if (String(previousStatus) !== OrderStatus.IN_PROGRESS) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Only In Progress items can be short closed');
+    }
+    if (String(item.yarnIssueStatus) === YarnIssueStatus.PENDING) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Cannot short close until yarn issue has started. Issue yarn first.'
+      );
+    }
+  }
 
   // Allow yarnIssueStatus in same request - apply it first so status validation passes
   if (body.yarnIssueStatus !== undefined && String(item.yarnIssueStatus) !== String(body.yarnIssueStatus)) {
@@ -636,9 +671,18 @@ export const updateProductionOrderItemStatusById = async (assignmentId, itemId, 
   }
 
   item.status = newStatus;
-  if ([OrderStatus.CANCELLED, OrderStatus.ON_HOLD, OrderStatus.COMPLETED].includes(String(newStatus))) {
+  if (
+    [OrderStatus.CANCELLED, OrderStatus.ON_HOLD, OrderStatus.SHORT_CLOSE, OrderStatus.COMPLETED].includes(
+      String(newStatus)
+    )
+  ) {
     item.set('priority', undefined);
   }
+
+  if (String(newStatus) === OrderStatus.SHORT_CLOSE && String(item.yarnReturnStatus) === YarnReturnStatus.PENDING) {
+    item.yarnReturnStatus = YarnReturnStatus.IN_PROGRESS;
+  }
+
   assignment.markModified('productionOrderItems');
   await assignment.save();
 
@@ -654,6 +698,13 @@ export const updateProductionOrderItemStatusById = async (assignmentId, itemId, 
       newValue: body.yarnIssueStatus,
     });
   }
+  if (String(newStatus) === OrderStatus.SHORT_CLOSE && String(previousYarnReturnStatus) !== String(item.yarnReturnStatus)) {
+    changes.push({
+      field: `productionOrderItems[${itemId}].yarnReturnStatus`,
+      previousValue: previousYarnReturnStatus,
+      newValue: item.yarnReturnStatus,
+    });
+  }
   if (removedByPreSave) {
     changes.push({
       field: 'productionOrderItems.removed',
@@ -665,7 +716,11 @@ export const updateProductionOrderItemStatusById = async (assignmentId, itemId, 
       },
     });
   }
-  const action = removedByPreSave ? LogAction.ASSIGNMENT_ITEM_COMPLETED_REMOVED : LogAction.ASSIGNMENT_ITEM_STATUS_CHANGED;
+  const action = removedByPreSave
+    ? LogAction.ASSIGNMENT_ITEM_COMPLETED_REMOVED
+    : String(newStatus) === OrderStatus.SHORT_CLOSE
+      ? LogAction.ASSIGNMENT_ITEM_SHORT_CLOSED
+      : LogAction.ASSIGNMENT_ITEM_STATUS_CHANGED;
   await writeAssignmentAuditLog({
     assignmentId: assignment._id,
     userId,
@@ -673,7 +728,9 @@ export const updateProductionOrderItemStatusById = async (assignmentId, itemId, 
     changes,
     remarks: removedByPreSave
       ? 'Item fully completed and removed from machine queue'
-      : `Item status updated to ${newStatus}`,
+      : String(newStatus) === OrderStatus.SHORT_CLOSE
+        ? 'Item short closed — knitting stopped; remaining yarn queued for return'
+        : `Item status updated to ${newStatus}`,
     snapshotBefore,
     snapshotAfter: snapshotAssignment(fresh),
     auditSource: userId ? 'user' : 'system',
