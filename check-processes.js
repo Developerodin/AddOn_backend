@@ -22,8 +22,11 @@ const checkProcesses = async () => {
       'Checking',
       'Washing',
       'Boarding',
-      'Final Checking',
+      'Silicon',
+      'Secondary Checking',
       'Branding',
+      'Re-Boarding',
+      'Final Checking',
       'Warehouse'
     ];
 

@@ -52,7 +52,7 @@ async function cleanupInvalidFloors() {
         }
 
         const floorQuantities = article.floorQuantities || {};
-        const allFloors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'silicon', 'secondaryChecking', 'finalChecking', 'branding', 'warehouse', 'dispatch'];
+        const allFloors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'silicon', 'secondaryChecking', 'branding', 'reBoarding', 'finalChecking', 'warehouse', 'dispatch'];
 
         // Clear work from floors not in expected flow
         for (const floorKey of allFloors) {
@@ -167,6 +167,7 @@ function getFloorFromKey(floorKey) {
     'silicon': ProductionFloor.SILICON,
     'secondaryChecking': ProductionFloor.SECONDARY_CHECKING,
     'branding': ProductionFloor.BRANDING,
+    'reBoarding': ProductionFloor.RE_BOARDING,
     'finalChecking': ProductionFloor.FINAL_CHECKING,
     'warehouse': ProductionFloor.WAREHOUSE,
     'dispatch': ProductionFloor.DISPATCH

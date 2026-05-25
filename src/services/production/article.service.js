@@ -19,6 +19,37 @@ import { computeConsumedPerDispatchRow } from '../../utils/dispatchWarehousePend
 const FLOORS_WITH_STYLE_TRANSFER_ITEMS = ['Branding', 'Final Checking', 'Dispatch'];
 
 /**
+ * Resolve floorQuantities key for style transferredData when accepting containers on a floor.
+ * Final Checking with Re-Boarding in flow uses Branding's style breakdown (Re-Boarding is qty-only).
+ * @param {import('../../models/production/article.model.js').default} article
+ * @param {string} normalizedFloor - Production floor enum name
+ * @returns {Promise<string|null>} floorQuantities key or null
+ */
+const resolveStyleSourceFloorKeyForReceive = async (article, normalizedFloor) => {
+  if (normalizedFloor === 'Final Checking') {
+    try {
+      const floorOrder = await article.getFloorOrder();
+      if (floorOrder.includes('Re-Boarding') && floorOrder.includes('Branding')) {
+        return 'branding';
+      }
+      const fcIdx = floorOrder.indexOf('Final Checking');
+      if (fcIdx > 0) {
+        return article.getFloorKey(floorOrder[fcIdx - 1]);
+      }
+    } catch {
+      // fall through to branding default
+    }
+    return 'branding';
+  }
+  const staticMap = {
+    Branding: 'secondaryChecking',
+    Dispatch: 'finalChecking',
+    Warehouse: 'dispatch',
+  };
+  return staticMap[normalizedFloor] || null;
+};
+
+/**
  * Enrich transferItems that have empty styleCode/brand using receivedData entries,
  * deducting amounts already consumed by prior transfers (transferredData).
  * Prevents the bug where every item gets the same style code from a naive fallback.
@@ -452,6 +483,7 @@ const checkAndTransferPreviousFloorWork = async (article, updateData, user = nul
     'Silicon',
     'Secondary Checking',
     'Branding',
+    'Re-Boarding',
     'Final Checking',
     'Dispatch',
     'Warehouse'
@@ -611,6 +643,7 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
     !nextFloor &&
     (normalizedFloor === 'Final Checking' ||
       normalizedFloor === 'Branding' ||
+      normalizedFloor === 'Re-Boarding' ||
       normalizedFloor === 'Dispatch')
   ) {
     floorOrder = getFloorOrderByLinkingType(article.linkingType);
@@ -1146,7 +1179,7 @@ const getNextFloor = async (article, currentFloor) => {
     // Fallback: product may not list tail floors; use linking-type flow
     if (
       !next &&
-      (currentFloor === 'Final Checking' || currentFloor === 'Branding' || currentFloor === 'Dispatch')
+      (currentFloor === 'Final Checking' || currentFloor === 'Branding' || currentFloor === 'Re-Boarding' || currentFloor === 'Dispatch')
     ) {
       const fallback = getFloorOrderByLinkingType(article.linkingType);
       const idx = fallback.indexOf(currentFloor);
@@ -1239,6 +1272,7 @@ const getTransferAction = (floor) => {
     'Washing': 'Transferred to Washing',
     'Boarding': 'Transferred to Boarding',
     'Branding': 'Transferred to Branding',
+    'Re-Boarding': 'Transferred to Re-Boarding',
     'Final Checking': 'Transferred to Final Checking',
     'Warehouse': 'Transferred to Warehouse',
     'Dispatch': 'Transferred to Dispatch'
@@ -1358,6 +1392,9 @@ export const updateArticleFloorReceivedData = async (articleId, payload) => {
     'Checking': 'Checking',
     'Washing': 'Washing',
     'Boarding': 'Boarding',
+    'Re-Boarding': 'Re-Boarding',
+    'ReBoarding': 'Re-Boarding',
+    're-boarding': 'Re-Boarding',
     'Branding': 'Branding',
     'Warehouse': 'Warehouse',
     'Dispatch': 'Dispatch',
@@ -1366,7 +1403,7 @@ export const updateArticleFloorReceivedData = async (articleId, payload) => {
   const floorKey = article.getFloorKey(normalizedFloor);
 
   if (!floorKey || !article.floorQuantities[floorKey]) {
-    throw new ApiError(httpStatus.BAD_REQUEST, `Invalid floor: "${payload.floor}". Must be one of: Knitting, Linking, Checking, Washing, Boarding, Silicon, Secondary Checking, Branding, Final Checking, Warehouse, Dispatch.`);
+    throw new ApiError(httpStatus.BAD_REQUEST, `Invalid floor: "${payload.floor}". Must be one of: Knitting, Linking, Checking, Washing, Boarding, Silicon, Secondary Checking, Branding, Re-Boarding, Final Checking, Warehouse, Dispatch.`);
   }
 
   const floorData = article.floorQuantities[floorKey];
@@ -1388,13 +1425,7 @@ export const updateArticleFloorReceivedData = async (articleId, payload) => {
   // Auto-populate receivedTransferItems from previous floor's transferredData (e.g. FC→Dispatch, Dispatch→Warehouse)
   // FIX: subtract quantities already received (from prior container accepts) so each entry is only used once.
   if ((!receivedTransferItems || receivedTransferItems.length === 0) && typeof quantity === 'number' && quantity > 0) {
-    const prevFloorMap = {
-      'Final Checking': 'branding',
-      'Branding': 'secondaryChecking',
-      'Dispatch': 'finalChecking',
-      'Warehouse': 'dispatch'
-    };
-    const prevFloorKey = prevFloorMap[normalizedFloor];
+    const prevFloorKey = await resolveStyleSourceFloorKeyForReceive(article, normalizedFloor);
     const prevFloorData = prevFloorKey && article.floorQuantities?.[prevFloorKey];
     const prevTransferredData = prevFloorData?.transferredData;
     if (Array.isArray(prevTransferredData) && prevTransferredData.length > 0) {

@@ -187,6 +187,7 @@ productionOrderSchema.pre('save', async function(next) {
       ProductionFloor.SILICON,
       ProductionFloor.SECONDARY_CHECKING,
       ProductionFloor.BRANDING,
+      ProductionFloor.RE_BOARDING,
       ProductionFloor.FINAL_CHECKING,
       ProductionFloor.DISPATCH,
       ProductionFloor.WAREHOUSE

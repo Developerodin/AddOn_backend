@@ -318,6 +318,7 @@ const getTransferAction = (floor) => {
     'Washing': LogAction.TRANSFERRED_TO_WASHING,
     'Boarding': LogAction.TRANSFERRED_TO_BOARDING,
     'Branding': LogAction.TRANSFERRED_TO_BRANDING,
+    'Re-Boarding': LogAction.TRANSFERRED_TO_RE_BOARDING,
     'Final Checking': LogAction.TRANSFERRED_TO_FINAL_CHECKING,
     'Warehouse': LogAction.TRANSFERRED_TO_WAREHOUSE,
     'Dispatch': LogAction.TRANSFERRED_TO_DISPATCH

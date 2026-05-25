@@ -16,6 +16,7 @@ export const getFloorOrderByLinkingType = (linkingType) => {
       ProductionFloor.SILICON,
       ProductionFloor.SECONDARY_CHECKING,
       ProductionFloor.BRANDING,
+      ProductionFloor.RE_BOARDING,
       ProductionFloor.FINAL_CHECKING,
       ProductionFloor.DISPATCH,
       ProductionFloor.WAREHOUSE
@@ -31,6 +32,7 @@ export const getFloorOrderByLinkingType = (linkingType) => {
       ProductionFloor.SILICON,
       ProductionFloor.SECONDARY_CHECKING,
       ProductionFloor.BRANDING,
+      ProductionFloor.RE_BOARDING,
       ProductionFloor.FINAL_CHECKING,
       ProductionFloor.DISPATCH,
       ProductionFloor.WAREHOUSE
@@ -52,6 +54,7 @@ export const getAllFloorsOrder = () => {
     ProductionFloor.SILICON,
     ProductionFloor.SECONDARY_CHECKING,
     ProductionFloor.BRANDING,
+    ProductionFloor.RE_BOARDING,
     ProductionFloor.FINAL_CHECKING,
     ProductionFloor.DISPATCH,
     ProductionFloor.WAREHOUSE
@@ -100,6 +103,7 @@ export const getFloorKey = (floor) => {
     [ProductionFloor.SILICON]: 'silicon',
     [ProductionFloor.SECONDARY_CHECKING]: 'secondaryChecking',
     [ProductionFloor.BRANDING]: 'branding',
+    [ProductionFloor.RE_BOARDING]: 'reBoarding',
     [ProductionFloor.FINAL_CHECKING]: 'finalChecking',
     [ProductionFloor.WAREHOUSE]: 'warehouse',
     [ProductionFloor.DISPATCH]: 'dispatch'
@@ -113,7 +117,7 @@ export const getFloorKey = (floor) => {
  */
 export const FLOORS_USING_CONTAINER_RECEIVE = [
   'Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon',
-  'Secondary Checking', 'Branding', 'Final Checking', 'Dispatch', 'Warehouse'
+  'Secondary Checking', 'Branding', 'Re-Boarding', 'Final Checking', 'Dispatch', 'Warehouse'
 ];
 
 /**
@@ -198,6 +202,10 @@ export const mapProcessToFloor = (processName) => {
     'secondary checking': ProductionFloor.SECONDARY_CHECKING,
     'secondarychecking': ProductionFloor.SECONDARY_CHECKING,
     'branding': ProductionFloor.BRANDING,
+    're-boarding': ProductionFloor.RE_BOARDING,
+    'reboarding': ProductionFloor.RE_BOARDING,
+    're boarding': ProductionFloor.RE_BOARDING,
+    're-board': ProductionFloor.RE_BOARDING,
     'final checking': ProductionFloor.FINAL_CHECKING,
     'finalchecking': ProductionFloor.FINAL_CHECKING,
     'warehouse': ProductionFloor.WAREHOUSE,
@@ -220,6 +228,15 @@ export const mapProcessToFloor = (processName) => {
   // Direct match
   if (processToFloorMap[normalizedName]) {
     return processToFloorMap[normalizedName];
+  }
+
+  // Re-Boarding before partial match (re-boarding/reboarding contain "boarding")
+  if (
+    normalizedName.includes('re-board') ||
+    normalizedName.includes('reboard') ||
+    normalizedName.includes('re boarding')
+  ) {
+    return ProductionFloor.RE_BOARDING;
   }
 
   // Partial match (contains floor name)
@@ -255,8 +272,9 @@ export const getAvailableArticleFloors = () => {
     'boarding',
     'silicon',
     'secondaryChecking',
-    'finalChecking',
     'branding',
+    'reBoarding',
+    'finalChecking',
     'warehouse',
     'dispatch'
   ];

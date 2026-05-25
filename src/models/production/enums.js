@@ -52,6 +52,7 @@ const ProductionFloor = {
   SILICON: 'Silicon',
   SECONDARY_CHECKING: 'Secondary Checking',
   BRANDING: 'Branding',
+  RE_BOARDING: 'Re-Boarding',
   FINAL_CHECKING: 'Final Checking',
   WAREHOUSE: 'Warehouse',
   DISPATCH: 'Dispatch'
@@ -135,6 +136,7 @@ const LogAction = {
   TRANSFERRED_TO_SILICON: 'Transferred to Silicon',
   TRANSFERRED_TO_SECONDARY_CHECKING: 'Transferred to Secondary Checking',
   TRANSFERRED_TO_BRANDING: 'Transferred to Branding',
+  TRANSFERRED_TO_RE_BOARDING: 'Transferred to Re-Boarding',
   TRANSFERRED_TO_FINAL_CHECKING: 'Transferred to Final Checking',
   TRANSFERRED_TO_WAREHOUSE: 'Transferred to Warehouse',
   TRANSFERRED_TO_DISPATCH: 'Transferred to Dispatch',

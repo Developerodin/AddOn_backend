@@ -107,6 +107,7 @@ const userSchema = mongoose.Schema(
           'Silicon Floor': false,
           'Secondary Checking Floor': false,
           'Branding Floor': false,
+          'Re-Boarding Floor': false,
           'Final Checking Floor': false,
           'Dispatch Floor': false,
           'Machine Floor': false,

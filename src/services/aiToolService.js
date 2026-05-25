@@ -6366,6 +6366,7 @@ export const getArticlesByOrder = async (params = {}) => {
             'checking': 'Checking',
             'washing': 'Washing',
             'boarding': 'Boarding',
+            'reBoarding': 'Re-Boarding',
             'finalChecking': 'Final Checking',
             'branding': 'Branding',
             'warehouse': 'Warehouse'
@@ -6494,7 +6495,7 @@ export const getArticleById = async (params = {}) => {
         if (floorData && (floorData.completed > 0 || floorData.remaining > 0)) {
           const floorNames = {
             'knitting': 'Knitting', 'linking': 'Linking', 'checking': 'Checking',
-            'washing': 'Washing', 'boarding': 'Boarding', 'finalChecking': 'Final Checking',
+            'washing': 'Washing', 'boarding': 'Boarding', 'reBoarding': 'Re-Boarding', 'finalChecking': 'Final Checking',
             'branding': 'Branding', 'warehouse': 'Warehouse'
           };
           return floorNames[floor] || floor;

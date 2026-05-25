@@ -23,11 +23,30 @@ function getFloorFromKey(floorKey) {
     'silicon': ProductionFloor.SILICON,
     'secondaryChecking': ProductionFloor.SECONDARY_CHECKING,
     'branding': ProductionFloor.BRANDING,
+    'reBoarding': ProductionFloor.RE_BOARDING,
     'finalChecking': ProductionFloor.FINAL_CHECKING,
     'warehouse': ProductionFloor.WAREHOUSE,
     'dispatch': ProductionFloor.DISPATCH
   };
   return keyToFloorMap[floorKey] || floorKey;
+}
+
+/**
+ * Resolve previous floor key for Final Checking (Re-Boarding when active, else Branding).
+ * @param {Object} floorQuantities - Article floorQuantities subdocument
+ * @returns {string} Previous floor key for style/qty consistency checks
+ */
+function getFinalCheckingPrevFloorKey(floorQuantities) {
+  const reBoarding = floorQuantities?.reBoarding;
+  if (
+    reBoarding &&
+    ((reBoarding.received || 0) > 0 ||
+      (reBoarding.transferred || 0) > 0 ||
+      (reBoarding.completed || 0) > 0)
+  ) {
+    return 'reBoarding';
+  }
+  return 'branding';
 }
 
 /**
@@ -323,6 +342,21 @@ const articleSchema = new mongoose.Schema({
         default: []
       }
     },
+    reBoarding: {
+      received: { type: Number, default: 0 },
+      completed: { type: Number, default: 0 },
+      remaining: { type: Number, default: 0 },
+      transferred: { type: Number, default: 0 },
+      repairReceived: { type: Number, default: 0, min: 0 },
+      receivedData: {
+        type: [{
+          receivedStatusFromPreviousFloor: { type: String, default: '' },
+          receivedInContainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'ContainersMaster', default: null },
+          receivedTimestamp: { type: Date, default: null }
+        }],
+        default: []
+      }
+    },
     warehouse: {
       received: { type: Number, default: 0 },
       completed: { type: Number, default: 0 },
@@ -415,7 +449,7 @@ articleSchema.virtual('calculatedProgress').get(function() {
   // Calculate total completed across all floors
   const floorOrder = [
     'knitting', 'linking', 'checking', 'washing', 
-    'boarding', 'silicon', 'secondaryChecking', 'branding', 'finalChecking', 'warehouse', 'dispatch'
+    'boarding', 'silicon', 'secondaryChecking', 'branding', 'reBoarding', 'finalChecking', 'warehouse', 'dispatch'
   ];
   
   let totalCompleted = 0;
@@ -538,7 +572,7 @@ articleSchema.pre('save', async function(next) {
         allowedFloors.add(ProductionFloor.WAREHOUSE);
 
         // Check each floor and clear invalid ones
-        const allFloors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'silicon', 'secondaryChecking', 'branding', 'finalChecking', 'warehouse', 'dispatch'];
+        const allFloors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'silicon', 'secondaryChecking', 'branding', 'reBoarding', 'finalChecking', 'warehouse', 'dispatch'];
         const floorQuantities = this.floorQuantities || {};
         let clearedAny = false;
 
@@ -582,7 +616,7 @@ articleSchema.pre('save', async function(next) {
   }
   
   // Flow-based validation: Check each floor independently
-  const floors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'silicon', 'secondaryChecking', 'branding', 'finalChecking', 'warehouse', 'dispatch'];
+  const floors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'silicon', 'secondaryChecking', 'branding', 'reBoarding', 'finalChecking', 'warehouse', 'dispatch'];
   
   floors.forEach(floorKey => {
     const floorData = this.floorQuantities[floorKey];
@@ -713,6 +747,7 @@ articleSchema.methods.getFloorKey = function(floor) {
     [ProductionFloor.SILICON]: 'silicon',
     [ProductionFloor.SECONDARY_CHECKING]: 'secondaryChecking',
     [ProductionFloor.BRANDING]: 'branding',
+    [ProductionFloor.RE_BOARDING]: 'reBoarding',
     [ProductionFloor.FINAL_CHECKING]: 'finalChecking',
     [ProductionFloor.WAREHOUSE]: 'warehouse',
     [ProductionFloor.DISPATCH]: 'dispatch'
@@ -801,6 +836,7 @@ articleSchema.methods.getFloorOrderByLinkingType = function() {
       ProductionFloor.SILICON,
       ProductionFloor.SECONDARY_CHECKING,
       ProductionFloor.BRANDING,
+      ProductionFloor.RE_BOARDING,
       ProductionFloor.FINAL_CHECKING,
       ProductionFloor.DISPATCH,
       ProductionFloor.WAREHOUSE
@@ -816,6 +852,7 @@ articleSchema.methods.getFloorOrderByLinkingType = function() {
       ProductionFloor.SILICON,
       ProductionFloor.SECONDARY_CHECKING,
       ProductionFloor.BRANDING,
+      ProductionFloor.RE_BOARDING,
       ProductionFloor.FINAL_CHECKING,
       ProductionFloor.DISPATCH,
       ProductionFloor.WAREHOUSE
@@ -1385,7 +1422,7 @@ articleSchema.methods.fixCheckingFloorDataConsistency = function() {
   const checkingFloors = [
     { key: 'checking', prevFloorKey: 'linking' },
     { key: 'secondaryChecking', prevFloorKey: 'silicon' },
-    { key: 'finalChecking', prevFloorKey: 'branding' }
+    { key: 'finalChecking', prevFloorKey: getFinalCheckingPrevFloorKey(this.floorQuantities) }
   ];
   let allFixes = [];
   const updatedData = {};
@@ -1463,7 +1500,7 @@ articleSchema.methods.fixCheckingFloorDataConsistency = function() {
 
 // Method to fix floor data corruption automatically
 articleSchema.methods.fixFloorDataCorruption = function() {
-  const floors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'silicon', 'secondaryChecking', 'branding', 'finalChecking', 'warehouse', 'dispatch'];
+  const floors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'silicon', 'secondaryChecking', 'branding', 'reBoarding', 'finalChecking', 'warehouse', 'dispatch'];
   let fixes = [];
   
   // Fix each floor's data consistency
@@ -1556,7 +1593,7 @@ articleSchema.methods.fixFloorDataCorruption = function() {
 
 // Method to fix all floor data inconsistencies
 articleSchema.methods.fixAllFloorDataConsistency = function() {
-  const floors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'silicon', 'secondaryChecking', 'branding', 'finalChecking', 'warehouse', 'dispatch'];
+  const floors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'silicon', 'secondaryChecking', 'branding', 'reBoarding', 'finalChecking', 'warehouse', 'dispatch'];
   let allFixes = [];
   let totalFixed = 0;
   
@@ -1618,7 +1655,7 @@ articleSchema.methods.fixAllFloorDataConsistency = function() {
   const floorPairs = [
     { checking: 'checking', prev: 'linking' },
     { checking: 'secondaryChecking', prev: 'silicon' },
-    { checking: 'finalChecking', prev: 'branding' }
+    { checking: 'finalChecking', prev: getFinalCheckingPrevFloorKey(this.floorQuantities) }
   ];
   for (const { checking: cKey, prev: pKey } of floorPairs) {
     const prevTransferred = this.floorQuantities[pKey]?.transferred || 0;

@@ -33,7 +33,7 @@ const getProductionOrders = {
     orderNumber: Joi.string(),
     priority: Joi.string().valid('Urgent', 'High', 'Medium', 'Low'),
     status: Joi.string().valid('Pending', 'In Progress', 'Completed', 'On Hold', 'Short Close', 'Cancelled'),
-    currentFloor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse', 'Dispatch'),
+    currentFloor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Re-Boarding', 'Final Checking', 'Warehouse', 'Dispatch'),
     customerId: Joi.string().custom(objectId),
     customerName: Joi.string(),
     customerOrderNumber: Joi.string(),
@@ -95,7 +95,7 @@ const deleteProductionOrder = {
 
 const getFloorOrders = {
   params: Joi.object().keys({
-    floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse', 'Dispatch').required(),
+    floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Re-Boarding', 'Final Checking', 'Warehouse', 'Dispatch').required(),
   }),
   query: Joi.object().keys({
     status: Joi.string().valid('Pending', 'In Progress', 'Completed', 'On Hold', 'Short Close', 'Cancelled'),
@@ -129,7 +129,7 @@ const getDispatchPendingWarehousePrintOrders = {
 const updateArticleProgress = {
   params: Joi.object().keys({
     floor: Joi.string()
-      .valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'FinalChecking', 'Warehouse', 'Dispatch')
+      .valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Re-Boarding', 'Final Checking', 'FinalChecking', 'Warehouse', 'Dispatch')
       .required(),
     orderId: Joi.string().custom(objectId).required(),
     articleId: Joi.string().custom(objectId).required(),
@@ -171,7 +171,7 @@ const updateArticleProgress = {
 
 const transferArticle = {
   params: Joi.object().keys({
-    floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse', 'Dispatch').required(),
+    floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Re-Boarding', 'Final Checking', 'Warehouse', 'Dispatch').required(),
     orderId: Joi.string().custom(objectId).required(),
     articleId: Joi.string().custom(objectId).required(),
   }),
@@ -202,7 +202,7 @@ const transferArticle = {
 
 const getFloorStatistics = {
   params: Joi.object().keys({
-    floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse', 'Dispatch').required(),
+    floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Re-Boarding', 'Final Checking', 'Warehouse', 'Dispatch').required(),
   }),
   query: Joi.object().keys({
     dateFrom: Joi.date(),
@@ -237,7 +237,7 @@ const transferM2ForRepair = {
   }),
   body: Joi.object().keys({
     quantity: Joi.number().integer().min(1).optional(),
-    targetFloor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking').optional(),
+    targetFloor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Re-Boarding', 'Final Checking').optional(),
     remarks: Joi.string().optional(),
     userId: Joi.string().custom(objectId).optional(),
     floorSupervisorId: Joi.string().custom(objectId).optional()
@@ -342,13 +342,13 @@ const getProductionDashboard = {
   query: Joi.object().keys({
     dateFrom: Joi.date(),
     dateTo: Joi.date(),
-    floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse', 'Dispatch')
+    floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Re-Boarding', 'Final Checking', 'Warehouse', 'Dispatch')
   }),
 };
 
 const getEfficiencyReport = {
   query: Joi.object().keys({
-    floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse', 'Dispatch'),
+    floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Re-Boarding', 'Final Checking', 'Warehouse', 'Dispatch'),
     dateFrom: Joi.date(),
     dateTo: Joi.date()
   }),
@@ -356,7 +356,7 @@ const getEfficiencyReport = {
 
 const getQualityReport = {
   query: Joi.object().keys({
-    floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse', 'Dispatch'),
+    floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Re-Boarding', 'Final Checking', 'Warehouse', 'Dispatch'),
     dateFrom: Joi.date(),
     dateTo: Joi.date()
   }),
@@ -397,6 +397,7 @@ const updateArticleFloorReceivedData = {
         'Silicon',
         'Secondary Checking',
         'Branding',
+        'Re-Boarding',
         'Final Checking',
         'Warehouse',
         'Dispatch'
@@ -448,7 +449,7 @@ const getOrderLogs = {
     dateFrom: Joi.date(),
     dateTo: Joi.date(),
     action: Joi.string(),
-    floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse', 'Dispatch'),
+    floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Re-Boarding', 'Final Checking', 'Warehouse', 'Dispatch'),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer()
@@ -457,7 +458,7 @@ const getOrderLogs = {
 
 const getFloorLogs = {
   params: Joi.object().keys({
-    floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse', 'Dispatch').required(),
+    floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Re-Boarding', 'Final Checking', 'Warehouse', 'Dispatch').required(),
   }),
   query: Joi.object().keys({
     dateFrom: Joi.date(),
@@ -478,7 +479,7 @@ const getUserLogs = {
     dateFrom: Joi.date(),
     dateTo: Joi.date(),
     action: Joi.string(),
-    floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse', 'Dispatch'),
+    floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Re-Boarding', 'Final Checking', 'Warehouse', 'Dispatch'),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer()
@@ -490,7 +491,7 @@ const getLogStatistics = {
     dateFrom: Joi.date(),
     dateTo: Joi.date(),
     groupBy: Joi.string().valid('day', 'week', 'month'),
-    floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse', 'Dispatch'),
+    floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Re-Boarding', 'Final Checking', 'Warehouse', 'Dispatch'),
     action: Joi.string()
   }),
 };
@@ -541,7 +542,7 @@ const bulkUpdateArticles = {
   body: Joi.object().keys({
     updates: Joi.array().items(
       Joi.object().keys({
-        floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Warehouse', 'Dispatch').required(),
+        floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Re-Boarding', 'Final Checking', 'Warehouse', 'Dispatch').required(),
         orderId: Joi.string().custom(objectId).required(),
         articleId: Joi.string().custom(objectId).required(),
         completedQuantity: Joi.number().integer().min(0).optional(),
