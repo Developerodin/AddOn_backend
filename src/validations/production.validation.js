@@ -126,6 +126,52 @@ const getDispatchPendingWarehousePrintOrders = {
   }),
 };
 
+const createDispatchTransferNote = {
+  body: Joi.object().keys({
+    categoryLabel: Joi.string().trim().allow('').optional(),
+  }),
+  query: Joi.object().keys({
+    status: Joi.string().valid('Pending', 'In Progress', 'Completed', 'On Hold', 'Short Close', 'Cancelled'),
+    priority: Joi.string().valid('Urgent', 'High', 'Medium', 'Low'),
+    search: Joi.string(),
+    machineId: Joi.string().custom(objectId),
+  }),
+};
+
+const previewDispatchTransferNote = {
+  query: Joi.object().keys({
+    status: Joi.string().valid('Pending', 'In Progress', 'Completed', 'On Hold', 'Short Close', 'Cancelled'),
+    priority: Joi.string().valid('Urgent', 'High', 'Medium', 'Low'),
+    search: Joi.string(),
+    machineId: Joi.string().custom(objectId),
+  }),
+};
+
+const getDispatchTransferNotes = {
+  query: Joi.object().keys({
+    startDate: Joi.date().optional(),
+    endDate: Joi.date().optional(),
+    search: Joi.string().optional(),
+    sortBy: Joi.string().optional(),
+    limit: Joi.number().integer().optional(),
+    page: Joi.number().integer().optional(),
+  }),
+};
+
+const getDispatchTransferNoteReport = {
+  query: Joi.object().keys({
+    startDate: Joi.date().optional(),
+    endDate: Joi.date().optional(),
+    search: Joi.string().optional(),
+  }),
+};
+
+const getDispatchTransferNote = {
+  params: Joi.object().keys({
+    transferNoteId: Joi.string().custom(objectId).required(),
+  }),
+};
+
 const updateArticleProgress = {
   params: Joi.object().keys({
     floor: Joi.string()
@@ -575,6 +621,11 @@ export default {
   // Floor operations validations
   getFloorOrders,
   getDispatchPendingWarehousePrintOrders,
+  createDispatchTransferNote,
+  previewDispatchTransferNote,
+  getDispatchTransferNotes,
+  getDispatchTransferNoteReport,
+  getDispatchTransferNote,
   updateArticleProgress,
   transferArticle,
   getFloorStatistics,

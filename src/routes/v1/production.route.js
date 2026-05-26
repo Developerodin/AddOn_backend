@@ -4,6 +4,7 @@ import { bulkImportMiddleware, validateBulkImportSize } from '../../middlewares/
 import * as productionValidation from '../../validations/production.validation.js';
 import * as machineOrderAssignmentValidation from '../../validations/machineOrderAssignment.validation.js';
 import * as productionController from '../../controllers/production.controller.js';
+import * as dispatchTransferNoteController from '../../controllers/production/dispatchTransferNote.controller.js';
 
 const router = express.Router();
 
@@ -126,6 +127,38 @@ router
   .get(
     validate(productionValidation.getDispatchPendingWarehousePrintOrders),
     productionController.getDispatchPendingWarehousePrintOrders
+  );
+
+router
+  .route('/floors/Dispatch/transfer-notes/report')
+  .get(
+    validate(productionValidation.getDispatchTransferNoteReport),
+    dispatchTransferNoteController.getDispatchTransferNoteReport
+  );
+
+router
+  .route('/floors/Dispatch/transfer-notes/preview')
+  .get(
+    validate(productionValidation.previewDispatchTransferNote),
+    dispatchTransferNoteController.previewDispatchTransferNote
+  );
+
+router
+  .route('/floors/Dispatch/transfer-notes/:transferNoteId')
+  .get(
+    validate(productionValidation.getDispatchTransferNote),
+    dispatchTransferNoteController.getDispatchTransferNote
+  );
+
+router
+  .route('/floors/Dispatch/transfer-notes')
+  .get(
+    validate(productionValidation.getDispatchTransferNotes),
+    dispatchTransferNoteController.getDispatchTransferNotes
+  )
+  .post(
+    validate(productionValidation.createDispatchTransferNote),
+    dispatchTransferNoteController.createDispatchTransferNote
   );
 
 router

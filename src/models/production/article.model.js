@@ -348,11 +348,22 @@ const articleSchema = new mongoose.Schema({
       remaining: { type: Number, default: 0 },
       transferred: { type: Number, default: 0 },
       repairReceived: { type: Number, default: 0, min: 0 },
+      transferredData: {
+        type: [{
+          transferred: { type: Number, required: true, min: 0 },
+          styleCode: { type: String, default: '' },
+          brand: { type: String, default: '' }
+        }],
+        default: []
+      },
       receivedData: {
         type: [{
           receivedStatusFromPreviousFloor: { type: String, default: '' },
           receivedInContainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'ContainersMaster', default: null },
-          receivedTimestamp: { type: Date, default: null }
+          receivedTimestamp: { type: Date, default: null },
+          transferred: { type: Number, default: 0 },
+          styleCode: { type: String, default: '' },
+          brand: { type: String, default: '' }
         }],
         default: []
       }

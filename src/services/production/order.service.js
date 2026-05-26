@@ -6,8 +6,9 @@ import ApiError from '../../utils/ApiError.js';
 import { generateArticleNumber } from '../../utils/generateId.js';
 import { getAllFloorsOrder, getFloorKey, validateProductProcesses } from '../../utils/productionHelper.js';
 import {
-  getPendingDispatchTransferredData,
-  sumPendingDispatchTransferred,
+  getPrintEligibleDispatchTransferredData,
+  sumPrintEligibleDispatchTransferred,
+  loadActiveStnAllocationMap,
 } from '../../utils/dispatchWarehousePending.util.js';
 import { removeProductionOrderFromAssignments, removeArticleFromAssignments } from './machineOrderAssignment.service.js';
 // import { generateOrderNumber } from '../../utils/generateId.js'; // Using model's auto-generation instead
@@ -615,11 +616,18 @@ export const getDispatchOrdersPendingWarehousePrint = async (floor, filter, opti
   }
 
   const raw = await getOrdersByFloor('Dispatch', filter, options);
+  const stnAllocMap = await loadActiveStnAllocationMap();
 
   const applyDispatchPendingWarehousePrintView = (articlePlain) => {
     const dispatch = articlePlain.floorQuantities?.dispatch || {};
     const warehouse = articlePlain.floorQuantities?.warehouse || {};
-    const pending = getPendingDispatchTransferredData(dispatch.transferredData, warehouse.receivedData);
+    const articleId = articlePlain._id || articlePlain.id;
+    const pending = getPrintEligibleDispatchTransferredData(
+      dispatch.transferredData,
+      warehouse.receivedData,
+      articleId,
+      stnAllocMap
+    );
     const transferredSum = pending.reduce((s, r) => s + (r.transferred || 0), 0);
     return {
       ...articlePlain,
@@ -643,9 +651,11 @@ export const getDispatchOrdersPendingWarehousePrint = async (floor, filter, opti
       orderObj.articles = articlesPlain
         .filter(
           (art) =>
-            sumPendingDispatchTransferred(
+            sumPrintEligibleDispatchTransferred(
               art.floorQuantities?.dispatch?.transferredData,
-              art.floorQuantities?.warehouse?.receivedData
+              art.floorQuantities?.warehouse?.receivedData,
+              art._id || art.id,
+              stnAllocMap
             ) > 0
         )
         .map(applyDispatchPendingWarehousePrintView);

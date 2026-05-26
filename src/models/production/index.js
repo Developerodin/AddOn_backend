@@ -11,6 +11,7 @@ import MachineOrderAssignment from './machineOrderAssignment.model.js';
 import MachineOrderAssignmentLog from './machineOrderAssignmentLog.model.js';
 import TeamMaster from './teamMaster.model.js';
 import ContainersMaster from './containersMaster.model.js';
+import DispatchStockTransferNote from './dispatchStockTransferNote.model.js';
 
 // Export enums
 import {
@@ -36,6 +37,7 @@ export {
   MachineOrderAssignmentLog,
   TeamMaster,
   ContainersMaster,
+  DispatchStockTransferNote,
 
   // Enums
   OrderStatus,

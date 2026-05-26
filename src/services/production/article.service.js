@@ -14,13 +14,19 @@ import {
 } from '../../utils/loggingHelper.js';
 import { createInwardReceivesForWarehouseAccept } from '../whms/inwardReceiveFromWarehouse.helper.js';
 import { computeConsumedPerDispatchRow } from '../../utils/dispatchWarehousePending.util.js';
+import {
+  brandKey,
+  mergeTransferredDataByBrand,
+  rowsMatchByBrand,
+  buildBrandBudgetFromReceived,
+} from '../../utils/brandQuantity.util.js';
 
 /** Floors that support brand/style breakdown via transferItems / transferredData (same shape as Branding → Final Checking). */
-const FLOORS_WITH_STYLE_TRANSFER_ITEMS = ['Branding', 'Final Checking', 'Dispatch'];
+const FLOORS_WITH_STYLE_TRANSFER_ITEMS = ['Branding', 'Final Checking', 'Dispatch', 'Re-Boarding'];
 
 /**
  * Resolve floorQuantities key for style transferredData when accepting containers on a floor.
- * Final Checking with Re-Boarding in flow uses Branding's style breakdown (Re-Boarding is qty-only).
+ * Final Checking with Re-Boarding in flow uses Re-Boarding brand breakdown when present, else Branding.
  * @param {import('../../models/production/article.model.js').default} article
  * @param {string} normalizedFloor - Production floor enum name
  * @returns {Promise<string|null>} floorQuantities key or null
@@ -30,6 +36,11 @@ const resolveStyleSourceFloorKeyForReceive = async (article, normalizedFloor) =>
     try {
       const floorOrder = await article.getFloorOrder();
       if (floorOrder.includes('Re-Boarding') && floorOrder.includes('Branding')) {
+        const reBoardingData = article.floorQuantities?.reBoarding;
+        const rbTransferred = reBoardingData?.transferredData;
+        if (Array.isArray(rbTransferred) && rbTransferred.some((r) => (r.transferred || 0) > 0 && brandKey(r?.brand))) {
+          return 'reBoarding';
+        }
         return 'branding';
       }
       const fcIdx = floorOrder.indexOf('Final Checking');
@@ -56,33 +67,20 @@ const resolveStyleSourceFloorKeyForReceive = async (article, normalizedFloor) =>
  */
 const enrichTransferItemsFromReceived = (transferItems, receivedData, transferredData) => {
   const withBreakdown = (receivedData || []).filter(
-    (r) => (r.transferred || 0) > 0 && ((r.styleCode || '').trim() || (r.brand || '').trim())
+    (r) => (r.transferred || 0) > 0 && brandKey(r?.brand)
   );
   if (withBreakdown.length === 0) return transferItems;
 
-  // Build per-style budget from receivedData, then subtract already-transferred amounts
-  const budget = withBreakdown.map((r) => ({
-    remaining: r.transferred || 0,
-    styleCode: (r.styleCode || '').trim(),
-    brand: (r.brand || '').trim(),
+  const budgetMap = buildBrandBudgetFromReceived(receivedData, transferredData);
+  const budget = Array.from(budgetMap.values()).map((b) => ({
+    remaining: b.remaining,
+    styleCode: '',
+    brand: b.brand,
   }));
-  for (const td of transferredData || []) {
-    const tdStyle = (td.styleCode || '').trim();
-    const tdBrand = (td.brand || '').trim();
-    let left = td.transferred || 0;
-    if (left <= 0 || (!tdStyle && !tdBrand)) continue;
-    for (const b of budget) {
-      if (left <= 0) break;
-      if (b.styleCode === tdStyle && b.brand === tdBrand && b.remaining > 0) {
-        const take = Math.min(b.remaining, left);
-        b.remaining -= take;
-        left -= take;
-      }
-    }
-  }
 
   return transferItems.map((item) => {
-    if ((item.styleCode || '').trim() || (item.brand || '').trim()) return item;
+    const itemBrand = brandKey(item?.brand);
+    if (itemBrand) return { ...item, styleCode: item.styleCode || '' };
     let qty = item.transferred || 0;
     const pieces = [];
     for (const b of budget) {
@@ -91,9 +89,9 @@ const enrichTransferItemsFromReceived = (transferItems, receivedData, transferre
       const take = Math.min(b.remaining, qty);
       b.remaining -= take;
       qty -= take;
-      pieces.push({ transferred: take, styleCode: b.styleCode, brand: b.brand });
+      pieces.push({ transferred: take, styleCode: '', brand: b.brand });
     }
-    if (pieces.length === 1) return { transferred: pieces[0].transferred, styleCode: pieces[0].styleCode, brand: pieces[0].brand };
+    if (pieces.length === 1) return pieces[0];
     if (pieces.length > 1) return pieces;
     return item;
   }).flat();
@@ -680,7 +678,8 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
   floorData.transferred = (floorData.transferred || 0) + transferQuantity;
 
   let transferItemsForStore = transferItems;
-  if (normalizedFloor === 'Dispatch' && Array.isArray(transferItems) && transferItems.length > 0) {
+  if ((normalizedFloor === 'Dispatch' || normalizedFloor === 'Final Checking' || normalizedFloor === 'Re-Boarding')
+      && Array.isArray(transferItems) && transferItems.length > 0) {
     transferItemsForStore = enrichTransferItemsFromReceived(
       transferItems, floorData.receivedData, floorData.transferredData
     );
@@ -690,13 +689,7 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
     if (!Array.isArray(floorData.transferredData)) {
       floorData.transferredData = [];
     }
-    transferItemsForStore.forEach((item) => {
-      floorData.transferredData.push({
-        transferred: item.transferred,
-        styleCode: item.styleCode || '',
-        brand: item.brand || ''
-      });
-    });
+    floorData.transferredData = mergeTransferredDataByBrand(floorData.transferredData, transferItemsForStore);
   }
 
   if (normalizedFloor === 'Knitting') {
@@ -965,7 +958,7 @@ const transferCompletedWorkToNextFloor = async (article, updateData, user = null
     }
   }
   // Final Checking / Dispatch: enrich empty styleCode/brand from receivedData, deducting already-transferred amounts
-  if ((sourceFloor === 'Final Checking' || sourceFloor === 'Dispatch') && Array.isArray(transferItems) && transferItems.length > 0) {
+  if ((sourceFloor === 'Final Checking' || sourceFloor === 'Dispatch' || sourceFloor === 'Re-Boarding') && Array.isArray(transferItems) && transferItems.length > 0) {
     transferItems = enrichTransferItemsFromReceived(
       transferItems, sourceFloorData.receivedData, sourceFloorData.transferredData
     );
@@ -975,14 +968,14 @@ const transferCompletedWorkToNextFloor = async (article, updateData, user = null
     if (itemsSum === newTransferQuantity) {
       const newEntries = transferItems.map((item) => ({
         transferred: item.transferred,
-        styleCode: item.styleCode || '',
+        styleCode: '',
         brand: item.brand || ''
       }));
       const isPartial = overrideQuantity != null && FLOORS_WITH_STYLE_TRANSFER_ITEMS.includes(sourceFloor);
       if (isPartial && Array.isArray(sourceFloorData.transferredData) && sourceFloorData.transferredData.length > 0) {
-        sourceFloorData.transferredData.push(...newEntries);
+        sourceFloorData.transferredData = mergeTransferredDataByBrand(sourceFloorData.transferredData, newEntries);
       } else {
-        sourceFloorData.transferredData = newEntries;
+        sourceFloorData.transferredData = mergeTransferredDataByBrand([], newEntries);
       }
       article.markModified(`floorQuantities.${sourceFloorKey}`);
       article.markModified('floorQuantities');
@@ -1928,19 +1921,18 @@ const transferM1ToNextFloor = async (article, m1Quantity, user = null, inspectio
       }
     }
   }
-  if (Array.isArray(transferItems) && transferItems.length > 0 && (sourceFloor === 'Branding' || sourceFloor === 'Final Checking')) {
+  if (Array.isArray(transferItems) && transferItems.length > 0 && (sourceFloor === 'Branding' || sourceFloor === 'Final Checking' || sourceFloor === 'Re-Boarding' || sourceFloor === 'Dispatch')) {
     const itemsSum = transferItems.reduce((s, i) => s + (i.transferred || 0), 0);
     if (itemsSum === m1Quantity) {
       if (!Array.isArray(sourceFloorData.transferredData)) {
         sourceFloorData.transferredData = [];
       }
-      transferItems.forEach((item) => {
-        sourceFloorData.transferredData.push({
-          transferred: item.transferred,
-          styleCode: item.styleCode || '',
-          brand: item.brand || ''
-        });
-      });
+      const newEntries = transferItems.map((item) => ({
+        transferred: item.transferred,
+        styleCode: '',
+        brand: item.brand || '',
+      }));
+      sourceFloorData.transferredData = mergeTransferredDataByBrand(sourceFloorData.transferredData, newEntries);
     }
   }
 
