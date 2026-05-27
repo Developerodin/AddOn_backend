@@ -1,4 +1,5 @@
 import httpStatus from 'http-status';
+import mongoose from 'mongoose';
 import {
   Article,
   M4Log,
@@ -8,6 +9,7 @@ import {
   ProductionFloor,
 } from '../../models/production/index.js';
 import Machine from '../../models/machine.model.js';
+import User from '../../models/user.model.js';
 import ApiError from '../../utils/ApiError.js';
 
 const M4_FLOOR_KEYS = ['knitting', 'checking', 'secondaryChecking', 'finalChecking'];
@@ -74,6 +76,82 @@ const resolveOrderNumber = async (article) => {
   if (!article?.orderId) return '';
   const order = await ProductionOrder.findById(article.orderId).select('orderNumber').lean();
   return order?.orderNumber || '';
+};
+
+/**
+ * Normalize a user reference to a string id.
+ * @param {Object|string|null|undefined} user
+ * @returns {string}
+ */
+const extractUserId = (user) => {
+  if (!user) return 'system';
+  if (typeof user === 'string') return user;
+
+  const rawId = user.id ?? user._id ?? user.userId ?? user.floorSupervisorId;
+  if (!rawId || rawId === 'system') return rawId || 'system';
+
+  return typeof rawId === 'object' && rawId.toString ? rawId.toString() : String(rawId);
+};
+
+/**
+ * Resolve user id, display name, and floor supervisor id for M4 log entries.
+ * @param {Object|string|null|undefined} user
+ * @returns {Promise<{ userId: string, userName: string, floorSupervisorId: string }>}
+ */
+const resolveUserDisplayFields = async (user) => {
+  const userId = extractUserId(user);
+
+  if (userId === 'system') {
+    return { userId: 'system', userName: 'System', floorSupervisorId: 'system' };
+  }
+
+  let userName = '';
+  if (user && typeof user === 'object') {
+    userName = user.name || user.userName || '';
+  }
+
+  if (!userName && mongoose.Types.ObjectId.isValid(userId)) {
+    const dbUser = await User.findById(userId).select('name').lean();
+    userName = dbUser?.name || '';
+  }
+
+  const floorSupervisorId = extractUserId(user?.floorSupervisorId ? { userId: user.floorSupervisorId } : user);
+
+  return {
+    userId,
+    userName,
+    floorSupervisorId: floorSupervisorId === 'system' ? userId : floorSupervisorId,
+  };
+};
+
+/**
+ * Fill missing userName values on M4 logs using the users collection.
+ * @param {Array<Object>} logs
+ * @returns {Promise<Array<Object>>}
+ */
+const enrichM4LogsWithUserNames = async (logs) => {
+  if (!logs?.length) return logs;
+
+  const missingNameUserIds = [
+    ...new Set(
+      logs
+        .filter((log) => !log.userName && log.userId && log.userId !== 'system')
+        .map((log) => log.userId)
+    ),
+  ];
+
+  if (!missingNameUserIds.length) return logs;
+
+  const validIds = missingNameUserIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+  if (!validIds.length) return logs;
+
+  const users = await User.find({ _id: { $in: validIds } }).select('name').lean();
+  const nameById = Object.fromEntries(users.map((u) => [u._id.toString(), u.name]));
+
+  return logs.map((log) => ({
+    ...log,
+    userName: log.userName || nameById[log.userId] || '',
+  }));
 };
 
 /**
@@ -177,6 +255,8 @@ export const recordM4Entry = async ({
       ? ` on machine ${machine.machineCode}`
       : '';
 
+  const userFields = await resolveUserDisplayFields(user);
+
   return M4Log.createLogEntry({
     type: M4LogType.ENTRY,
     articleId: articleIdStr,
@@ -193,9 +273,7 @@ export const recordM4Entry = async ({
     remarks:
       remarks ||
       `M4 entry on ${sourceFloor}${machineRemark}: +${deltaQuantity} (floor total ${previousFloorTotal} → ${newFloorTotal})`,
-    userId: user?.id || user?.userId || 'system',
-    userName: user?.name || user?.userName || '',
-    floorSupervisorId: user?.id || user?.floorSupervisorId || 'system',
+    ...userFields,
     machineId: machine.machineId,
     machineCode: machine.machineCode,
     machineName: machine.machineName,
@@ -245,6 +323,8 @@ export const markM4Outward = async (articleId, body, user = {}) => {
   const orderIdStr = article.orderId.toString();
   const availableAfter = Math.max(0, snapshot.onHand - newOutwardTotal);
 
+  const userFields = await resolveUserDisplayFields(user);
+
   const log = await M4Log.createLogEntry({
     type: M4LogType.OUTWARD,
     articleId: articleIdStr,
@@ -259,9 +339,7 @@ export const markM4Outward = async (articleId, body, user = {}) => {
     newOutwardTotal,
     availableAfter,
     remarks: String(remarks).trim(),
-    userId: user?.id || 'system',
-    userName: user?.name || '',
-    floorSupervisorId: user?.id || 'system',
+    ...userFields,
   });
 
   return {
@@ -384,10 +462,12 @@ export const getM4ArticleSummary = async (articleId, options = {}) => {
   const articleIdStr = article._id.toString();
   const logLimit = options.logLimit || 20;
 
-  const recentLogs = await M4Log.find({ articleId: articleIdStr })
-    .sort({ timestamp: -1 })
-    .limit(logLimit)
-    .lean();
+  const recentLogs = await enrichM4LogsWithUserNames(
+    await M4Log.find({ articleId: articleIdStr })
+      .sort({ timestamp: -1 })
+      .limit(logLimit)
+      .lean()
+  );
 
   return {
     id: article.id,
@@ -441,10 +521,16 @@ export const getM4Logs = async (filter = {}, options = {}) => {
     ];
   }
 
-  return M4Log.paginate(logFilter, {
+  const paginated = await M4Log.paginate(logFilter, {
     ...options,
     sortBy: options.sortBy || 'timestamp:desc',
   });
+
+  if (paginated.results?.length) {
+    paginated.results = await enrichM4LogsWithUserNames(paginated.results);
+  }
+
+  return paginated;
 };
 
 /**

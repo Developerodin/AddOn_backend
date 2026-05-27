@@ -548,6 +548,10 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
 
   const hasTransferItems = Array.isArray(updateData?.transferItems) && updateData.transferItems.length > 0;
   const isTransferFloor = FLOORS_WITH_STYLE_TRANSFER_ITEMS.includes(normalizedFloor);
+  const isKnittingM4OnlyUpdate =
+    normalizedFloor === 'Knitting' &&
+    updateData.m4Quantity !== undefined &&
+    updateData.completedQuantity === undefined;
 
   let transferQuantity = maxTransferable;
   if (hasTransferItems && isTransferFloor) {
@@ -565,7 +569,7 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
     }
   }
 
-  if (floorData && transferQuantity > 0) {
+  if (floorData && transferQuantity > 0 && !isKnittingM4OnlyUpdate) {
     if (isTransferFloor) {
       console.log(`Transferring ${transferQuantity} units from ${normalizedFloor} to next floor${hasTransferItems ? ' (brand-wise)' : ''}`);
       await transferCompletedWorkToNextFloor(article, updateData, user, normalizedFloor, transferQuantity);
