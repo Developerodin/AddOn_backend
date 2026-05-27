@@ -20,6 +20,9 @@ import {
   rowsMatchByBrand,
   buildBrandBudgetFromReceived,
 } from '../../utils/brandQuantity.util.js';
+import { recordM4Entry } from './m4Management.service.js';
+import { recordM3Entry } from './m3Management.service.js';
+import { ProductionFloor } from '../../models/production/enums.js';
 
 /** Floors that support brand/style breakdown via transferItems / transferredData (same shape as Branding → Final Checking). */
 const FLOORS_WITH_STYLE_TRANSFER_ITEMS = ['Branding', 'Final Checking', 'Dispatch', 'Re-Boarding'];
@@ -309,6 +312,35 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
   }
   
   // Update knitting floor m4Quantity (defect quantity) and weight - replace existing values
+  const previousKnittingM4 =
+    normalizedFloor === 'Knitting'
+      ? article.floorQuantities.knitting?.m4Quantity || 0
+      : 0;
+  const previousCheckingM4 =
+    normalizedFloor === 'Checking'
+      ? article.floorQuantities.checking?.m4Quantity || 0
+      : 0;
+  const previousSecondaryCheckingM4 =
+    normalizedFloor === 'Secondary Checking'
+      ? article.floorQuantities.secondaryChecking?.m4Quantity || 0
+      : 0;
+  const previousFinalCheckingM4 =
+    normalizedFloor === 'Final Checking'
+      ? article.floorQuantities.finalChecking?.m4Quantity || 0
+      : 0;
+  const previousCheckingM3 =
+    normalizedFloor === 'Checking'
+      ? article.floorQuantities.checking?.m3Quantity || 0
+      : 0;
+  const previousSecondaryCheckingM3 =
+    normalizedFloor === 'Secondary Checking'
+      ? article.floorQuantities.secondaryChecking?.m3Quantity || 0
+      : 0;
+  const previousFinalCheckingM3 =
+    normalizedFloor === 'Final Checking'
+      ? article.floorQuantities.finalChecking?.m3Quantity || 0
+      : 0;
+
   if (normalizedFloor === 'Knitting') {
     const knittingFloorData = article.floorQuantities.knitting;
     if (knittingFloorData) {
@@ -405,6 +437,106 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
       userId: user?.id || updateData.userId || 'system',
       floorSupervisorId: user?.id || updateData.floorSupervisorId || 'system'
     });
+  }
+
+  // M4 ledger hooks (non-blocking — never fail floor operations)
+  try {
+    if (normalizedFloor === 'Knitting' && updateData.m4Quantity !== undefined) {
+      const newM4 = article.floorQuantities.knitting?.m4Quantity || 0;
+      const delta = newM4 - previousKnittingM4;
+      if (delta !== 0) {
+        await createQualityCategoryLog({
+          articleId: article._id.toString(),
+          orderId: article.orderId.toString(),
+          floor: normalizedFloor,
+          category: 'M4',
+          previousQuantity: previousKnittingM4,
+          newQuantity: newM4,
+          userId: user?.id || updateData.userId || 'system',
+          floorSupervisorId: user?.id || updateData.floorSupervisorId || 'system',
+          remarks: `Knitting M4 updated: ${previousKnittingM4} → ${newM4}`,
+        });
+      }
+      if (delta > 0) {
+        await recordM4Entry({
+          article,
+          sourceFloor: ProductionFloor.KNITTING,
+          deltaQuantity: delta,
+          previousFloorTotal: previousKnittingM4,
+          newFloorTotal: newM4,
+          user: user || updateData,
+          machineId: updateData.machineId,
+        });
+      }
+    }
+
+    if (
+      (normalizedFloor === 'Checking' ||
+        normalizedFloor === 'Secondary Checking' ||
+        normalizedFloor === 'Final Checking') &&
+      updateData.m4Quantity !== undefined &&
+      updateData.m4Quantity > 0
+    ) {
+      const floorLabel = normalizedFloor;
+      const prevMap = {
+        Checking: previousCheckingM4,
+        'Secondary Checking': previousSecondaryCheckingM4,
+        'Final Checking': previousFinalCheckingM4,
+      };
+      const floorKeyMap = {
+        Checking: 'checking',
+        'Secondary Checking': 'secondaryChecking',
+        'Final Checking': 'finalChecking',
+      };
+      const fk = floorKeyMap[normalizedFloor];
+      const newM4 = article.floorQuantities[fk]?.m4Quantity || 0;
+      const prev = prevMap[normalizedFloor] || 0;
+      await recordM4Entry({
+        article,
+        sourceFloor: floorLabel,
+        deltaQuantity: updateData.m4Quantity,
+        previousFloorTotal: prev,
+        newFloorTotal: newM4,
+        user: user || updateData,
+      });
+    }
+  } catch (m4LogErr) {
+    console.error('M4 ledger hook failed (updateArticleProgress):', m4LogErr);
+  }
+
+  // M3 ledger hooks (checking floors only — non-blocking)
+  try {
+    if (
+      (normalizedFloor === 'Checking' ||
+        normalizedFloor === 'Secondary Checking' ||
+        normalizedFloor === 'Final Checking') &&
+      updateData.m3Quantity !== undefined &&
+      updateData.m3Quantity > 0
+    ) {
+      const prevMap = {
+        Checking: previousCheckingM3,
+        'Secondary Checking': previousSecondaryCheckingM3,
+        'Final Checking': previousFinalCheckingM3,
+      };
+      const floorKeyMap = {
+        Checking: 'checking',
+        'Secondary Checking': 'secondaryChecking',
+        'Final Checking': 'finalChecking',
+      };
+      const fk = floorKeyMap[normalizedFloor];
+      const newM3 = article.floorQuantities[fk]?.m3Quantity || 0;
+      const prev = prevMap[normalizedFloor] || 0;
+      await recordM3Entry({
+        article,
+        sourceFloor: normalizedFloor,
+        deltaQuantity: updateData.m3Quantity,
+        previousFloorTotal: prev,
+        newFloorTotal: newM3,
+        user: user || updateData,
+      });
+    }
+  } catch (m3LogErr) {
+    console.error('M3 ledger hook failed (updateArticleProgress):', m3LogErr);
   }
 
   // FIXED: Handle transfers based on which floor was updated
@@ -1742,6 +1874,42 @@ export const qualityInspection = async (articleId, inspectionData, user = null) 
       floorSupervisorId: inspectionData.floorSupervisorId || user?.id || 'system',
       remarks: `Added ${inspectionData.m4Quantity} M4 quantity on ${targetFloor}. Previous: ${previousM4}, New total: ${targetFloorData?.m4Quantity || 0}`
     });
+  }
+
+  // M4 ledger hook for quality inspection (non-blocking)
+  try {
+    const newM4Total = targetFloorData?.m4Quantity || 0;
+    const m4Delta = newM4Total - previousM4;
+    if (m4Delta > 0) {
+      await recordM4Entry({
+        article,
+        sourceFloor: targetFloor,
+        deltaQuantity: m4Delta,
+        previousFloorTotal: previousM4,
+        newFloorTotal: newM4Total,
+        user: inspectionData.userId ? { id: inspectionData.userId, ...user } : user,
+      });
+    }
+  } catch (m4LogErr) {
+    console.error('M4 ledger hook failed (qualityInspection):', m4LogErr);
+  }
+
+  // M3 ledger hook for quality inspection (checking floors only — non-blocking)
+  try {
+    const newM3Total = targetFloorData?.m3Quantity || 0;
+    const m3Delta = newM3Total - previousM3;
+    if (m3Delta > 0) {
+      await recordM3Entry({
+        article,
+        sourceFloor: targetFloor,
+        deltaQuantity: m3Delta,
+        previousFloorTotal: previousM3,
+        newFloorTotal: newM3Total,
+        user: inspectionData.userId ? { id: inspectionData.userId, ...user } : user,
+      });
+    }
+  } catch (m3LogErr) {
+    console.error('M3 ledger hook failed (qualityInspection):', m3LogErr);
   }
 
   if (article.progress !== previousProgress) {

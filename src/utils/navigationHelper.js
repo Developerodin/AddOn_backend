@@ -42,6 +42,8 @@ export const DEFAULT_NAVIGATION = {
     'Re-Boarding Floor': false,
     'Final Checking Floor': false,
     'Dispatch Floor': false,
+    'M4 Management': false,
+    'M3 Management': false,
     'Machine Floor': false,
     'Warehouse Floor': false
   },
@@ -136,6 +138,8 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Re-Boarding Floor': true,
       'Final Checking Floor': true,
       'Dispatch Floor': true,
+      'M4 Management': true,
+      'M3 Management': true,
       'Machine Floor': true,
       'Warehouse Floor': true
     },
@@ -224,6 +228,8 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Branding Floor': false,
       'Final Checking Floor': false,
       'Dispatch Floor': false,
+      'M4 Management': false,
+      'M3 Management': false,
       'Machine Floor': false,
       'Warehouse Floor': false
     },
@@ -373,6 +379,8 @@ export const validateNavigationStructure = (navigation) => {
     'Re-Boarding Floor',
     'Final Checking Floor',
     'Dispatch Floor',
+    'M4 Management',
+    'M3 Management',
     'Machine Floor',
     'Warehouse Floor'
   ];

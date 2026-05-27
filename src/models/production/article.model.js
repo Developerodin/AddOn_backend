@@ -422,6 +422,16 @@ const articleSchema = new mongoose.Schema({
     }
   },
   
+  /** M4 Management ledger — outwardTotal only; floor m4Quantity unchanged on outward */
+  m4Tracking: {
+    outwardTotal: { type: Number, default: 0, min: 0 },
+  },
+
+  /** M3 Management ledger — checking floors only; floor m3Quantity unchanged on outward */
+  m3Tracking: {
+    outwardTotal: { type: Number, default: 0, min: 0 },
+  },
+
   // Quality fields are now floor-specific only
   // Removed article-level quality fields to prevent conflicts between Checking and Final Checking floors
   finalQualityConfirmed: {

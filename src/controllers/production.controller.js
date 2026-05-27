@@ -509,3 +509,98 @@ export const fixCompletionStatusForOrder = catchAsync(async (req, res) => {
   const result = await productionService.fixCompletionStatus(orderId);
   res.status(httpStatus.OK).send(result);
 });
+
+// ==================== M4 MANAGEMENT ====================
+
+export const getM4Articles = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['orderId', 'search']);
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  if (options.limit) options.limit = parseInt(options.limit, 10);
+  if (options.page) options.page = parseInt(options.page, 10);
+  const result = await productionService.getM4Articles(filter, options);
+  res.send(result);
+});
+
+export const getM4Logs = catchAsync(async (req, res) => {
+  const filter = pick(req.query, [
+    'articleId',
+    'orderId',
+    'type',
+    'sourceFloor',
+    'machineId',
+    'dateFrom',
+    'dateTo',
+    'search',
+  ]);
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  if (options.limit) options.limit = parseInt(options.limit, 10);
+  if (options.page) options.page = parseInt(options.page, 10);
+  const result = await productionService.getM4Logs(filter, options);
+  res.send(result);
+});
+
+export const getM4Statistics = catchAsync(async (req, res) => {
+  const stats = await productionService.getM4Statistics();
+  res.send(stats);
+});
+
+export const getM4ArticleSummary = catchAsync(async (req, res) => {
+  const { articleId } = req.params;
+  const options = pick(req.query, ['logLimit']);
+  if (options.logLimit) options.logLimit = parseInt(options.logLimit, 10);
+  const result = await productionService.getM4ArticleSummary(articleId, options);
+  res.send(result);
+});
+
+export const markM4Outward = catchAsync(async (req, res) => {
+  const { articleId } = req.params;
+  const result = await productionService.markM4Outward(articleId, req.body, req.user);
+  res.status(httpStatus.OK).send(result);
+});
+
+// ==================== M3 MANAGEMENT ====================
+
+export const getM3Articles = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['orderId', 'search']);
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  if (options.limit) options.limit = parseInt(options.limit, 10);
+  if (options.page) options.page = parseInt(options.page, 10);
+  const result = await productionService.getM3Articles(filter, options);
+  res.send(result);
+});
+
+export const getM3Logs = catchAsync(async (req, res) => {
+  const filter = pick(req.query, [
+    'articleId',
+    'orderId',
+    'type',
+    'sourceFloor',
+    'dateFrom',
+    'dateTo',
+    'search',
+  ]);
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  if (options.limit) options.limit = parseInt(options.limit, 10);
+  if (options.page) options.page = parseInt(options.page, 10);
+  const result = await productionService.getM3Logs(filter, options);
+  res.send(result);
+});
+
+export const getM3Statistics = catchAsync(async (req, res) => {
+  const stats = await productionService.getM3Statistics();
+  res.send(stats);
+});
+
+export const getM3ArticleSummary = catchAsync(async (req, res) => {
+  const { articleId } = req.params;
+  const options = pick(req.query, ['logLimit']);
+  if (options.logLimit) options.logLimit = parseInt(options.logLimit, 10);
+  const result = await productionService.getM3ArticleSummary(articleId, options);
+  res.send(result);
+});
+
+export const markM3Outward = catchAsync(async (req, res) => {
+  const { articleId } = req.params;
+  const result = await productionService.markM3Outward(articleId, req.body, req.user);
+  res.status(httpStatus.OK).send(result);
+});

@@ -293,6 +293,50 @@ router
   .route('/logs/audit-trail/:orderId')
   .get(validate(productionValidation.getAuditTrail), productionController.getAuditTrail);
 
+// ==================== M4 MANAGEMENT ====================
+
+router
+  .route('/m4/articles')
+  .get(validate(productionValidation.getM4Articles), productionController.getM4Articles);
+
+router
+  .route('/m4/logs')
+  .get(validate(productionValidation.getM4Logs), productionController.getM4Logs);
+
+router
+  .route('/m4/statistics')
+  .get(productionController.getM4Statistics);
+
+router
+  .route('/m4/articles/:articleId/summary')
+  .get(validate(productionValidation.getM4ArticleSummary), productionController.getM4ArticleSummary);
+
+router
+  .route('/m4/articles/:articleId/outward')
+  .post(validate(productionValidation.markM4Outward), productionController.markM4Outward);
+
+// ==================== M3 MANAGEMENT ====================
+
+router
+  .route('/m3/articles')
+  .get(validate(productionValidation.getM3Articles), productionController.getM3Articles);
+
+router
+  .route('/m3/logs')
+  .get(validate(productionValidation.getM3Logs), productionController.getM3Logs);
+
+router
+  .route('/m3/statistics')
+  .get(productionController.getM3Statistics);
+
+router
+  .route('/m3/articles/:articleId/summary')
+  .get(validate(productionValidation.getM3ArticleSummary), productionController.getM3ArticleSummary);
+
+router
+  .route('/m3/articles/:articleId/outward')
+  .post(validate(productionValidation.markM3Outward), productionController.markM3Outward);
+
 
 // ==================== BULK OPERATIONS ROUTES ====================
 

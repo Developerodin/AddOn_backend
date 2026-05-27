@@ -99,6 +99,18 @@ const ContainerType = {
   CONTAINER: 'container'
 };
 
+/** M4 ledger event types (dedicated m4_logs collection) */
+const M4LogType = {
+  ENTRY: 'ENTRY',
+  OUTWARD: 'OUTWARD',
+};
+
+/** M3 ledger event types (checking floors only — m3_logs collection) */
+const M3LogType = {
+  ENTRY: 'ENTRY',
+  OUTWARD: 'OUTWARD',
+};
+
 // Complete list of all loggable actions
 const LogAction = {
   // Order Management
@@ -206,6 +218,8 @@ export {
   ProductionFloor,
   QualityCategory,
   RepairStatus,
+  M4LogType,
+  M3LogType,
   LogAction,
   TeamRole,
   TeamMemberStatus,

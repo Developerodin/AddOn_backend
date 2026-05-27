@@ -552,6 +552,95 @@ const getAuditTrail = {
   }),
 };
 
+const getM4Articles = {
+  query: Joi.object().keys({
+    orderId: Joi.string().custom(objectId),
+    search: Joi.string(),
+    limit: Joi.number().integer().min(1).max(1000),
+    page: Joi.number().integer().min(1),
+    sortBy: Joi.string(),
+  }),
+};
+
+const getM4Logs = {
+  query: Joi.object().keys({
+    articleId: Joi.string().custom(objectId),
+    orderId: Joi.string().custom(objectId),
+    type: Joi.string().valid('ENTRY', 'OUTWARD'),
+    sourceFloor: Joi.string().valid('Knitting', 'Checking', 'Secondary Checking', 'Final Checking'),
+    machineId: Joi.string().custom(objectId),
+    dateFrom: Joi.date(),
+    dateTo: Joi.date(),
+    search: Joi.string(),
+    limit: Joi.number().integer().min(1).max(1000),
+    page: Joi.number().integer().min(1),
+    sortBy: Joi.string(),
+  }),
+};
+
+const getM4ArticleSummary = {
+  params: Joi.object().keys({
+    articleId: Joi.string().custom(objectId).required(),
+  }),
+  query: Joi.object().keys({
+    logLimit: Joi.number().integer().min(1).max(100),
+  }),
+};
+
+const markM4Outward = {
+  params: Joi.object().keys({
+    articleId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object().keys({
+    quantity: Joi.number().min(0.01).required(),
+    remarks: Joi.string().trim().min(1).required(),
+  }),
+};
+
+const getM3Articles = {
+  query: Joi.object().keys({
+    orderId: Joi.string().custom(objectId),
+    search: Joi.string(),
+    limit: Joi.number().integer().min(1).max(1000),
+    page: Joi.number().integer().min(1),
+    sortBy: Joi.string(),
+  }),
+};
+
+const getM3Logs = {
+  query: Joi.object().keys({
+    articleId: Joi.string().custom(objectId),
+    orderId: Joi.string().custom(objectId),
+    type: Joi.string().valid('ENTRY', 'OUTWARD'),
+    sourceFloor: Joi.string().valid('Checking', 'Secondary Checking', 'Final Checking'),
+    dateFrom: Joi.date(),
+    dateTo: Joi.date(),
+    search: Joi.string(),
+    limit: Joi.number().integer().min(1).max(1000),
+    page: Joi.number().integer().min(1),
+    sortBy: Joi.string(),
+  }),
+};
+
+const getM3ArticleSummary = {
+  params: Joi.object().keys({
+    articleId: Joi.string().custom(objectId).required(),
+  }),
+  query: Joi.object().keys({
+    logLimit: Joi.number().integer().min(1).max(100),
+  }),
+};
+
+const markM3Outward = {
+  params: Joi.object().keys({
+    articleId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object().keys({
+    quantity: Joi.number().min(0.01).required(),
+    remarks: Joi.string().trim().min(1).required(),
+  }),
+};
+
 
 // ==================== BULK OPERATIONS VALIDATIONS ====================
 
@@ -653,6 +742,18 @@ export default {
   getUserLogs,
   getLogStatistics,
   getAuditTrail,
+
+  // M4 Management validations
+  getM4Articles,
+  getM4Logs,
+  getM4ArticleSummary,
+  markM4Outward,
+
+  // M3 Management validations
+  getM3Articles,
+  getM3Logs,
+  getM3ArticleSummary,
+  markM3Outward,
   
   // Bulk operations validations
   bulkCreateOrders,

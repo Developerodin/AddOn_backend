@@ -12,6 +12,8 @@ import MachineOrderAssignmentLog from './machineOrderAssignmentLog.model.js';
 import TeamMaster from './teamMaster.model.js';
 import ContainersMaster from './containersMaster.model.js';
 import DispatchStockTransferNote from './dispatchStockTransferNote.model.js';
+import M4Log from './m4Log.model.js';
+import M3Log from './m3Log.model.js';
 
 // Export enums
 import {
@@ -21,6 +23,8 @@ import {
   ProductionFloor,
   QualityCategory,
   RepairStatus,
+  M4LogType,
+  M3LogType,
   LogAction,
   TeamRole,
   TeamMemberStatus,
@@ -38,6 +42,8 @@ export {
   TeamMaster,
   ContainersMaster,
   DispatchStockTransferNote,
+  M4Log,
+  M3Log,
 
   // Enums
   OrderStatus,
@@ -46,6 +52,8 @@ export {
   ProductionFloor,
   QualityCategory,
   RepairStatus,
+  M4LogType,
+  M3LogType,
   LogAction,
   TeamRole,
   TeamMemberStatus,
