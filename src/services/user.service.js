@@ -2,7 +2,12 @@ import httpStatus from 'http-status';
 
 import ApiError from '../utils/ApiError.js';
 import User from '../models/user.model.js';
-import { getDefaultNavigationByRole, mergeNavigation, validateNavigationStructure } from '../utils/navigationHelper.js';
+import {
+  DEFAULT_NAVIGATION,
+  getDefaultNavigationByRole,
+  mergeNavigation,
+  validateNavigationStructure,
+} from '../utils/navigationHelper.js';
 
 
 /**
@@ -110,12 +115,13 @@ const updateUserNavigationById = async (userId, navigationBody) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
   }
   
-  // Always start with complete default navigation for the user's role
-  // This ensures all required fields are present
-  const defaultNavigation = getDefaultNavigationByRole(user.role || 'user');
-  
-  // Merge existing user navigation into defaults (preserve user's current permissions)
-  const baseNavigation = mergeNavigation(defaultNavigation, user.navigation || {});
+  // Canonical schema first, then role permissions, stored nav, and incoming updates
+  const canonicalNavigation = JSON.parse(JSON.stringify(DEFAULT_NAVIGATION));
+  const roleNavigation = getDefaultNavigationByRole(user.role || 'user');
+  const baseNavigation = mergeNavigation(
+    mergeNavigation(canonicalNavigation, roleNavigation),
+    user.navigation || {}
+  );
   
   // Merge incoming navigation updates on top
   const updatedNavigation = mergeNavigation(baseNavigation, navigationBody.navigation);

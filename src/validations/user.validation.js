@@ -276,6 +276,8 @@ const updateUserNavigation = {
           'Checking Floor': Joi.boolean(),
           'Washing Floor': Joi.boolean(),
           'Boarding Floor': Joi.boolean(),
+          'Silicon Floor': Joi.boolean(),
+          'Secondary Checking Floor': Joi.boolean(),
           'Final Checking Floor': Joi.boolean(),
           'Branding Floor': Joi.boolean(),
           'Re-Boarding Floor': Joi.boolean(),

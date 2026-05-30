@@ -94,7 +94,7 @@ dispatchStockTransferNoteSchema.index({ categoryLabel: 1 });
 dispatchStockTransferNoteSchema.index({ 'allocations.articleId': 1 });
 
 /**
- * Atomic counter for global 6-digit STN serials.
+ * Atomic counter for global STN serials (F + 6-digit sequence).
  */
 const dispatchStnCounterSchema = new mongoose.Schema(
   {
@@ -105,7 +105,7 @@ const dispatchStnCounterSchema = new mongoose.Schema(
 );
 
 /**
- * Returns next padded 6-digit STN serial (e.g. `000042`).
+ * Returns next STN serial with F prefix and 6-digit sequence (e.g. `F000042`).
  * @returns {Promise<string>}
  */
 dispatchStnCounterSchema.statics.getNextSerial = async function getNextSerial() {
@@ -114,7 +114,7 @@ dispatchStnCounterSchema.statics.getNextSerial = async function getNextSerial() 
     { $inc: { seq: 1 } },
     { new: true, upsert: true, setDefaultsOnInsert: true }
   );
-  return String(doc.seq).padStart(6, '0');
+  return `F${String(doc.seq).padStart(6, '0')}`;
 };
 
 const DispatchStockTransferNote = mongoose.model(

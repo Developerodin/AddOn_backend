@@ -225,15 +225,16 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Boarding Floor': false,
       'Silicon Floor': false,
       'Secondary Checking Floor': false,
-      'Branding Floor': false,
-      'Final Checking Floor': false,
-      'Dispatch Floor': false,
-      'M4 Management': false,
-      'M3 Management': false,
-      'Machine Floor': false,
-      'Warehouse Floor': false
-    },
-    'Yarn Management': {
+    'Branding Floor': false,
+    'Re-Boarding Floor': false,
+    'Final Checking Floor': false,
+    'Dispatch Floor': false,
+    'M4 Management': false,
+    'M3 Management': false,
+    'Machine Floor': false,
+    'Warehouse Floor': false
+  },
+  'Yarn Management': {
       'Dashboard': false,
       'Inventory': false,
       'Cataloguing': false,
@@ -287,12 +288,17 @@ export const ROLE_NAVIGATION_TEMPLATES = {
 };
 
 /**
- * Get default navigation based on user role
+ * Get default navigation based on user role.
+ * Role templates are merged onto DEFAULT_NAVIGATION so new keys are always present.
  * @param {string} role - User role
  * @returns {Object} Navigation object
  */
 export const getDefaultNavigationByRole = (role) => {
-  return ROLE_NAVIGATION_TEMPLATES[role] || DEFAULT_NAVIGATION;
+  const roleTemplate = ROLE_NAVIGATION_TEMPLATES[role];
+  if (!roleTemplate) {
+    return JSON.parse(JSON.stringify(DEFAULT_NAVIGATION));
+  }
+  return mergeNavigation(JSON.parse(JSON.stringify(DEFAULT_NAVIGATION)), roleTemplate);
 };
 
 /**
@@ -303,15 +309,40 @@ export const getDefaultNavigationByRole = (role) => {
  */
 export const mergeNavigation = (target, source) => {
   const result = { ...target };
-  
+
   for (const key in source) {
-    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
-      result[key] = mergeNavigation(result[key] || {}, source[key]);
-    } else {
-      result[key] = source[key];
+    const sourceValue = source[key];
+    const targetValue = result[key];
+
+    if (
+      sourceValue !== null &&
+      typeof sourceValue === 'object' &&
+      !Array.isArray(sourceValue)
+    ) {
+      const targetIsObject =
+        targetValue !== null &&
+        typeof targetValue === 'object' &&
+        !Array.isArray(targetValue);
+      result[key] = mergeNavigation(targetIsObject ? targetValue : {}, sourceValue);
+      continue;
     }
+
+    // Do not replace a nested object with a primitive (legacy/corrupt user docs).
+    if (
+      typeof sourceValue === 'boolean' &&
+      targetValue !== null &&
+      typeof targetValue === 'object' &&
+      !Array.isArray(targetValue)
+    ) {
+      if (key === 'Yarn Issue') {
+        result[key] = sourceValue;
+      }
+      continue;
+    }
+
+    result[key] = sourceValue;
   }
-  
+
   return result;
 };
 

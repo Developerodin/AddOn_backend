@@ -201,6 +201,87 @@ describe('Machine order assignment audit logs', () => {
       expect(await countLogs()).toBe(n);
     });
 
+    test('full productionOrderItems resync preserves In Progress when status omitted (supervisor edit)', async () => {
+      const articleId2 = new mongoose.Types.ObjectId();
+      const a = await moaService.createMachineOrderAssignment(
+        {
+          machine: machine._id,
+          activeNeedle: '7',
+          productionOrderItems: [
+            {
+              productionOrder: poId,
+              article: articleId,
+              status: OrderStatus.IN_PROGRESS,
+              yarnIssueStatus: YarnIssueStatus.COMPLETED,
+              yarnReturnStatus: YarnReturnStatus.PENDING,
+              priority: 1,
+            },
+          ],
+        },
+        userId
+      );
+
+      await moaService.updateMachineOrderAssignmentById(
+        a._id,
+        {
+          productionOrderItems: [
+            { productionOrder: poId, article: articleId },
+            { productionOrder: poId, article: articleId2, status: OrderStatus.PENDING },
+          ],
+        },
+        userId
+      );
+
+      const refreshed = await MachineOrderAssignment.findById(a._id);
+      expect(refreshed.productionOrderItems.length).toBe(2);
+      const inProgressRow = refreshed.productionOrderItems.find(
+        (row) => String(row.article) === String(articleId)
+      );
+      const newRow = refreshed.productionOrderItems.find(
+        (row) => String(row.article) === String(articleId2)
+      );
+      expect(String(inProgressRow.status)).toBe(OrderStatus.IN_PROGRESS);
+      expect(String(inProgressRow.yarnIssueStatus)).toBe(YarnIssueStatus.COMPLETED);
+      expect(String(newRow.status)).toBe(OrderStatus.PENDING);
+    });
+
+    test('merge PATCH ignores In Progress to Pending downgrade', async () => {
+      const a = await moaService.createMachineOrderAssignment(
+        {
+          machine: machine._id,
+          activeNeedle: '7',
+          productionOrderItems: [
+            {
+              productionOrder: poId,
+              article: articleId,
+              status: OrderStatus.IN_PROGRESS,
+              yarnIssueStatus: YarnIssueStatus.COMPLETED,
+              yarnReturnStatus: YarnReturnStatus.PENDING,
+              priority: 1,
+            },
+          ],
+        },
+        userId
+      );
+
+      await moaService.updateMachineOrderAssignmentById(
+        a._id,
+        {
+          productionOrderItems: [
+            {
+              productionOrder: poId,
+              article: articleId,
+              status: OrderStatus.PENDING,
+            },
+          ],
+        },
+        userId
+      );
+
+      const refreshed = await MachineOrderAssignment.findById(a._id);
+      expect(String(refreshed.productionOrderItems[0].status)).toBe(OrderStatus.IN_PROGRESS);
+    });
+
     test('moving (PO,article) to another assignment preserves yarn + status and writes transfer logs', async () => {
       const machineB = await seedMachine();
       const assignmentA = await moaService.createMachineOrderAssignment(

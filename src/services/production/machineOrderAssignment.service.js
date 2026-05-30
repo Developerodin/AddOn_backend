@@ -407,7 +407,16 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
       const existingIdx = keyToIndex.get(k);
       if (existingIdx !== undefined) {
         const existing = current[existingIdx];
-        if (item.status !== undefined && String(existing.status) !== String(item.status)) {
+        const statusWouldChange =
+          item.status !== undefined && String(existing.status) !== String(item.status);
+        const isDowngradeToPending =
+          statusWouldChange &&
+          String(item.status) === OrderStatus.PENDING &&
+          (String(existing.status) === OrderStatus.IN_PROGRESS ||
+            String(existing.status) === OrderStatus.COMPLETED);
+        const shouldApplyStatus = statusWouldChange && !isDowngradeToPending;
+
+        if (shouldApplyStatus) {
           const newStatusVal = String(item.status);
           if (newStatusVal === OrderStatus.IN_PROGRESS || newStatusVal === OrderStatus.COMPLETED) {
             if (String(existing.yarnIssueStatus) !== YarnIssueStatus.COMPLETED) {
@@ -418,8 +427,10 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
             }
           }
         }
-        pushItemFieldChanges(changes, existing, item, String(existing._id));
-        if (item.status !== undefined && String(existing.status) !== String(item.status)) {
+        const itemForAudit =
+          shouldApplyStatus || item.status === undefined ? item : { ...item, status: undefined };
+        pushItemFieldChanges(changes, existing, itemForAudit, String(existing._id));
+        if (shouldApplyStatus) {
           existing.status = item.status;
           didChange = true;
         }
