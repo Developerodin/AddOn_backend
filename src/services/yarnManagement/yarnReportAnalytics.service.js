@@ -38,6 +38,29 @@ const formatYmd = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 /**
+ * Effective receipt date for Pur analytics — goodsReceivedDate with fallbacks when null.
+ * @param {object} po
+ * @returns {Date|null}
+ */
+const resolvePoReceiptDate = (po) => {
+  if (po.goodsReceivedDate) return po.goodsReceivedDate;
+  if (po.receivedBy?.receivedAt) return po.receivedBy.receivedAt;
+  return po.lastUpdateDate ?? null;
+};
+
+/**
+ * Whether PO receipt activity falls in the analytics date range.
+ * @param {object} po
+ * @param {Date} start
+ * @param {Date} end
+ * @returns {boolean}
+ */
+const isPoReceiptInRange = (po, start, end) => {
+  const receiptDate = resolvePoReceiptDate(po);
+  return receiptDate != null && receiptDate >= start && receiptDate <= end;
+};
+
+/**
  * Mongo match for POs in analytics range by created vs receipt activity (mirrors yarnReport PUR window for `received`).
  * @param {Date} start
  * @param {Date} end
@@ -51,6 +74,15 @@ const buildDateModeMatch = (start, end, dateMode) => {
   return {
     $or: [
       { goodsReceivedDate: { $gte: start, $lte: end } },
+      {
+        goodsReceivedDate: null,
+        currentStatus: { $in: ['goods_received', 'goods_partially_received'] },
+        'receivedLotDetails.status': 'lot_accepted',
+        $or: [
+          { lastUpdateDate: { $gte: start, $lte: end } },
+          { 'receivedBy.receivedAt': { $gte: start, $lte: end } },
+        ],
+      },
       { currentStatus: 'po_rejected', lastUpdateDate: { $gte: start, $lte: end } },
       { receivedLotDetails: { $elemMatch: { status: 'lot_rejected' } }, lastUpdateDate: { $gte: start, $lte: end } },
     ],
@@ -73,8 +105,7 @@ const lineReceiptsByLotStatus = (po, poItemIdStr, { start, end, dateMode }) => {
   let qcPending = 0;
   let rejected = 0;
 
-  const poInRange =
-    po.goodsReceivedDate && po.goodsReceivedDate >= start && po.goodsReceivedDate <= end;
+  const poInRange = isPoReceiptInRange(po, start, end);
   const rejectionInRange =
     po.lastUpdateDate && po.lastUpdateDate >= start && po.lastUpdateDate <= end;
 

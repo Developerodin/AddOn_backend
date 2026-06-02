@@ -512,6 +512,11 @@ yarnPurchaseOrderSchema.pre('save', async function (next) {
     this.currentStatus = newStatus;
   }
 
+  const receivedStatuses = ['goods_received', 'goods_partially_received'];
+  if (receivedStatuses.includes(this.currentStatus) && !this.goodsReceivedDate) {
+    this.goodsReceivedDate = this.receivedBy?.receivedAt || new Date();
+  }
+
   next();
 });
 

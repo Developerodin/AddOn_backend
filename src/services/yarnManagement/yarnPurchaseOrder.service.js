@@ -466,6 +466,10 @@ export const updateLotStatusAndQcApprove = async (poNumber, lotNumber, lotStatus
     };
   }
 
+  if (lotStatus === 'lot_accepted' && !purchaseOrder.goodsReceivedDate) {
+    purchaseOrder.goodsReceivedDate = purchaseOrder.receivedBy?.receivedAt || new Date();
+  }
+
   await purchaseOrder.save();
 
   // Update all boxes for this PO and lot with QC data

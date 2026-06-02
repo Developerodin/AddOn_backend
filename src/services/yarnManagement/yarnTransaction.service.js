@@ -25,6 +25,42 @@ const ZERO_BUCKET = () => ({
 
 const toNumber = (value) => Number(value ?? 0);
 
+/** Max net kg for a single-cone issue/return transaction. */
+const MAX_SINGLE_CONE_TXN_KG = 50;
+/** Sanity ceiling for any yarn transaction net weight. */
+const MAX_ANY_TXN_KG = 5000;
+
+const CONE_WEIGHT_TYPES = new Set([
+  'yarn_issued',
+  'yarn_issued_linking',
+  'yarn_issued_sampling',
+  'yarn_returned',
+]);
+
+/**
+ * Rejects absurd transaction weights before persisting (e.g. corrupted return rows).
+ * @param {object} payload Normalised transaction payload
+ */
+export const validateTransactionWeight = (payload) => {
+  const net = toNumber(payload.transactionNetWeight);
+  const cones = toNumber(payload.transactionConeCount);
+  const type = payload.transactionType;
+
+  if (net > MAX_ANY_TXN_KG) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `transactionNetWeight ${net} kg exceeds maximum allowed ${MAX_ANY_TXN_KG} kg`
+    );
+  }
+
+  if (CONE_WEIGHT_TYPES.has(type) && cones === 1 && net > MAX_SINGLE_CONE_TXN_KG) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Single-cone ${type} weight ${net} kg exceeds maximum allowed ${MAX_SINGLE_CONE_TXN_KG} kg`
+    );
+  }
+};
+
 /**
  * Makes sure the requested inventory bucket exists and contains numeric values.
  */
@@ -357,6 +393,7 @@ export const createYarnTransaction = async (transactionBody) => {
   if (!normalisedPayload.yarnCatalogId) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'yarnCatalogId (or legacy yarn) is required');
   }
+  validateTransactionWeight(normalisedPayload);
 
   const session = await mongoose.startSession();
   let transactionRecord;

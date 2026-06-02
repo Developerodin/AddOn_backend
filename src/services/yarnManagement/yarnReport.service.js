@@ -7,10 +7,34 @@ import {
   YarnBox,
   YarnCone,
   YarnDailyClosingSnapshot,
+  YarnPoVendorReturn,
 } from '../../models/index.js';
 import { LT_SECTION_CODES } from '../../models/storageManagement/storageSlot.model.js';
 
 const toNum = (v) => Number(v ?? 0);
+
+/**
+ * Effective receipt date for Pur — goodsReceivedDate with fallbacks when null.
+ * @param {object} po Lean PO document
+ * @returns {Date|null}
+ */
+const resolvePoReceiptDate = (po) => {
+  if (po.goodsReceivedDate) return po.goodsReceivedDate;
+  if (po.receivedBy?.receivedAt) return po.receivedBy.receivedAt;
+  return po.lastUpdateDate ?? null;
+};
+
+/**
+ * Whether accepted-lot Pur qty falls in the report date range.
+ * @param {object} po
+ * @param {Date} startDate
+ * @param {Date} endDate
+ * @returns {boolean}
+ */
+const isPoReceiptInRange = (po, startDate, endDate) => {
+  const receiptDate = resolvePoReceiptDate(po);
+  return receiptDate != null && receiptDate >= startDate && receiptDate <= endDate;
+};
 
 /**
  * Sums kg from snapshot maps keyed by yarnCatalogId (exactly-once totals).
@@ -169,6 +193,69 @@ const getTransactionTotalsInRange = async (startDate, endDate) => {
 };
 
 /**
+ * Net kg returned to vendor (YarnPoVendorReturn) per yarn + shade + supplier in range.
+ * Uses completedAt as the PurRet date (return-to-supplier, distinct from QC lot_rejected).
+ *
+ * @param {Date} startDate
+ * @param {Date} endDate
+ * @returns {Promise<Map<string, { yarnId, shadeCode, supplierId, supplierName, purRet, rate, gstRate, pantoneName }>>}
+ */
+const getVendorReturnPurRetMap = async (startDate, endDate) => {
+  const sessions = await YarnPoVendorReturn.find({
+    status: 'completed',
+    completedAt: { $gte: startDate, $lte: endDate },
+  })
+    .select('poNumber lines')
+    .lean();
+
+  if (!sessions.length) return new Map();
+
+  const poNumbers = [...new Set(sessions.map((s) => s.poNumber).filter(Boolean))];
+  const pos = await YarnPurchaseOrder.find({ poNumber: { $in: poNumbers } })
+    .populate('supplier', 'brandName')
+    .lean();
+
+  const poByNumber = new Map(pos.map((p) => [p.poNumber, p]));
+  const out = new Map();
+
+  for (const session of sessions) {
+    const po = poByNumber.get(session.poNumber);
+    if (!po) continue;
+
+    const supplierId = po.supplier?._id?.toString?.() ?? po.supplier?.toString?.() ?? '';
+    const supplierName = po.supplier?.brandName ?? po.supplierName ?? '';
+
+    for (const line of session.lines || []) {
+      const yarnId = line.yarnCatalogId?.toString?.() ?? '';
+      if (!yarnId) continue;
+
+      const poItem = (po.poItems || []).find((item) => item.yarnCatalogId?.toString?.() === yarnId);
+      const shadeCode = (poItem?.shadeCode || '').trim();
+      const key = `${yarnId}|${shadeCode}|${supplierId}`;
+      const kg = toNum(
+        line.netWeight ?? Math.max(0, toNum(line.coneWeight) - toNum(line.tearWeight))
+      );
+
+      if (!out.has(key)) {
+        out.set(key, {
+          yarnId,
+          shadeCode,
+          supplierId,
+          supplierName,
+          purRet: 0,
+          rate: toNum(poItem?.rate),
+          gstRate: toNum(poItem?.gstRate),
+          pantoneName: (poItem?.pantoneName || '').trim(),
+        });
+      }
+      out.get(key).purRet += kg;
+    }
+  }
+
+  return out;
+};
+
+/**
  * Get Pur (purchase received) and PurRet (purchase return / rejected) per (yarn, shade, supplier)
  * from YarnPurchaseOrder.
  *
@@ -180,6 +267,15 @@ const getPurchaseDataByYarnShadeSupplier = async (startDate, endDate) => {
   const pos = await YarnPurchaseOrder.find({
     $or: [
       { goodsReceivedDate: { $gte: startDate, $lte: endDate } },
+      {
+        goodsReceivedDate: null,
+        currentStatus: { $in: ['goods_received', 'goods_partially_received'] },
+        'receivedLotDetails.status': 'lot_accepted',
+        $or: [
+          { lastUpdateDate: { $gte: startDate, $lte: endDate } },
+          { 'receivedBy.receivedAt': { $gte: startDate, $lte: endDate } },
+        ],
+      },
       { currentStatus: 'po_rejected', lastUpdateDate: { $gte: startDate, $lte: endDate } },
       { 'receivedLotDetails.status': 'lot_rejected', lastUpdateDate: { $gte: startDate, $lte: endDate } },
     ],
@@ -206,7 +302,7 @@ const getPurchaseDataByYarnShadeSupplier = async (startDate, endDate) => {
   for (const po of pos) {
     const supplierId = po.supplier?._id?.toString?.() ?? po.supplier?.toString?.() ?? '';
     const supplierName = supplierBrandMap.get(supplierId) ?? po.supplier?.brandName ?? po.supplierName ?? '';
-    const poInRange = po.goodsReceivedDate >= startDate && po.goodsReceivedDate <= endDate;
+    const poInRange = isPoReceiptInRange(po, startDate, endDate);
     const rejectionInRange = po.lastUpdateDate >= startDate && po.lastUpdateDate <= endDate;
 
     for (const item of po.poItems || []) {
@@ -225,6 +321,8 @@ const getPurchaseDataByYarnShadeSupplier = async (startDate, endDate) => {
 
           const qty = toNum(rec.receivedQuantity);
           if (lot.status === 'lot_rejected' && rejectionInRange) {
+            purRet += qty;
+          } else if (lot.status === 'lot_returned_to_vendor' && rejectionInRange) {
             purRet += qty;
           } else if (lot.status === 'lot_accepted' && poInRange) {
             pur += qty;
@@ -259,6 +357,27 @@ const getPurchaseDataByYarnShadeSupplier = async (startDate, endDate) => {
       row.pur += pur;
       row.purRet += purRet;
       row.amount += amount;
+    }
+  }
+
+  const vendorRetMap = await getVendorReturnPurRetMap(startDate, endDate);
+  for (const vr of vendorRetMap.values()) {
+    const key = `${vr.yarnId}|${vr.shadeCode}|${vr.supplierId}`;
+    if (map.has(key)) {
+      map.get(key).purRet += vr.purRet;
+    } else {
+      map.set(key, {
+        yarnId: vr.yarnId,
+        shadeCode: vr.shadeCode,
+        supplierId: vr.supplierId,
+        supplierName: vr.supplierName,
+        pur: 0,
+        purRet: vr.purRet,
+        rate: vr.rate,
+        gstRate: vr.gstRate,
+        amount: 0,
+        pantoneName: vr.pantoneName,
+      });
     }
   }
 
@@ -385,6 +504,8 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
   }
 
   const results = [];
+  /** Issue/return are per yarnCatalogId — show once, not on every shade/supplier row. */
+  const txnAllocatedYarnIds = new Set();
 
   for (const row of purchaseRows) {
     const catalog = catalogMap.get(row.yarnId);
@@ -393,8 +514,10 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
 
     const pur = row.pur;
     const purRet = row.purRet;
-    const issued = txn.issued;
-    const returned = txn.returned;
+    const alreadyAllocated = txnAllocatedYarnIds.has(row.yarnId);
+    const issued = alreadyAllocated ? 0 : txn.issued;
+    const returned = alreadyAllocated ? 0 : txn.returned;
+    if (!alreadyAllocated) txnAllocatedYarnIds.add(row.yarnId);
     const balance = closingMap.get(row.yarnId) ?? 0;
 
     const yarnType = catalog?.yarnType;

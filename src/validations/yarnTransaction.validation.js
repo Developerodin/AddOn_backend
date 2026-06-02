@@ -65,6 +65,22 @@ export const createYarnTransaction = {
         });
       }
 
+      const net =
+        valueWithId.transactionNetWeight ?? valueWithId.totalNetWeight ?? valueWithId.totalBlockedWeight ?? 0;
+      const cones = valueWithId.transactionConeCount ?? valueWithId.numberOfCones ?? 0;
+      const issueTypes = ['yarn_issued', 'yarn_issued_linking', 'yarn_issued_sampling', 'yarn_returned'];
+
+      if (Number(net) > 5000) {
+        return helpers.error('any.custom', {
+          message: `transactionNetWeight ${net} kg exceeds maximum allowed 5000 kg`,
+        });
+      }
+      if (issueTypes.includes(type) && Number(cones) === 1 && Number(net) > 50) {
+        return helpers.error('any.custom', {
+          message: `Single-cone ${type} weight ${net} kg exceeds maximum allowed 50 kg`,
+        });
+      }
+
       return valueWithId;
     }, 'transaction payload completeness validation')
     .required(),
