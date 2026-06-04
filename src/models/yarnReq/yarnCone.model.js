@@ -5,6 +5,7 @@ import YarnCatalog from '../yarnManagement/yarnCatalog.model.js';
 import YarnInventory from './yarnInventory.model.js';
 import YarnBox from './yarnBox.model.js';
 import { computeLtRemainingBoxWeight } from '../../services/yarnManagement/yarnBoxLtRemaining.helper.js';
+import { resolveYarnCatalogIdForCone } from '../../services/yarnManagement/yarnConeCatalogResolve.service.js';
 
 export const yarnConeIssueStatuses = ['issued', 'not_issued', 'used', 'returned_to_vendor'];
 export const yarnConeReturnStatuses = ['returned', 'not_returned'];
@@ -67,10 +68,11 @@ const yarnConeSchema = mongoose.Schema(
       type: String,
       trim: true,
     },
-    /** Canonical YarnCatalog reference. */
+    /** Canonical YarnCatalog reference (required; auto-resolved on validate when missing). */
     yarnCatalogId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'YarnCatalog',
+      required: true,
     },
     shadeCode: {
       type: String,
@@ -135,6 +137,22 @@ const yarnConeSchema = mongoose.Schema(
     timestamps: true,
   }
 );
+
+/**
+ * Pre-validate: resolve yarnCatalogId from box / yarnName / PO / transactions when absent.
+ * Cones were historically created with yarnName only (insertMany skips save hooks); this heals on update.
+ */
+yarnConeSchema.pre('validate', async function (next) {
+  if (!this.yarnCatalogId) {
+    try {
+      const { catalogId } = await resolveYarnCatalogIdForCone(this);
+      if (catalogId) this.yarnCatalogId = catalogId;
+    } catch (e) {
+      return next(e);
+    }
+  }
+  next();
+});
 
 /**
  * Pre-save hook for YarnCone.

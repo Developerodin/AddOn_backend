@@ -9,6 +9,7 @@ import {
   yarnConeUnavailableIssueStatuses,
 } from '../../models/yarnReq/yarnCone.model.js';
 import { activeYarnConeMatch, activeYarnBoxMatch } from './yarnStockActiveFilters.js';
+import { resolveYarnCatalogIdForCone } from './yarnConeCatalogResolve.service.js';
 
 /** Types that assign a cone to a production order + article (same as article-return-slice). */
 const ISSUE_TX_TYPES_FOR_CONE_LINK = ['yarn_issued', 'yarn_issued_linking', 'yarn_issued_sampling'];
@@ -535,6 +536,21 @@ export const generateConesByBox = async (boxId, options = {}) => {
     basePayload.yarnCatalogId = options.yarnCatalogId ?? options.yarn;
   } else if (yarnBox.yarnCatalogId) {
     basePayload.yarnCatalogId = yarnBox.yarnCatalogId;
+  }
+
+  if (!basePayload.yarnCatalogId) {
+    const { catalogId } = await resolveYarnCatalogIdForCone({
+      ...basePayload,
+      boxId: yarnBox.boxId,
+      poNumber: yarnBox.poNumber,
+    });
+    if (catalogId) basePayload.yarnCatalogId = catalogId;
+  }
+  if (!basePayload.yarnCatalogId) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'yarnCatalogId is required. Link the box to a yarn catalog or provide yarnCatalogId when generating cones.'
+    );
   }
 
   const conesToCreate = Array.from({ length: numberOfCones }, () => ({

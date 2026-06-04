@@ -1,0 +1,34 @@
+[
+  {
+    "_id": "699ea0e0c926fc0fe858474b",
+    "barcode": "699ea0e0c926fc0fe858474a",
+    "poNumber": "PO-2026-352",
+    "boxId": "BOX-PO-2026-352-DDM2001430-1771998842381-1",
+    "yarnName": "30s-Dk. Purple-DYL-25555-B-Cotton",
+    "issueStatus": "used"
+  },
+  {
+    "_id": "699ea0cac926fc0fe8583fb6",
+    "barcode": "699ea0cac926fc0fe8583fb5",
+    "poNumber": "PO-2026-352",
+    "boxId": "BOX-PO-2026-352-DDM2001430-1771998842381-2",
+    "yarnName": "30s-Dk. Purple-DYL-36999-B-Cotton",
+    "issueStatus": "used"
+  },
+  {
+    "_id": "69327381abe3fbc58a86ebab",
+    "barcode": "69327381abe3fbc58a86eba9",
+    "poNumber": "PO-2025-868",
+    "boxId": "BOX-PO-2025-868-1764913703581-1",
+    "yarnName": "20s-Beige-Bamboo/Bamboo",
+    "issueStatus": "not_issued"
+  },
+  {
+    "_id": "69327381abe3fbc58a86ebac",
+    "barcode": "69327381abe3fbc58a86ebaa",
+    "poNumber": "PO-2025-868",
+    "boxId": "BOX-PO-2025-868-1764913703581-1",
+    "yarnName": "20s-Beige-Bamboo/Bamboo",
+    "issueStatus": "not_issued"
+  }
+]

@@ -43,8 +43,8 @@ export const createYarnCone = {
       coneWeight: Joi.number().min(0).allow(null),
       tearWeight: Joi.number().min(0).allow(null),
       yarnName: Joi.string().trim().allow('', null),
-      yarnCatalogId: Joi.string().custom(objectId).allow(null),
-      yarn: Joi.string().custom(objectId).allow(null),
+      yarnCatalogId: Joi.string().custom(objectId),
+      yarn: Joi.string().custom(objectId),
       shadeCode: Joi.string().trim().allow('', null),
       issueStatus: issueStatusField.default('not_issued'),
       issuedBy: userRefSchema,
@@ -57,8 +57,14 @@ export const createYarnCone = {
       coneStorageId: Joi.string().trim().allow('', null),
       barcode: Joi.string().trim().required(),
     })
-    .custom((v) => {
+    .custom((v, helpers) => {
       const id = v.yarnCatalogId || v.yarn;
+      const yarnName = String(v.yarnName || '').trim();
+      if (!id && !yarnName) {
+        return helpers.error('any.custom', {
+          message: 'yarnCatalogId (or legacy yarn) or yarnName is required',
+        });
+      }
       return id ? { ...v, yarnCatalogId: id } : v;
     })
     .required(),
@@ -77,8 +83,8 @@ export const updateYarnCone = {
       coneWeight: Joi.number().min(0).allow(null),
       tearWeight: Joi.number().min(0).allow(null),
       yarnName: Joi.string().trim().allow('', null),
-      yarnCatalogId: Joi.string().custom(objectId).allow(null),
-      yarn: Joi.string().custom(objectId).allow(null),
+      yarnCatalogId: Joi.string().custom(objectId),
+      yarn: Joi.string().custom(objectId),
       shadeCode: Joi.string().trim().allow('', null),
       issueStatus: issueStatusField,
       issuedBy: userRefSchema,
