@@ -455,6 +455,41 @@ export const updateLotStatusAndQcApprove = async (poNumber, lotNumber, lotStatus
   // Update the lot status
   purchaseOrder.receivedLotDetails[lotIndex].status = lotStatus;
 
+  // Map lot status to box QC status label
+  let qcStatus = null;
+  let actionMessage = '';
+
+  if (lotStatus === 'lot_accepted') {
+    qcStatus = 'qc_approved';
+    actionMessage = 'QC approved';
+  } else if (lotStatus === 'lot_rejected') {
+    qcStatus = 'qc_rejected';
+    actionMessage = 'QC rejected';
+  } else if (lotStatus === 'lot_returned_to_vendor') {
+    qcStatus = 'qc_rejected';
+    actionMessage = 'Lot marked return to vendor (QC)';
+  }
+
+  // Persist lot-level qcData on PO (canonical for history; works even when no yarn boxes exist)
+  if (qcStatus) {
+    const userId = updatedBy?.user_id != null ? String(updatedBy.user_id).trim() : '';
+    const hasValidUser = userId && mongoose.Types.ObjectId.isValid(userId);
+    const lotQcPayload = {
+      status: qcStatus,
+      date: new Date(),
+      username: updatedBy?.username ?? undefined,
+      ...(hasValidUser && { user: userId }),
+    };
+    if (qcData?.remarks !== undefined) {
+      lotQcPayload.remarks = qcData.remarks;
+    }
+    if (qcData?.mediaUrl && typeof qcData.mediaUrl === 'object') {
+      lotQcPayload.mediaUrl = qcData.mediaUrl;
+    }
+    purchaseOrder.receivedLotDetails[lotIndex].qcData = lotQcPayload;
+    purchaseOrder.markModified('receivedLotDetails');
+  }
+
   // Update receivedBy if provided (only set user when valid ObjectId to avoid cast error)
   if (updatedBy) {
     const userId = updatedBy.user_id != null ? String(updatedBy.user_id).trim() : '';
@@ -473,20 +508,6 @@ export const updateLotStatusAndQcApprove = async (poNumber, lotNumber, lotStatus
   await purchaseOrder.save();
 
   // Update all boxes for this PO and lot with QC data
-  // Only update QC status if lot is accepted or rejected
-  let qcStatus = null;
-  let actionMessage = '';
-
-  if (lotStatus === 'lot_accepted') {
-    qcStatus = 'qc_approved';
-    actionMessage = 'QC approved';
-  } else if (lotStatus === 'lot_rejected') {
-    qcStatus = 'qc_rejected';
-    actionMessage = 'QC rejected';
-  } else if (lotStatus === 'lot_returned_to_vendor') {
-    qcStatus = 'qc_rejected';
-    actionMessage = 'Lot marked return to vendor (QC)';
-  }
 
   const boxes = await YarnBox.find({ poNumber, lotNumber, ...activeYarnBoxMatch });
 

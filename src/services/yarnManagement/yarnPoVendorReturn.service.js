@@ -7,6 +7,7 @@ import YarnBox from '../../models/yarnReq/yarnBox.model.js';
 import ApiError from '../../utils/ApiError.js';
 import { activeYarnConeMatch } from './yarnStockActiveFilters.js';
 import { syncInventoriesFromStorageForCatalogIds } from './yarnInventory.service.js';
+import * as yarnPoReturnChallanService from './yarnPoReturnChallan.service.js';
 
 /**
  * Standalone MongoDB instances do not support multi-document transactions.
@@ -240,7 +241,8 @@ export const finalizeVendorReturnSession = async (params) => {
     const existing = await YarnPoVendorReturn.findOne({ idempotencyKey: idem, status: 'completed' }).lean();
     if (existing) {
       const po = await YarnPurchaseOrder.findOne({ poNumber: existing.poNumber }).lean();
-      return { vendorReturn: existing, purchaseOrder: po, idempotent: true };
+      const challan = await yarnPoReturnChallanService.getChallanByVendorReturnId(existing._id);
+      return { vendorReturn: existing, purchaseOrder: po, challan, idempotent: true };
     }
   }
 
@@ -403,7 +405,13 @@ export const finalizeVendorReturnSession = async (params) => {
   const purchaseOrderAfter = await YarnPurchaseOrder.findOne({ poNumber });
   const poOut = purchaseOrderAfter ? purchaseOrderAfter.toJSON() : null;
 
-  return { vendorReturn: populated, purchaseOrder: poOut };
+  const challan = await yarnPoReturnChallanService.createChallanFromVendorReturn(
+    populated,
+    purchaseOrderAfter,
+    params.user || {}
+  );
+
+  return { vendorReturn: populated, purchaseOrder: poOut, challan };
 };
 
 /**

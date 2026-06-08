@@ -130,6 +130,36 @@ const poItemSchema = mongoose.Schema(
   { _id: true }
 );
 
+/** Lot-level QC metadata (inspector, remarks, S3 attachment URLs) — canonical for history. */
+const lotQcDataSchema = mongoose.Schema(
+  {
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    username: {
+      type: String,
+      trim: true,
+    },
+    date: {
+      type: Date,
+    },
+    remarks: {
+      type: String,
+      trim: true,
+    },
+    status: {
+      type: String,
+      trim: true,
+    },
+    mediaUrl: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
+  },
+  { _id: false }
+);
+
 const receivedLotDetailsSchema = mongoose.Schema(
   {
     lotNumber: {
@@ -175,6 +205,7 @@ const receivedLotDetailsSchema = mongoose.Schema(
       enum: lotStatuses,
       default: 'lot_pending',
     },
+    qcData: lotQcDataSchema,
   },
   { _id: false }
 );
@@ -358,6 +389,18 @@ const yarnPurchaseOrderSchema = mongoose.Schema(
         {
           type: mongoose.Schema.Types.ObjectId,
           ref: 'YarnGrn',
+        },
+      ],
+      default: [],
+    },
+    /**
+     * Append-only list of PO return challan doc ids issued when vendor returns finalize.
+     */
+    returnChallanHistory: {
+      type: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'YarnPoReturnChallan',
         },
       ],
       default: [],

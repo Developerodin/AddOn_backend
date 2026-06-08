@@ -126,6 +126,7 @@ const userSchema = mongoose.Schema(
             'Purchase Order Recevied': false,
             'Draft POs': false,
             'PO Return': false,
+            'PO Return Challan': false,
             'GRN History': false,
             'Yarn QC': false,
             'Yarn Storage': false,
