@@ -1,6 +1,6 @@
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
-import { YarnGrn, YarnPurchaseOrder, YarnBox } from '../../models/index.js';
+import { YarnGrn, YarnPurchaseOrder, YarnBox, YarnCatalog } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import { activeYarnBoxMatch } from './yarnStockActiveFilters.js';
 import {
@@ -29,6 +29,40 @@ const leanToClient = (doc) => {
     rest.id = typeof _id.toString === 'function' ? _id.toString() : String(_id);
   }
   return rest;
+};
+
+/**
+ * Backfill missing hsnCode on GRN item snapshots from YarnCatalog.
+ * Display-only — does not persist. New GRNs store hsnCode at issue time.
+ * @param {Object|null} grn - lean GRN doc
+ * @returns {Promise<Object|null>}
+ */
+const enrichGrnItemsHsn = async (grn) => {
+  if (!grn || !Array.isArray(grn.items) || grn.items.length === 0) return grn;
+
+  const missingIds = [
+    ...new Set(
+      grn.items
+        .filter((it) => !it.hsnCode && it.yarnCatalogId)
+        .map((it) => String(it.yarnCatalogId))
+        .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    ),
+  ];
+  if (missingIds.length === 0) return grn;
+
+  const catalogs = await YarnCatalog.find({ _id: { $in: missingIds } })
+    .select('_id hsnCode')
+    .lean();
+  const hsnByCatalogId = new Map(
+    catalogs.map((c) => [String(c._id), (c.hsnCode || '').trim()])
+  );
+
+  grn.items = grn.items.map((it) => {
+    if (it.hsnCode || !it.yarnCatalogId) return it;
+    const hsnCode = hsnByCatalogId.get(String(it.yarnCatalogId)) || '';
+    return hsnCode ? { ...it, hsnCode } : it;
+  });
+  return grn;
 };
 
 /**
@@ -264,6 +298,7 @@ export const getGrnById = async (id) => {
       .lean();
     grn.parent = leanToClient(parent);
   }
+  await enrichGrnItemsHsn(grn);
   return leanToClient(grn);
 };
 
@@ -272,6 +307,8 @@ export const getGrnById = async (id) => {
  */
 export const getGrnByNumber = async (grnNumber) => {
   const grn = await YarnGrn.findOne({ grnNumber }).lean();
+  if (!grn) return null;
+  await enrichGrnItemsHsn(grn);
   return leanToClient(grn);
 };
 
@@ -286,6 +323,7 @@ export const getRevisionsOf = async (grnId) => {
   const list = await YarnGrn.find({ baseGrnNumber: start.baseGrnNumber })
     .sort({ revisionNo: 1, createdAt: 1 })
     .lean();
+  await Promise.all(list.map((grn) => enrichGrnItemsHsn(grn)));
   return list.map(leanToClient);
 };
 

@@ -144,6 +144,14 @@ describe('yarnGrnSnapshot.builder', () => {
       const items = buildItemsSnapshot(po, lots);
       expect(items).toHaveLength(2);
     });
+
+    test('copies hsnCode from populated yarnCatalogId', () => {
+      const po = buildPo();
+      po.poItems[0].yarnCatalogId = { _id: 'cat-1', hsnCode: '5509' };
+      const lots = buildLotsSnapshot(po, ['LOT-A']);
+      const items = buildItemsSnapshot(po, lots);
+      expect(items[0]).toMatchObject({ hsnCode: '5509' });
+    });
   });
 
   describe('computeTotals', () => {
@@ -225,11 +233,14 @@ describe('yarnGrnSnapshot.builder', () => {
 
   describe('buildSnapshot', () => {
     test('combines supplier, consignee, lots, items and totals', () => {
-      const snap = buildSnapshot(buildPo(), ['LOT-A']);
+      const po = buildPo();
+      po.poItems[0].yarnCatalogId = { _id: 'cat-1', hsnCode: '5509' };
+      const snap = buildSnapshot(po, ['LOT-A']);
       expect(snap.supplier.name).toBe('Sutlej Textiles');
       expect(snap.consignee.stateCode).toBe('27');
       expect(snap.lots).toHaveLength(1);
       expect(snap.items).toHaveLength(1);
+      expect(snap.items[0].hsnCode).toBe('5509');
       expect(snap.totals.subTotal).toBeGreaterThan(0);
     });
   });

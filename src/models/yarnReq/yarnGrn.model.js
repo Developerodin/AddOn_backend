@@ -15,6 +15,7 @@ const grnItemSchema = mongoose.Schema(
     yarnCatalogId: { type: mongoose.Schema.Types.ObjectId, ref: 'YarnCatalog' },
     sizeCount: { type: String, trim: true },
     shadeCode: { type: String, trim: true },
+    hsnCode: { type: String, trim: true },
     pantoneName: { type: String, trim: true },
     quantity: { type: Number, default: 0, min: 0 },
     rate: { type: Number, default: 0, min: 0 },

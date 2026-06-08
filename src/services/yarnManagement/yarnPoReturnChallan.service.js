@@ -1,6 +1,6 @@
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
-import { YarnPoReturnChallan, YarnPurchaseOrder } from '../../models/index.js';
+import { YarnPoReturnChallan, YarnPurchaseOrder, YarnCatalog } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import { buildReturnChallanSnapshot } from './yarnPoReturnChallanSnapshot.builder.js';
 
@@ -19,6 +19,40 @@ const leanToClient = (doc) => {
     rest.id = typeof _id.toString === 'function' ? _id.toString() : String(_id);
   }
   return rest;
+};
+
+/**
+ * Backfill missing hsnCode on challan line snapshots from YarnCatalog.
+ * Display-only — does not persist. New challans store hsnCode at issue time.
+ * @param {object|null} challan - lean challan doc
+ * @returns {Promise<object|null>}
+ */
+const enrichChallanLinesHsn = async (challan) => {
+  if (!challan || !Array.isArray(challan.lines) || challan.lines.length === 0) return challan;
+
+  const missingIds = [
+    ...new Set(
+      challan.lines
+        .filter((line) => !line.hsnCode && line.yarnCatalogId)
+        .map((line) => String(line.yarnCatalogId))
+        .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    ),
+  ];
+  if (missingIds.length === 0) return challan;
+
+  const catalogs = await YarnCatalog.find({ _id: { $in: missingIds } })
+    .select('_id hsnCode')
+    .lean();
+  const hsnByCatalogId = new Map(
+    catalogs.map((c) => [String(c._id), (c.hsnCode || '').trim()])
+  );
+
+  challan.lines = challan.lines.map((line) => {
+    if (line.hsnCode || !line.yarnCatalogId) return line;
+    const hsnCode = hsnByCatalogId.get(String(line.yarnCatalogId)) || '';
+    return hsnCode ? { ...line, hsnCode } : line;
+  });
+  return challan;
 };
 
 /**
@@ -147,6 +181,8 @@ export const queryChallans = async (filter, options) => {
  */
 export const getChallanById = async (id) => {
   const challan = await YarnPoReturnChallan.findById(id).lean();
+  if (!challan) return null;
+  await enrichChallanLinesHsn(challan);
   return leanToClient(challan);
 };
 
@@ -155,6 +191,8 @@ export const getChallanById = async (id) => {
  */
 export const getChallanByNumber = async (challanNumber) => {
   const challan = await YarnPoReturnChallan.findOne({ challanNumber: String(challanNumber).trim() }).lean();
+  if (!challan) return null;
+  await enrichChallanLinesHsn(challan);
   return leanToClient(challan);
 };
 
@@ -163,6 +201,8 @@ export const getChallanByNumber = async (challanNumber) => {
  */
 export const getChallanByVendorReturnId = async (vendorReturnId) => {
   const challan = await YarnPoReturnChallan.findOne({ vendorReturnId }).lean();
+  if (!challan) return null;
+  await enrichChallanLinesHsn(challan);
   return leanToClient(challan);
 };
 

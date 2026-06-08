@@ -25,6 +25,13 @@ const challanConsigneeSchema = mongoose.Schema(
   {
     name: { type: String, trim: true },
     address: { type: String, trim: true },
+    city: { type: String, trim: true },
+    state: { type: String, trim: true },
+    pincode: { type: String, trim: true },
+    country: { type: String, trim: true },
+    contactNumber: { type: String, trim: true },
+    contactPersonName: { type: String, trim: true },
+    email: { type: String, trim: true },
     stateCode: { type: String, trim: true },
     gstNo: { type: String, trim: true },
   },
@@ -39,6 +46,7 @@ const challanLineSchema = mongoose.Schema(
     lotNumber: { type: String, trim: true, default: '' },
     yarnCatalogId: { type: mongoose.Schema.Types.ObjectId, ref: 'YarnCatalog' },
     yarnName: { type: String, trim: true, default: '' },
+    hsnCode: { type: String, trim: true },
     coneWeight: { type: Number, min: 0, default: 0 },
     tearWeight: { type: Number, min: 0, default: 0 },
     netWeight: { type: Number, min: 0, default: 0 },
@@ -113,6 +121,7 @@ yarnPoReturnChallanSchema.index({ challanDate: -1 });
 yarnPoReturnChallanSchema.index({ createdAt: -1 });
 yarnPoReturnChallanSchema.index({ status: 1 });
 yarnPoReturnChallanSchema.index({ 'supplier.name': 1 });
+yarnPoReturnChallanSchema.index({ 'consignee.name': 1 });
 
 yarnPoReturnChallanSchema.plugin(toJSON);
 yarnPoReturnChallanSchema.plugin(paginate);

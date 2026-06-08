@@ -54,7 +54,7 @@ export const getPurchaseOrders = async ({ startDate, endDate, statusCode }) => {
   })
     .populate({
       path: 'poItems.yarnCatalogId',
-      select: '_id yarnName yarnType status yarnSubtype colorFamily',
+      select: '_id yarnName yarnType status yarnSubtype colorFamily hsnCode',
     })
     .sort({ createDate: -1 })
     .lean();
@@ -71,7 +71,7 @@ export const getPurchaseOrderById = async (purchaseOrderId) => {
     })
     .populate({
       path: 'poItems.yarnCatalogId',
-      select: '_id yarnName yarnType status yarnSubtype colorFamily',
+      select: '_id yarnName yarnType status yarnSubtype colorFamily hsnCode',
     })
     .lean();
 
@@ -92,7 +92,7 @@ export const getPurchaseOrderByPoNumber = async (poNumber) => {
     })
     .populate({
       path: 'poItems.yarnCatalogId',
-      select: '_id yarnName yarnType status yarnSubtype colorFamily',
+      select: '_id yarnName yarnType status yarnSubtype colorFamily hsnCode',
     })
     .lean();
 

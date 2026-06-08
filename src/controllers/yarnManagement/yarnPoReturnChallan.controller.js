@@ -13,7 +13,7 @@ const buildListFilter = (query) => {
   if (query.challanNumber) filter.challanNumber = { $regex: query.challanNumber, $options: 'i' };
   if (query.poNumber) filter.poNumber = { $regex: query.poNumber, $options: 'i' };
   if (query.purchaseOrder) filter.purchaseOrder = query.purchaseOrder;
-  if (query.supplierName) filter['supplier.name'] = { $regex: query.supplierName, $options: 'i' };
+  if (query.supplierName) filter['consignee.name'] = { $regex: query.supplierName, $options: 'i' };
   filter.status = query.status || 'active';
 
   if (query.from || query.to) {
