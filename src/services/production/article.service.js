@@ -355,6 +355,10 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
     article.remarks = updateData.remarks;
   }
 
+  if (updateData.brandingType !== undefined) {
+    article.brandingType = updateData.brandingType;
+  }
+
   // Update timestamps
   if (article.status === 'Pending' && updateData.completedQuantity > 0) {
     article.status = 'In Progress';
@@ -1494,6 +1498,25 @@ export const fixDataCorruption = async (articleId) => {
     console.error('❌ Error fixing data corruption:', error);
     throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Failed to fix data corruption');
   }
+};
+
+/**
+ * Updates branding type (Heat Transfer | Embroidery) on an article immediately.
+ * @param {string} articleId - Article _id
+ * @param {'Heat Transfer'|'Embroidery'} brandingType
+ * @returns {Promise<Article>}
+ */
+export const updateArticleBrandingType = async (articleId, brandingType) => {
+  const article = await Article.findById(articleId);
+  if (!article) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Article not found');
+  }
+
+  article.brandingType = brandingType;
+  await article.save();
+
+  return Article.findById(articleId)
+    .populate('machineId', 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor');
 };
 
 /**

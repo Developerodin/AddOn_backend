@@ -160,6 +160,12 @@ export const updateArticleFloorReceivedData = catchAsync(async (req, res) => {
   res.send(result);
 });
 
+export const updateArticleBrandingType = catchAsync(async (req, res) => {
+  const { articleId } = req.params;
+  const article = await productionService.updateArticleBrandingType(articleId, req.body.brandingType);
+  res.send(article);
+});
+
 // ==================== REPORTS AND ANALYTICS ====================
 
 export const getProductionDashboard = catchAsync(async (req, res) => {

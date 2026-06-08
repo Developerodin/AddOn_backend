@@ -235,6 +235,11 @@ router
   .route('/articles/:articleId/floor-received-data')
   .patch(validate(productionValidation.updateArticleFloorReceivedData), productionController.updateArticleFloorReceivedData);
 
+// Instant branding type update (Heat Transfer | Embroidery)
+router
+  .route('/articles/:articleId/branding-type')
+  .patch(validate(productionValidation.updateArticleBrandingType), productionController.updateArticleBrandingType);
+
 // Fix data corruption for specific article
 router
   .route('/articles/:articleId/fix-corruption')

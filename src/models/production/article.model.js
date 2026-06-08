@@ -116,6 +116,12 @@ const articleSchema = new mongoose.Schema({
     type: String,
     required: false
   },
+  /** Branding floor: Heat Transfer or Embroidery */
+  brandingType: {
+    type: String,
+    enum: ['Heat Transfer', 'Embroidery'],
+    required: false
+  },
   
   // Machine assignment
   machineId: {

@@ -192,6 +192,7 @@ const updateArticleProgress = {
     weight: Joi.number().min(0).optional(),
     repairStatus: Joi.string().valid('Not Required', 'In Review', 'Repaired', 'Rejected').optional(),
     repairRemarks: Joi.string().optional(),
+    brandingType: Joi.string().valid('Heat Transfer', 'Embroidery').optional(),
     userId: Joi.string().custom(objectId).required(),
     floorSupervisorId: Joi.string().custom(objectId).required(),
     machineId: Joi.string().custom(objectId).optional(),
@@ -424,6 +425,16 @@ const getArticleWiseData = {
     limit: Joi.number().integer().min(1).max(100),
     page: Joi.number().integer().min(1),
     logsPerArticle: Joi.number().integer().min(0).max(100),
+  }),
+};
+
+/** Instant branding type update on an article (Branding floor). */
+const updateArticleBrandingType = {
+  params: Joi.object().keys({
+    articleId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object().keys({
+    brandingType: Joi.string().valid('Heat Transfer', 'Embroidery').required(),
   }),
 };
 
@@ -758,5 +769,6 @@ export default {
   // Bulk operations validations
   bulkCreateOrders,
   bulkUpdateArticles,
+  updateArticleBrandingType,
   updateArticleFloorReceivedData,
 };
