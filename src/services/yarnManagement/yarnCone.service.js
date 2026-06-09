@@ -1,6 +1,6 @@
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
-import { YarnCone, YarnBox, YarnTransaction } from '../../models/index.js';
+import { YarnCone, YarnBox, YarnTransaction, Machine } from '../../models/index.js';
 import { ProductionOrder, Article } from '../../models/production/index.js';
 import ApiError from '../../utils/ApiError.js';
 import {
@@ -13,6 +13,71 @@ import { resolveYarnCatalogIdForCone } from './yarnConeCatalogResolve.service.js
 
 /** Types that assign a cone to a production order + article (same as article-return-slice). */
 const ISSUE_TX_TYPES_FOR_CONE_LINK = ['yarn_issued', 'yarn_issued_linking', 'yarn_issued_sampling'];
+
+const MACHINE_SELECT = 'machineCode machineNumber model floor';
+
+/**
+ * @param {Object|null|undefined} machine
+ * @returns {string|null}
+ */
+function formatMachineLabel(machine) {
+  if (!machine || typeof machine !== 'object') return null;
+  const code = machine.machineCode != null ? String(machine.machineCode).trim() : '';
+  const num = machine.machineNumber != null ? String(machine.machineNumber).trim() : '';
+  const parts = [];
+  if (code) parts.push(code);
+  if (num && num !== code) parts.push(`#${num}`);
+  if (machine.model) parts.push(String(machine.model).trim());
+  return parts.length ? parts.join(' · ') : null;
+}
+
+/**
+ * Resolve machine from issue transaction (txn.machineId first, then article.machineId).
+ *
+ * @param {Object} txn - Lean issue transaction
+ * @returns {Promise<{ machineId: string|null, machineLabel: string|null, machineFloor: string|null }>}
+ */
+async function resolveMachineForIssueTxn(txn) {
+  const populatedMachine =
+    txn.machineId && typeof txn.machineId === 'object' && '_id' in txn.machineId
+      ? txn.machineId
+      : null;
+  if (populatedMachine) {
+    return {
+      machineId: String(populatedMachine._id),
+      machineLabel: formatMachineLabel(populatedMachine),
+      machineFloor:
+        populatedMachine.floor != null && String(populatedMachine.floor).trim() !== ''
+          ? String(populatedMachine.floor)
+          : null,
+    };
+  }
+
+  const article =
+    txn.articleId && typeof txn.articleId === 'object' && '_id' in txn.articleId
+      ? txn.articleId
+      : null;
+  const articleMachineId = article?.machineId;
+  if (articleMachineId) {
+    const machineOid =
+      typeof articleMachineId === 'object' && articleMachineId !== null && '_id' in articleMachineId
+        ? articleMachineId._id
+        : articleMachineId;
+    const machine = await Machine.findById(machineOid).select(MACHINE_SELECT).lean();
+    if (machine) {
+      return {
+        machineId: String(machine._id),
+        machineLabel: formatMachineLabel(machine),
+        machineFloor:
+          machine.floor != null && String(machine.floor).trim() !== ''
+            ? String(machine.floor)
+            : null,
+      };
+    }
+  }
+
+  return { machineId: null, machineLabel: null, machineFloor: null };
+}
 
 /**
  * @param {string} s
@@ -79,7 +144,8 @@ export async function loadLatestIssueTransactionContextForCone(coneId) {
   })
     .sort({ transactionDate: -1, _id: -1 })
     .populate({ path: 'orderId', select: '_id orderNumber' })
-    .populate({ path: 'articleId', select: '_id articleNumber' })
+    .populate({ path: 'articleId', select: '_id articleNumber machineId' })
+    .populate({ path: 'machineId', select: MACHINE_SELECT })
     .lean();
   if (!txn) return null;
   let orderIdStr = null;
@@ -120,6 +186,7 @@ export async function loadLatestIssueTransactionContextForCone(coneId) {
     }
   }
   const transactionDate = txn.transactionDate ? new Date(/** @type {string | Date} */ (txn.transactionDate)) : null;
+  const machineInfo = await resolveMachineForIssueTxn(txn);
   return {
     orderId: orderIdStr,
     productionOrder,
@@ -127,6 +194,9 @@ export async function loadLatestIssueTransactionContextForCone(coneId) {
     articleNumber,
     transactionId: String(txn._id),
     transactionDate: transactionDate && !Number.isNaN(transactionDate.getTime()) ? transactionDate.toISOString() : null,
+    machineId: machineInfo.machineId,
+    machineLabel: machineInfo.machineLabel,
+    machineFloor: machineInfo.machineFloor,
   };
 }
 

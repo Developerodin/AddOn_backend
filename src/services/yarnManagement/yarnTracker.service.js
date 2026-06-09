@@ -8,7 +8,8 @@ import { getYarnConeByBarcode } from './yarnCone.service.js';
 import { activeYarnConeMatch } from './yarnStockActiveFilters.js';
 
 const ORDER_SELECT = 'orderNumber orderNote status currentFloor priority';
-const ARTICLE_SELECT = 'articleNumber knittingCode linkingType status plannedQuantity';
+const ARTICLE_SELECT = 'articleNumber knittingCode linkingType status plannedQuantity machineId';
+const MACHINE_SELECT = 'machineCode machineNumber model floor';
 
 const ISSUE_TX_TYPES = ['yarn_issued', 'yarn_issued_linking', 'yarn_issued_sampling'];
 const RETURN_TX_TYPES = ['yarn_returned'];
@@ -55,6 +56,7 @@ async function fetchTransactionsForBox(boxId) {
   })
     .populate({ path: 'orderId', select: ORDER_SELECT })
     .populate({ path: 'articleId', select: ARTICLE_SELECT })
+    .populate({ path: 'machineId', select: MACHINE_SELECT })
     .sort({ transactionDate: -1, _id: -1 })
     .limit(100)
     .lean();
@@ -79,6 +81,7 @@ async function fetchTransactionsForCone(coneId) {
   })
     .populate({ path: 'orderId', select: ORDER_SELECT })
     .populate({ path: 'articleId', select: ARTICLE_SELECT })
+    .populate({ path: 'machineId', select: MACHINE_SELECT })
     .sort({ transactionDate: -1, _id: -1 })
     .limit(100)
     .lean();
@@ -118,6 +121,21 @@ function formatArticleLabel(article) {
   if (code) parts.push(code);
   if (knit) parts.push(`Knitting: ${knit}`);
   if (article.linkingType) parts.push(String(article.linkingType));
+  return parts.length ? parts.join(' · ') : null;
+}
+
+/**
+ * @param {Object|null|undefined} machine
+ * @returns {string|null}
+ */
+function formatMachineLabel(machine) {
+  if (!machine || typeof machine !== 'object') return null;
+  const code = machine.machineCode != null ? String(machine.machineCode).trim() : '';
+  const num = machine.machineNumber != null ? String(machine.machineNumber).trim() : '';
+  const parts = [];
+  if (code) parts.push(code);
+  if (num && num !== code) parts.push(`#${num}`);
+  if (machine.model) parts.push(String(machine.model).trim());
   return parts.length ? parts.join(' · ') : null;
 }
 
@@ -233,6 +251,7 @@ function mapTransactionEvent(tx) {
 
   const order = populatedDoc(tx.orderId);
   const article = populatedDoc(tx.articleId);
+  const machine = populatedDoc(tx.machineId);
   const details = {
     yarnName: tx.yarnName,
     netWeight: tx.transactionNetWeight,
@@ -251,6 +270,9 @@ function mapTransactionEvent(tx) {
     formatArticleLabel(article) || (tx.articleNumber != null ? String(tx.articleNumber) : null);
   if (orderLabel) details.productionOrder = orderLabel;
   if (articleLabel) details.articleCode = articleLabel;
+  const machineLabel = formatMachineLabel(machine);
+  if (machineLabel) details.machine = machineLabel;
+  if (machine?.floor) details.machineFloor = String(machine.floor);
   if (order?.status) details.orderStatus = order.status;
   if (order?.currentFloor) details.currentFloor = order.currentFloor;
   if (article?.status) details.articleStatus = article.status;
@@ -438,6 +460,7 @@ function buildConeTimeline(cone, transactions) {
   }
 
   if (cone.issueDate || cone.issueStatus === 'issued') {
+    const ctx = cone.issueTransactionContext;
     events.push({
       id: `cone-issued-${cone._id}`,
       kind: 'cone_issue',
@@ -449,6 +472,10 @@ function buildConeTimeline(cone, transactions) {
         issuedBy: cone.issuedBy?.username,
         orderId: cone.orderId,
         articleId: cone.articleId,
+        ...(ctx?.machineLabel ? { machine: ctx.machineLabel } : {}),
+        ...(ctx?.machineFloor ? { machineFloor: ctx.machineFloor } : {}),
+        ...(ctx?.productionOrder ? { productionOrder: ctx.productionOrder } : {}),
+        ...(ctx?.articleNumber ? { articleCode: ctx.articleNumber } : {}),
       },
     });
   }
@@ -499,6 +526,8 @@ function buildConeTimeline(cone, transactions) {
     };
     if (ctx.productionOrder) ctxDetails.productionOrder = String(ctx.productionOrder);
     if (ctx.articleNumber) ctxDetails.articleCode = String(ctx.articleNumber);
+    if (ctx.machineLabel) ctxDetails.machine = String(ctx.machineLabel);
+    if (ctx.machineFloor) ctxDetails.machineFloor = String(ctx.machineFloor);
     if (ctx.orderId) ctxDetails.orderId = ctx.orderId;
     if (ctx.articleId) ctxDetails.articleId = ctx.articleId;
     events.push({
@@ -606,6 +635,8 @@ export const getConeTrackerByBarcode = async (barcode, options = {}) => {
 
   let productionOrderLabel = null;
   let articleLabel = null;
+  let machineLabel = null;
+  let machineFloor = null;
   if (cone.orderId || cone.articleId) {
     const { orderMap, articleMap } = await loadOrderArticleMaps(
       new Set(cone.orderId ? [String(cone.orderId)] : []),
@@ -624,6 +655,20 @@ export const getConeTrackerByBarcode = async (barcode, options = {}) => {
     articleLabel = cone.issueTransactionContext.articleNumber || null;
   }
 
+  if (cone.issueTransactionContext) {
+    machineLabel = cone.issueTransactionContext.machineLabel || null;
+    machineFloor = cone.issueTransactionContext.machineFloor || null;
+  }
+
+  if (!machineLabel && cone.issueStatus === 'issued') {
+    const latestIssueTx = transactions.find((tx) => ISSUE_TX_TYPES.includes(tx.transactionType));
+    if (latestIssueTx) {
+      machineLabel = formatMachineLabel(populatedDoc(latestIssueTx.machineId));
+      const mach = populatedDoc(latestIssueTx.machineId);
+      if (mach?.floor) machineFloor = String(mach.floor);
+    }
+  }
+
   return {
     entityType: 'cone',
     cone: {
@@ -634,6 +679,8 @@ export const getConeTrackerByBarcode = async (barcode, options = {}) => {
       parentPoNumber: parentBox?.poNumber ?? cone.poNumber,
       productionOrderLabel,
       articleLabel,
+      machineLabel,
+      machineFloor,
     },
     parentBox: parentBox
       ? {
