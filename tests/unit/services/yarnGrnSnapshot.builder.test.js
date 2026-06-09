@@ -182,6 +182,77 @@ describe('yarnGrnSnapshot.builder', () => {
       expect(t.igst).toBeCloseTo(5);
       expect(t.grandTotal).toBeCloseTo(105);
     });
+
+    test('applies 10% discount with GST on discounted taxable value', () => {
+      const po = buildPo();
+      const supplier = buildSupplierSnapshot(po);
+      const items = [{ amount: 1000, quantity: 10, gstRate: 5 }];
+      const t = computeTotals(items, supplier, { discountPercent: 10 }, { applyAutoRoundOff: true });
+      expect(t.subTotal).toBe(1000);
+      expect(t.discountAmount).toBeCloseTo(100);
+      expect(t.taxableValue).toBeCloseTo(900);
+      expect(t.itemGst).toBeCloseTo(45);
+      expect(t.grandTotal).toBeCloseTo(945);
+    });
+
+    test('adds freight with GST and splits for in-state supplier', () => {
+      const po = buildPo();
+      const supplier = buildSupplierSnapshot(po);
+      const items = [{ amount: 1000, quantity: 10, gstRate: 5 }];
+      const t = computeTotals(
+        items,
+        supplier,
+        { freightAmount: 100, freightGstPercent: 5 },
+        { applyAutoRoundOff: true }
+      );
+      expect(t.freightAmount).toBe(100);
+      expect(t.freightGst).toBeCloseTo(5);
+      expect(t.gst).toBeCloseTo(55);
+      expect(t.sgst).toBeCloseTo(27.5);
+      expect(t.cgst).toBeCloseTo(27.5);
+      expect(t.preRoundTotal).toBeCloseTo(1155);
+      expect(t.grandTotal).toBeCloseTo(1155);
+    });
+
+    test('uses IGST for freight on out-of-state supplier', () => {
+      const po = buildPo();
+      po.supplier.state = 'Delhi';
+      const supplier = buildSupplierSnapshot(po);
+      const items = [{ amount: 100, quantity: 1, gstRate: 5 }];
+      const t = computeTotals(
+        items,
+        supplier,
+        { freightAmount: 50, freightGstPercent: 5 },
+        { applyAutoRoundOff: true }
+      );
+      expect(t.igst).toBeCloseTo(7.5);
+      expect(t.sgst).toBe(0);
+      expect(t.cgst).toBe(0);
+    });
+
+    test('honours manual round-off override', () => {
+      const po = buildPo();
+      const supplier = buildSupplierSnapshot(po);
+      const items = [{ amount: 1000.33, quantity: 1, gstRate: 5 }];
+      const auto = computeTotals(items, supplier, {}, { applyAutoRoundOff: true });
+      const manual = computeTotals(items, supplier, { roundOff: 0.5 }, { applyAutoRoundOff: true });
+      expect(auto.roundOff).not.toBe(0.5);
+      expect(manual.roundOff).toBe(0.5);
+      expect(manual.grandTotal).toBeCloseTo(manual.preRoundTotal + 0.5);
+    });
+
+    test('amountInWords reflects final grandTotal after adjustments', () => {
+      const po = buildPo();
+      const supplier = buildSupplierSnapshot(po);
+      const t = computeTotals(
+        [{ amount: 1000, quantity: 1, gstRate: 5 }],
+        supplier,
+        { discountPercent: 10, freightAmount: 0 },
+        { applyAutoRoundOff: true }
+      );
+      expect(t.amountInWords).toMatch(/Rupees Only$/);
+      expect(t.grandTotal).toBeCloseTo(945);
+    });
   });
 
   describe('lotMaterialChange', () => {

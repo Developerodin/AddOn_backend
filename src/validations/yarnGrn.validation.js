@@ -57,6 +57,13 @@ export const getGrnsByLot = {
   }),
 };
 
+const grnFinancialBodyKeys = {
+  discountPercent: Joi.number().min(0).max(100),
+  freightAmount: Joi.number().min(0),
+  freightGstPercent: Joi.number().min(0).max(100),
+  roundOff: Joi.number(),
+};
+
 export const ensureGrnForPo = {
   params: Joi.object().keys({
     purchaseOrderId: Joi.string().custom(objectId).required(),
@@ -67,6 +74,7 @@ export const ensureGrnForPo = {
       vendorInvoiceDate: Joi.date().iso().allow(null, ''),
       discrepancyDetails: Joi.string().allow('').max(2000),
       notes: Joi.string().allow('').max(2000),
+      ...grnFinancialBodyKeys,
     })
     .unknown(false)
     .default({}),
@@ -82,6 +90,7 @@ export const updateGrnHeader = {
       vendorInvoiceDate: Joi.date().iso().allow(null, ''),
       discrepancyDetails: Joi.string().allow('').max(2000),
       notes: Joi.string().allow('').max(2000),
+      ...grnFinancialBodyKeys,
     })
     .min(1)
     .unknown(false),

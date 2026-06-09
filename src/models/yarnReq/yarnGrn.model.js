@@ -80,9 +80,31 @@ const grnConsigneeSchema = mongoose.Schema(
   { _id: false }
 );
 
+const grnAdjustmentsSchema = mongoose.Schema(
+  {
+    /** Percentage deducted from basic value (line subtotal). */
+    discountPercent: { type: Number, default: 0, min: 0, max: 100 },
+    /** Base freight / shipping charge before GST. */
+    freightAmount: { type: Number, default: 0, min: 0 },
+    /** GST rate applied to freight amount. */
+    freightGstPercent: { type: Number, default: 0, min: 0, max: 100 },
+    /** Saved round-off (+/-); auto-suggested when not overridden. */
+    roundOff: { type: Number, default: 0 },
+  },
+  { _id: false }
+);
+
 const grnTotalsSchema = mongoose.Schema(
   {
     subTotal: { type: Number, default: 0, min: 0 },
+    discountAmount: { type: Number, default: 0, min: 0 },
+    taxableValue: { type: Number, default: 0, min: 0 },
+    freightAmount: { type: Number, default: 0, min: 0 },
+    freightGst: { type: Number, default: 0, min: 0 },
+    itemGst: { type: Number, default: 0, min: 0 },
+    preRoundTotal: { type: Number, default: 0, min: 0 },
+    roundOff: { type: Number, default: 0 },
+    roundOffSuggested: { type: Number, default: 0 },
     sgst: { type: Number, default: 0, min: 0 },
     cgst: { type: Number, default: 0, min: 0 },
     igst: { type: Number, default: 0, min: 0 },
@@ -139,6 +161,7 @@ const yarnGrnSchema = mongoose.Schema(
     lots: { type: [grnLotSchema], default: [] },
     items: { type: [grnItemSchema], default: [] },
     totals: grnTotalsSchema,
+    adjustments: { type: grnAdjustmentsSchema, default: () => ({}) },
 
     vendorInvoiceNo: { type: String, trim: true },
     vendorInvoiceDate: { type: Date },

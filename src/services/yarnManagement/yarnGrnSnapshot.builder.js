@@ -210,47 +210,93 @@ const numberToWords = (num) => {
 };
 
 /**
- * Compute the totals block (sub-total, GST split, grand total) from snapshot
- * line items only so a partial GRN never inherits the full PO's `total` / `gst`.
- * Tax is summed per line: amount × (gstRate / 100). Supplier state drives SGST+CGST vs IGST.
+ * Build amount-in-words string from a rupee total.
+ * @param {number} grandTotal
+ * @returns {string}
+ */
+const formatAmountInWords = (grandTotal) => {
+  const rupees = Math.floor(grandTotal);
+  const paise = Math.round((grandTotal - rupees) * 100);
+  return paise > 0
+    ? `${numberToWords(rupees)} and ${numberToWords(paise).replace(' Rupees', '')} Paise Only`
+    : `${numberToWords(rupees)} Only`;
+};
+
+/**
+ * Normalize header-editable financial adjustment inputs.
+ * @param {Object} adjustments
+ * @returns {{ discountPercent: number, freightAmount: number, freightGstPercent: number, roundOff: number|null }}
+ */
+const normalizeAdjustments = (adjustments = {}) => {
+  const hasRoundOff = adjustments.roundOff !== undefined && adjustments.roundOff !== null;
+  return {
+    discountPercent: Math.min(100, Math.max(0, toNumber(adjustments.discountPercent))),
+    freightAmount: Math.max(0, toNumber(adjustments.freightAmount)),
+    freightGstPercent: Math.min(100, Math.max(0, toNumber(adjustments.freightGstPercent))),
+    roundOff: hasRoundOff ? toNumber(adjustments.roundOff) : null,
+  };
+};
+
+/**
+ * Compute the totals block from snapshot line items and optional financial
+ * adjustments (discount, freight, round-off). Supplier state drives SGST+CGST vs IGST.
  * @param {Array<Object>} items - printed rows (received qty × rate per line)
  * @param {Object} supplier - already-built supplier snapshot (for state)
+ * @param {Object} [adjustments={}] - discountPercent, freightAmount, freightGstPercent, roundOff
+ * @param {{ applyAutoRoundOff?: boolean }} [opts={}] - when true and roundOff not explicit, auto-round to nearest rupee
  */
-const computeTotals = (items, supplier) => {
+const computeTotals = (items, supplier, adjustments = {}, opts = {}) => {
   const subTotal = items.reduce((s, it) => s + toNumber(it.amount), 0);
   const totalQty = items.reduce((s, it) => s + toNumber(it.quantity), 0);
 
-  const supplierState = (supplier?.state || '').toLowerCase();
-  const sameState = SUPPLIER_HOME_STATES.has(supplierState);
-
-  const totalGst = items.reduce((s, it) => {
-    const amt = toNumber(it.amount);
-    const ratePct = toNumber(it.gstRate);
-    return s + (amt * ratePct) / 100;
-  }, 0);
-
-  const sgst = sameState ? totalGst / 2 : 0;
-  const cgst = sameState ? totalGst / 2 : 0;
-  const igst = sameState ? 0 : totalGst;
-
-  const grandTotal = subTotal + totalGst;
+  const adj = normalizeAdjustments(adjustments);
+  const discountAmount = (subTotal * adj.discountPercent) / 100;
+  const taxableValue = subTotal - discountAmount;
 
   const avgGstRate = items.length
     ? items.reduce((s, it) => s + toNumber(it.gstRate || 0), 0) / items.length
     : 0;
 
+  const itemGst = (taxableValue * avgGstRate) / 100;
+  const freightAmount = adj.freightAmount;
+  const freightGst = (freightAmount * adj.freightGstPercent) / 100;
+  const totalGst = itemGst + freightGst;
+
+  const supplierState = (supplier?.state || '').toLowerCase();
+  const sameState = SUPPLIER_HOME_STATES.has(supplierState);
+  const sgst = sameState ? totalGst / 2 : 0;
+  const cgst = sameState ? totalGst / 2 : 0;
+  const igst = sameState ? 0 : totalGst;
+
+  const preRoundTotal = taxableValue + itemGst + freightAmount + freightGst;
+  const roundOffSuggested = Math.round(preRoundTotal) - preRoundTotal;
+
+  const hasFinancialAdj =
+    adj.discountPercent > 0 || adj.freightAmount > 0 || adj.freightGstPercent > 0;
+
+  let roundOff = 0;
+  if (adj.roundOff !== null) {
+    roundOff = adj.roundOff;
+  } else if (opts.applyAutoRoundOff || hasFinancialAdj) {
+    roundOff = roundOffSuggested;
+  }
+
+  const grandTotal = preRoundTotal + roundOff;
+
   const taxLabel = sameState
     ? `GST ${avgGstRate.toFixed(1)}%`
     : `IGST ${avgGstRate.toFixed(1)}%`;
 
-  const rupees = Math.floor(grandTotal);
-  const paise = Math.round((grandTotal - rupees) * 100);
-  const amountInWords = paise > 0
-    ? `${numberToWords(rupees)} and ${numberToWords(paise).replace(' Rupees', '')} Paise Only`
-    : `${numberToWords(rupees)} Only`;
-
   return {
     subTotal,
+    discountAmount,
+    taxableValue,
+    freightAmount,
+    freightGst,
+    itemGst,
+    preRoundTotal,
+    roundOff,
+    roundOffSuggested,
     sgst,
     cgst,
     igst,
@@ -258,9 +304,19 @@ const computeTotals = (items, supplier) => {
     grandTotal,
     totalQty,
     taxLabel,
-    amountInWords,
+    amountInWords: formatAmountInWords(grandTotal),
   };
 };
+
+/**
+ * Recompute totals from stored items using persisted adjustment inputs.
+ * @param {Array<Object>} items
+ * @param {Object} supplier
+ * @param {Object} adjustments - persisted adjustments subdoc
+ * @returns {Object} totals block
+ */
+const applyAdjustmentsToTotals = (items, supplier, adjustments = {}) =>
+  computeTotals(items, supplier, adjustments, { applyAutoRoundOff: true });
 
 /**
  * Cheap "did the printable content of this lot change?" check.
@@ -344,6 +400,9 @@ export {
   buildLotsSnapshot,
   buildItemsSnapshot,
   computeTotals,
+  applyAdjustmentsToTotals,
+  normalizeAdjustments,
+  formatAmountInWords,
   computeSnapshotDiff,
   lotMaterialChange,
   numberToWords,

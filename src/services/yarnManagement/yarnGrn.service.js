@@ -7,7 +7,18 @@ import {
   buildSnapshot,
   computeSnapshotDiff,
   lotMaterialChange,
+  applyAdjustmentsToTotals,
 } from './yarnGrnSnapshot.builder.js';
+
+const FINANCIAL_HEADER_KEYS = ['discountPercent', 'freightAmount', 'freightGstPercent', 'roundOff'];
+
+/**
+ * Returns true when the caller supplied at least one financial adjustment field.
+ * @param {Object} fields
+ * @returns {boolean}
+ */
+const hasFinancialFields = (fields) =>
+  FINANCIAL_HEADER_KEYS.some((key) => fields[key] !== undefined && fields[key] !== null);
 
 const GRN_BASE_PATTERN = /^GRN-(\d{4})-(\d+)$/;
 const GRN_ANY_PATTERN = /^GRN-\d{4}-\d+(?:-R\d+)?$/;
@@ -167,6 +178,12 @@ export const createGrnFromNewLots = async (po, newLotNumbers, reqUser, extras = 
 
   const grn = await insertWithRetry(payload, generateGrnNumber);
   await linkGrnToPo(po._id, grn._id);
+
+  if (hasFinancialFields(extras)) {
+    const patched = await updateGrnHeader(grn._id, extras);
+    return leanToClient(patched || grn.toObject());
+  }
+
   return leanToClient(grn.toObject());
 };
 
@@ -351,19 +368,23 @@ export const getGrnsByLot = async (lotNumber, options = {}) => {
 
 /**
  * Patch the header-only fields on an existing GRN. These fields (vendor
- * invoice no/date, discrepancy notes, narration) are *metadata* — not part
- * of the materially-immutable lot snapshot — so it's safe to update them
- * post-issuance without minting a revision. Only persists fields the caller
- * actually supplied as a non-empty value, so passing `{}` is a no-op.
+ * invoice no/date, discrepancy notes, narration, financial adjustments) are
+ * *metadata* — not part of the materially-immutable lot snapshot — so it's
+ * safe to update them post-issuance without minting a revision.
  *
  * @param {string} grnId
- * @param {Object} fields - any subset of { vendorInvoiceNo, vendorInvoiceDate, discrepancyDetails, notes }
+ * @param {Object} fields - subset of vendor invoice, discrepancy, notes, and financial adjustments
  * @returns {Promise<?Object>} updated GRN doc (lean)
  */
 export const updateGrnHeader = async (grnId, fields = {}) => {
   if (!grnId) return null;
+
+  const existing = await YarnGrn.findById(grnId).lean();
+  if (!existing) return null;
+
   const $set = {};
-  if (typeof fields.vendorInvoiceNo === 'string' && fields.vendorInvoiceNo.trim()) {
+
+  if (typeof fields.vendorInvoiceNo === 'string') {
     $set.vendorInvoiceNo = fields.vendorInvoiceNo.trim();
   }
   if (fields.vendorInvoiceDate) {
@@ -373,12 +394,42 @@ export const updateGrnHeader = async (grnId, fields = {}) => {
   if (typeof fields.discrepancyDetails === 'string') {
     $set.discrepancyDetails = fields.discrepancyDetails;
   }
-  if (typeof fields.notes === 'string' && fields.notes.trim()) {
+  if (typeof fields.notes === 'string') {
     $set.notes = fields.notes.trim();
   }
+
+  const mergedAdjustments = {
+    discountPercent: existing.adjustments?.discountPercent ?? 0,
+    freightAmount: existing.adjustments?.freightAmount ?? 0,
+    freightGstPercent: existing.adjustments?.freightGstPercent ?? 0,
+    roundOff: existing.adjustments?.roundOff ?? 0,
+  };
+
+  if (typeof fields.discountPercent === 'number') {
+    mergedAdjustments.discountPercent = fields.discountPercent;
+  }
+  if (typeof fields.freightAmount === 'number') {
+    mergedAdjustments.freightAmount = fields.freightAmount;
+  }
+  if (typeof fields.freightGstPercent === 'number') {
+    mergedAdjustments.freightGstPercent = fields.freightGstPercent;
+  }
+  if (typeof fields.roundOff === 'number') {
+    mergedAdjustments.roundOff = fields.roundOff;
+  }
+
+  if (hasFinancialFields(fields)) {
+    $set.adjustments = mergedAdjustments;
+    $set.totals = applyAdjustmentsToTotals(
+      existing.items || [],
+      existing.supplier || {},
+      mergedAdjustments
+    );
+  }
+
   const doc =
     Object.keys($set).length === 0
-      ? await YarnGrn.findById(grnId).lean()
+      ? existing
       : await YarnGrn.findByIdAndUpdate(grnId, { $set }, { new: true }).lean();
   return leanToClient(doc);
 };
@@ -465,7 +516,8 @@ export const ensureGrnForPo = async (purchaseOrderId, reqUser, extras = {}) => {
           new Date(latestGrn.vendorInvoiceDate || 0).getTime()) ||
       (typeof extras.discrepancyDetails === 'string' &&
         extras.discrepancyDetails !== (latestGrn.discrepancyDetails || '')) ||
-      (extras.notes && extras.notes !== latestGrn.notes);
+      (extras.notes && extras.notes !== latestGrn.notes) ||
+      hasFinancialFields(extras);
     if (hasHeaderChanges) {
       const patched = await updateGrnHeader(latestGrn._id, extras);
       if (patched) {
