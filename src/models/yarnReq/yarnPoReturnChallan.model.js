@@ -23,6 +23,7 @@ const challanSupplierSchema = mongoose.Schema(
 
 const challanConsigneeSchema = mongoose.Schema(
   {
+    supplierId: { type: mongoose.Schema.Types.ObjectId, ref: 'Supplier' },
     name: { type: String, trim: true },
     address: { type: String, trim: true },
     city: { type: String, trim: true },

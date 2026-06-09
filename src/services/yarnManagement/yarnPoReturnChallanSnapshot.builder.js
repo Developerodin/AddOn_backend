@@ -24,26 +24,40 @@ const toNumber = (value) => {
 const trimSafe = (value) => (value == null ? '' : String(value).trim());
 
 /**
- * Resolves the PO supplier document when only an ObjectId is stored on the PO.
+ * Extracts the Supplier ObjectId from a PO supplier field (ref, populated doc, or string).
+ * @param {object} po - lean or populated YarnPurchaseOrder
+ * @returns {string}
+ */
+const extractPoSupplierId = (po) => {
+  const raw = po?.supplier;
+  if (!raw) return '';
+  if (typeof raw === 'string') return raw.trim();
+  if (typeof raw === 'object') {
+    if (raw._id) return raw._id.toString();
+    if (mongoose.Types.ObjectId.isValid(raw)) return raw.toString();
+  }
+  return '';
+};
+
+/**
+ * Resolves full Brand Master (Supplier) data for challan snapshot at write time only.
+ * Always prefers DB fetch when a valid supplier ref exists on the PO.
  * @param {object} po - lean or populated YarnPurchaseOrder
  * @returns {Promise<object|null>}
  */
 export const resolvePoSupplier = async (po) => {
-  const embedded = po?.supplier && typeof po.supplier === 'object' ? po.supplier : null;
-  if (embedded?.brandName || embedded?.address || embedded?.gstNo) {
-    return embedded;
+  const embedded =
+    po?.supplier && typeof po.supplier === 'object' && !mongoose.Types.ObjectId.isValid(po.supplier)
+      ? po.supplier
+      : null;
+
+  const supplierId = extractPoSupplierId(po);
+  if (supplierId && mongoose.Types.ObjectId.isValid(supplierId)) {
+    const fromDb = await Supplier.findById(supplierId).select(SUPPLIER_SELECT).lean();
+    if (fromDb) return fromDb;
   }
 
-  const supplierId =
-    po?.supplier?._id?.toString?.() ||
-    po?.supplier?.toString?.() ||
-    (typeof po?.supplier === 'string' ? po.supplier : '');
-
-  if (!supplierId || !mongoose.Types.ObjectId.isValid(supplierId)) {
-    return embedded;
-  }
-
-  return Supplier.findById(supplierId).select(SUPPLIER_SELECT).lean();
+  return embedded;
 };
 
 /**
@@ -59,6 +73,7 @@ export const buildVendorConsigneeSnapshot = async (po) => {
   const vendor = buildSupplierSnapshot(poWithSupplier);
 
   return {
+    supplierId: vendor.supplierId || undefined,
     name: vendor.name,
     address: vendor.address,
     city: vendor.city,

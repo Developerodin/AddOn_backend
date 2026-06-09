@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 /**
- * Fixes supplier/consignee on existing PO Return Challans that still use the
- * legacy GRN-inverted layout (vendor as supplier, ADDON HOLDINGS as consignee).
+ * Fixes supplier/consignee on existing PO Return Challans:
+ * - Legacy GRN-inverted layout (vendor as supplier, ADDON HOLDINGS as consignee)
+ * - Incomplete consignee snapshots (name present but missing GST, address, or contact)
+ *
+ * Rebuilds vendor party from PO + Brand Master at backfill time, then stores immutably on challan.
  *
  * Usage:
  *   node scripts/fix-po-return-challan-parties.js                 # dry run (default)
@@ -37,6 +40,7 @@ const log = (msg, data) => {
  * @returns {object}
  */
 const consigneeFromLegacySupplier = (legacySupplier) => ({
+  supplierId: legacySupplier?.supplierId || undefined,
   name: legacySupplier?.name || '',
   address: legacySupplier?.address || '',
   city: legacySupplier?.city || '',
@@ -50,13 +54,68 @@ const consigneeFromLegacySupplier = (legacySupplier) => ({
   stateCode: (legacySupplier?.gstNo || '').trim().slice(0, 2) || undefined,
 });
 
+/**
+ * Whether challan still uses legacy inverted party layout.
+ * @param {object} challan
+ * @returns {boolean}
+ */
+const isLegacyLayout = (challan) =>
+  (challan.consignee?.name || '').trim().toUpperCase() === 'ADDON HOLDINGS';
+
+/**
+ * Mongo filter for challans needing party snapshot repair.
+ * @returns {object}
+ */
+const buildRepairQuery = () => ({
+  $or: [
+    { 'consignee.name': { $regex: /^ADDON HOLDINGS$/i } },
+    {
+      'consignee.name': { $exists: true, $nin: [null, ''] },
+      $or: [
+        { 'consignee.gstNo': { $in: [null, ''] } },
+        { 'consignee.address': { $in: [null, ''] } },
+        { 'consignee.contactNumber': { $in: [null, ''] } },
+      ],
+    },
+  ],
+});
+
+/**
+ * Resolves consignee snapshot for a challan needing repair.
+ * @param {object} challan
+ * @param {object|null} po
+ * @returns {Promise<object|null>}
+ */
+const resolveConsigneeForRepair = async (challan, po) => {
+  if (!po) return null;
+
+  if (isLegacyLayout(challan)) {
+    const fromLegacy = consigneeFromLegacySupplier(challan.supplier);
+    const supplierIsAddon = (challan.supplier?.name || '').trim().toUpperCase() === 'ADDON HOLDINGS';
+    const legacyComplete =
+      fromLegacy.name &&
+      !supplierIsAddon &&
+      fromLegacy.gstNo &&
+      fromLegacy.address &&
+      fromLegacy.contactNumber;
+
+    if (legacyComplete) {
+      const fromPo = await buildVendorConsigneeSnapshot(po);
+      return {
+        ...fromLegacy,
+        supplierId: fromPo.supplierId || fromLegacy.supplierId,
+      };
+    }
+  }
+
+  return buildVendorConsigneeSnapshot(po);
+};
+
 const main = async () => {
   const redactedUri = await connectMongooseForScript(config);
   log(`[fix-po-return-challan-parties] connected to ${redactedUri} (apply=${APPLY})`);
 
-  let query = YarnPoReturnChallan.find({
-    'consignee.name': { $regex: /^ADDON HOLDINGS$/i },
-  }).sort({ createdAt: 1 });
+  let query = YarnPoReturnChallan.find(buildRepairQuery()).sort({ createdAt: 1 });
   if (LIMIT > 0) query = query.limit(LIMIT);
   const challans = await query.lean();
 
@@ -66,23 +125,27 @@ const main = async () => {
 
   for (const challan of challans) {
     try {
-      let consignee = consigneeFromLegacySupplier(challan.supplier);
-      const supplierIsAddon = (challan.supplier?.name || '').trim().toUpperCase() === 'ADDON HOLDINGS';
+      const po = await YarnPurchaseOrder.findById(challan.purchaseOrder).lean();
+      if (!po) {
+        log(`[skip] no PO for challan ${challan.challanNumber}`);
+        skipped += 1;
+        continue;
+      }
 
-      if (!consignee.name || supplierIsAddon) {
-        const po = await YarnPurchaseOrder.findById(challan.purchaseOrder).lean();
-        if (!po) {
-          log(`[skip] no PO for challan ${challan.challanNumber}`);
-          skipped += 1;
-          continue;
-        }
-        consignee = await buildVendorConsigneeSnapshot(po);
+      const consignee = await resolveConsigneeForRepair(challan, po);
+      if (!consignee?.name) {
+        log(`[skip] could not resolve consignee for ${challan.challanNumber}`);
+        skipped += 1;
+        continue;
       }
 
       const supplier = buildConsigneeSnapshot();
+      const reason = isLegacyLayout(challan) ? 'legacy' : 'incomplete';
 
       if (!APPLY) {
-        log(`[dry-run] would fix ${challan.challanNumber}: consignee=${consignee.name}`);
+        log(
+          `[dry-run] would fix (${reason}) ${challan.challanNumber}: consignee=${consignee.name} gst=${consignee.gstNo || '—'}`
+        );
         updated += 1;
         continue;
       }
@@ -91,7 +154,7 @@ const main = async () => {
         { _id: challan._id },
         { $set: { supplier, consignee } }
       );
-      log(`[updated] ${challan.challanNumber} consignee=${consignee.name}`);
+      log(`[updated] (${reason}) ${challan.challanNumber} consignee=${consignee.name}`);
       updated += 1;
     } catch (err) {
       log(`[error] ${challan.challanNumber}: ${err?.message || err}`);
