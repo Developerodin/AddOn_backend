@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import app from './app.js';
 import config from './config/config.js';
+import { redactMongoUri } from './config/mongoUri.js';
 import logger from './config/logger.js';
 import { testS3Connection } from './utils/s3Connection.js';
 import { startOrderSyncJob } from './cron/orderSync.cron.js';
@@ -10,7 +11,16 @@ let server;
 let orderSyncCronJob;
 let yarnSnapshotCronJob;
 
-mongoose.connect(config.mongoose.url, config.mongoose.options).then(async () => {
+const mongoOptions = {
+  ...config.mongoose.options,
+  retryWrites: config.mongoose.options.retryWrites ?? false,
+};
+
+logger.info(
+  `MongoDB connect → ${redactMongoUri(config.mongoose.url)} | retryWrites=${mongoOptions.retryWrites}`
+);
+
+mongoose.connect(config.mongoose.url, mongoOptions).then(async () => {
   logger.info('Connected to MongoDB');
   
   // Test S3 connection
