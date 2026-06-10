@@ -51,12 +51,15 @@ function log(msg, data) {
 }
 
 /**
+ * Extracts the underlying QC reason from a failed return attempt remark.
+ *
  * @param {string | undefined} remarks
  * @returns {string}
  */
 function stripReturnToVendorRemark(remarks) {
   const r = String(remarks || '').trim();
-  if (/^Return to vendor:/i.test(r)) return '';
+  const match = r.match(/^Return to vendor:\s*(.*)$/i);
+  if (match) return String(match[1] || '').trim();
   return r;
 }
 
@@ -271,22 +274,31 @@ async function applyRollback(report) {
   );
   if (lotIdx < 0) throw new Error(`Lot ${lotNumber} missing on PO`);
 
+  const priorQc = purchaseOrder.receivedLotDetails[lotIdx].qcData || {};
   purchaseOrder.receivedLotDetails[lotIdx].status = 'lot_rejected';
   purchaseOrder.receivedLotDetails[lotIdx].qcData = {
-    ...(purchaseOrder.receivedLotDetails[lotIdx].qcData || {}),
+    ...priorQc,
     status: 'qc_rejected',
     date: new Date(),
     remarks: qcRemark,
   };
   purchaseOrder.markModified('receivedLotDetails');
 
-  if (!purchaseOrder.statusLogs) purchaseOrder.statusLogs = [];
-  purchaseOrder.statusLogs.push({
-    statusCode: purchaseOrder.currentStatus,
-    updatedBy: { username: 'revert-qc-lot-script' },
-    updatedAt: new Date(),
-    notes: `Script revert: lot ${lotNumber} restored to lot_rejected (QC rejected) for re-return.`,
-  });
+  const logUserId =
+    priorQc.user && mongoose.Types.ObjectId.isValid(String(priorQc.user))
+      ? new mongoose.Types.ObjectId(String(priorQc.user))
+      : null;
+  const logUsername = String(priorQc.username || 'revert-qc-lot-script').trim() || 'revert-qc-lot-script';
+
+  if (logUserId) {
+    if (!purchaseOrder.statusLogs) purchaseOrder.statusLogs = [];
+    purchaseOrder.statusLogs.push({
+      statusCode: purchaseOrder.currentStatus,
+      updatedBy: { username: logUsername, user: logUserId },
+      updatedAt: new Date(),
+      notes: `Script revert: lot ${lotNumber} restored to lot_rejected (QC rejected) for re-return.`,
+    });
+  }
 
   await purchaseOrder.save();
 
