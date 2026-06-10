@@ -39,7 +39,12 @@ export function setRetryWritesOnUri(uri, enabled = false) {
   }
 
   params.set('retryWrites', enabled ? 'true' : 'false');
-  if (!enabled) params.set('w', '1');
+  if (!enabled) {
+    params.set('w', '1');
+    if (/^mongodb:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//i.test(base)) {
+      params.set('directConnection', 'true');
+    }
+  }
 
   const qs = [...params.entries()]
     .map(([k, v]) => (v === '' ? k : `${k}=${v}`))

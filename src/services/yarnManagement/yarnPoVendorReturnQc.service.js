@@ -185,15 +185,6 @@ export async function finalizeQcLotReturn(params) {
   const userId = params.user?.userId != null ? String(params.user.userId) : '';
   const username = actor.username;
 
-  await yarnPurchaseOrderService.updateLotStatusAndQcApprove(
-    poNumber,
-    lotNumber,
-    'lot_returned_to_vendor',
-    { username, user_id: userId },
-    `Lot ${lotNumber} return to vendor (QC) — ${remark} — by ${username}`,
-    { remarks: `Return to vendor: ${remark}` }
-  );
-
   const { ltBoxes, stCones, excludedCones } = await classifyLotBoxesForReturn(poNumber, lotNumber);
   const { preStorage, inStorage } = partitionConesByStorage(stCones);
 
@@ -221,6 +212,15 @@ export async function finalizeQcLotReturn(params) {
     cancellationIntent: 'partial',
     user: params.user,
   });
+
+  await yarnPurchaseOrderService.updateLotStatusAndQcApprove(
+    poNumber,
+    lotNumber,
+    'lot_returned_to_vendor',
+    { username, user_id: userId },
+    `Lot ${lotNumber} return to vendor (QC) — ${remark} — by ${username}`,
+    { remarks: `Return to vendor: ${remark}` }
+  );
 
   const purchaseOrder = await YarnPurchaseOrder.findOne({ poNumber }).lean();
 

@@ -3,7 +3,7 @@ import path from 'path';
 import Joi from 'joi';
 import { parseMongoRetryWrites, setRetryWritesOnUri } from './mongoUri.js';
 
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env'), override: true });
 
 const envVarsSchema = Joi.object()
   .keys({

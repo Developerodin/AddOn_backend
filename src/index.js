@@ -3,6 +3,7 @@ import app from './app.js';
 import config from './config/config.js';
 import { redactMongoUri } from './config/mongoUri.js';
 import logger from './config/logger.js';
+import { mongoSupportsTransactions } from './utils/mongoDeployment.js';
 import { testS3Connection } from './utils/s3Connection.js';
 import { startOrderSyncJob } from './cron/orderSync.cron.js';
 import { startYarnDailySnapshotJob, stopYarnDailySnapshotJob } from './cron/yarnDailySnapshot.cron.js';
@@ -22,6 +23,8 @@ logger.info(
 
 mongoose.connect(config.mongoose.url, mongoOptions).then(async () => {
   logger.info('Connected to MongoDB');
+  const txnSupported = await mongoSupportsTransactions();
+  logger.info(`MongoDB deployment transactionsSupported=${txnSupported}`);
   
   // Test S3 connection
   await testS3Connection();

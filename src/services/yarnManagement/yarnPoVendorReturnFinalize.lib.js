@@ -8,18 +8,9 @@ import ApiError from '../../utils/ApiError.js';
 import { activeYarnConeMatch } from './yarnStockActiveFilters.js';
 import { syncInventoriesFromStorageForCatalogIds } from './yarnInventory.service.js';
 import * as yarnPoReturnChallanService from './yarnPoReturnChallan.service.js';
+import { runWithOptionalMongoTransaction } from '../../utils/mongoDeployment.js';
 
-/**
- * Standalone MongoDB instances do not support multi-document transactions.
- *
- * @param {unknown} err
- * @returns {boolean}
- */
-export function isTransactionUnsupportedError(err) {
-  const code = err && typeof err === 'object' && 'code' in err ? /** @type {any} */ (err).code : undefined;
-  const msg = String(err && typeof err === 'object' && 'message' in err ? /** @type {any} */ (err).message : err);
-  return code === 20 || /replica set|mongos|transaction numbers/i.test(msg);
-}
+export { isTransactionUnsupportedError } from '../../utils/mongoDeployment.js';
 
 /**
  * @param {{ userId?: string, username?: string }} u
@@ -268,27 +259,7 @@ export async function archiveConesAndCompleteReturn(params) {
     }
   };
 
-  const mongoSession = await mongoose.startSession();
-  try {
-    mongoSession.startTransaction();
-    try {
-      await applyFinalizeMutations(mongoSession);
-      await mongoSession.commitTransaction();
-    } catch (inner) {
-      await mongoSession.abortTransaction().catch(() => {});
-      throw inner;
-    }
-  } catch (err) {
-    if (isTransactionUnsupportedError(err)) {
-      // eslint-disable-next-line no-console -- dev DBs often run without replica set
-      console.warn('[yarnPoVendorReturn] Mongo transaction unavailable; finalizing without transaction');
-      await applyFinalizeMutations(null);
-    } else {
-      throw err;
-    }
-  } finally {
-    await mongoSession.endSession().catch(() => {});
-  }
+  await runWithOptionalMongoTransaction(applyFinalizeMutations, 'yarnPoVendorReturn');
 
   await syncInventoriesFromStorageForCatalogIds([...catalogIdSet]);
 

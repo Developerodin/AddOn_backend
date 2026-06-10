@@ -8,10 +8,8 @@ import YarnBox from '../../models/yarnReq/yarnBox.model.js';
 import { activeYarnBoxMatch, activeYarnConeMatch } from './yarnStockActiveFilters.js';
 import { syncInventoriesFromStorageForCatalogIds } from './yarnInventory.service.js';
 import * as yarnPoReturnChallanService from './yarnPoReturnChallan.service.js';
-import {
-  isTransactionUnsupportedError,
-  normaliseVendorReturnActor,
-} from './yarnPoVendorReturnFinalize.lib.js';
+import { normaliseVendorReturnActor } from './yarnPoVendorReturnFinalize.lib.js';
+import { runWithOptionalMongoTransaction } from '../../utils/mongoDeployment.js';
 
 /**
  * Adjusts PO received lot subdocuments after box-level vendor return.
@@ -180,27 +178,7 @@ export async function archiveBoxesAndCompleteReturn(params) {
     }
   };
 
-  const mongoSession = await mongoose.startSession();
-  try {
-    mongoSession.startTransaction();
-    try {
-      await applyFinalizeMutations(mongoSession);
-      await mongoSession.commitTransaction();
-    } catch (inner) {
-      await mongoSession.abortTransaction().catch(() => {});
-      throw inner;
-    }
-  } catch (err) {
-    if (isTransactionUnsupportedError(err)) {
-      // eslint-disable-next-line no-console
-      console.warn('[yarnPoVendorReturn] Mongo transaction unavailable; finalizing boxes without transaction');
-      await applyFinalizeMutations(null);
-    } else {
-      throw err;
-    }
-  } finally {
-    await mongoSession.endSession().catch(() => {});
-  }
+  await runWithOptionalMongoTransaction(applyFinalizeMutations, 'yarnPoVendorReturnBox');
 
   await syncInventoriesFromStorageForCatalogIds([...catalogIdSet]);
 
