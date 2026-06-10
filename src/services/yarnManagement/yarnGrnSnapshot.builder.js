@@ -6,7 +6,7 @@
 const SUPPLIER_HOME_STATES = new Set(['maharashtra', 'mh']);
 
 const CONSIGNEE_DEFAULT = Object.freeze({
-  name: 'ADDON HOLDINGS',
+  name: 'ADDON HOLDINGS PRIVATE LIMITED',
   address: '',
   stateCode: '27',
   gstNo: '27AAACA8827A1ZZ',

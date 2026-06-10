@@ -165,7 +165,7 @@ describe('yarnPoReturnChallanSnapshot.builder', () => {
   });
 
   describe('buildReturnChallanSnapshot', () => {
-    test('sets supplier to ADDON HOLDINGS and consignee to vendor', async () => {
+    test('sets supplier to ADDON HOLDINGS PRIVATE LIMITED and consignee to vendor', async () => {
       jest.spyOn(YarnCatalog, 'find').mockReturnValue({
         select: jest.fn().mockReturnValue({
           lean: jest.fn().mockResolvedValue([]),
@@ -175,7 +175,7 @@ describe('yarnPoReturnChallanSnapshot.builder', () => {
       const snapshot = await buildReturnChallanSnapshot(buildVendorReturn(), buildPopulatedPo());
 
       expect(snapshot.supplier).toMatchObject({
-        name: 'ADDON HOLDINGS',
+        name: 'ADDON HOLDINGS PRIVATE LIMITED',
         gstNo: '27AAACA8827A1ZZ',
       });
       expect(snapshot.consignee).toMatchObject({

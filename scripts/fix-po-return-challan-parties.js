@@ -60,7 +60,7 @@ const consigneeFromLegacySupplier = (legacySupplier) => ({
  * @returns {boolean}
  */
 const isLegacyLayout = (challan) =>
-  (challan.consignee?.name || '').trim().toUpperCase() === 'ADDON HOLDINGS';
+  /^(ADDON HOLDINGS|ADDON HOLDINGS PRIVATE LIMITED)$/i.test((challan.consignee?.name || '').trim());
 
 /**
  * Mongo filter for challans needing party snapshot repair.
@@ -91,7 +91,9 @@ const resolveConsigneeForRepair = async (challan, po) => {
 
   if (isLegacyLayout(challan)) {
     const fromLegacy = consigneeFromLegacySupplier(challan.supplier);
-    const supplierIsAddon = (challan.supplier?.name || '').trim().toUpperCase() === 'ADDON HOLDINGS';
+    const supplierIsAddon = /^(ADDON HOLDINGS|ADDON HOLDINGS PRIVATE LIMITED)$/i.test(
+      (challan.supplier?.name || '').trim()
+    );
     const legacyComplete =
       fromLegacy.name &&
       !supplierIsAddon &&
