@@ -5,6 +5,7 @@
 import '../../src/scripts/lib/mongoUrlParsePatch.js';
 import mongoose from 'mongoose';
 import dns from 'dns/promises';
+import { parseMongoRetryWrites, setRetryWritesOnUri } from '../../src/config/mongoUri.js';
 
 /**
  * @param {string} rawUrl
@@ -98,9 +99,10 @@ export async function resolveMongoUriForScript(mongoUrl) {
   if (!cleaned) {
     throw new Error('Missing MONGODB_URL — set it in AddOn_backend/.env');
   }
-  const safeUri = (await expandSrvUriIfNeeded(
+  const expanded = (await expandSrvUriIfNeeded(
     stripUnsupportedMongoParams(normalizeMongoUri(cleaned))
   )).replace(/\s/g, '');
+  const safeUri = setRetryWritesOnUri(expanded, parseMongoRetryWrites(process.env.MONGODB_RETRY_WRITES));
   if (!/^mongodb:\/\//i.test(safeUri)) {
     throw new Error('Resolved Mongo URI is invalid after normalization');
   }
@@ -118,6 +120,10 @@ export async function connectMongooseForScript(config) {
     throw new Error('Missing config.mongoose.url (check MONGODB_URL in .env).');
   }
   const safeUri = await resolveMongoUriForScript(mongoUrl);
-  await mongoose.connect(safeUri, config.mongoose.options || {});
+  const retryWrites = parseMongoRetryWrites(process.env.MONGODB_RETRY_WRITES);
+  await mongoose.connect(safeUri, {
+    ...(config.mongoose.options || {}),
+    retryWrites,
+  });
   return redactMongoUri(safeUri);
 }

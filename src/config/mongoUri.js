@@ -1,0 +1,48 @@
+/**
+ * Sets or replaces `retryWrites` on a MongoDB connection URI.
+ * Standalone MongoDB deployments require `retryWrites=false`.
+ *
+ * @param {string} uri - Mongo connection string
+ * @param {boolean} [enabled=false] - Whether retryable writes are enabled
+ * @returns {string}
+ */
+export function setRetryWritesOnUri(uri, enabled = false) {
+  const raw = String(uri || '').trim();
+  if (!raw) return raw;
+
+  const qIdx = raw.indexOf('?');
+  const base = qIdx === -1 ? raw : raw.slice(0, qIdx);
+  const query = qIdx === -1 ? '' : raw.slice(qIdx + 1);
+
+  const params = new Map();
+  if (query) {
+    for (const part of query.split('&')) {
+      if (!part) continue;
+      const eq = part.indexOf('=');
+      const key = (eq === -1 ? part : part.slice(0, eq)).trim();
+      const val = eq === -1 ? '' : part.slice(eq + 1);
+      if (key && key.toLowerCase() !== 'retrywrites') {
+        params.set(key, val);
+      }
+    }
+  }
+
+  params.set('retryWrites', enabled ? 'true' : 'false');
+  const qs = [...params.entries()]
+    .map(([k, v]) => (v === '' ? k : `${k}=${v}`))
+    .join('&');
+
+  return `${base}?${qs}`;
+}
+
+/**
+ * Parses `MONGODB_RETRY_WRITES` env value (defaults to false for standalone hosts).
+ *
+ * @param {string | boolean | undefined} raw
+ * @returns {boolean}
+ */
+export function parseMongoRetryWrites(raw) {
+  if (raw === true || raw === 'true') return true;
+  if (raw === false || raw === 'false') return false;
+  return false;
+}

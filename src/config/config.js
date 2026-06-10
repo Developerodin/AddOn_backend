@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import path from 'path';
 import Joi from 'joi';
+import { parseMongoRetryWrites, setRetryWritesOnUri } from './mongoUri.js';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
@@ -9,6 +10,10 @@ const envVarsSchema = Joi.object()
     NODE_ENV: Joi.string().valid('production', 'development', 'test').required(),
     PORT: Joi.number().default(3000),
     MONGODB_URL: Joi.string().required().description('MongoDB URL'),
+    MONGODB_RETRY_WRITES: Joi.string()
+      .valid('true', 'false')
+      .default('false')
+      .description('Enable MongoDB retryable writes (false for standalone deployments)'),
     JWT_SECRET: Joi.string().required().description('JWT secret key'),
     JWT_ACCESS_EXPIRATION_MINUTES: Joi.number().default(30).description('minutes after which access tokens expire'),
     JWT_REFRESH_EXPIRATION_DAYS: Joi.number().default(30).description('days after which refresh tokens expire'),
@@ -37,15 +42,19 @@ if (error) {
   throw Error(`Config validation error: ${error.message}`);
 }
 
+const mongoRetryWrites = parseMongoRetryWrites(envVars.MONGODB_RETRY_WRITES);
+const mongoBaseUrl = envVars.MONGODB_URL + (envVars.NODE_ENV === 'test' ? '-test' : '');
+
 const config = {
   env: envVars.NODE_ENV,
   port: envVars.PORT,
   mongoose: {
-    url: envVars.MONGODB_URL + (envVars.NODE_ENV === 'test' ? '-test' : ''),
+    url: setRetryWritesOnUri(mongoBaseUrl, mongoRetryWrites),
     options: {
       useCreateIndex: true, // Optional: Remove this if using Mongoose v6+
       useNewUrlParser: true,
       useUnifiedTopology: true,
+      retryWrites: mongoRetryWrites,
     },
   },
   jwt: {
