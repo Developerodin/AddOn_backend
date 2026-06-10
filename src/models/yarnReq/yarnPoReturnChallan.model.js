@@ -41,6 +41,7 @@ const challanConsigneeSchema = mongoose.Schema(
 
 const challanLineSchema = mongoose.Schema(
   {
+    lineType: { type: String, enum: ['cone', 'box'], default: 'cone' },
     barcode: { type: String, trim: true, required: true },
     coneId: { type: mongoose.Schema.Types.ObjectId, ref: 'YarnCone' },
     boxId: { type: String, trim: true },
@@ -57,6 +58,7 @@ const challanLineSchema = mongoose.Schema(
 
 const challanTotalsSchema = mongoose.Schema(
   {
+    boxCount: { type: Number, default: 0, min: 0 },
     coneCount: { type: Number, default: 0, min: 0 },
     totalNetWeight: { type: Number, default: 0, min: 0 },
     totalGrossWeight: { type: Number, default: 0, min: 0 },

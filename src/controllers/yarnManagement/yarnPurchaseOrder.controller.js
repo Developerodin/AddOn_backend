@@ -222,6 +222,16 @@ export const createVendorReturnSessionController = catchAsync(async (req, res) =
 });
 
 /**
+ * GET pending vendor-return session with staged cone previews.
+ */
+export const getVendorReturnSessionController = catchAsync(async (req, res) => {
+  const payload = await yarnPoVendorReturnService.getVendorReturnSessionWithPreviews({
+    sessionId: req.params.sessionId,
+  });
+  res.status(httpStatus.OK).send(payload);
+});
+
+/**
  * POST add scanned cone barcode to pending list.
  */
 export const scanVendorReturnSessionBarcode = catchAsync(async (req, res) => {
@@ -266,4 +276,39 @@ export const getVendorReturnHistory = catchAsync(async (req, res) => {
     limit: limit != null ? Number(limit) : undefined,
   });
   res.status(httpStatus.OK).send(rows);
+});
+
+/**
+ * POST QC lot return — hybrid auto-finalize + ST pending session.
+ */
+export const finalizeQcLotReturnController = catchAsync(async (req, res) => {
+  const result = await yarnPoVendorReturnService.finalizeQcLotReturn({
+    poNumber: req.body.poNumber,
+    lotNumber: req.body.lotNumber,
+    remark: req.body.remark,
+    user: vendorReturnActor(req),
+  });
+  res.status(httpStatus.CREATED).send(result);
+});
+
+/**
+ * POST QC full PO return — hybrid auto-finalize + ST pending session.
+ */
+export const finalizeQcPoReturnController = catchAsync(async (req, res) => {
+  const result = await yarnPoVendorReturnService.finalizeQcPoReturn({
+    poNumber: req.body.poNumber,
+    remark: req.body.remark,
+    user: vendorReturnActor(req),
+  });
+  res.status(httpStatus.CREATED).send(result);
+});
+
+/**
+ * GET QC pending ST cones for vendor-return finalize on PO Return page.
+ */
+export const getQcPendingVendorReturnsController = catchAsync(async (req, res) => {
+  const result = await yarnPoVendorReturnService.getQcPendingVendorReturns({
+    poNumber: req.query.poNumber,
+  });
+  res.status(httpStatus.OK).send(result);
 });

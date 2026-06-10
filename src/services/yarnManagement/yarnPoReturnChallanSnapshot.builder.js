@@ -124,13 +124,15 @@ const resolveYarnCatalogFields = async (lines) => {
  */
 export const buildReturnChallanSnapshot = async (vendorReturn, purchaseOrder) => {
   const po = purchaseOrder || {};
-  const lines = Array.isArray(vendorReturn?.lines) ? vendorReturn.lines : [];
-  const catalogFieldsById = await resolveYarnCatalogFields(lines);
+  const coneLines = Array.isArray(vendorReturn?.lines) ? vendorReturn.lines : [];
+  const boxLines = Array.isArray(vendorReturn?.boxLines) ? vendorReturn.boxLines : [];
+  const catalogFieldsById = await resolveYarnCatalogFields([...coneLines, ...boxLines]);
 
-  const snapshotLines = lines.map((line) => {
+  const snapshotConeLines = coneLines.map((line) => {
     const catalogId = line?.yarnCatalogId?.toString?.() || (typeof line?.yarnCatalogId === 'string' ? line.yarnCatalogId : '');
     const catalogFields = catalogFieldsById.get(catalogId);
     return {
+      lineType: 'cone',
       barcode: trimSafe(line.barcode),
       coneId: line.coneId,
       boxId: trimSafe(line.boxId),
@@ -144,6 +146,27 @@ export const buildReturnChallanSnapshot = async (vendorReturn, purchaseOrder) =>
     };
   });
 
+  const snapshotBoxLines = boxLines.map((line) => {
+    const catalogId = line?.yarnCatalogId?.toString?.() || (typeof line?.yarnCatalogId === 'string' ? line.yarnCatalogId : '');
+    const catalogFields = catalogFieldsById.get(catalogId);
+    const boxId = trimSafe(line.boxId);
+    const coneCount = toNumber(line.numberOfCones);
+    const yarnLabel = catalogFields?.yarnName || trimSafe(line.yarnName);
+    return {
+      lineType: 'box',
+      barcode: boxId,
+      boxId,
+      lotNumber: trimSafe(line.lotNumber),
+      yarnCatalogId: catalogId || undefined,
+      yarnName: coneCount > 0 ? `${yarnLabel} (${coneCount} cones)`.trim() : yarnLabel,
+      hsnCode: catalogFields?.hsnCode || '',
+      coneWeight: toNumber(line.boxWeight),
+      tearWeight: toNumber(line.tearWeight),
+      netWeight: toNumber(line.netWeight),
+    };
+  });
+
+  const snapshotLines = [...snapshotBoxLines, ...snapshotConeLines];
   const totalNetWeight = snapshotLines.reduce((s, l) => s + l.netWeight, 0);
   const totalGrossWeight = snapshotLines.reduce((s, l) => s + l.coneWeight, 0);
 
@@ -152,7 +175,8 @@ export const buildReturnChallanSnapshot = async (vendorReturn, purchaseOrder) =>
     consignee: await buildVendorConsigneeSnapshot(po),
     lines: snapshotLines,
     totals: {
-      coneCount: snapshotLines.length,
+      boxCount: snapshotBoxLines.length,
+      coneCount: snapshotConeLines.length,
       totalNetWeight,
       totalGrossWeight,
     },

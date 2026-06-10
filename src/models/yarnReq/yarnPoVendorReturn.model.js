@@ -5,6 +5,22 @@ export const yarnPoVendorReturnStatuses = ['pending_session', 'completed', 'canc
 
 export const vendorReturnCancellationIntents = ['partial', 'full_po'];
 
+const boxLineSchema = mongoose.Schema(
+  {
+    boxId: { type: String, trim: true, required: true },
+    lotNumber: { type: String, trim: true, default: '' },
+    yarnCatalogId: { type: mongoose.Schema.Types.ObjectId, ref: 'YarnCatalog' },
+    yarnName: { type: String, trim: true, default: '' },
+    shadeCode: { type: String, trim: true, default: '' },
+    numberOfCones: { type: Number, min: 0, default: 0 },
+    boxWeight: { type: Number, min: 0, default: 0 },
+    tearWeight: { type: Number, min: 0, default: 0 },
+    netWeight: { type: Number, min: 0, default: 0 },
+    storageLocationBefore: { type: String, trim: true, default: '' },
+  },
+  { _id: false }
+);
+
 const coneLineSchema = mongoose.Schema(
   {
     barcode: { type: String, trim: true, required: true },
@@ -49,9 +65,12 @@ const yarnPoVendorReturnSchema = mongoose.Schema(
     remark: { type: String, trim: true, default: '' },
     /** Barcodes staged before finalize (deduped). */
     pendingBarcodes: { type: [String], default: [] },
-    /** Populated on finalize for audit. */
+    /** Populated on finalize for audit (cone barcodes). */
     lines: { type: [coneLineSchema], default: [] },
+    /** Whole LT boxes returned without cone extraction. */
+    boxLines: { type: [boxLineSchema], default: [] },
     totalNetWeight: { type: Number, min: 0, default: 0 },
+    boxCount: { type: Number, min: 0, default: 0 },
     coneCount: { type: Number, min: 0, default: 0 },
     createdBy: createdBySchema,
     completedAt: { type: Date, default: null },

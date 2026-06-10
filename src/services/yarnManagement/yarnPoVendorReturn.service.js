@@ -6,80 +6,18 @@ import YarnCone from '../../models/yarnReq/yarnCone.model.js';
 import YarnBox from '../../models/yarnReq/yarnBox.model.js';
 import ApiError from '../../utils/ApiError.js';
 import { activeYarnConeMatch } from './yarnStockActiveFilters.js';
-import { syncInventoriesFromStorageForCatalogIds } from './yarnInventory.service.js';
 import * as yarnPoReturnChallanService from './yarnPoReturnChallan.service.js';
+import {
+  archiveConesAndCompleteReturn,
+  buildLinePayloadsFromCones,
+  normaliseVendorReturnActor,
+} from './yarnPoVendorReturnFinalize.lib.js';
 
-/**
- * Standalone MongoDB instances do not support multi-document transactions.
- *
- * @param {unknown} err
- * @returns {boolean}
- */
-function isTransactionUnsupportedError(err) {
-  const code = err && typeof err === 'object' && 'code' in err ? /** @type {any} */ (err).code : undefined;
-  const msg = String(err && typeof err === 'object' && 'message' in err ? /** @type {any} */ (err).message : err);
-  return code === 20 || /replica set|mongos|transaction numbers/i.test(msg);
-}
-
-/**
- * @param {{ userId?: string, username?: string }} u
- * @returns {{ user: import('mongoose').Types.ObjectId | null, username: string }}
- */
-function normaliseActor(u) {
-  const username = String(u?.username || 'system').trim() || 'system';
-  let user = null;
-  if (u?.userId && mongoose.Types.ObjectId.isValid(String(u.userId))) {
-    user = new mongoose.Types.ObjectId(String(u.userId));
-  }
-  return { user, username };
-}
-
-/**
- * Adjusts PO received lot subdocuments after vendor return (cone-level).
- *
- * @param {import('mongoose').Document} purchaseOrder
- * @param {Array<{ lotNumber?: string, yarnCatalogId?: import('mongoose').Types.ObjectId | null, grossWeight?: number }>} lines
- * @returns {void}
- */
-function applyVendorReturnToReceivedLots(purchaseOrder, lines) {
-  const lots = purchaseOrder.receivedLotDetails;
-  if (!Array.isArray(lots) || lots.length === 0) return;
-
-  const poItems = purchaseOrder.poItems || [];
-
-  for (const snap of lines) {
-    const ln = String(snap.lotNumber || '').trim();
-    if (!ln) continue;
-
-    const lot = lots.find((l) => String(l.lotNumber || '').trim() === ln);
-    if (!lot) continue;
-
-    if (typeof lot.numberOfCones === 'number') {
-      lot.numberOfCones = Math.max(0, lot.numberOfCones - 1);
-    }
-    const gw = Number(snap.grossWeight || 0);
-    if (gw > 0 && typeof lot.totalWeight === 'number') {
-      lot.totalWeight = Math.max(0, lot.totalWeight - gw);
-    }
-
-    const lotPoItems = lot.poItems;
-    if (!Array.isArray(lotPoItems) || lotPoItems.length === 0) continue;
-
-    let targetIdx = -1;
-    if (snap.yarnCatalogId) {
-      targetIdx = lotPoItems.findIndex((p) => {
-        const line = poItems.find((pi) => pi._id && String(pi._id) === String(p.poItem));
-        return line && line.yarnCatalogId && String(line.yarnCatalogId) === String(snap.yarnCatalogId);
-      });
-    }
-    if (targetIdx < 0) targetIdx = 0;
-
-    const row = lotPoItems[targetIdx];
-    if (row && typeof row.receivedQuantity === 'number' && row.receivedQuantity > 0) {
-      row.receivedQuantity = Math.max(0, row.receivedQuantity - 1);
-    }
-  }
-}
+export {
+  finalizeQcLotReturn,
+  finalizeQcPoReturn,
+  getQcPendingVendorReturns,
+} from './yarnPoVendorReturnQc.service.js';
 
 /**
  * Loads a cone that is eligible for vendor return scanning.
@@ -104,8 +42,9 @@ async function loadActiveConeForVendorReturn(barcode) {
  *
  * @param {import('mongoose').Document} cone
  * @param {string} expectedPoNumber
+ * @param {{ skipStorageCheck?: boolean }} [options]
  */
-function assertConeEligibleForVendorReturn(cone, expectedPoNumber) {
+function assertConeEligibleForVendorReturn(cone, expectedPoNumber, options = {}) {
   const po = String(expectedPoNumber || '').trim();
   if (String(cone.poNumber || '').trim() !== po) {
     throw new ApiError(
@@ -113,9 +52,11 @@ function assertConeEligibleForVendorReturn(cone, expectedPoNumber) {
       `Cone ${cone.barcode} belongs to PO ${cone.poNumber}, not ${po}`
     );
   }
-  const st = cone.coneStorageId != null && String(cone.coneStorageId).trim() !== '';
-  if (!st) {
-    throw new ApiError(httpStatus.BAD_REQUEST, `Cone ${cone.barcode} is not in short-term storage (no slot).`);
+  if (!options.skipStorageCheck) {
+    const st = cone.coneStorageId != null && String(cone.coneStorageId).trim() !== '';
+    if (!st) {
+      throw new ApiError(httpStatus.BAD_REQUEST, `Cone ${cone.barcode} is not in short-term storage (no slot).`);
+    }
   }
   if (String(cone.issueStatus) !== 'not_issued') {
     throw new ApiError(
@@ -143,7 +84,7 @@ export const createVendorReturnSession = async (params) => {
   if (!po) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Purchase order not found');
   }
-  const actor = normaliseActor(params.user || {});
+  const actor = normaliseVendorReturnActor(params.user || {});
 
   const doc = await YarnPoVendorReturn.create({
     poNumber,
@@ -175,8 +116,9 @@ export const scanVendorReturnBarcode = async (params) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Vendor return session not found or already closed');
   }
 
+  const isQcStSession = String(session.remark || '').startsWith('QC return (ST pending scan)');
   const cone = await loadActiveConeForVendorReturn(params.barcode);
-  assertConeEligibleForVendorReturn(cone, session.poNumber);
+  assertConeEligibleForVendorReturn(cone, session.poNumber, { skipStorageCheck: isQcStSession });
 
   const bc = String(cone.barcode || '').trim();
   const pending = session.pendingBarcodes || [];
@@ -225,7 +167,6 @@ export const removePendingVendorReturnBarcode = async (params) => {
 
 /**
  * Finalizes vendor return: archives cones, updates PO, syncs inventory.
- * Does not mutate {@link YarnBox#boxWeight}; only cone rows and PO/inventory reflect the return.
  *
  * @param {{ sessionId: string, user?: { userId?: string, username?: string }, idempotencyKey?: string }} params
  * @returns {Promise<{ vendorReturn: object, purchaseOrder: object, idempotent?: boolean }>}
@@ -259,159 +200,81 @@ export const finalizeVendorReturnSession = async (params) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'No cones scanned — add at least one barcode before finalize');
   }
 
-  /** @type {Array<object>} */
-  const linePayloads = [];
-  const catalogIdSet = new Set();
-
+  const isQcStSession = String(session.remark || '').startsWith('QC return (ST pending scan)');
+  /** @type {import('mongoose').Document[]} */
+  const coneDocs = [];
   for (const barcode of pending) {
     const cone = await loadActiveConeForVendorReturn(barcode);
-    assertConeEligibleForVendorReturn(cone, session.poNumber);
-
-    const box = cone.boxId ? await YarnBox.findOne({ boxId: cone.boxId }).select('lotNumber').lean() : null;
-    const gw = Number(cone.coneWeight || 0);
-    const tw = Number(cone.tearWeight || 0);
-    const net = Math.max(0, gw - tw);
-
-    linePayloads.push({
-      barcode: cone.barcode,
-      coneId: cone._id,
-      boxId: cone.boxId,
-      lotNumber: box?.lotNumber ? String(box.lotNumber) : '',
-      yarnCatalogId: cone.yarnCatalogId || undefined,
-      coneWeight: gw,
-      tearWeight: tw,
-      netWeight: net,
-      coneStorageIdBefore: cone.coneStorageId ? String(cone.coneStorageId) : '',
-      grossWeight: gw,
-    });
-
-    if (cone.yarnCatalogId) catalogIdSet.add(String(cone.yarnCatalogId));
+    assertConeEligibleForVendorReturn(cone, session.poNumber, { skipStorageCheck: isQcStSession });
+    coneDocs.push(cone);
   }
 
-  const now = new Date();
-  const actor = normaliseActor(params.user || {});
-  const returnDocId = session._id;
-  const linesForDoc = linePayloads.map((l) => ({
-    barcode: l.barcode,
-    coneId: l.coneId,
-    boxId: l.boxId,
-    lotNumber: l.lotNumber,
-    yarnCatalogId: l.yarnCatalogId,
-    coneWeight: l.coneWeight,
-    tearWeight: l.tearWeight,
-    netWeight: l.netWeight,
-    coneStorageIdBefore: l.coneStorageIdBefore,
-  }));
-  const totalNetWeight = linePayloads.reduce((s, l) => s + l.netWeight, 0);
-  const vrSessionId = session._id;
-  const poNumber = session.poNumber;
-  const cancellationIntent = session.cancellationIntent;
-  const remark = session.remark || '';
+  const { linePayloads } = await buildLinePayloadsFromCones(coneDocs, session.poNumber);
+  const actor = normaliseVendorReturnActor(params.user || {});
 
-  /**
-   * Archives cones, completes YarnPoVendorReturn, patches PO — optionally in a Mongo transaction.
-   *
-   * @param {import('mongoose').ClientSession | null} mongoSession
-   */
-  const applyFinalizeMutations = async (mongoSession) => {
-    const opts = mongoSession ? { session: mongoSession } : {};
+  const result = await archiveConesAndCompleteReturn({
+    returnDocId: session._id,
+    linePayloads,
+    poNumber: session.poNumber,
+    cancellationIntent: session.cancellationIntent,
+    remark: session.remark || '',
+    actor,
+    user: params.user,
+    idempotencyKey: idem || undefined,
+  });
 
-    for (const line of linePayloads) {
-      const updated = await YarnCone.findOneAndUpdate(
-        { _id: line.coneId, ...activeYarnConeMatch },
-        {
-          $set: {
-            returnedToVendorAt: now,
-            vendorReturnId: returnDocId,
-            issueStatus: 'returned_to_vendor',
-          },
-          $unset: { coneStorageId: '', orderId: '', articleId: '' },
-        },
-        { new: true, ...opts }
-      ).exec();
-      if (!updated) {
-        throw new ApiError(
-          httpStatus.CONFLICT,
-          `Cone ${line.barcode} could not be archived — it may have been issued or already returned.`
-        );
-      }
-    }
-
-    const completedBy = { username: actor.username, user: actor.user };
-    const setDoc = {
-      status: 'completed',
-      lines: linesForDoc,
-      pendingBarcodes: [],
-      coneCount: linePayloads.length,
-      totalNetWeight,
-      completedAt: now,
-      completedBy,
-    };
-    if (idem) setDoc.idempotencyKey = idem;
-
-    await YarnPoVendorReturn.findByIdAndUpdate(vrSessionId, { $set: setDoc }, opts);
-
-    const purchaseOrder = mongoSession
-      ? await YarnPurchaseOrder.findOne({ poNumber }).session(mongoSession)
-      : await YarnPurchaseOrder.findOne({ poNumber });
-    if (purchaseOrder) {
-      applyVendorReturnToReceivedLots(purchaseOrder, linePayloads);
-      purchaseOrder.vendorReturnRequiresErpCancellation = true;
-      purchaseOrder.lastVendorReturnCancellationIntent = cancellationIntent;
-      purchaseOrder.lastVendorReturnId = vrSessionId;
-
-      if (actor.user) {
-        if (!purchaseOrder.statusLogs) purchaseOrder.statusLogs = [];
-        purchaseOrder.statusLogs.push({
-          statusCode: purchaseOrder.currentStatus,
-          updatedBy: {
-            username: actor.username,
-            user: actor.user,
-          },
-          updatedAt: now,
-          notes: `Vendor return finalized: ${linePayloads.length} cone(s). ${remark} ERP: ${cancellationIntent}.`,
-        });
-      }
-
-      await purchaseOrder.save(opts);
-    }
+  return {
+    vendorReturn: result.vendorReturn,
+    purchaseOrder: result.purchaseOrder,
+    challan: result.challan,
   };
+};
 
-  const mongoSession = await mongoose.startSession();
-  try {
-    mongoSession.startTransaction();
-    try {
-      await applyFinalizeMutations(mongoSession);
-      await mongoSession.commitTransaction();
-    } catch (inner) {
-      await mongoSession.abortTransaction().catch(() => {});
-      throw inner;
-    }
-  } catch (err) {
-    if (isTransactionUnsupportedError(err)) {
-      // eslint-disable-next-line no-console -- dev DBs often run without replica set
-      console.warn('[yarnPoVendorReturn] Mongo transaction unavailable; finalizing without transaction');
-      await applyFinalizeMutations(null);
-    } else {
-      throw err;
-    }
-  } finally {
-    await mongoSession.endSession().catch(() => {});
+/**
+ * Loads a pending vendor-return session with cone preview rows for staged barcodes.
+ *
+ * @param {{ sessionId: string }} params
+ * @returns {Promise<{ session: object, pendingRows: object[] }>}
+ */
+export const getVendorReturnSessionWithPreviews = async (params) => {
+  const sessionId = String(params.sessionId || '').trim();
+  if (!sessionId || !mongoose.Types.ObjectId.isValid(sessionId)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid session id');
   }
 
-  await syncInventoriesFromStorageForCatalogIds([...catalogIdSet]);
+  const session = await YarnPoVendorReturn.findById(sessionId);
+  if (!session || session.status !== 'pending_session') {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Vendor return session not found or already closed');
+  }
 
-  const populated = await YarnPoVendorReturn.findById(session._id).lean();
-  const purchaseOrderAfter = await YarnPurchaseOrder.findOne({ poNumber });
-  const poOut = purchaseOrderAfter ? purchaseOrderAfter.toJSON() : null;
+  const pendingRows = [];
+  for (const bc of session.pendingBarcodes || []) {
+    try {
+      const cone = await loadActiveConeForVendorReturn(bc);
+      const box = cone.boxId
+        ? await YarnBox.findOne({ boxId: cone.boxId }).select('lotNumber').lean()
+        : null;
+      pendingRows.push({
+        barcode: String(cone.barcode || bc),
+        yarnName: String(cone.yarnName || '—'),
+        lotNumber: String(box?.lotNumber || '—'),
+        boxId: String(cone.boxId || '—'),
+        coneWeight: Number(cone.coneWeight ?? 0),
+        tearWeight: Number(cone.tearWeight ?? 0),
+      });
+    } catch {
+      pendingRows.push({
+        barcode: bc,
+        yarnName: '—',
+        lotNumber: '—',
+        boxId: '—',
+        coneWeight: 0,
+        tearWeight: 0,
+      });
+    }
+  }
 
-  const challan = await yarnPoReturnChallanService.createChallanFromVendorReturn(
-    populated,
-    purchaseOrderAfter,
-    params.user || {}
-  );
-
-  return { vendorReturn: populated, purchaseOrder: poOut, challan };
+  return { session: session.toJSON(), pendingRows };
 };
 
 /**

@@ -20,6 +20,13 @@ router
   );
 
 router
+  .route('/vendor-return/sessions/:sessionId')
+  .get(
+    validate(yarnPurchaseOrderValidation.vendorReturnSessionGet),
+    yarnPurchaseOrderController.getVendorReturnSessionController
+  );
+
+router
   .route('/vendor-return/sessions/:sessionId/scan')
   .post(
     validate(yarnPurchaseOrderValidation.vendorReturnSessionScan),
@@ -35,6 +42,27 @@ router
   .post(
     validate(yarnPurchaseOrderValidation.vendorReturnSessionFinalize),
     yarnPurchaseOrderController.finalizeVendorReturnSessionController
+  );
+
+router
+  .route('/vendor-return/qc/lot')
+  .post(
+    validate(yarnPurchaseOrderValidation.vendorReturnQcLot),
+    yarnPurchaseOrderController.finalizeQcLotReturnController
+  );
+
+router
+  .route('/vendor-return/qc/po')
+  .post(
+    validate(yarnPurchaseOrderValidation.vendorReturnQcPo),
+    yarnPurchaseOrderController.finalizeQcPoReturnController
+  );
+
+router
+  .route('/vendor-return/qc/pending')
+  .get(
+    validate(yarnPurchaseOrderValidation.vendorReturnQcPending),
+    yarnPurchaseOrderController.getQcPendingVendorReturnsController
   );
 
 router

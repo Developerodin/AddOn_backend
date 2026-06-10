@@ -205,7 +205,7 @@ const getVendorReturnPurRetMap = async (startDate, endDate) => {
     status: 'completed',
     completedAt: { $gte: startDate, $lte: endDate },
   })
-    .select('poNumber lines')
+    .select('poNumber lines boxLines')
     .lean();
 
   if (!sessions.length) return new Map();
@@ -235,6 +235,30 @@ const getVendorReturnPurRetMap = async (startDate, endDate) => {
       const kg = toNum(
         line.netWeight ?? Math.max(0, toNum(line.coneWeight) - toNum(line.tearWeight))
       );
+
+      if (!out.has(key)) {
+        out.set(key, {
+          yarnId,
+          shadeCode,
+          supplierId,
+          supplierName,
+          purRet: 0,
+          rate: toNum(poItem?.rate),
+          gstRate: toNum(poItem?.gstRate),
+          pantoneName: (poItem?.pantoneName || '').trim(),
+        });
+      }
+      out.get(key).purRet += kg;
+    }
+
+    for (const line of session.boxLines || []) {
+      const yarnId = line.yarnCatalogId?.toString?.() ?? '';
+      if (!yarnId) continue;
+
+      const poItem = (po.poItems || []).find((item) => item.yarnCatalogId?.toString?.() === yarnId);
+      const shadeCode = (poItem?.shadeCode || line.shadeCode || '').trim();
+      const key = `${yarnId}|${shadeCode}|${supplierId}`;
+      const kg = toNum(line.netWeight ?? Math.max(0, toNum(line.boxWeight) - toNum(line.tearWeight)));
 
       if (!out.has(key)) {
         out.set(key, {
@@ -299,6 +323,22 @@ const getPurchaseDataByYarnShadeSupplier = async (startDate, endDate) => {
 
   const map = new Map();
 
+  const vendorReturnLotsInRange = new Set();
+  const completedReturnsInRange = await YarnPoVendorReturn.find({
+    status: 'completed',
+    completedAt: { $gte: startDate, $lte: endDate },
+  })
+    .select('poNumber lines.lotNumber')
+    .lean();
+  for (const vr of completedReturnsInRange) {
+    for (const line of vr.lines || []) {
+      const ln = String(line.lotNumber || '').trim();
+      if (ln && vr.poNumber) {
+        vendorReturnLotsInRange.add(`${vr.poNumber}|${ln}`);
+      }
+    }
+  }
+
   for (const po of pos) {
     const supplierId = po.supplier?._id?.toString?.() ?? po.supplier?.toString?.() ?? '';
     const supplierName = supplierBrandMap.get(supplierId) ?? po.supplier?.brandName ?? po.supplierName ?? '';
@@ -323,7 +363,10 @@ const getPurchaseDataByYarnShadeSupplier = async (startDate, endDate) => {
           if (lot.status === 'lot_rejected' && rejectionInRange) {
             purRet += qty;
           } else if (lot.status === 'lot_returned_to_vendor' && rejectionInRange) {
-            purRet += qty;
+            const lotKey = `${po.poNumber}|${String(lot.lotNumber || '').trim()}`;
+            if (!vendorReturnLotsInRange.has(lotKey)) {
+              purRet += qty;
+            }
           } else if (lot.status === 'lot_accepted' && poInRange) {
             pur += qty;
           }

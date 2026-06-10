@@ -449,12 +449,49 @@ export const vendorReturnSessionFinalize = {
     .default({}),
 };
 
+/** GET pending vendor-return session with staged barcodes */
+export const vendorReturnSessionGet = {
+  params: Joi.object().keys({
+    sessionId: Joi.string().custom(objectId).required(),
+  }),
+};
+
 /** GET vendor return history */
 export const vendorReturnHistory = {
   query: Joi.object()
     .keys({
       po_number: Joi.string().trim().optional(),
       limit: Joi.number().integer().min(1).max(200).optional(),
+    })
+    .required(),
+};
+
+/** POST QC lot return (hybrid vendor return) */
+export const vendorReturnQcLot = {
+  body: Joi.object()
+    .keys({
+      poNumber: Joi.string().trim().required(),
+      lotNumber: Joi.string().trim().required(),
+      remark: Joi.string().trim().required(),
+    })
+    .required(),
+};
+
+/** POST QC full PO return (hybrid vendor return) */
+export const vendorReturnQcPo = {
+  body: Joi.object()
+    .keys({
+      poNumber: Joi.string().trim().required(),
+      remark: Joi.string().trim().required(),
+    })
+    .required(),
+};
+
+/** GET QC pending ST cones for a PO */
+export const vendorReturnQcPending = {
+  query: Joi.object()
+    .keys({
+      poNumber: Joi.string().trim().required(),
     })
     .required(),
 };
