@@ -234,20 +234,32 @@ No upstream floors touched.
 
 ---
 
-## Brand-wise M2 → M1 merge (Final Checking)
+## Brand-wise M2 → M1 merge (Checking / Secondary / Final Checking)
+
+M2→M1 merge **skips Branding** in the cascade. For branded articles, the operator must assign brand equity at merge time in **M2 Management** — from **Checking**, **Secondary Checking**, or **Final Checking**.
 
 Brand allocation is required when **all** are true:
 
 1. Merge cascade includes **Final Checking**
 2. Article process includes **Branding** or **Re-Boarding**
-3. `finalChecking.receivedData` has brand breakdown rows
+3. Product catalog has at least one brand (`styleCodes`)
 
 Otherwise: merge is **qty-only** (no brand picker).
 
+**Brand budget source:**
+
+| Situation | Budget used |
+|-----------|----------------|
+| `finalChecking.receivedData` has brand rows (Branding already ran) | FC received − FC transferred (strict per-brand caps) |
+| Branding not done yet | Product catalog brands; split must sum to merge qty |
+
+**Single-brand articles:** backend auto-assigns full merge qty to that brand (no manual split).
+
 When brand is required:
 
-- Operator splits merge qty by brand (must sum to merge qty)
+- Multi-brand: operator splits merge qty by brand (must sum to merge qty)
 - Backend updates `finalChecking.transferredData` so scalar **M1Trf** and brand breakdown stay in sync
+- When merge cascade passes **Branding** or **Re-Boarding**, backend also updates that floor's `transferredData` (and `transferred` when cascade did not already bump it) so the Branding supervisor UI shows the merge brand split
 - **Dispatch** does not get brand lines on merge — only **RCV** bump; brand tracking on Dispatch happens on Final Checking → Dispatch transfer
 
 ---

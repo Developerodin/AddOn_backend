@@ -18,11 +18,14 @@ import {
   recalcQcFloorRemaining,
 } from '../../utils/m2Cascade.util.js';
 import {
-  articleRequiresBrandOnM2Merge,
+  applyM2MergeBrandingFloorTransferData,
+  buildSingleBrandM2MergeItems,
   formatM2MergeBrandRemarks,
   mergeTransferredDataByBrand,
-  validateM2MergeTransferItems,
+  resolveM2MergeBrandContext,
+  validateM2MergeBrandSplit,
 } from '../../utils/brandQuantity.util.js';
+import { getProductByCode } from '../product.service.js';
 
 const M2_QC_FLOORS = ['Checking', 'Secondary Checking', 'Final Checking'];
 
@@ -206,19 +209,30 @@ export const markM2MergeToM1 = async (entryId, body, user = {}) => {
   }
 
   const cascadeFloors = await getCascadeFloorsForM2Merge(article, entry.sourceFloor);
-  const brandRequired = await articleRequiresBrandOnM2Merge(article, cascadeFloors);
-  const fcData = article.floorQuantities?.finalChecking;
-  const receivedData = fcData?.receivedData || [];
-  const transferredData = fcData?.transferredData || [];
+  const floorOrder = await article.getFloorOrder();
+  const factoryCode = String(article.articleNumber ?? '').trim();
+  const product = factoryCode ? await getProductByCode(factoryCode) : null;
+  const productStyleCodes = (product?.styleCodes || []).map((sc) =>
+    typeof sc?.toObject === 'function' ? sc.toObject() : sc
+  );
+  const brandContext = resolveM2MergeBrandContext(
+    article,
+    cascadeFloors,
+    floorOrder,
+    productStyleCodes
+  );
+  const brandRequired = brandContext.required;
 
   let normalizedTransferItems = [];
   if (brandRequired) {
-    const validation = validateM2MergeTransferItems(
-      transferItems,
-      quantity,
-      receivedData,
-      transferredData
-    );
+    const itemsForValidation =
+      brandContext.multiBrand
+        ? transferItems
+        : transferItems?.length
+          ? transferItems
+          : buildSingleBrandM2MergeItems(quantity, brandContext.autoAssignBrand);
+
+    const validation = validateM2MergeBrandSplit(itemsForValidation, quantity, brandContext);
     if (!validation.valid) {
       throw new ApiError(httpStatus.BAD_REQUEST, validation.error);
     }
@@ -226,7 +240,7 @@ export const markM2MergeToM1 = async (entryId, body, user = {}) => {
   } else if (Array.isArray(transferItems) && transferItems.length > 0) {
     throw new ApiError(
       httpStatus.BAD_REQUEST,
-      'transferItems are not supported for this article merge (no brand breakdown on Final Checking)'
+      'transferItems are not supported for this article merge (article is not a branded process or has no catalog brands)'
     );
   }
 
@@ -273,6 +287,14 @@ export const markM2MergeToM1 = async (entryId, body, user = {}) => {
       normalizedTransferItems
     );
     article.markModified('floorQuantities.finalChecking');
+
+    applyM2MergeBrandingFloorTransferData(
+      article,
+      cascadeFloors,
+      normalizedTransferItems,
+      quantity,
+      productStyleCodes
+    );
   }
 
   const newRemaining = Math.max(0, entry.remainingQuantity - quantity);
