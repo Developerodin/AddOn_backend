@@ -108,3 +108,122 @@ export function buildBrandBudgetFromReceived(receivedData, transferredData) {
   }
   return budget;
 }
+
+const FINAL_CHECKING_LABEL = 'Final Checking';
+
+/**
+ * Whether Final Checking receivedData has brand breakdown rows.
+ * @param {Object} article
+ * @returns {boolean}
+ */
+export function finalCheckingHasBrandReceivedData(article) {
+  const receivedData = article?.floorQuantities?.finalChecking?.receivedData;
+  if (!Array.isArray(receivedData)) return false;
+  return receivedData.some(
+    (r) => (Number(r?.transferred ?? 0) > 0) && brandKey(r?.brand)
+  );
+}
+
+/**
+ * Whether article process includes a branding floor.
+ * @param {string[]} floorOrder
+ * @returns {boolean}
+ */
+export function articleHasBrandingInProcess(floorOrder) {
+  if (!Array.isArray(floorOrder)) return false;
+  return floorOrder.includes('Branding') || floorOrder.includes('Re-Boarding');
+}
+
+/**
+ * M2→M1 merge requires brand allocation when cascade hits Final Checking on a branded article.
+ * @param {Object} article - Mongoose article with getFloorOrder()
+ * @param {string[]} cascadeFloors
+ * @returns {Promise<boolean>}
+ */
+export async function articleRequiresBrandOnM2Merge(article, cascadeFloors) {
+  if (!Array.isArray(cascadeFloors) || !cascadeFloors.includes(FINAL_CHECKING_LABEL)) {
+    return false;
+  }
+  const floorOrder = await article.getFloorOrder();
+  if (!articleHasBrandingInProcess(floorOrder)) return false;
+  return finalCheckingHasBrandReceivedData(article);
+}
+
+/**
+ * Normalize transfer items for M2 merge (brand-only lines).
+ * @param {Array<{ transferred?: number, styleCode?: string, brand?: string }>} transferItems
+ * @returns {Array<{ transferred: number, styleCode: string, brand: string }>}
+ */
+export function normalizeM2MergeTransferItems(transferItems) {
+  return (transferItems || [])
+    .map((item) => ({
+      transferred: Math.max(0, Number(item?.transferred ?? 0)),
+      styleCode: '',
+      brand: String(item?.brand ?? '').trim(),
+    }))
+    .filter((item) => item.transferred > 0 && item.brand);
+}
+
+/**
+ * Validate brand split for M2→M1 merge on Final Checking.
+ * @param {Array<{ transferred?: number, brand?: string }>} transferItems
+ * @param {number} quantity
+ * @param {Array<{ transferred?: number, brand?: string }>} receivedData
+ * @param {Array<{ transferred?: number, brand?: string }>} transferredData
+ * @returns {{ valid: boolean, error?: string, normalizedItems: Array<{ transferred: number, styleCode: string, brand: string }> }}
+ */
+export function validateM2MergeTransferItems(transferItems, quantity, receivedData, transferredData) {
+  const normalizedItems = normalizeM2MergeTransferItems(transferItems);
+  if (normalizedItems.length === 0) {
+    return { valid: false, error: 'transferItems with brand and quantity are required for this merge', normalizedItems };
+  }
+
+  const sum = normalizedItems.reduce((s, i) => s + i.transferred, 0);
+  if (Math.abs(sum - quantity) > 0.001) {
+    return {
+      valid: false,
+      error: `transferItems sum (${sum}) must equal merge quantity (${quantity})`,
+      normalizedItems,
+    };
+  }
+
+  const receivedBrands = aggregateByBrand(receivedData);
+  for (const item of normalizedItems) {
+    const key = brandKey(item.brand);
+    if (!receivedBrands.has(key)) {
+      return {
+        valid: false,
+        error: `Brand "${item.brand}" is not in Final Checking received breakdown`,
+        normalizedItems,
+      };
+    }
+  }
+
+  const budget = buildBrandBudgetFromReceived(receivedData, transferredData);
+  const byBrand = aggregateByBrand(normalizedItems);
+  for (const [key, qty] of byBrand.entries()) {
+    const entry = budget.get(key);
+    const remaining = entry?.remaining ?? 0;
+    if (qty > remaining + 0.001) {
+      const display = entry?.brand ?? key;
+      return {
+        valid: false,
+        error: `Brand "${display}" exceeds remaining (${remaining})`,
+        normalizedItems,
+      };
+    }
+  }
+
+  return { valid: true, normalizedItems };
+}
+
+/**
+ * Format brand lines for M2 merge audit remarks.
+ * @param {Array<{ transferred?: number, brand?: string }>} items
+ * @returns {string}
+ */
+export function formatM2MergeBrandRemarks(items) {
+  const collapsed = normalizeM2MergeTransferItems(items);
+  if (collapsed.length === 0) return '';
+  return collapsed.map((i) => `${i.transferred}·${i.brand}`).join('; ');
+}

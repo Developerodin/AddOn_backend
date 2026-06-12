@@ -111,6 +111,7 @@ const userSchema = mongoose.Schema(
           'Final Checking Floor': false,
           'Dispatch Floor': false,
           'M4 Management': false,
+          'M2 Management': false,
           'M3 Management': false,
           'Machine Floor': false,
           'Warehouse Floor': false

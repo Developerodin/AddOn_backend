@@ -60,6 +60,7 @@ const createUser = {
         'Re-Boarding Floor': Joi.boolean(),
         'Dispatch Floor': Joi.boolean(),
         'M4 Management': Joi.boolean(),
+        'M2 Management': Joi.boolean(),
         'M3 Management': Joi.boolean(),
         'Machine Floor': Joi.boolean(),
         'Warehouse Floor': Joi.boolean()
@@ -186,6 +187,7 @@ const updateUser = {
           'Re-Boarding Floor': Joi.boolean(),
           'Dispatch Floor': Joi.boolean(),
         'M4 Management': Joi.boolean(),
+        'M2 Management': Joi.boolean(),
         'M3 Management': Joi.boolean(),
           'Machine Floor': Joi.boolean(),
           'Warehouse Floor': Joi.boolean()
@@ -285,6 +287,7 @@ const updateUserNavigation = {
           'Re-Boarding Floor': Joi.boolean(),
           'Dispatch Floor': Joi.boolean(),
         'M4 Management': Joi.boolean(),
+        'M2 Management': Joi.boolean(),
         'M3 Management': Joi.boolean(),
           'Machine Floor': Joi.boolean(),
           'Warehouse Floor': Joi.boolean()

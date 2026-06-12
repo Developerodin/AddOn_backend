@@ -22,6 +22,7 @@ import {
 } from '../../utils/brandQuantity.util.js';
 import { recordM4Entry } from './m4Management.service.js';
 import { recordM3Entry } from './m3Management.service.js';
+import { recordM2Entry, computeOpenM2Quantity } from './m2Management.service.js';
 import { ProductionFloor } from '../../models/production/enums.js';
 
 /** Floors that support brand/style breakdown via transferItems / transferredData (same shape as Branding → Final Checking). */
@@ -1783,29 +1784,36 @@ export const qualityInspection = async (articleId, inspectionData, user = null) 
     console.log(`📥 Processing: inspectedQuantity=${inspectionData.inspectedQuantity || 0}, m1=${inspectionData.m1Quantity || 0} (additive), m2=${inspectionData.m2Quantity || 0} (set), m3=${inspectionData.m3Quantity || 0} (set), m4=${inspectionData.m4Quantity || 0} (set)`);
     
     // M1 quantity is additive (represents new completed work)
-    // M2, M3, M4 quantities are set directly (represents current inspection results)
+    // M2, M3, M4 quantities are additive deltas per save
     if (inspectionData.m1Quantity !== undefined) {
       targetFloorData.m1Quantity = (targetFloorData.m1Quantity || 0) + inspectionData.m1Quantity;
     }
-    if (inspectionData.m2Quantity !== undefined) {
-      targetFloorData.m2Quantity = inspectionData.m2Quantity;
+    if (inspectionData.m2Quantity !== undefined && inspectionData.m2Quantity > 0) {
+      targetFloorData.m2Quantity = (targetFloorData.m2Quantity || 0) + inspectionData.m2Quantity;
     }
-    if (inspectionData.m3Quantity !== undefined) {
-      targetFloorData.m3Quantity = inspectionData.m3Quantity;
+    if (inspectionData.m3Quantity !== undefined && inspectionData.m3Quantity > 0) {
+      targetFloorData.m3Quantity = (targetFloorData.m3Quantity || 0) + inspectionData.m3Quantity;
     }
-    if (inspectionData.m4Quantity !== undefined) {
-      targetFloorData.m4Quantity = inspectionData.m4Quantity;
+    if (inspectionData.m4Quantity !== undefined && inspectionData.m4Quantity > 0) {
+      targetFloorData.m4Quantity = (targetFloorData.m4Quantity || 0) + inspectionData.m4Quantity;
     }
     
     // FIXED: Add to completed quantity based on M1 quantity only (not total inspected quantity)
     // Only M1 quantity should be counted as "completed" work that can be transferred
     if (inspectionData.m1Quantity !== undefined) {
       targetFloorData.completed = (targetFloorData.completed || 0) + inspectionData.m1Quantity;
-      // Recalculate remaining quantity (ensure non-negative)
-      targetFloorData.remaining = Math.max(0, targetFloorData.received - targetFloorData.completed);
       console.log(`🎯 QUALITY INSPECTION: Added M1 quantity (${inspectionData.m1Quantity}) to completed. Total completed: ${targetFloorData.completed}`);
     }
-    
+
+    // Always recalc remaining using M2/M3/M4-aware formula (matches article pre-save hook)
+    const received = targetFloorData.received || 0;
+    const m1Transferred = targetFloorData.m1Transferred || 0;
+    const m2 = targetFloorData.m2Quantity || 0;
+    const m3 = targetFloorData.m3Quantity || 0;
+    const m4 = targetFloorData.m4Quantity || 0;
+    targetFloorData.remaining = Math.max(0, received - m1Transferred - m2 - m3 - m4);
+    targetFloorData.m1Remaining = Math.max(0, (targetFloorData.m1Quantity || 0) - m1Transferred);
+
     if (inspectionData.repairStatus !== undefined) {
       targetFloorData.repairStatus = inspectionData.repairStatus;
     }
@@ -1825,6 +1833,10 @@ export const qualityInspection = async (articleId, inspectionData, user = null) 
   if (article.status === 'Pending' && (Number(inspectionData.inspectedQuantity) > 0 || inspectionData.m1Quantity > 0)) {
     article.status = 'In Progress';
     article.startedAt = new Date().toISOString();
+  }
+
+  if (targetFloorKey && targetFloorData) {
+    article.markModified(`floorQuantities.${targetFloorKey}`);
   }
 
   await article.save();
@@ -1937,6 +1949,45 @@ export const qualityInspection = async (articleId, inspectionData, user = null) 
     }
   } catch (m3LogErr) {
     console.error('M3 ledger hook failed (qualityInspection):', m3LogErr);
+  }
+
+  // M2 ledger hook — create OPEN entry per save delta (non-blocking)
+  try {
+    const newM2Total = targetFloorData?.m2Quantity || 0;
+    const m2Delta = inspectionData.m2Quantity || 0;
+    if (m2Delta > 0) {
+      await recordM2Entry({
+        article,
+        sourceFloor: targetFloor,
+        deltaQuantity: m2Delta,
+        previousFloorTotal: previousM2,
+        newFloorTotal: newM2Total,
+        user: inspectionData.userId ? { id: inspectionData.userId, ...user } : user,
+      });
+    }
+  } catch (m2LogErr) {
+    console.error('M2 ledger hook failed (qualityInspection):', m2LogErr);
+  }
+
+  // Final Checking completion: balanced qty + zero open M2 entries + all M1 transferred
+  if (targetFloor === 'Final Checking' && targetFloorData) {
+    try {
+      const received = targetFloorData.received || 0;
+      const m1T = targetFloorData.m1Transferred || 0;
+      const m2 = targetFloorData.m2Quantity || 0;
+      const m3 = targetFloorData.m3Quantity || 0;
+      const m4 = targetFloorData.m4Quantity || 0;
+      const balanced = received > 0 && Math.abs(received - (m1T + m2 + m3 + m4)) < 0.001;
+      const openM2 = await computeOpenM2Quantity(article._id.toString());
+      const m1Done = m1T >= (targetFloorData.m1Quantity || 0);
+      if (balanced && openM2 === 0 && m1Done) {
+        article.status = 'Completed';
+        article.completedAt = new Date().toISOString();
+        await article.save();
+      }
+    } catch (completeErr) {
+      console.error('Final checking completion check failed:', completeErr);
+    }
   }
 
   if (article.progress !== previousProgress) {
@@ -2131,12 +2182,15 @@ const transferM1ToNextFloor = async (article, m1Quantity, user = null, inspectio
     }
   }
 
-  // Update remaining quantity on source floor (received - transferred)
-  sourceFloorData.remaining = Math.max(0, sourceFloorData.received - sourceFloorData.transferred);
-  
-  // Update M1 remaining (how much M1 is left on this floor)
+  // Update remaining using M2/M3/M4-aware formula (matches article pre-save hook)
   const currentM1Quantity = sourceFloorData.m1Quantity || 0;
   sourceFloorData.m1Remaining = Math.max(0, currentM1Quantity - newM1Transferred);
+  const received = sourceFloorData.received || 0;
+  const m2 = sourceFloorData.m2Quantity || 0;
+  const m3 = sourceFloorData.m3Quantity || 0;
+  const m4 = sourceFloorData.m4Quantity || 0;
+  sourceFloorData.remaining = Math.max(0, received - newM1Transferred - m2 - m3 - m4);
+  article.markModified(`floorQuantities.${sourceFloorKey}`);
 
   // Checking floors use container-based receive - next floor received only on container accept
   console.log(`🎯 CONTAINER FLOW: ${m1Quantity} M1 units transferred from ${sourceFloor} - received will update on container accept`);

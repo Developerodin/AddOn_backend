@@ -111,6 +111,21 @@ const M3LogType = {
   OUTWARD: 'OUTWARD',
 };
 
+/** M2 ledger event types (m2_logs collection) */
+const M2LogType = {
+  ENTRY: 'ENTRY',
+  MERGE_TO_M1: 'MERGE_TO_M1',
+  TRANSFER_TO_M3: 'TRANSFER_TO_M3',
+  TRANSFER_TO_M4: 'TRANSFER_TO_M4',
+};
+
+/** M2 entry row status (ENTRY logs only) */
+const M2EntryStatus = {
+  OPEN: 'OPEN',
+  PARTIAL: 'PARTIAL',
+  RESOLVED: 'RESOLVED',
+};
+
 // Complete list of all loggable actions
 const LogAction = {
   // Order Management
@@ -164,6 +179,9 @@ const LogAction = {
   M2_ITEM_SHIFTED_TO_M1: 'M2 Item Shifted to M1',
   M2_ITEM_SHIFTED_TO_M3: 'M2 Item Shifted to M3',
   M2_ITEM_SHIFTED_TO_M4: 'M2 Item Shifted to M4',
+  M2_MERGED_TO_M1_CASCADE: 'M2 Merged to M1 Cascade',
+  M2_TRANSFERRED_TO_M3: 'M2 Transferred to M3',
+  M2_TRANSFERRED_TO_M4: 'M2 Transferred to M4',
   REPAIR_STARTED: 'Repair Started',
   REPAIR_COMPLETED: 'Repair Completed',
   REPAIR_REJECTED: 'Repair Rejected',
@@ -220,6 +238,8 @@ export {
   RepairStatus,
   M4LogType,
   M3LogType,
+  M2LogType,
+  M2EntryStatus,
   LogAction,
   TeamRole,
   TeamMemberStatus,

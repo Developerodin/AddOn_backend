@@ -652,6 +652,75 @@ const markM3Outward = {
   }),
 };
 
+const getM2Entries = {
+  query: Joi.object().keys({
+    orderId: Joi.string().custom(objectId),
+    articleId: Joi.string().custom(objectId),
+    sourceFloor: Joi.string().valid('Checking', 'Secondary Checking', 'Final Checking'),
+    status: Joi.string().valid('OPEN', 'PARTIAL', 'RESOLVED'),
+    includeResolved: Joi.string().valid('true', 'false'),
+    search: Joi.string(),
+    limit: Joi.number().integer().min(1).max(1000),
+    page: Joi.number().integer().min(1),
+    sortBy: Joi.string(),
+  }),
+};
+
+const getM2Logs = {
+  query: Joi.object().keys({
+    articleId: Joi.string().custom(objectId),
+    orderId: Joi.string().custom(objectId),
+    entryId: Joi.string(),
+    type: Joi.string().valid('ENTRY', 'MERGE_TO_M1', 'TRANSFER_TO_M3', 'TRANSFER_TO_M4'),
+    sourceFloor: Joi.string().valid('Checking', 'Secondary Checking', 'Final Checking'),
+    dateFrom: Joi.date(),
+    dateTo: Joi.date(),
+    search: Joi.string(),
+    limit: Joi.number().integer().min(1).max(1000),
+    page: Joi.number().integer().min(1),
+    sortBy: Joi.string(),
+  }),
+};
+
+const getM2ArticleSummary = {
+  params: Joi.object().keys({
+    articleId: Joi.string().custom(objectId).required(),
+  }),
+  query: Joi.object().keys({
+    logLimit: Joi.number().integer().min(1).max(100),
+  }),
+};
+
+const m2TransferItemRowSchema = Joi.object().keys({
+  transferred: Joi.number().min(0.01).required(),
+  styleCode: Joi.string().trim().allow('').optional(),
+  brand: Joi.string().trim().allow('').optional(),
+});
+
+const m2EntryActionBody = {
+  params: Joi.object().keys({
+    entryId: Joi.string().required(),
+  }),
+  body: Joi.object().keys({
+    quantity: Joi.number().min(0.01).required(),
+    remarks: Joi.string().trim().min(1).required(),
+  }),
+};
+
+const markM2MergeToM1 = {
+  params: Joi.object().keys({
+    entryId: Joi.string().required(),
+  }),
+  body: Joi.object().keys({
+    quantity: Joi.number().min(0.01).required(),
+    remarks: Joi.string().trim().min(1).required(),
+    transferItems: Joi.array().items(m2TransferItemRowSchema).optional(),
+  }),
+};
+
+const markM2TransferToM3 = m2EntryActionBody;
+const markM2TransferToM4 = m2EntryActionBody;
+
 
 // ==================== BULK OPERATIONS VALIDATIONS ====================
 
@@ -765,6 +834,14 @@ export default {
   getM3Logs,
   getM3ArticleSummary,
   markM3Outward,
+
+  // M2 Management validations
+  getM2Entries,
+  getM2Logs,
+  getM2ArticleSummary,
+  markM2MergeToM1,
+  markM2TransferToM3,
+  markM2TransferToM4,
   
   // Bulk operations validations
   bulkCreateOrders,

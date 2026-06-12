@@ -320,6 +320,36 @@ router
   .route('/m4/articles/:articleId/outward')
   .post(validate(productionValidation.markM4Outward), productionController.markM4Outward);
 
+// ==================== M2 MANAGEMENT ====================
+
+router
+  .route('/m2/entries')
+  .get(validate(productionValidation.getM2Entries), productionController.getM2Entries);
+
+router
+  .route('/m2/logs')
+  .get(validate(productionValidation.getM2Logs), productionController.getM2Logs);
+
+router
+  .route('/m2/statistics')
+  .get(productionController.getM2Statistics);
+
+router
+  .route('/m2/articles/:articleId/summary')
+  .get(validate(productionValidation.getM2ArticleSummary), productionController.getM2ArticleSummary);
+
+router
+  .route('/m2/entries/:entryId/merge-to-m1')
+  .post(validate(productionValidation.markM2MergeToM1), productionController.markM2MergeToM1);
+
+router
+  .route('/m2/entries/:entryId/transfer-to-m3')
+  .post(validate(productionValidation.markM2TransferToM3), productionController.markM2TransferToM3);
+
+router
+  .route('/m2/entries/:entryId/transfer-to-m4')
+  .post(validate(productionValidation.markM2TransferToM4), productionController.markM2TransferToM4);
+
 // ==================== M3 MANAGEMENT ====================
 
 router

@@ -14,6 +14,7 @@ import ContainersMaster from './containersMaster.model.js';
 import DispatchStockTransferNote from './dispatchStockTransferNote.model.js';
 import M4Log from './m4Log.model.js';
 import M3Log from './m3Log.model.js';
+import M2Log from './m2Log.model.js';
 
 // Export enums
 import {
@@ -25,6 +26,8 @@ import {
   RepairStatus,
   M4LogType,
   M3LogType,
+  M2LogType,
+  M2EntryStatus,
   LogAction,
   TeamRole,
   TeamMemberStatus,
@@ -44,6 +47,7 @@ export {
   DispatchStockTransferNote,
   M4Log,
   M3Log,
+  M2Log,
 
   // Enums
   OrderStatus,
@@ -54,6 +58,8 @@ export {
   RepairStatus,
   M4LogType,
   M3LogType,
+  M2LogType,
+  M2EntryStatus,
   LogAction,
   TeamRole,
   TeamMemberStatus,

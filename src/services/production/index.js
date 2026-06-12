@@ -29,3 +29,5 @@ export * from './dispatchTransferNote.service.js';
 export * from './m4Management.service.js';
 
 export * from './m3Management.service.js';
+
+export * from './m2Management.service.js';

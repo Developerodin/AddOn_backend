@@ -610,3 +610,63 @@ export const markM3Outward = catchAsync(async (req, res) => {
   const result = await productionService.markM3Outward(articleId, req.body, req.user);
   res.status(httpStatus.OK).send(result);
 });
+
+// ==================== M2 MANAGEMENT ====================
+
+export const getM2Entries = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['orderId', 'articleId', 'sourceFloor', 'status', 'search', 'includeResolved']);
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  if (options.limit) options.limit = parseInt(options.limit, 10);
+  if (options.page) options.page = parseInt(options.page, 10);
+  const result = await productionService.getM2Entries(filter, options);
+  res.send(result);
+});
+
+export const getM2Logs = catchAsync(async (req, res) => {
+  const filter = pick(req.query, [
+    'articleId',
+    'orderId',
+    'type',
+    'sourceFloor',
+    'entryId',
+    'dateFrom',
+    'dateTo',
+    'search',
+  ]);
+  const options = pick(req.query, ['sortBy', 'limit', 'page']);
+  if (options.limit) options.limit = parseInt(options.limit, 10);
+  if (options.page) options.page = parseInt(options.page, 10);
+  const result = await productionService.getM2Logs(filter, options);
+  res.send(result);
+});
+
+export const getM2Statistics = catchAsync(async (req, res) => {
+  const stats = await productionService.getM2Statistics();
+  res.send(stats);
+});
+
+export const getM2ArticleSummary = catchAsync(async (req, res) => {
+  const { articleId } = req.params;
+  const options = pick(req.query, ['logLimit']);
+  if (options.logLimit) options.logLimit = parseInt(options.logLimit, 10);
+  const result = await productionService.getM2ArticleSummary(articleId, options);
+  res.send(result);
+});
+
+export const markM2MergeToM1 = catchAsync(async (req, res) => {
+  const { entryId } = req.params;
+  const result = await productionService.markM2MergeToM1(entryId, req.body, req.user);
+  res.status(httpStatus.OK).send(result);
+});
+
+export const markM2TransferToM3 = catchAsync(async (req, res) => {
+  const { entryId } = req.params;
+  const result = await productionService.markM2TransferToM3(entryId, req.body, req.user);
+  res.status(httpStatus.OK).send(result);
+});
+
+export const markM2TransferToM4 = catchAsync(async (req, res) => {
+  const { entryId } = req.params;
+  const result = await productionService.markM2TransferToM4(entryId, req.body, req.user);
+  res.status(httpStatus.OK).send(result);
+});
