@@ -2,7 +2,9 @@ const allPermissions = ['getUsers', 'manageUsers', 'getMachines', 'manageMachine
 
 const allRoles = {
   user: allPermissions,
+  accounts: allPermissions,
   admin: allPermissions,
+  super_admin: allPermissions,
 };
 
 const roles = Object.keys(allRoles);

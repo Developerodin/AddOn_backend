@@ -38,6 +38,36 @@ const FLOOR_NAME_TO_KEY = {
 };
 
 /**
+ * Branding receive cannot exceed M1 quantity transferred from secondary checking.
+ * @param {Object} flow - VendorProductionFlow document
+ * @param {number} quantity - Units to accept on branding
+ */
+function assertVendorBrandingReceiveWithinSecondaryCap(flow, quantity) {
+  const qty = Number(quantity);
+  if (!Number.isFinite(qty) || qty <= 0) return;
+
+  const sc = flow.floorQuantities?.secondaryChecking || {};
+  const branding = flow.floorQuantities?.branding || {};
+  const m1Transferred = Number(sc.m1Transferred || 0);
+  const brandingReceived = Number(branding.received || 0);
+
+  if (m1Transferred <= 0) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Cannot receive at branding: secondary checking has not transferred M1 quantity for this flow.'
+    );
+  }
+
+  const maxReceivable = Math.max(0, m1Transferred - brandingReceived);
+  if (qty > maxReceivable + 1e-6) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Accept quantity (${qty}) exceeds receivable from secondary checking (${maxReceivable}). Transfer from secondary checking first.`
+    );
+  }
+}
+
+/**
  * Cumulative FC receive per style cannot exceed what branding sent (sum of branding.transferredData per key).
  * Supports incremental containers: first scan +10, second +20 for same style → cap 30 from branding.
  */
@@ -154,6 +184,20 @@ function resolveVendorFloorKey(floor) {
 }
 
 /**
+ * True when this container was already accepted on the given floor (idempotent re-accept).
+ * @param {Object} floorData
+ * @param {*} containerId
+ * @returns {boolean}
+ */
+function floorAlreadyAcceptedContainer(floorData, containerId) {
+  if (!containerId || !Array.isArray(floorData?.receivedData)) return false;
+  const cid = String(containerId);
+  return floorData.receivedData.some(
+    (row) => row?.receivedInContainerId != null && String(row.receivedInContainerId) === cid
+  );
+}
+
+/**
  * Apply container accept: increment `received` on the vendor flow floor and append `receivedData`.
  * Mirrors production `updateArticleFloorReceivedData` for vendor documents.
  *
@@ -178,6 +222,11 @@ export const updateVendorProductionFlowFloorReceivedData = async (flowId, payloa
   const floorData = flow.floorQuantities[floorKey];
   if (!Array.isArray(floorData.receivedData)) {
     floorData.receivedData = [];
+  }
+
+  const containerId = payload.receivedData?.receivedInContainerId ?? null;
+  if (containerId && floorAlreadyAcceptedContainer(floorData, containerId)) {
+    return { flow, receivedDataNewLines: [] };
   }
 
   const receivedDataLengthBefore = floorData.receivedData.length;
@@ -313,6 +362,10 @@ export const updateVendorProductionFlowFloorReceivedData = async (flowId, payloa
     });
   }
 
+  if (floorKey === 'branding' && typeof quantity === 'number' && quantity > 0) {
+    assertVendorBrandingReceiveWithinSecondaryCap(flow, quantity);
+  }
+
   if (typeof quantity === 'number' && quantity > 0) {
     floorData.received = (floorData.received || 0) + quantity;
     if (floorData.completed > floorData.received) {
@@ -392,6 +445,17 @@ export const stageVendorTransferOnExistingContainer = async ({
   }
   if (doc.status !== ContainerStatus.ACTIVE) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Container must be Active to stage a vendor transfer');
+  }
+
+  const hasActiveItems =
+    Array.isArray(doc.activeItems) &&
+    doc.activeItems.some((i) => Number(i?.quantity || 0) > 0);
+  const hasActiveFloor = Boolean(doc.activeFloor && String(doc.activeFloor).trim());
+  if (hasActiveItems || hasActiveFloor) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Container must be empty before staging a vendor transfer (no active floor or items)'
+    );
   }
 
   const activeFloor = vendorFloorKeyToContainerActiveFloor(toFloorKey);

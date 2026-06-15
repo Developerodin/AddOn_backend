@@ -4,6 +4,7 @@ import Product from '../../models/product.model.js';
 import ApiError from '../../utils/ApiError.js';
 import { RepairStatus } from '../../models/production/enums.js';
 import { vendorProductionFlowSequence } from '../../models/vendorManagement/vendorProductionFlow.model.js';
+import { tryAutoIssueFromFlow } from './vendorGrn.service.js';
 import {
   assertAllowedFloorKey,
   assertForwardFloorMove,
@@ -336,8 +337,9 @@ export const syncBoxToProductionFlow = async (box, quantityChange) => {
  * @param {string} flowId
  * @param {string} floorKey
  * @param {Object} body
+ * @param {Object} [reqUser] - optional user for GRN auto-issue hook
  */
-export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body) => {
+export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body, reqUser = null) => {
   assertAllowedFloorKey(floorKey);
 
   if (body?.resetSecondaryChecking === true && floorKey !== 'secondaryChecking') {
@@ -420,6 +422,7 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
         transferred: 0,
         m1Quantity: 0,
         m2Quantity: 0,
+        m3Quantity: 0,
         m4Quantity: 0,
         m1Transferred: 0,
         m2Transferred: 0,
@@ -436,6 +439,7 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
             [floorPath(floorKey, 'transferred')]: 0,
             [floorPath(floorKey, 'm1Quantity')]: 0,
             [floorPath(floorKey, 'm2Quantity')]: 0,
+            [floorPath(floorKey, 'm3Quantity')]: 0,
             [floorPath(floorKey, 'm4Quantity')]: 0,
             [floorPath(floorKey, 'm1Transferred')]: 0,
             [floorPath(floorKey, 'm2Transferred')]: 0,
@@ -465,6 +469,7 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
         transferred: before.transferred + (ops.$inc?.[floorPath(floorKey, 'transferred')] || 0),
         m1Quantity: before.m1Quantity + (ops.$inc?.[floorPath(floorKey, 'm1Quantity')] || 0),
         m2Quantity: before.m2Quantity + (ops.$inc?.[floorPath(floorKey, 'm2Quantity')] || 0),
+        m3Quantity: before.m3Quantity + (ops.$inc?.[floorPath(floorKey, 'm3Quantity')] || 0),
         m4Quantity: before.m4Quantity + (ops.$inc?.[floorPath(floorKey, 'm4Quantity')] || 0),
         repairStatus: ops.$set?.[floorPath(floorKey, 'repairStatus')] ?? before.repairStatus,
         repairRemarks: ops.$set?.[floorPath(floorKey, 'repairRemarks')] ?? before.repairRemarks,
@@ -568,7 +573,6 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
       await session.withTransaction(async () => {
         updatedFlow = await applyPatchUpdates(session);
       });
-      return updatedFlow;
     } catch (error) {
       const message = String(error?.message || '');
       const isReplicaSetError =
@@ -578,8 +582,19 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
       }
 
       // Fallback for standalone MongoDB deployments that do not support transactions.
-      return applyPatchUpdates(null);
+      updatedFlow = await applyPatchUpdates(null);
     }
+
+    if (floorKey === 'secondaryChecking' && updatedFlow && reqUser) {
+      try {
+        await tryAutoIssueFromFlow(flowId, reqUser);
+      } catch (grnErr) {
+        // Floor patch succeeded — GRN auto-issue is best-effort.
+        console.error('[vendorGrn] auto-issue failed:', grnErr?.message || grnErr);
+      }
+    }
+
+    return updatedFlow;
   } finally {
     session.endSession();
   }

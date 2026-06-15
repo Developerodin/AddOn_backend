@@ -100,6 +100,20 @@ const vendorBoxSchema = mongoose.Schema(
       type: Date,
       default: null,
     },
+    /** True when box physically returned to vendor via PO return challan. */
+    returnedToVendor: {
+      type: Boolean,
+      default: false,
+    },
+    returnedToVendorAt: {
+      type: Date,
+      default: null,
+    },
+    vendorReturnId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'VendorPoVendorReturn',
+      default: null,
+    },
   },
   {
     timestamps: true,

@@ -12,6 +12,7 @@ const numericFloorFields = new Set([
   'transferred',
   'm1Quantity',
   'm2Quantity',
+  'm3Quantity',
   'm4Quantity',
   'm1Transferred',
   'm1Remaining',
@@ -30,12 +31,14 @@ export function assertAllowedFloorKey(floorKey) {
  * Server-owned patch mode: client `mode` is ignored. Increment when any *Delta field is present; otherwise replace.
  */
 export function resolveMode(body) {
+  if (body?.setSplitTotals === true) return 'replace';
   const hasDelta =
     body?.receivedDelta !== undefined ||
     body?.completedDelta !== undefined ||
     body?.transferredDelta !== undefined ||
     body?.m1Delta !== undefined ||
     body?.m2Delta !== undefined ||
+    body?.m3Delta !== undefined ||
     body?.m4Delta !== undefined;
   if (hasDelta) return 'increment';
   return 'replace';
@@ -53,14 +56,21 @@ export function normalizeCheckingFloorSplitBody(floorKey, body) {
 
   const next = { ...withoutMode };
 
+  /** Process drawer sends absolute M1–M4 totals with `setSplitTotals: true`. */
+  if (next.setSplitTotals === true) {
+    delete next.setSplitTotals;
+    return next;
+  }
+
   const hasSplitAbsolute =
     next.m1Quantity !== undefined ||
     next.m2Quantity !== undefined ||
+    next.m3Quantity !== undefined ||
     next.m4Quantity !== undefined;
   if (!hasSplitAbsolute) return next;
 
   /**
-   * `m1Quantity` / `m2Quantity` / `m4Quantity` always mean “add this many now”.
+   * `m1Quantity` / `m2Quantity` / `m3Quantity` / `m4Quantity` always mean “add this many now”.
    * If the client also sends `m1Delta`/`m2Delta`/`m4Delta` (e.g. form defaults to 0),
    * those deltas must not block conversion — otherwise `m1Quantity` stays on the body and
    * can hit **replace** `$set` and look like an absolute overwrite.
@@ -73,6 +83,10 @@ export function normalizeCheckingFloorSplitBody(floorKey, body) {
     next.m2Delta = next.m2Quantity;
     delete next.m2Quantity;
   }
+  if (next.m3Quantity !== undefined) {
+    next.m3Delta = next.m3Quantity;
+    delete next.m3Quantity;
+  }
   if (next.m4Quantity !== undefined) {
     next.m4Delta = next.m4Quantity;
     delete next.m4Quantity;
@@ -80,7 +94,7 @@ export function normalizeCheckingFloorSplitBody(floorKey, body) {
   return next;
 }
 
-/** Secondary checking: these counters are always server-derived from M1/M2/M4 (and transfer sub-pools). */
+/** Secondary checking: these counters are always server-derived from M1/M2/M3/M4 (and transfer sub-pools). */
 export function stripSecondaryCheckingServerDerivedFields(body) {
   if (!body || typeof body !== 'object') return body;
   const next = { ...body };
@@ -132,7 +146,7 @@ export function pickFloorSnapshot(flow, floorKey) {
  * `remaining` meaning:
  * - Branding / dispatch: received − transferred (not yet sent to next floor).
  * - Other non-checking floors: received − completed − transferred.
- * - secondaryChecking: received − m1 − m2 − m4 (not yet classified into M1/M2/M4 buckets; independent of transferred).
+ * - secondaryChecking: received − m1 − m2 − m3 − m4 (not yet classified; independent of transferred).
  * - finalChecking: received − transferred (pipeline handoff view).
  */
 /** Branding / dispatch: assert + transferable math use pipeline rules (transferred ≤ completed ≤ received). */
@@ -149,8 +163,9 @@ export function computeRemainingForFloor(floorKey, floor) {
   if (floorKey === 'secondaryChecking') {
     const m1Quantity = toFiniteNumber(floor.m1Quantity, 0);
     const m2Quantity = toFiniteNumber(floor.m2Quantity, 0);
+    const m3Quantity = toFiniteNumber(floor.m3Quantity, 0);
     const m4Quantity = toFiniteNumber(floor.m4Quantity, 0);
-    return Math.max(0, received - m1Quantity - m2Quantity - m4Quantity);
+    return Math.max(0, received - m1Quantity - m2Quantity - m3Quantity - m4Quantity);
   }
   if (pipelineStandardFloorKeys.has(floorKey)) {
     return Math.max(0, received - transferred);
@@ -248,14 +263,19 @@ export function assertValidFloorState(floorKey, floor) {
 
     const m1Quantity = toFiniteNumber(floor.m1Quantity, 0);
     const m2Quantity = toFiniteNumber(floor.m2Quantity, 0);
+    const m3Quantity = toFiniteNumber(floor.m3Quantity, 0);
     const m4Quantity = toFiniteNumber(floor.m4Quantity, 0);
     const m1Transferred = toFiniteNumber(floor.m1Transferred, 0);
     const m2Transferred = toFiniteNumber(floor.m2Transferred, 0);
 
-    if (m1Quantity < 0 || m2Quantity < 0 || m4Quantity < 0) {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'M1/M2/M4 quantities cannot be negative');
+    if (m1Quantity < 0 || m2Quantity < 0 || m3Quantity < 0 || m4Quantity < 0) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'M1/M2/M3/M4 quantities cannot be negative');
     }
-    if (m1Quantity + m2Quantity + m4Quantity > received) {
+    if (floorKey === 'secondaryChecking') {
+      if (m1Quantity + m2Quantity + m3Quantity + m4Quantity > received) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'M1 + M2 + M3 + M4 cannot exceed received');
+      }
+    } else if (m1Quantity + m2Quantity + m4Quantity > received) {
       throw new ApiError(httpStatus.BAD_REQUEST, 'M1 + M2 + M4 cannot exceed received');
     }
 
@@ -293,6 +313,7 @@ export function buildIncrementOps(floorKey, body) {
   const transferredDelta = body?.transferredDelta;
   const m1Delta = body?.m1Delta;
   const m2Delta = body?.m2Delta;
+  const m3Delta = body?.m3Delta;
   const m4Delta = body?.m4Delta;
 
   if (receivedDelta !== undefined) inc[floorPath(floorKey, 'received')] = toFiniteNumber(receivedDelta, 0);
@@ -305,6 +326,12 @@ export function buildIncrementOps(floorKey, body) {
     inc[floorPath(floorKey, 'm1Quantity')] = toFiniteNumber(m1Delta, 0);
   }
   if (m2Delta !== undefined) inc[floorPath(floorKey, 'm2Quantity')] = toFiniteNumber(m2Delta, 0);
+  if (m3Delta !== undefined) {
+    if (floorKey !== 'secondaryChecking') {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'm3Delta is only valid on secondaryChecking');
+    }
+    inc[floorPath(floorKey, 'm3Quantity')] = toFiniteNumber(m3Delta, 0);
+  }
   if (m4Delta !== undefined) inc[floorPath(floorKey, 'm4Quantity')] = toFiniteNumber(m4Delta, 0);
 
   if (body?.repairStatus !== undefined) set[floorPath(floorKey, 'repairStatus')] = body.repairStatus;
@@ -338,6 +365,7 @@ export function buildReplaceOps(floorKey, body) {
     'transferred',
     'm1Quantity',
     'm2Quantity',
+    'm3Quantity',
     'm4Quantity',
     'm1Transferred',
     'm1Remaining',

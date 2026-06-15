@@ -19,7 +19,7 @@ const createUser = {
     email: Joi.string().required().email(),
     password: Joi.string().required().custom(password),
     name: Joi.string().required(),
-    role: Joi.string().required().valid('user', 'admin'),
+    role: Joi.string().required().valid('user', 'accounts', 'admin', 'super_admin'),
     phoneNumber: Joi.string().allow(''),
     profilePicture: Joi.string().allow(''),
     dateOfBirth: Joi.date(),
@@ -111,7 +111,9 @@ const createUser = {
         'Final Checking': Joi.boolean(),
         'Dispatch': Joi.boolean(),
         'Counting & Dispatch': Joi.boolean(),
-        'GRN': Joi.boolean()
+        'GRN': Joi.boolean(),
+        'Vendor PO Return': Joi.boolean(),
+        'Vendor PO Return Challan': Joi.boolean()
       })
     }).optional(),
   }),
@@ -152,7 +154,7 @@ const updateUser = {
       gender: Joi.string().valid('Male', 'Female', 'Other'),
       country: Joi.string().allow(''),
       timezone: Joi.string(),
-      role: Joi.string().valid('user', 'admin'),
+      role: Joi.string().valid('user', 'accounts', 'admin', 'super_admin'),
       navigation: Joi.object().keys({
         Dashboard: Joi.boolean(),
         Catalog: Joi.object().keys({
@@ -238,7 +240,9 @@ const updateUser = {
           'Final Checking': Joi.boolean(),
           'Dispatch': Joi.boolean(),
           'Counting & Dispatch': Joi.boolean(),
-          'GRN': Joi.boolean()
+          'GRN': Joi.boolean(),
+        'Vendor PO Return': Joi.boolean(),
+        'Vendor PO Return Challan': Joi.boolean()
         })
       }),
     })
@@ -338,7 +342,9 @@ const updateUserNavigation = {
           'Final Checking': Joi.boolean(),
           'Dispatch': Joi.boolean(),
           'Counting & Dispatch': Joi.boolean(),
-          'GRN': Joi.boolean()
+          'GRN': Joi.boolean(),
+        'Vendor PO Return': Joi.boolean(),
+        'Vendor PO Return Challan': Joi.boolean()
         }).unknown(true)
       }).unknown(true).required(),
     })

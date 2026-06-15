@@ -5,11 +5,17 @@ import * as vendorManagementValidation from '../../validations/vendorManagement.
 import * as vendorManagementController from '../../controllers/vendorManagement/vendorManagement.controller.js';
 import vendorManagementPoRoute from './vendorManagementPo.route.js';
 import vendorManagementBoxRoute from './vendorManagementBox.route.js';
+import vendorGrnRoute from './vendorGrn.route.js';
+import vendorPoVendorReturnRoute from './vendorPoVendorReturn.route.js';
+import vendorPoReturnChallanRoute from './vendorPoReturnChallan.route.js';
 
 const router = express.Router();
 
 router.use('/purchase-orders', vendorManagementPoRoute);
 router.use('/boxes', vendorManagementBoxRoute);
+router.use('/vendor-grns', vendorGrnRoute);
+router.use('/vendor-returns', vendorPoVendorReturnRoute);
+router.use('/vendor-po-return-challans', vendorPoReturnChallanRoute);
 
 router
   .route('/')

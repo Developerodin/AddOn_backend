@@ -5,7 +5,7 @@ import { RepairStatus } from '../production/enums.js';
  * Embedded shapes aligned with {@link ../production/article.model.js} `floorQuantities`.
  * Vendor flow is fixed: secondaryChecking → branding → finalChecking → dispatch
  * (see {@link ./vendorProductionFlow.model.js} `vendorProductionFlowSequence`).
- * Secondary + final checking floors track M1, M2, M4 only (no M3 on vendor).
+ * Secondary checking tracks M1, M2, M3, M4; final checking tracks M1, M2, M4 only.
  */
 
 export const receivedDataEntrySchema = new mongoose.Schema(
@@ -138,6 +138,7 @@ export const vendorSecondaryCheckingFloorSchema = new mongoose.Schema(
     transferred: { type: Number, default: 0 },
     m1Quantity: { type: Number, default: 0, min: 0 },
     m2Quantity: { type: Number, default: 0, min: 0 },
+    m3Quantity: { type: Number, default: 0, min: 0 },
     m4Quantity: { type: Number, default: 0, min: 0 },
     m1Transferred: { type: Number, default: 0, min: 0 },
     m1Remaining: { type: Number, default: 0, min: 0 },

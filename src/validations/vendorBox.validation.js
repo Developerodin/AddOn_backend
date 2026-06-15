@@ -67,6 +67,8 @@ export const getVendorBoxes = {
     productName: Joi.string(),
     lotNumber: Joi.string(),
     storedStatus: Joi.alternatives().try(Joi.boolean(), Joi.string().valid('true', 'false')),
+    secondaryCheckingAccepted: Joi.alternatives().try(Joi.boolean(), Joi.string().valid('true', 'false')),
+    numberOfUnitsMin: Joi.number().min(0),
     search: Joi.string(),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
@@ -112,6 +114,12 @@ export const updateVendorBox = {
 
 export const scanAcceptForSecondaryChecking = {
   body: Joi.object().keys({
+    barcode: Joi.string().required().trim(),
+  }),
+};
+
+export const lookupVendorBoxForSecondaryChecking = {
+  query: Joi.object().keys({
     barcode: Joi.string().required().trim(),
   }),
 };

@@ -15,6 +15,10 @@ router
   .post(auth(), validate(vendorBoxValidation.scanAcceptForSecondaryChecking), vendorBoxController.scanAcceptForSecondaryChecking);
 
 router
+  .route('/lookup')
+  .get(auth(), validate(vendorBoxValidation.lookupVendorBoxForSecondaryChecking), vendorBoxController.lookupForSecondaryChecking);
+
+router
   .route('/process-lot')
   .post(auth(), validate(vendorBoxValidation.processVendorLot), vendorBoxController.processVendorLot);
 

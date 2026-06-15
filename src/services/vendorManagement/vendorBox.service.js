@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { VendorBox, VendorPurchaseOrder, VendorManagement, VendorProductionFlow } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import * as vendorProductionFlowService from './vendorProductionFlow.service.js';
+import { tryAutoIssueFromFlow } from './vendorGrn.service.js';
 
 export const createVendorBox = async (vendorBoxBody) => {
   const payload = { ...vendorBoxBody };
@@ -29,7 +30,7 @@ export const createVendorBox = async (vendorBoxBody) => {
 
 export const getVendorBoxById = async (vendorBoxId) => {
   const box = await VendorBox.findById(vendorBoxId)
-    .populate({ path: 'productId', select: 'name softwareCode internalCode status' })
+    .populate({ path: 'productId', select: 'name softwareCode internalCode status vendorCode' })
     .populate({ path: 'vendor', select: 'header' })
     .populate({ path: 'vendorPurchaseOrderId', select: 'vpoNumber vendorName currentStatus' })
     .exec();
@@ -62,6 +63,17 @@ export const queryVendorBoxes = async (filter, options, search) => {
   } else if (filter.storedStatus === false || filter.storedStatus === 'false') {
     mongoFilter.storedStatus = false;
   }
+  if (filter.secondaryCheckingAccepted === true || filter.secondaryCheckingAccepted === 'true') {
+    mongoFilter.secondaryCheckingAccepted = true;
+  } else if (filter.secondaryCheckingAccepted === false || filter.secondaryCheckingAccepted === 'false') {
+    mongoFilter.secondaryCheckingAccepted = { $ne: true };
+  }
+  if (filter.numberOfUnitsMin !== undefined && filter.numberOfUnitsMin !== null && filter.numberOfUnitsMin !== '') {
+    const minUnits = Number(filter.numberOfUnitsMin);
+    if (!Number.isNaN(minUnits)) {
+      mongoFilter.numberOfUnits = minUnits > 0 ? { $gte: minUnits } : { $gt: 0 };
+    }
+  }
 
   if (search && typeof search === 'string' && search.trim()) {
     const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -74,7 +86,7 @@ export const queryVendorBoxes = async (filter, options, search) => {
 
   const paginateOptions = { ...options };
   if (paginateOptions.populate === 'productId') {
-    paginateOptions.populate = { path: 'productId', select: 'name softwareCode internalCode status' };
+    paginateOptions.populate = { path: 'productId', select: 'name softwareCode internalCode status vendorCode' };
   }
 
   return VendorBox.paginate(mongoFilter, paginateOptions);
@@ -108,12 +120,47 @@ export const updateVendorBoxById = async (vendorBoxId, updateBody) => {
 };
 
 /**
+ * Look up a vendor box by barcode for secondary checking preview (does not accept).
+ * @param {string} barcode - Box barcode or boxId
+ * @returns {Promise<{ box: Object, alreadyAccepted: boolean, canAccept: boolean }>}
+ */
+export const lookupVendorBoxForSecondaryChecking = async (barcode) => {
+  const trimmed = String(barcode).trim();
+  if (!trimmed) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Barcode is required');
+  }
+
+  const box = await VendorBox.findOne({
+    $or: [{ barcode: trimmed }, { boxId: trimmed }],
+  })
+    .populate({ path: 'productId', select: 'name softwareCode internalCode status vendorCode' })
+    .populate({ path: 'vendor', select: 'header' })
+    .populate({ path: 'vendorPurchaseOrderId', select: 'vpoNumber vendorName currentStatus' })
+    .exec();
+
+  if (!box) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'No box found with this barcode');
+  }
+
+  const units = Number(box.numberOfUnits) || 0;
+  const alreadyAccepted = Boolean(box.secondaryCheckingAccepted);
+
+  return {
+    box,
+    alreadyAccepted,
+    canAccept: !alreadyAccepted && units > 0,
+  };
+};
+
+/**
  * Accept a vendor box on the secondary checking floor by scanning its barcode.
  * Moves the box's quantity from `pendingFromBoxes` into `received` / `remaining` on the production flow.
+ * Auto-creates the production flow when missing.
  * @param {string} barcode - The box barcode (or Mongo _id that doubles as barcode)
- * @returns {{ box: Object, flow: Object | null, acceptedUnits: number }}
+ * @param {Object} [reqUser] - optional user for GRN auto-issue after last box scan
+ * @returns {Promise<{ box: Object, flow: Object | null, acceptedUnits: number, vpoNumber: string, productName: string, isNewOrder: boolean, isNewArticle: boolean }>}
  */
-export const scanAcceptVendorBoxForSecondaryChecking = async (barcode) => {
+export const scanAcceptVendorBoxForSecondaryChecking = async (barcode, reqUser = null) => {
   const trimmed = String(barcode).trim();
   if (!trimmed) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Barcode is required');
@@ -134,38 +181,83 @@ export const scanAcceptVendorBoxForSecondaryChecking = async (barcode) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Box has no units to accept (numberOfUnits is 0)');
   }
 
-  box.secondaryCheckingAccepted = true;
-  box.secondaryCheckingAcceptedAt = new Date();
-  await box.save();
-
   const filter = {
     vendor: box.vendor,
     vendorPurchaseOrder: box.vendorPurchaseOrderId,
     product: box.productId,
   };
-  const flow = await VendorProductionFlow.findOne(filter);
+
+  const vpoId = String(box.vendorPurchaseOrderId || '');
+  const existingOrderFlowCount = vpoId
+    ? await VendorProductionFlow.countDocuments({ vendorPurchaseOrder: box.vendorPurchaseOrderId })
+    : 0;
+  const existingArticleFlow = await VendorProductionFlow.findOne(filter).lean();
+
+  let flow = existingArticleFlow
+    ? await VendorProductionFlow.findById(existingArticleFlow._id)
+    : null;
+  const isNewArticle = !existingArticleFlow;
+  const isNewOrder = existingOrderFlowCount === 0;
+
   if (!flow) {
-    return { box, flow: null, acceptedUnits: units };
+    await vendorProductionFlowService.syncBoxToProductionFlow(box, units);
+    flow = await VendorProductionFlow.findOne(filter);
   }
 
-  const sc = flow.floorQuantities?.secondaryChecking || {};
-  const pending = Number(sc.pendingFromBoxes || 0);
-  const acceptQty = Math.min(units, pending);
+  let acceptQty = 0;
+  if (flow) {
+    const sc = flow.floorQuantities?.secondaryChecking || {};
+    let pending = Number(sc.pendingFromBoxes || 0);
+    if (pending < units) {
+      await vendorProductionFlowService.syncBoxToProductionFlow(box, units);
+      flow = await VendorProductionFlow.findById(flow._id);
+      if (!flow) {
+        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Production flow missing after box sync');
+      }
+      pending = Number(flow.floorQuantities?.secondaryChecking?.pendingFromBoxes || 0);
+    }
+    acceptQty = Math.min(units, pending);
 
-  if (acceptQty > 0) {
-    sc.pendingFromBoxes = Math.max(0, pending - acceptQty);
-    sc.received = Number(sc.received || 0) + acceptQty;
-    sc.remaining = Number(sc.remaining || 0) + acceptQty;
-    flow.floorQuantities.secondaryChecking = sc;
-    await flow.save();
+    if (acceptQty > 0) {
+      const scAfter = flow.floorQuantities?.secondaryChecking || {};
+      scAfter.pendingFromBoxes = Math.max(0, pending - acceptQty);
+      scAfter.received = Number(scAfter.received || 0) + acceptQty;
+      scAfter.remaining = Number(scAfter.remaining || 0) + acceptQty;
+      flow.floorQuantities.secondaryChecking = scAfter;
+      await flow.save();
+    }
+  } else {
+    acceptQty = units;
   }
 
-  const updatedFlow = await VendorProductionFlow.findById(flow._id)
-    .populate({ path: 'vendor', select: 'header' })
-    .populate({ path: 'vendorPurchaseOrder', select: 'vpoNumber vendorName currentStatus' })
-    .populate({ path: 'product', select: 'name softwareCode internalCode status' });
+  box.secondaryCheckingAccepted = true;
+  box.secondaryCheckingAcceptedAt = new Date();
+  await box.save();
 
-  return { box, flow: updatedFlow, acceptedUnits: acceptQty };
+  const updatedFlow = flow
+    ? await VendorProductionFlow.findById(flow._id)
+        .populate({ path: 'vendor', select: 'header' })
+        .populate({ path: 'vendorPurchaseOrder', select: 'vpoNumber vendorName currentStatus' })
+        .populate({ path: 'product', select: 'name softwareCode internalCode status vendorCode' })
+    : null;
+
+  if (updatedFlow && reqUser) {
+    try {
+      await tryAutoIssueFromFlow(String(updatedFlow._id), reqUser);
+    } catch (grnErr) {
+      console.error('[vendorGrn] auto-issue after box scan failed:', grnErr?.message || grnErr);
+    }
+  }
+
+  return {
+    box,
+    flow: updatedFlow,
+    acceptedUnits: acceptQty,
+    vpoNumber: box.vpoNumber || updatedFlow?.vendorPurchaseOrder?.vpoNumber || '',
+    productName: box.productName || updatedFlow?.product?.name || '',
+    isNewOrder,
+    isNewArticle,
+  };
 };
 
 export const deleteVendorBoxById = async (vendorBoxId) => {

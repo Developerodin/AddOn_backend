@@ -4,6 +4,11 @@ import { VendorPurchaseOrder, VendorManagement, VendorBox, VendorProductionFlow 
 import ApiError from '../../utils/ApiError.js';
 import { vendorPurchaseOrderStatuses } from '../../models/vendorManagement/vendorPurchaseOrder.model.js';
 import getNextVendorPoNumberForYear from '../../utils/vendorPoNumber.util.js';
+import {
+  applyVendorPoCreateRoleRules,
+  applyVendorPoUpdateRoleRules,
+  resolveUserRole,
+} from '../../utils/vendorPurchaseOrderRoleAccess.js';
 
 async function assertVendorExists(vendorId) {
   const v = await VendorManagement.findById(vendorId).select('_id').lean();
@@ -23,19 +28,21 @@ function normalizePurchaseOrderUpdateBody(updateBody = {}) {
 /**
  * @param {number} [year]
  */
-export const createVendorPurchaseOrder = async (purchaseOrderBody, year = new Date().getFullYear()) => {
-  await assertVendorExists(purchaseOrderBody.vendor);
+export const createVendorPurchaseOrder = async (purchaseOrderBody, year = new Date().getFullYear(), user) => {
+  const role = resolveUserRole(user);
+  const scopedBody = applyVendorPoCreateRoleRules(purchaseOrderBody, role);
+  await assertVendorExists(scopedBody.vendor);
   const vpoNumber = await getNextVendorPoNumberForYear(year);
   const existing = await VendorPurchaseOrder.findOne({ vpoNumber });
   if (existing) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'VPO number already exists');
   }
 
-  const statusLogs = purchaseOrderBody.statusLogs || [];
-  const currentStatus = purchaseOrderBody.currentStatus || vendorPurchaseOrderStatuses[0];
+  const statusLogs = scopedBody.statusLogs || [];
+  const currentStatus = scopedBody.currentStatus || vendorPurchaseOrderStatuses[0];
 
   const payload = {
-    ...purchaseOrderBody,
+    ...scopedBody,
     vpoNumber,
     currentStatus,
     statusLogs,
@@ -98,16 +105,19 @@ export const getVendorPurchaseOrderByVpoNumber = async (vpoNumber) =>
     .populate({ path: 'poItems.productId', select: 'name softwareCode internalCode vendorCode status category' })
     .exec();
 
-export const updateVendorPurchaseOrderById = async (purchaseOrderId, updateBody) => {
+export const updateVendorPurchaseOrderById = async (purchaseOrderId, updateBody, user) => {
   const normalizedBody = normalizePurchaseOrderUpdateBody(updateBody);
   const purchaseOrder = await VendorPurchaseOrder.findById(purchaseOrderId);
   if (!purchaseOrder) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Vendor purchase order not found');
   }
 
-  if (normalizedBody.vpoNumber && normalizedBody.vpoNumber !== purchaseOrder.vpoNumber) {
+  const role = resolveUserRole(user);
+  const scopedBody = applyVendorPoUpdateRoleRules(normalizedBody, role, purchaseOrder);
+
+  if (scopedBody.vpoNumber && scopedBody.vpoNumber !== purchaseOrder.vpoNumber) {
     const exists = await VendorPurchaseOrder.findOne({
-      vpoNumber: normalizedBody.vpoNumber,
+      vpoNumber: scopedBody.vpoNumber,
       _id: { $ne: purchaseOrderId },
     });
     if (exists) {
@@ -115,10 +125,10 @@ export const updateVendorPurchaseOrderById = async (purchaseOrderId, updateBody)
     }
   }
 
-  const safeUpdate = Object.fromEntries(Object.entries(normalizedBody).filter(([, value]) => value !== undefined));
+  const safeUpdate = Object.fromEntries(Object.entries(scopedBody).filter(([, value]) => value !== undefined));
 
-  if (normalizedBody.vendor) {
-    await assertVendorExists(normalizedBody.vendor);
+  if (scopedBody.vendor) {
+    await assertVendorExists(scopedBody.vendor);
   }
 
   Object.assign(purchaseOrder, safeUpdate);

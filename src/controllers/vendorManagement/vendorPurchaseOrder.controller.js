@@ -6,7 +6,7 @@ import * as vendorBoxService from '../../services/vendorManagement/vendorBox.ser
 
 export const createVendorPurchaseOrder = catchAsync(async (req, res) => {
   const { year, ...body } = req.body;
-  const doc = await vendorPurchaseOrderService.createVendorPurchaseOrder(body, year);
+  const doc = await vendorPurchaseOrderService.createVendorPurchaseOrder(body, year, req.user);
   res.status(httpStatus.CREATED).send(doc);
 });
 
@@ -42,7 +42,8 @@ export const getVendorPurchaseOrderByVpoNumber = catchAsync(async (req, res) => 
 export const updateVendorPurchaseOrder = catchAsync(async (req, res) => {
   const doc = await vendorPurchaseOrderService.updateVendorPurchaseOrderById(
     req.params.vendorPurchaseOrderId,
-    req.body
+    req.body,
+    req.user
   );
 
   if (doc.receivedLotDetails?.length > 0) {

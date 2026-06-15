@@ -38,6 +38,9 @@ import VendorManagement from './vendorManagement/vendorManagement.model.js';
 import VendorPurchaseOrder from './vendorManagement/vendorPurchaseOrder.model.js';
 import VendorBox from './vendorManagement/vendorBox.model.js';
 import VendorProductionFlow from './vendorManagement/vendorProductionFlow.model.js';
+import VendorGrn from './vendorManagement/vendorGrn.model.js';
+import VendorPoVendorReturn from './vendorManagement/vendorPoVendorReturn.model.js';
+import VendorPoReturnChallan from './vendorManagement/vendorPoReturnChallan.model.js';
 
 export {
   Token,
@@ -80,4 +83,7 @@ export {
   VendorPurchaseOrder,
   VendorBox,
   VendorProductionFlow,
+  VendorGrn,
+  VendorPoVendorReturn,
+  VendorPoReturnChallan,
 };

@@ -136,6 +136,7 @@ export const updateVendorProductionFlowFloor = {
       transferredDelta: Joi.number().min(0),
       m1Delta: Joi.number().min(0),
       m2Delta: Joi.number().min(0),
+      m3Delta: Joi.number().min(0),
       m4Delta: Joi.number().min(0),
 
       // Backward compatibility (replace semantics)
@@ -146,7 +147,10 @@ export const updateVendorProductionFlowFloor = {
       transferred: Joi.number().min(0),
       m1Quantity: Joi.number().min(0),
       m2Quantity: Joi.number().min(0),
+      m3Quantity: Joi.number().min(0),
       m4Quantity: Joi.number().min(0),
+      /** When true, m1–m4 quantities are absolute totals (process drawer). */
+      setSplitTotals: Joi.boolean(),
       m1Transferred: Joi.number().min(0),
       m1Remaining: Joi.number().min(0),
       m2Transferred: Joi.number().min(0),

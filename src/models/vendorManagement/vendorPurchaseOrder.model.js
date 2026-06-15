@@ -6,6 +6,7 @@ import VendorManagement from './vendorManagement.model.js';
 
 /** Aligned with yarn PO flow; adjust enums as business rules evolve */
 export const vendorPurchaseOrderStatuses = [
+  'draft',
   'submitted_to_vendor',
   'in_transit',
   'goods_partially_received',
@@ -174,11 +175,19 @@ const vendorPurchaseOrderSchema = mongoose.Schema(
     currentStatus: {
       type: String,
       enum: vendorPurchaseOrderStatuses,
-      default: 'submitted_to_vendor',
+      default: 'draft',
     },
     statusLogs: { type: [statusLogSchema], default: [] },
     receivedLotDetails: { type: [receivedLotDetailsSchema], default: [] },
     packListDetails: { type: [packListDetailsSchema], default: [] },
+    grnHistory: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'VendorGrn' }],
+      default: [],
+    },
+    returnChallanHistory: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'VendorPoReturnChallan' }],
+      default: [],
+    },
   },
   {
     timestamps: { createdAt: 'createDate', updatedAt: 'lastUpdateDate' },

@@ -429,7 +429,7 @@ export const queryVendorProductionFlows = async (filter, options, search) => {
     populate: [
       { path: 'vendor', select: 'header.vendorName header.vendorCode' },
       { path: 'vendorPurchaseOrder', select: 'vpoNumber vendorName currentStatus' },
-      { path: 'product', select: 'name softwareCode internalCode status' },
+      { path: 'product', select: 'name softwareCode internalCode status vendorCode' },
     ],
   };
 
@@ -443,8 +443,8 @@ export const queryVendorProductionFlows = async (filter, options, search) => {
 export const getVendorProductionFlowById = async (flowId) => {
   const doc = await VendorProductionFlow.findById(flowId)
     .populate('vendor', 'header.vendorName header.vendorCode')
-    .populate('vendorPurchaseOrder', 'vpoNumber vendorName currentStatus')
-    .populate('product', 'name softwareCode internalCode status');
+    .populate('vendorPurchaseOrder', 'vpoNumber vendorName currentStatus poItems receivedLotDetails')
+    .populate('product', 'name softwareCode internalCode status vendorCode');
   if (!doc) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Vendor production flow not found');
   }

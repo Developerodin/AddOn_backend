@@ -97,7 +97,9 @@ export const DEFAULT_NAVIGATION = {
     'Final Checking': false,
     'Dispatch': false,
     'Counting & Dispatch': false,
-    'GRN': false
+    'GRN': false,
+    'Vendor PO Return': false,
+    'Vendor PO Return Challan': false
   }
 };
 
@@ -195,7 +197,9 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Final Checking': true,
       'Dispatch': true,
       'Counting & Dispatch': true,
-      'GRN': true
+      'GRN': true,
+      'Vendor PO Return': true,
+      'Vendor PO Return Challan': true
     }
   },
   user: {
@@ -288,10 +292,18 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Final Checking': false,
       'Dispatch': false,
       'Counting & Dispatch': false,
-      'GRN': false
+      'GRN': false,
+      'Vendor PO Return': false,
+      'Vendor PO Return Challan': false
     }
   }
 };
+
+/** Same default navigation as `user` — label-only role for accounts team. */
+ROLE_NAVIGATION_TEMPLATES.accounts = ROLE_NAVIGATION_TEMPLATES.user;
+
+/** Same full navigation as admin. */
+ROLE_NAVIGATION_TEMPLATES.super_admin = ROLE_NAVIGATION_TEMPLATES.admin;
 
 /**
  * Get default navigation based on user role.
@@ -505,7 +517,7 @@ export const validateNavigationStructure = (navigation) => {
     console.error('Validation failed: Vendor PO is not an object');
     return false;
   }
-  const vendorPOKeys = ['Vendor List', 'Vendor PO Raise', 'Vendor PO Receive', 'Secondary Checking', 'Washing', 'Boarding', 'Branding', 'Final Checking', 'Dispatch', 'Counting & Dispatch', 'GRN'];
+  const vendorPOKeys = ['Vendor List', 'Vendor PO Raise', 'Vendor PO Receive', 'Secondary Checking', 'Washing', 'Boarding', 'Branding', 'Final Checking', 'Dispatch', 'Counting & Dispatch', 'GRN', 'Vendor PO Return', 'Vendor PO Return Challan'];
   for (const key of vendorPOKeys) {
     if (!(key in navigation['Vendor PO']) || typeof navigation['Vendor PO'][key] !== 'boolean') {
       console.error(`Validation failed: Vendor PO.${key} is missing or not a boolean`);

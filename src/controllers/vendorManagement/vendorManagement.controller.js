@@ -41,7 +41,8 @@ export const updateVendorProductionFlowFloor = catchAsync(async (req, res) => {
   const result = await vendorProductionFlowService.updateVendorProductionFlowFloorById(
     vendorProductionFlowId,
     floorKey,
-    req.body
+    req.body,
+    req.user
   );
   res.send(result);
 });

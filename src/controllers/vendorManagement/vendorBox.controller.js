@@ -21,6 +21,8 @@ export const getVendorBoxes = catchAsync(async (req, res) => {
     'productName',
     'lotNumber',
     'storedStatus',
+    'secondaryCheckingAccepted',
+    'numberOfUnitsMin',
   ]);
   const options = pick(req.query, ['sortBy', 'limit', 'page', 'populate']);
   const { search } = req.query;
@@ -44,7 +46,15 @@ export const processVendorLot = catchAsync(async (req, res) => {
 });
 
 export const scanAcceptForSecondaryChecking = catchAsync(async (req, res) => {
-  const result = await vendorBoxService.scanAcceptVendorBoxForSecondaryChecking(req.body.barcode);
+  const result = await vendorBoxService.scanAcceptVendorBoxForSecondaryChecking(
+    req.body.barcode,
+    req.user
+  );
+  res.send(result);
+});
+
+export const lookupForSecondaryChecking = catchAsync(async (req, res) => {
+  const result = await vendorBoxService.lookupVendorBoxForSecondaryChecking(req.query.barcode);
   res.send(result);
 });
 
