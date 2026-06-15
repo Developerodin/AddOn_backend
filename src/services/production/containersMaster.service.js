@@ -261,9 +261,29 @@ function activeItemRefKey(ref) {
 function resolveActiveItemArticleId(item) {
   const ref = item?.article;
   if (ref == null) return null;
-  if (typeof ref === 'object' && ref._id) return ref._id.toString();
+  if (typeof ref === 'object') {
+    if (ref._id) return ref._id.toString();
+    const idField = ref.id != null ? String(ref.id).trim() : '';
+    if (idField && /^[0-9a-fA-F]{24}$/.test(idField)) return idField;
+  }
   const key = activeItemRefKey(ref);
   return key && /^[0-9a-fA-F]{24}$/.test(key) ? key : null;
+}
+
+/**
+ * Copy an activeItems row without `{ ...subdoc }` — object spread drops populated refs on Mongoose subdocuments.
+ * @param {{ article?: unknown, vendorProductionFlow?: unknown, quantity?: unknown, transferItems?: unknown[] }} row
+ * @returns {{ article?: unknown, vendorProductionFlow?: unknown, quantity: number, transferItems?: unknown[] }}
+ */
+function cloneActiveItemRow(row) {
+  const quantity = Number(row?.quantity ?? 0);
+  const cloned = { quantity };
+  if (row?.article != null) cloned.article = row.article;
+  if (row?.vendorProductionFlow != null) cloned.vendorProductionFlow = row.vendorProductionFlow;
+  if (Array.isArray(row?.transferItems) && row.transferItems.length > 0) {
+    cloned.transferItems = row.transferItems;
+  }
+  return cloned;
 }
 
 /**
@@ -275,19 +295,20 @@ function dedupeActiveItems(rows) {
   if (!Array.isArray(rows) || rows.length === 0) return [];
   const byKey = new Map();
   for (const row of rows) {
-    if (!row || typeof row.quantity !== 'number' || row.quantity < 0.0001) continue;
+    const quantity = Number(row?.quantity ?? 0);
+    if (!row || !Number.isFinite(quantity) || quantity < 0.0001) continue;
     const articleKey = row.article ? `article:${activeItemRefKey(row.article)}` : null;
     const vpfKey = row.vendorProductionFlow ? `vpf:${activeItemRefKey(row.vendorProductionFlow)}` : null;
     const key = articleKey || vpfKey;
     if (!key) continue;
     const existing = byKey.get(key);
     if (existing) {
-      existing.quantity = Number(existing.quantity || 0) + Number(row.quantity || 0);
+      existing.quantity = Number(existing.quantity || 0) + quantity;
       if (!existing.transferItems?.length && Array.isArray(row.transferItems) && row.transferItems.length > 0) {
         existing.transferItems = row.transferItems;
       }
     } else {
-      byKey.set(key, { ...row, quantity: Number(row.quantity) });
+      byKey.set(key, cloneActiveItemRow(row));
     }
   }
   return Array.from(byKey.values());
@@ -321,7 +342,16 @@ export const updateContainersMasterByBarcode = async (barcode, body) => {
 export const acceptContainerByBarcode = async (barcode, body = {}) => {
   const doc = await getContainerByBarcode(barcode);
   if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Container not found for this barcode');
-  const items = dedupeActiveItems(doc.activeItems || []);
+  let rawItems = doc.activeItems || [];
+  // Legacy containers may still use top-level activeArticle + quantity instead of activeItems[].
+  if (rawItems.length === 0 && doc.activeArticle) {
+    const aid = doc.activeArticle?.toString?.() || doc.activeArticle;
+    const legacyQty = Number(doc.quantity ?? 0);
+    if (aid && Number.isFinite(legacyQty) && legacyQty >= 0.0001) {
+      rawItems = [{ article: aid, quantity: legacyQty }];
+    }
+  }
+  const items = dedupeActiveItems(rawItems);
   const floor = doc.activeFloor;
   if (!floor || items.length === 0) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Container has no active items or floor to accept');
