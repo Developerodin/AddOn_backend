@@ -49,6 +49,40 @@ function getFinalCheckingPrevFloorKey(floorQuantities) {
   return 'branding';
 }
 
+/** QC floor keys where M1 may exceed received after upstream M2→M1 cascade. */
+const QC_FLOOR_KEYS = new Set(['checking', 'secondaryChecking', 'finalChecking']);
+
+/**
+ * Whether a floor key is a QC floor (Checking, Secondary Checking, Final Checking).
+ * @param {string} floorKey
+ * @returns {boolean}
+ */
+function isQcFloorKey(floorKey) {
+  return QC_FLOOR_KEYS.has(floorKey);
+}
+
+/**
+ * Cap M2/M3/M4 defect quantities to received on QC floors.
+ * M1/m1Transferred/transferred may exceed received when repaired goods cascade forward.
+ * @param {Object} floorData
+ * @param {number} received
+ * @returns {boolean} Whether any defect field was adjusted
+ */
+function enforceQcDefectBounds(floorData, received) {
+  const m2 = floorData.m2Quantity || 0;
+  const m3 = floorData.m3Quantity || 0;
+  const m4 = floorData.m4Quantity || 0;
+  const defectTotal = m2 + m3 + m4;
+  if (defectTotal <= received || received <= 0) {
+    return false;
+  }
+  const scaleFactor = received / defectTotal;
+  floorData.m2Quantity = Math.round(m2 * scaleFactor);
+  floorData.m3Quantity = Math.round(m3 * scaleFactor);
+  floorData.m4Quantity = Math.round(m4 * scaleFactor);
+  return true;
+}
+
 /**
  * Article Model
  * Individual articles within production orders
@@ -642,102 +676,7 @@ articleSchema.pre('save', async function(next) {
     }
   }
   
-  // Flow-based validation: Check each floor independently
-  const floors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'silicon', 'secondaryChecking', 'branding', 'reBoarding', 'finalChecking', 'warehouse', 'dispatch'];
-  
-  floors.forEach(floorKey => {
-    const floorData = this.floorQuantities[floorKey];
-    if (!floorData) return;
-    
-    const received = floorData.received || 0;
-    const completed = floorData.completed || 0;
-    const transferred = floorData.transferred || 0;
-    
-    // Basic validation: completed and transferred cannot exceed received
-    // EXCEPTION: Knitting floor allows overproduction (completed can exceed received)
-    if (completed > received && received > 0 && floorKey !== 'knitting') {
-      console.warn(`🚨 ${floorKey}: Completed (${completed}) > Received (${received}). Auto-fixing...`);
-      floorData.completed = received;
-      floorData.remaining = received - transferred;
-    }
-    
-    // Special handling for knitting floor overproduction
-    if (floorKey === 'knitting' && completed > received && received > 0) {
-      console.log(`🎯 KNITTING OVERPRODUCTION DETECTED: Completed (${completed}) > Received (${received}). Overproduction: ${completed - received}`);
-      // Don't auto-fix knitting overproduction - it's allowed
-    }
-    
-    // Transferred validation: cannot exceed received (except knitting floor)
-    if (transferred > received && received > 0 && floorKey !== 'knitting') {
-      console.warn(`🚨 ${floorKey}: Transferred (${transferred}) > Received (${received}). Auto-fixing...`);
-      floorData.transferred = received;
-      floorData.remaining = received - completed;
-    }
-    
-    // Special handling for knitting floor transferred overproduction
-    if (floorKey === 'knitting' && transferred > received && received > 0) {
-      console.log(`🎯 KNITTING TRANSFERRED OVERPRODUCTION: Transferred (${transferred}) > Received (${received}). This is allowed for knitting floor.`);
-      // Don't auto-fix knitting transferred overproduction - it's allowed
-    }
-    
-    // Quality validation for checking floors
-    if ((floorKey === 'checking' || floorKey === 'secondaryChecking' || floorKey === 'finalChecking') && received > 0) {
-      const m1Quantity = floorData.m1Quantity || 0;
-      const m2Quantity = floorData.m2Quantity || 0;
-      const m3Quantity = floorData.m3Quantity || 0;
-      const m4Quantity = floorData.m4Quantity || 0;
-      const totalQualityQuantity = m1Quantity + m2Quantity + m3Quantity + m4Quantity;
-      
-      if (totalQualityQuantity > received) {
-        console.warn(`🚨 ${floorKey}: Quality total (${totalQualityQuantity}) > Received (${received}). Auto-fixing...`);
-        // Scale down quality quantities proportionally
-        const scaleFactor = received / totalQualityQuantity;
-        floorData.m1Quantity = Math.round(m1Quantity * scaleFactor);
-        floorData.m2Quantity = Math.round(m2Quantity * scaleFactor);
-        floorData.m3Quantity = Math.round(m3Quantity * scaleFactor);
-        floorData.m4Quantity = Math.round(m4Quantity * scaleFactor);
-      }
-      
-      // For checking floors, transferred should not exceed M1 quantity
-      const m1Transferred = floorData.m1Transferred || 0;
-      if (m1Transferred > m1Quantity && m1Quantity > 0) {
-        console.warn(`🚨 ${floorKey}: M1 Transferred (${m1Transferred}) > M1 Quantity (${m1Quantity}). Auto-fixing...`);
-        floorData.m1Transferred = m1Quantity;
-        floorData.m1Remaining = 0;
-        floorData.remaining = 0;
-      }
-      
-      // Update M1 remaining
-      floorData.m1Remaining = Math.max(0, m1Quantity - m1Transferred);
-      
-      // Update remaining: like knitting (received - m4), checking subtracts m2, m3, m4 from received
-      // remaining = received - m1Transferred - m2 - m3 - m4 = good items left to transfer
-      floorData.remaining = Math.max(0, (received || 0) - (m1Transferred || 0) - (m2Quantity || 0) - (m3Quantity || 0) - (m4Quantity || 0));
-      
-      // Update M2 remaining
-      const m2Transferred = floorData.m2Transferred || 0;
-      // m2Remaining = m2Quantity (since m2Quantity is reduced when items are sent for repair)
-      // But we also track m2Transferred for audit purposes
-      floorData.m2Remaining = Math.max(0, m2Quantity - m2Transferred);
-      
-      // Validate M2 transferred doesn't exceed original M2 quantity
-      // Note: m2Quantity may be less than m2Transferred if items were sent for repair
-      // This is expected - m2Transferred is cumulative, m2Quantity is current remaining
-      if (m2Transferred > m2Quantity + m2Transferred && m2Quantity > 0) {
-        // This shouldn't happen, but if it does, it means m2Quantity was incorrectly reduced
-        console.warn(`🚨 ${floorKey}: M2 Transferred (${m2Transferred}) seems incorrect. M2 Quantity: ${m2Quantity}`);
-      }
-    }
-    
-    // Knitting floor validation
-    if (floorKey === 'knitting' && completed > 0) {
-      const m4Quantity = floorData.m4Quantity || 0;
-      if (m4Quantity > completed) {
-        console.warn(`🚨 ${floorKey}: M4 (${m4Quantity}) > Completed (${completed}). Auto-fixing...`);
-        floorData.m4Quantity = completed;
-      }
-    }
-  });
+  this.enforceFloorQuantityBounds();
   
   next();
 });
@@ -1525,6 +1464,91 @@ articleSchema.methods.fixCheckingFloorDataConsistency = function() {
   return { fixed: false, message: 'No inconsistencies found' };
 };
 
+/**
+ * Enforce per-floor quantity bounds on save (complement to fixFloorDataCorruption).
+ * QC floors allow M1/m1Transferred/transferred to exceed received after M2 cascade.
+ */
+articleSchema.methods.enforceFloorQuantityBounds = function() {
+  const floors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'silicon', 'secondaryChecking', 'branding', 'reBoarding', 'finalChecking', 'warehouse', 'dispatch'];
+
+  floors.forEach((floorKey) => {
+    const floorData = this.floorQuantities[floorKey];
+    if (!floorData) return;
+
+    const received = floorData.received || 0;
+    const completed = floorData.completed || 0;
+    const transferred = floorData.transferred || 0;
+
+    if (completed > received && received > 0 && floorKey !== 'knitting') {
+      console.warn(`🚨 ${floorKey}: Completed (${completed}) > Received (${received}). Auto-fixing...`);
+      floorData.completed = received;
+      floorData.remaining = received - transferred;
+    }
+
+    if (floorKey === 'knitting' && completed > received && received > 0) {
+      console.log(`🎯 KNITTING OVERPRODUCTION DETECTED: Completed (${completed}) > Received (${received}). Overproduction: ${completed - received}`);
+    }
+
+    if (
+      transferred > received &&
+      received > 0 &&
+      floorKey !== 'knitting' &&
+      !isQcFloorKey(floorKey)
+    ) {
+      console.warn(`🚨 ${floorKey}: Transferred (${transferred}) > Received (${received}). Auto-fixing...`);
+      floorData.transferred = received;
+      floorData.remaining = received - completed;
+    }
+
+    if (floorKey === 'knitting' && transferred > received && received > 0) {
+      console.log(`🎯 KNITTING TRANSFERRED OVERPRODUCTION: Transferred (${transferred}) > Received (${received}). This is allowed for knitting floor.`);
+    }
+
+    if (isQcFloorKey(floorKey) && received > 0) {
+      const m1Quantity = floorData.m1Quantity || 0;
+
+      if (enforceQcDefectBounds(floorData, received)) {
+        console.warn(
+          `🚨 ${floorKey}: Defect total exceeded received (${received}). Capped M2/M3/M4 only.`
+        );
+      }
+
+      const m1Transferred = floorData.m1Transferred || 0;
+      if (m1Transferred > m1Quantity && m1Quantity > 0) {
+        console.warn(`🚨 ${floorKey}: M1 Transferred (${m1Transferred}) > M1 Quantity (${m1Quantity}). Auto-fixing...`);
+        floorData.m1Transferred = m1Quantity;
+        floorData.m1Remaining = 0;
+        floorData.remaining = 0;
+      }
+
+      floorData.m1Remaining = Math.max(0, m1Quantity - m1Transferred);
+
+      const m3Quantity = floorData.m3Quantity || 0;
+      const m4Quantity = floorData.m4Quantity || 0;
+      const m2AfterBounds = floorData.m2Quantity || 0;
+      floorData.remaining = Math.max(
+        0,
+        (received || 0) - (m1Transferred || 0) - m2AfterBounds - m3Quantity - m4Quantity
+      );
+
+      const m2Transferred = floorData.m2Transferred || 0;
+      floorData.m2Remaining = Math.max(0, m2AfterBounds - m2Transferred);
+
+      if (m2Transferred > m2AfterBounds + m2Transferred && m2AfterBounds > 0) {
+        console.warn(`🚨 ${floorKey}: M2 Transferred (${m2Transferred}) seems incorrect. M2 Quantity: ${m2AfterBounds}`);
+      }
+    }
+
+    if (floorKey === 'knitting' && completed > 0) {
+      const m4Quantity = floorData.m4Quantity || 0;
+      if (m4Quantity > completed) {
+        console.warn(`🚨 ${floorKey}: M4 (${m4Quantity}) > Completed (${completed}). Auto-fixing...`);
+        floorData.m4Quantity = completed;
+      }
+    }
+  });
+};
+
 // Method to fix floor data corruption automatically
 articleSchema.methods.fixFloorDataCorruption = function() {
   const floors = ['knitting', 'linking', 'checking', 'washing', 'boarding', 'silicon', 'secondaryChecking', 'branding', 'reBoarding', 'finalChecking', 'warehouse', 'dispatch'];
@@ -1540,8 +1564,13 @@ articleSchema.methods.fixFloorDataCorruption = function() {
     const transferred = floorData.transferred || 0;
     const remaining = floorData.remaining || 0;
     
-    // Fix 1: Transferred cannot exceed received (except knitting floor)
-    if (transferred > received && received > 0 && floorKey !== 'knitting') {
+    // Fix 1: Transferred cannot exceed received (except knitting + QC floors after M2 cascade)
+    if (
+      transferred > received &&
+      received > 0 &&
+      floorKey !== 'knitting' &&
+      !isQcFloorKey(floorKey)
+    ) {
       const oldTransferred = transferred;
       floorData.transferred = received;
       floorData.remaining = received - completed;
@@ -1589,22 +1618,10 @@ articleSchema.methods.fixFloorDataCorruption = function() {
       fixes.push(`${floorKey}: fixed remaining from ${oldRemaining} to ${expectedRemaining}`);
     }
     
-    // Fix 4: For checking floors, ensure quality quantities don't exceed received
-    if ((floorKey === 'checking' || floorKey === 'secondaryChecking' || floorKey === 'finalChecking') && received > 0) {
-      const m1Quantity = floorData.m1Quantity || 0;
-      const m2Quantity = floorData.m2Quantity || 0;
-      const m3Quantity = floorData.m3Quantity || 0;
-      const m4Quantity = floorData.m4Quantity || 0;
-      const totalQuality = m1Quantity + m2Quantity + m3Quantity + m4Quantity;
-      
-      if (totalQuality > received) {
-        // Scale down quality quantities proportionally
-        const scaleFactor = received / totalQuality;
-        floorData.m1Quantity = Math.round(m1Quantity * scaleFactor);
-        floorData.m2Quantity = Math.round(m2Quantity * scaleFactor);
-        floorData.m3Quantity = Math.round(m3Quantity * scaleFactor);
-        floorData.m4Quantity = Math.round(m4Quantity * scaleFactor);
-        fixes.push(`${floorKey}: scaled down quality quantities to fit received quantity`);
+    // Fix 4: QC floors — cap M2/M3/M4 defects only (M1 may exceed received after M2 cascade)
+    if (isQcFloorKey(floorKey) && received > 0) {
+      if (enforceQcDefectBounds(floorData, received)) {
+        fixes.push(`${floorKey}: capped M2/M3/M4 defects to fit received quantity`);
       }
     }
   });

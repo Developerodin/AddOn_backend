@@ -289,6 +289,18 @@ describe('brandQuantity.util — M2 merge brand', () => {
       expect(result.error).toMatch(/exceeds remaining/);
     });
 
+    test('allows exceed remaining when skipBrandBudgetCap (cascade merge)', () => {
+      const result = validateM2MergeTransferItems(
+        [{ transferred: 100, brand: 'Van Heusen' }],
+        100,
+        receivedData,
+        transferredData,
+        { skipBrandBudgetCap: true }
+      );
+      expect(result.valid).toBe(true);
+      expect(result.normalizedItems[0].transferred).toBe(100);
+    });
+
     test('rejects empty transferItems', () => {
       const result = validateM2MergeTransferItems([], 10, receivedData, transferredData);
       expect(result.valid).toBe(false);

@@ -277,7 +277,10 @@ export function validateM2MergeBrandSplit(transferItems, quantity, brandContext)
   } = brandContext || {};
 
   if (budgetMode === 'floor') {
-    return validateM2MergeTransferItems(transferItems, quantity, receivedData, transferredData);
+    // Cascade merge adds M1 downstream — brand labels the repair pool, not FC receive remaining.
+    return validateM2MergeTransferItems(transferItems, quantity, receivedData, transferredData, {
+      skipBrandBudgetCap: true,
+    });
   }
 
   if (budgetMode === 'product') {
@@ -327,9 +330,10 @@ export function validateM2MergeBrandSplit(transferItems, quantity, brandContext)
  * @param {number} quantity
  * @param {Array<{ transferred?: number, brand?: string }>} receivedData
  * @param {Array<{ transferred?: number, brand?: string }>} transferredData
+ * @param {{ skipBrandBudgetCap?: boolean }} [options]
  * @returns {{ valid: boolean, error?: string, normalizedItems: Array<{ transferred: number, styleCode: string, brand: string }> }}
  */
-export function validateM2MergeTransferItems(transferItems, quantity, receivedData, transferredData) {
+export function validateM2MergeTransferItems(transferItems, quantity, receivedData, transferredData, options = {}) {
   const normalizedItems = normalizeM2MergeTransferItems(transferItems);
   if (normalizedItems.length === 0) {
     return { valid: false, error: 'transferItems with brand and quantity are required for this merge', normalizedItems };
@@ -356,18 +360,20 @@ export function validateM2MergeTransferItems(transferItems, quantity, receivedDa
     }
   }
 
-  const budget = buildBrandBudgetFromReceived(receivedData, transferredData);
-  const byBrand = aggregateByBrand(normalizedItems);
-  for (const [key, qty] of byBrand.entries()) {
-    const entry = budget.get(key);
-    const remaining = entry?.remaining ?? 0;
-    if (qty > remaining + 0.001) {
-      const display = entry?.brand ?? key;
-      return {
-        valid: false,
-        error: `Brand "${display}" exceeds remaining (${remaining})`,
-        normalizedItems,
-      };
+  if (!options.skipBrandBudgetCap) {
+    const budget = buildBrandBudgetFromReceived(receivedData, transferredData);
+    const byBrand = aggregateByBrand(normalizedItems);
+    for (const [key, qty] of byBrand.entries()) {
+      const entry = budget.get(key);
+      const remaining = entry?.remaining ?? 0;
+      if (qty > remaining + 0.001) {
+        const display = entry?.brand ?? key;
+        return {
+          valid: false,
+          error: `Brand "${display}" exceeds remaining (${remaining})`,
+          normalizedItems,
+        };
+      }
     }
   }
 

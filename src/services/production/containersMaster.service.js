@@ -241,18 +241,71 @@ function normalizeActiveItemRow(i) {
   return row;
 }
 
+/**
+ * Normalize an activeItems ref (article or vendorProductionFlow) to a stable string key.
+ * @param {unknown} ref
+ * @returns {string|null}
+ */
+function activeItemRefKey(ref) {
+  if (!ref) return null;
+  if (typeof ref === 'string') return ref.trim() || null;
+  if (ref._id) return ref._id.toString();
+  return ref.toString?.() || null;
+}
+
+/**
+ * Resolve article Mongo id from an activeItems row (populated doc, ObjectId, or string).
+ * @param {{ article?: unknown }} item
+ * @returns {string|null}
+ */
+function resolveActiveItemArticleId(item) {
+  const ref = item?.article;
+  if (ref == null) return null;
+  if (typeof ref === 'object' && ref._id) return ref._id.toString();
+  const key = activeItemRefKey(ref);
+  return key && /^[0-9a-fA-F]{24}$/.test(key) ? key : null;
+}
+
+/**
+ * Merge duplicate activeItems rows (same article or vendorProductionFlow) by summing quantity.
+ * @param {Array<{ article?: unknown, vendorProductionFlow?: unknown, quantity: number, transferItems?: unknown[] }>} rows
+ * @returns {Array<{ article?: unknown, vendorProductionFlow?: unknown, quantity: number, transferItems?: unknown[] }>}
+ */
+function dedupeActiveItems(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+  const byKey = new Map();
+  for (const row of rows) {
+    if (!row || typeof row.quantity !== 'number' || row.quantity < 0.0001) continue;
+    const articleKey = row.article ? `article:${activeItemRefKey(row.article)}` : null;
+    const vpfKey = row.vendorProductionFlow ? `vpf:${activeItemRefKey(row.vendorProductionFlow)}` : null;
+    const key = articleKey || vpfKey;
+    if (!key) continue;
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.quantity = Number(existing.quantity || 0) + Number(row.quantity || 0);
+      if (!existing.transferItems?.length && Array.isArray(row.transferItems) && row.transferItems.length > 0) {
+        existing.transferItems = row.transferItems;
+      }
+    } else {
+      byKey.set(key, { ...row, quantity: Number(row.quantity) });
+    }
+  }
+  return Array.from(byKey.values());
+}
+
 export const updateContainersMasterByBarcode = async (barcode, body) => {
   const doc = await getContainerByBarcode(barcode);
   if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Container not found for this barcode');
   if (body.hasOwnProperty('activeFloor')) doc.activeFloor = body.activeFloor || '';
   if (body.hasOwnProperty('activeItems') && Array.isArray(body.activeItems)) {
-    doc.activeItems = body.activeItems.map(normalizeActiveItemRow).filter(Boolean);
+    doc.activeItems = dedupeActiveItems(body.activeItems.map(normalizeActiveItemRow).filter(Boolean));
   }
   if (body.addItem && typeof body.addItem.quantity === 'number' && body.addItem.quantity >= 0.0001) {
     const add = normalizeActiveItemRow({ ...body.addItem, quantity: body.addItem.quantity });
     if (add) {
       if (!doc.activeItems) doc.activeItems = [];
       doc.activeItems.push(add);
+      doc.activeItems = dedupeActiveItems(doc.activeItems);
     }
   }
   await doc.save();
@@ -268,7 +321,7 @@ export const updateContainersMasterByBarcode = async (barcode, body) => {
 export const acceptContainerByBarcode = async (barcode, body = {}) => {
   const doc = await getContainerByBarcode(barcode);
   if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Container not found for this barcode');
-  const items = doc.activeItems || [];
+  const items = dedupeActiveItems(doc.activeItems || []);
   const floor = doc.activeFloor;
   if (!floor || items.length === 0) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Container has no active items or floor to accept');
@@ -327,11 +380,10 @@ export const acceptContainerByBarcode = async (barcode, body = {}) => {
   for (const item of items) {
     let quantity = item.quantity || 0;
     if (quantity <= 0) continue;
-    const article = item.article;
+    const articleId = resolveActiveItemArticleId(item);
     const vpf = item.vendorProductionFlow;
-    if (article) {
-      const articleId = typeof article === 'object' ? article._id : article;
-      const updated = await articleService.updateArticleFloorReceivedData(articleId.toString(), {
+    if (articleId) {
+      const updated = await articleService.updateArticleFloorReceivedData(articleId, {
         floor,
         quantity,
         receivedData: {
@@ -401,6 +453,13 @@ export const acceptContainerByBarcode = async (barcode, body = {}) => {
     throw new ApiError(
       httpStatus.BAD_REQUEST,
       'vendorReceive.vendorProductionFlow does not match any vendor item on this container'
+    );
+  }
+
+  if (updatedArticles.length === 0 && updatedVendorFlows.length === 0) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Container accept did not update any articles or vendor flows. Check activeItems refs and quantities.'
     );
   }
 

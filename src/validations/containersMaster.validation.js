@@ -29,6 +29,25 @@ const activeItemSchema = Joi.object()
   })
   .xor('article', 'vendorProductionFlow');
 
+/** Reject duplicate article or vendorProductionFlow ids within activeItems (backend also merges on save). */
+const activeItemsUniqueSchema = Joi.array()
+  .items(activeItemSchema)
+  .custom((items, helpers) => {
+    if (!Array.isArray(items)) return items;
+    const seen = new Set();
+    for (const row of items) {
+      const key = row.article ? `a:${row.article}` : row.vendorProductionFlow ? `v:${row.vendorProductionFlow}` : null;
+      if (!key) continue;
+      if (seen.has(key)) {
+        return helpers.error('any.custom', {
+          message: 'activeItems must not contain duplicate article or vendorProductionFlow ids',
+        });
+      }
+      seen.add(key);
+    }
+    return items;
+  });
+
 export const createContainersMaster = {
   body: Joi.object().keys({
     containerName: Joi.string().trim().allow('', null),
@@ -36,7 +55,7 @@ export const createContainersMaster = {
       .valid(...statusValues)
       .default(ContainerStatus.ACTIVE),
     activeFloor: Joi.string().trim().allow('', null),
-    activeItems: Joi.array().items(activeItemSchema),
+    activeItems: activeItemsUniqueSchema,
     type: Joi.string().valid(...typeValues),
     tearWeight: Joi.number().min(0),
   }),
@@ -86,7 +105,7 @@ export const updateContainerByBarcode = {
   body: Joi.object()
     .keys({
       activeFloor: Joi.string().trim().allow('', null),
-      activeItems: Joi.array().items(activeItemSchema),
+      activeItems: activeItemsUniqueSchema,
       addItem: Joi.object()
         .keys({
           article: Joi.string().custom(objectId),
@@ -142,7 +161,7 @@ export const updateContainersMaster = {
       type: Joi.string().valid(...typeValues),
       tearWeight: Joi.number().min(0),
       activeFloor: Joi.string().trim().allow('', null),
-      activeItems: Joi.array().items(activeItemSchema),
+      activeItems: activeItemsUniqueSchema,
     })
     .min(1),
 };

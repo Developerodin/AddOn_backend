@@ -1087,6 +1087,27 @@ const transferCompletedWorkToNextFloor = async (article, updateData, user = null
 
   // Store transferItems in transferredData for Branding/Final Checking (from PATCH updateArticleProgress)
   let transferItems = updateData?.transferItems;
+  // Auto-derive brand breakdown when FC/Dispatch/Re-Boarding transfers without explicit transferItems
+  const brandTransferFloors = ['Final Checking', 'Dispatch', 'Re-Boarding'];
+  if (
+    (!Array.isArray(transferItems) || transferItems.length === 0) &&
+    brandTransferFloors.includes(sourceFloor) &&
+    newTransferQuantity > 0
+  ) {
+    const hasReceivedBrands = (sourceFloorData.receivedData || []).some(
+      (r) => (r.transferred || 0) > 0 && brandKey(r?.brand)
+    );
+    if (hasReceivedBrands) {
+      transferItems = enrichTransferItemsFromReceived(
+        [{ transferred: newTransferQuantity, styleCode: '', brand: '' }],
+        sourceFloorData.receivedData,
+        sourceFloorData.transferredData
+      );
+      if (updateData) {
+        updateData.transferItems = transferItems;
+      }
+    }
+  }
   // Branding: enrich empty styleCode/brand from previous transferredData (same product, use last known)
   if (sourceFloor === 'Branding' && Array.isArray(transferItems) && transferItems.length > 0) {
     const prev = (sourceFloorData.transferredData || []).filter((t) => ((t.styleCode || '').trim() || (t.brand || '').trim()));
@@ -1605,6 +1626,23 @@ export const updateArticleFloorReceivedData = async (articleId, payload) => {
         }
       }
     }
+    // Fallback: allocate brand from previous floor receivedData when transferredData is empty
+    if ((!receivedTransferItems || receivedTransferItems.length === 0) && prevFloorData) {
+      const hasReceivedBrands = (prevFloorData.receivedData || []).some(
+        (r) => (r.transferred || 0) > 0 && brandKey(r?.brand)
+      );
+      if (hasReceivedBrands) {
+        const allocated = enrichTransferItemsFromReceived(
+          [{ transferred: quantity, styleCode: '', brand: '' }],
+          prevFloorData.receivedData,
+          prevFloorData.transferredData
+        );
+        const allocatedSum = allocated.reduce((s, i) => s + (i.transferred || 0), 0);
+        if (allocated.length > 0 && allocatedSum === quantity) {
+          receivedTransferItems = allocated;
+        }
+      }
+    }
   }
 
   if (Array.isArray(receivedTransferItems) && receivedTransferItems.length > 0) {
@@ -1635,6 +1673,17 @@ export const updateArticleFloorReceivedData = async (articleId, payload) => {
 
   // Container accept flow: increment received by container quantity so quantity becomes visible on this floor
   if (typeof quantity === 'number' && quantity > 0) {
+    const prevFloorKey = await resolveStyleSourceFloorKeyForReceive(article, normalizedFloor);
+    const prevFloorData = prevFloorKey && article.floorQuantities?.[prevFloorKey];
+    if (prevFloorData) {
+      const maxReceivable = Math.max(0, (prevFloorData.transferred || 0) - (floorData.received || 0));
+      if (quantity > maxReceivable) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Accept quantity (${quantity}) exceeds receivable from ${prevFloorKey} (${maxReceivable}). Transfer from the previous floor first.`
+        );
+      }
+    }
     floorData.received = (floorData.received || 0) + quantity;
     floorData.remaining = floorData.received - (floorData.completed || 0);
     if (floorData.completed > floorData.received) {
