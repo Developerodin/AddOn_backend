@@ -1,8 +1,10 @@
 import { jest, describe, test, expect } from '@jest/globals';
 import {
   applyCascadeMergeIncrement,
+  assessM2MergeToM1Eligibility,
   recalcQcFloorRemaining,
 } from '../../../src/utils/m2Cascade.util.js';
+import { ProductionFloor } from '../../../src/models/production/enums.js';
 
 /**
  * Minimal article stub for cascade merge tests.
@@ -15,9 +17,11 @@ const makeArticleStub = (floorQuantities = {}) => ({
     const map = {
       Checking: 'checking',
       Washing: 'washing',
+      Boarding: 'boarding',
       Branding: 'branding',
       'Secondary Checking': 'secondaryChecking',
       'Final Checking': 'finalChecking',
+      Dispatch: 'dispatch',
     };
     return map[label] || label;
   },
@@ -150,6 +154,44 @@ describe('m2Cascade.util', () => {
       expect(fd.m1Transferred).toBe(491);
       expect(fd.transferred).toBe(491);
       expect(fd.m2Quantity).toBe(3);
+    });
+  });
+
+  describe('assessM2MergeToM1Eligibility', () => {
+    test('blocks when article is not yet on Dispatch floor', () => {
+      const article = makeArticleStub({
+        checking: {
+          received: 1020,
+          m1Quantity: 990,
+          m2Quantity: 25,
+          m1Transferred: 0,
+        },
+      });
+
+      const result = assessM2MergeToM1Eligibility(article);
+      expect(result.eligible).toBe(false);
+      expect(result.reason).toMatch(/received on Dispatch floor/i);
+    });
+
+    test('allows merge when dispatch received > 0', () => {
+      const article = makeArticleStub({
+        checking: { received: 1020, m2Quantity: 25 },
+        dispatch: { received: 100 },
+      });
+
+      const result = assessM2MergeToM1Eligibility(article);
+      expect(result.eligible).toBe(true);
+      expect(result.reason).toBeNull();
+    });
+
+    test('allows merge when currentFloor is Dispatch even if received is 0', () => {
+      const article = {
+        ...makeArticleStub({ checking: { m2Quantity: 5 } }),
+        currentFloor: ProductionFloor.DISPATCH,
+      };
+
+      const result = assessM2MergeToM1Eligibility(article);
+      expect(result.eligible).toBe(true);
     });
   });
 });

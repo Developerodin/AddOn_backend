@@ -138,3 +138,38 @@ export function applyCascadeMergeIncrement(article, floorLabel, qty, sourceFloor
 export function getSourceFloorKey(article, sourceFloor) {
   return article.getFloorKey(sourceFloor);
 }
+
+/**
+ * Whether the article has been received on Dispatch floor (present in dispatch pipeline).
+ * @param {Object} article
+ * @returns {boolean}
+ */
+export function isArticlePresentOnDispatchFloor(article) {
+  const dispatchReceived = Number(article.floorQuantities?.dispatch?.received ?? 0);
+  if (dispatchReceived > 0) return true;
+  return article.currentFloor === ProductionFloor.DISPATCH;
+}
+
+/**
+ * M2→M1 merge is allowed only when the article is present on Dispatch floor.
+ * @param {Object} article
+ * @returns {{ eligible: boolean, reason: string|null }}
+ */
+export function assessM2MergeToM1Eligibility(article) {
+  if (!isArticlePresentOnDispatchFloor(article)) {
+    return {
+      eligible: false,
+      reason: 'M2 merge is only allowed after the article has been received on Dispatch floor.',
+    };
+  }
+  return { eligible: true, reason: null };
+}
+
+/**
+ * Evaluates M2 merge eligibility for an article document.
+ * @param {Object} article
+ * @returns {Promise<{ eligible: boolean, reason: string|null }>}
+ */
+export async function assessM2MergeToM1EligibilityForArticle(article) {
+  return assessM2MergeToM1Eligibility(article);
+}

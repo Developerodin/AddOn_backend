@@ -13,6 +13,7 @@ import { recordM3Entry } from './m3Management.service.js';
 import { recordM4Entry } from './m4Management.service.js';
 import {
   applyCascadeMergeIncrement,
+  assessM2MergeToM1EligibilityForArticle,
   getCascadeFloorsForM2Merge,
   getSourceFloorKey,
   recalcQcFloorRemaining,
@@ -206,6 +207,15 @@ export const markM2MergeToM1 = async (entryId, body, user = {}) => {
   const article = await findArticleById(entry.articleId);
   if (!article) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Article not found');
+  }
+
+  const mergeEligibility = await assessM2MergeToM1EligibilityForArticle(article);
+  if (!mergeEligibility.eligible) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      mergeEligibility.reason ||
+        'M2 merge to M1 is only allowed after the article has been received on Dispatch floor'
+    );
   }
 
   const cascadeFloors = await getCascadeFloorsForM2Merge(article, entry.sourceFloor);
@@ -495,10 +505,42 @@ export const getM2Entries = async (filter = {}, options = {}) => {
     ];
   }
 
-  return M2Log.paginate(logFilter, {
+  const paginated = await M2Log.paginate(logFilter, {
     ...options,
     sortBy: options.sortBy || 'timestamp:desc',
   });
+
+  const articleIds = [...new Set(paginated.results.map((row) => row.articleId).filter(Boolean))];
+  const articles = articleIds.length
+    ? await Article.find({ $or: [{ _id: { $in: articleIds } }, { id: { $in: articleIds } }] })
+    : [];
+  const articleById = new Map();
+  for (const art of articles) {
+    articleById.set(art._id.toString(), art);
+    if (art.id) articleById.set(art.id, art);
+  }
+
+  const enrichedResults = await Promise.all(
+    paginated.results.map(async (row) => {
+      const plain = row.toObject ? row.toObject() : { ...row };
+      const article = articleById.get(row.articleId);
+      if (!article || !row.sourceFloor) {
+        return {
+          ...plain,
+          canMergeToM1: false,
+          mergeBlockedReason: 'Article or source floor not found',
+        };
+      }
+      const assessment = await assessM2MergeToM1EligibilityForArticle(article);
+      return {
+        ...plain,
+        canMergeToM1: assessment.eligible,
+        mergeBlockedReason: assessment.reason,
+      };
+    })
+  );
+
+  return { ...paginated, results: enrichedResults };
 };
 
 /**
