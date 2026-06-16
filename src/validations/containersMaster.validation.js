@@ -94,6 +94,7 @@ export const getContainersByFloorWithArticles = {
   }),
   query: Joi.object().keys({
     status: containerStatusFlexible,
+    contentDomain: Joi.string().valid('vendor', 'production').optional(),
   }),
 };
 

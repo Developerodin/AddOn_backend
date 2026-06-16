@@ -397,22 +397,31 @@ export const queryVendorProductionFlows = async (filter, options, search) => {
    */
   if (filter.currentFloorKey === 'secondaryChecking') {
     mongoFilter.$or = [
-      {
-        currentFloorKey: 'secondaryChecking',
-        'floorQuantities.secondaryChecking.received': { $gt: 0 },
-      },
+      { currentFloorKey: 'secondaryChecking' },
+      { 'floorQuantities.secondaryChecking.received': { $gt: 0 } },
       { 'floorQuantities.secondaryChecking.remaining': { $gt: 0 } },
+      { 'floorQuantities.secondaryChecking.pendingFromBoxes': { $gt: 0 } },
+    ];
+  } else if (filter.currentFloorKey === 'branding') {
+    mongoFilter.$or = [
+      { currentFloorKey: 'branding' },
+      { 'floorQuantities.branding.received': { $gt: 0 } },
+      { 'floorQuantities.branding.remaining': { $gt: 0 } },
+      { 'floorQuantities.branding.transferred': { $gt: 0 } },
     ];
   } else if (filter.currentFloorKey === 'finalChecking') {
     mongoFilter.$or = [
       { currentFloorKey: 'finalChecking' },
+      { 'floorQuantities.finalChecking.received': { $gt: 0 } },
       { 'floorQuantities.finalChecking.remaining': { $gt: 0 } },
+      { 'floorQuantities.finalChecking.pendingFromBoxes': { $gt: 0 } },
     ];
   } else if (filter.currentFloorKey === 'dispatch') {
     mongoFilter.$or = [
       { currentFloorKey: 'dispatch' },
       { 'floorQuantities.dispatch.received': { $gt: 0 } },
       { 'floorQuantities.dispatch.remaining': { $gt: 0 } },
+      { 'floorQuantities.dispatch.transferred': { $gt: 0 } },
     ];
   } else if (filter.currentFloorKey) {
     mongoFilter.currentFloorKey = String(filter.currentFloorKey);
@@ -429,7 +438,7 @@ export const queryVendorProductionFlows = async (filter, options, search) => {
     populate: [
       { path: 'vendor', select: 'header.vendorName header.vendorCode' },
       { path: 'vendorPurchaseOrder', select: 'vpoNumber vendorName currentStatus' },
-      { path: 'product', select: 'name softwareCode internalCode status vendorCode' },
+      { path: 'product', select: 'name softwareCode internalCode factoryCode status vendorCode' },
     ],
   };
 
@@ -444,7 +453,7 @@ export const getVendorProductionFlowById = async (flowId) => {
   const doc = await VendorProductionFlow.findById(flowId)
     .populate('vendor', 'header.vendorName header.vendorCode')
     .populate('vendorPurchaseOrder', 'vpoNumber vendorName currentStatus poItems receivedLotDetails')
-    .populate('product', 'name softwareCode internalCode status vendorCode');
+    .populate('product', 'name softwareCode internalCode factoryCode status vendorCode');
   if (!doc) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Vendor production flow not found');
   }

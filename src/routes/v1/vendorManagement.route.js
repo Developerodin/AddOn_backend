@@ -3,6 +3,7 @@ import auth from '../../middlewares/auth.js';
 import validate from '../../middlewares/validate.js';
 import * as vendorManagementValidation from '../../validations/vendorManagement.validation.js';
 import * as vendorManagementController from '../../controllers/vendorManagement/vendorManagement.controller.js';
+import * as vendorDispatchTransferNoteController from '../../controllers/vendorManagement/vendorDispatchTransferNote.controller.js';
 import vendorManagementPoRoute from './vendorManagementPo.route.js';
 import vendorManagementBoxRoute from './vendorManagementBox.route.js';
 import vendorGrnRoute from './vendorGrn.route.js';
@@ -65,6 +66,43 @@ router.route('/production-flow/:vendorProductionFlowId/final-checking/m2-transfe
   validate(vendorManagementValidation.transferFinalCheckingM2ForRework),
   vendorManagementController.transferFinalCheckingM2ForRework
 );
+
+router
+  .route('/dispatch/transfer-notes/report')
+  .get(
+    auth(),
+    validate(vendorManagementValidation.getVendorDispatchTransferNoteReport),
+    vendorDispatchTransferNoteController.getVendorDispatchTransferNoteReport
+  );
+
+router
+  .route('/dispatch/transfer-notes/preview')
+  .get(
+    auth(),
+    validate(vendorManagementValidation.previewVendorDispatchTransferNote),
+    vendorDispatchTransferNoteController.previewVendorDispatchTransferNote
+  );
+
+router
+  .route('/dispatch/transfer-notes/:transferNoteId')
+  .get(
+    auth(),
+    validate(vendorManagementValidation.getVendorDispatchTransferNote),
+    vendorDispatchTransferNoteController.getVendorDispatchTransferNote
+  );
+
+router
+  .route('/dispatch/transfer-notes')
+  .get(
+    auth(),
+    validate(vendorManagementValidation.getVendorDispatchTransferNotes),
+    vendorDispatchTransferNoteController.getVendorDispatchTransferNotes
+  )
+  .post(
+    auth(),
+    validate(vendorManagementValidation.createVendorDispatchTransferNote),
+    vendorDispatchTransferNoteController.createVendorDispatchTransferNote
+  );
 
 router
   .route('/:vendorManagementId/products')

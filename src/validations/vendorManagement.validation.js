@@ -314,3 +314,43 @@ export const removeVendorProducts = {
     productIds: Joi.array().items(Joi.string().custom(objectId)).min(1).required(),
   }),
 };
+
+export const createVendorDispatchTransferNote = {
+  body: Joi.object().keys({
+    categoryLabel: Joi.string().trim().allow('').optional(),
+  }),
+  query: Joi.object().keys({
+    search: Joi.string(),
+  }),
+};
+
+export const previewVendorDispatchTransferNote = {
+  query: Joi.object().keys({
+    search: Joi.string(),
+  }),
+};
+
+export const getVendorDispatchTransferNotes = {
+  query: Joi.object().keys({
+    startDate: Joi.date().optional(),
+    endDate: Joi.date().optional(),
+    search: Joi.string().optional(),
+    sortBy: Joi.string().optional(),
+    limit: Joi.number().integer().optional(),
+    page: Joi.number().integer().optional(),
+  }),
+};
+
+export const getVendorDispatchTransferNoteReport = {
+  query: Joi.object().keys({
+    startDate: Joi.date().optional(),
+    endDate: Joi.date().optional(),
+    search: Joi.string().optional(),
+  }),
+};
+
+export const getVendorDispatchTransferNote = {
+  params: Joi.object().keys({
+    transferNoteId: Joi.string().custom(objectId).required(),
+  }),
+};

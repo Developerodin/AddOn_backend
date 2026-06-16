@@ -197,7 +197,7 @@ export const getContainerWithArticlesByBarcode = async (barcode) => {
  * All containers whose activeFloor matches this floor (case-insensitive, full string),
  * each with activeItems enriched with article documents and quantities.
  * @param {string} activeFloor - Floor linking string (same as container.activeFloor)
- * @param {{ status?: string }} [opts]
+ * @param {{ status?: string, contentDomain?: 'vendor' | 'production' }} [opts]
  * @returns {Promise<Object[]>}
  */
 export const getContainersWithArticlesByFloor = async (activeFloor, opts = {}) => {
@@ -210,6 +210,11 @@ export const getContainersWithArticlesByFloor = async (activeFloor, opts = {}) =
     activeFloor: { $regex: `^${escaped}$`, $options: 'i' },
   };
   if (opts.status) query.status = opts.status;
+  if (opts.contentDomain === 'vendor') {
+    query['activeItems.vendorProductionFlow'] = { $exists: true, $ne: null };
+  } else if (opts.contentDomain === 'production') {
+    query['activeItems.article'] = { $exists: true, $ne: null };
+  }
   const docs = await ContainersMaster.find(query).sort({ updatedAt: -1 });
   return Promise.all(docs.map((d) => enrichContainerWithArticles(d)));
 };
