@@ -41,6 +41,9 @@ import VendorProductionFlow from './vendorManagement/vendorProductionFlow.model.
 import VendorGrn from './vendorManagement/vendorGrn.model.js';
 import VendorPoVendorReturn from './vendorManagement/vendorPoVendorReturn.model.js';
 import VendorPoReturnChallan from './vendorManagement/vendorPoReturnChallan.model.js';
+import VendorM2Log from './vendorManagement/vendorM2Log.model.js';
+import VendorM3Log from './vendorManagement/vendorM3Log.model.js';
+import VendorM4Log from './vendorManagement/vendorM4Log.model.js';
 
 export {
   Token,
@@ -86,4 +89,7 @@ export {
   VendorGrn,
   VendorPoVendorReturn,
   VendorPoReturnChallan,
+  VendorM2Log,
+  VendorM3Log,
+  VendorM4Log,
 };

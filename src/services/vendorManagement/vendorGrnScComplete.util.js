@@ -11,7 +11,7 @@ export function isScReadyForGrn(sc) {
   const m1 = Number(sc?.m1Quantity || 0);
   const m2 = Number(sc?.m2Quantity || 0);
   const m3 = Number(sc?.m3Quantity || 0);
-  const m4 = Number(sc?.m4Quantity || 0);
-  const remaining = Number(sc?.remaining ?? received - m1 - m2 - m3 - m4);
-  return remaining === 0 && m1 + m2 + m3 + m4 === received;
+  const vm4 = Number(sc?.vm4Quantity ?? sc?.m4Quantity ?? 0);
+  const remaining = Number(sc?.remaining ?? received - m1 - m2 - m3 - vm4);
+  return remaining === 0 && m1 + m2 + m3 + vm4 === received;
 }

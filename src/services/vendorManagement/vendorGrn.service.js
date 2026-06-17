@@ -143,7 +143,7 @@ export const issueGrnFromFlow = async (flowId, reqUser, opts = {}) => {
   const { flow, vpo, boxes } = await loadFlowContext(flowId);
   const sc = flow.floorQuantities?.secondaryChecking || {};
   const classified = Number(sc.m1Quantity || 0) + Number(sc.m2Quantity || 0)
-    + Number(sc.m3Quantity || 0) + Number(sc.m4Quantity || 0);
+    + Number(sc.m3Quantity || 0) + Number(sc.vm4Quantity ?? sc.m4Quantity ?? 0);
 
   if (classified <= 0) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Cannot issue GRN — no classified quantity on secondary checking');
@@ -154,8 +154,8 @@ export const issueGrnFromFlow = async (flowId, reqUser, opts = {}) => {
     const pending = Number(sc.pendingFromBoxes || 0);
     const msg =
       pending > 0
-        ? 'Secondary checking has unscanned boxes — scan all boxes and complete M1+M2+M3+M4 before GRN'
-        : 'Secondary checking classification is incomplete — confirm manual issue or complete M1+M2+M3+M4';
+        ? 'Secondary checking has unscanned boxes — scan all boxes and complete M1+M2+M3+VM4 before GRN'
+        : 'Secondary checking classification is incomplete — confirm manual issue or complete M1+M2+M3+VM4';
     throw new ApiError(httpStatus.BAD_REQUEST, msg);
   }
 

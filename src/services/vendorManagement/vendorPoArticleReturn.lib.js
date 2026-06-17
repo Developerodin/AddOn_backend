@@ -12,21 +12,21 @@ const toNumber = (value) => {
 };
 
 /**
- * Verified secondary-checking qty (M1+M2+M3+M4) available for return.
+ * Verified secondary-checking qty (M1+M2+M3+VM4) available for return.
  * @param {Object} sc - secondaryChecking floor object
- * @returns {{ m1: number, m2: number, m3: number, m4: number, verifiedAvailable: number }}
+ * @returns {{ m1: number, m2: number, m3: number, vm4: number, verifiedAvailable: number }}
  */
 export const getVerifiedBreakdown = (sc = {}) => {
   const m1 = toNumber(sc.m1Quantity);
   const m2 = toNumber(sc.m2Quantity);
   const m3 = toNumber(sc.m3Quantity);
-  const m4 = toNumber(sc.m4Quantity);
+  const vm4 = toNumber(sc.vm4Quantity ?? sc.m4Quantity);
   return {
     m1,
     m2,
     m3,
-    m4,
-    verifiedAvailable: m1 + m2 + m3 + m4,
+    vm4,
+    verifiedAvailable: m1 + m2 + m3 + vm4,
   };
 };
 
@@ -71,7 +71,7 @@ export const deductVerifiedQtyFromSc = (sc, qty) => {
   }
 
   const buckets = [
-    ['m4Quantity', toNumber(sc.m4Quantity)],
+    ['vm4Quantity', toNumber(sc.vm4Quantity ?? sc.m4Quantity)],
     ['m3Quantity', toNumber(sc.m3Quantity)],
     ['m2Quantity', toNumber(sc.m2Quantity)],
     ['m1Quantity', toNumber(sc.m1Quantity)],
@@ -99,7 +99,7 @@ export const deductVerifiedQtyFromSc = (sc, qty) => {
     m1Quantity: toNumber(next.m1Quantity),
     m2Quantity: toNumber(next.m2Quantity),
     m3Quantity: toNumber(next.m3Quantity),
-    m4Quantity: toNumber(next.m4Quantity),
+    vm4Quantity: toNumber(next.vm4Quantity ?? next.m4Quantity),
   });
 
   return { ...next, ...derived };
@@ -128,7 +128,7 @@ export const buildArticleCandidateFromFlow = (flow) => {
       m1: breakdown.m1,
       m2: breakdown.m2,
       m3: breakdown.m3,
-      m4: breakdown.m4,
+      vm4: breakdown.vm4,
     },
   };
 };

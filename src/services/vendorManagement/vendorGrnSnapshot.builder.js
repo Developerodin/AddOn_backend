@@ -93,8 +93,8 @@ export const buildSnapshotFromFlow = ({ flow, vpo, boxes = [] }) => {
   const m1 = toNumber(sc.m1Quantity);
   const m2 = toNumber(sc.m2Quantity);
   const m3 = toNumber(sc.m3Quantity);
-  const m4 = toNumber(sc.m4Quantity);
-  const verifiedQty = m1 + m2 + m3 + m4;
+  const vm4 = toNumber(sc.vm4Quantity ?? sc.m4Quantity);
+  const verifiedQty = m1 + m2 + m3 + vm4;
   const scanAcceptedQty = toNumber(sc.received);
   const product = flow?.product && typeof flow.product === 'object' ? flow.product : {};
   const poItemId = resolvePoItemId(vpo, product);

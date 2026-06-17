@@ -5,6 +5,7 @@ import ApiError from '../../utils/ApiError.js';
 import { RepairStatus } from '../../models/production/enums.js';
 import { vendorProductionFlowSequence } from '../../models/vendorManagement/vendorProductionFlow.model.js';
 import { tryAutoIssueFromFlow } from './vendorGrn.service.js';
+import { recordVendorM2Entry } from './vendorM2Management.service.js';
 import {
   assertAllowedFloorKey,
   assertForwardFloorMove,
@@ -351,6 +352,8 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
     normalizedBody = stripSecondaryCheckingServerDerivedFields(normalizedBody);
   }
 
+  let beforeFloorSnapshot = null;
+
   const applyPatchUpdates = async (session = null) => {
     const sessionOptions = session ? { session } : undefined;
     let updatedFlow;
@@ -361,6 +364,7 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
     }
 
     const before = pickFloorSnapshot(flow, floorKey);
+    beforeFloorSnapshot = before;
 
     const bodyForPatch = { ...normalizedBody };
 
@@ -423,7 +427,7 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
         m1Quantity: 0,
         m2Quantity: 0,
         m3Quantity: 0,
-        m4Quantity: 0,
+        vm4Quantity: 0,
         m1Transferred: 0,
         m2Transferred: 0,
         repairStatus: RepairStatus.NOT_REQUIRED,
@@ -440,7 +444,7 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
             [floorPath(floorKey, 'm1Quantity')]: 0,
             [floorPath(floorKey, 'm2Quantity')]: 0,
             [floorPath(floorKey, 'm3Quantity')]: 0,
-            [floorPath(floorKey, 'm4Quantity')]: 0,
+            [floorPath(floorKey, 'vm4Quantity')]: 0,
             [floorPath(floorKey, 'm1Transferred')]: 0,
             [floorPath(floorKey, 'm2Transferred')]: 0,
             [floorPath(floorKey, 'repairStatus')]: RepairStatus.NOT_REQUIRED,
@@ -471,6 +475,9 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
         m2Quantity: before.m2Quantity + (ops.$inc?.[floorPath(floorKey, 'm2Quantity')] || 0),
         m3Quantity: before.m3Quantity + (ops.$inc?.[floorPath(floorKey, 'm3Quantity')] || 0),
         m4Quantity: before.m4Quantity + (ops.$inc?.[floorPath(floorKey, 'm4Quantity')] || 0),
+        vm4Quantity:
+          (before.vm4Quantity ?? before.m4Quantity ?? 0) +
+          (ops.$inc?.[floorPath(floorKey, 'vm4Quantity')] || 0),
         repairStatus: ops.$set?.[floorPath(floorKey, 'repairStatus')] ?? before.repairStatus,
         repairRemarks: ops.$set?.[floorPath(floorKey, 'repairRemarks')] ?? before.repairRemarks,
       };
@@ -591,6 +598,25 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
       } catch (grnErr) {
         // Floor patch succeeded — GRN auto-issue is best-effort.
         console.error('[vendorGrn] auto-issue failed:', grnErr?.message || grnErr);
+      }
+    }
+
+    if (updatedFlow && VENDOR_CHECKING_FLOORS.has(floorKey) && beforeFloorSnapshot) {
+      const afterSnap = pickFloorSnapshot(updatedFlow, floorKey);
+      const m2Delta = afterSnap.m2Quantity - beforeFloorSnapshot.m2Quantity;
+      if (m2Delta > 0) {
+        try {
+          await recordVendorM2Entry({
+            flow: updatedFlow,
+            sourceFloor: floorKey,
+            deltaQuantity: m2Delta,
+            previousFloorTotal: beforeFloorSnapshot.m2Quantity,
+            newFloorTotal: afterSnap.m2Quantity,
+            user: reqUser,
+          });
+        } catch (m2LogErr) {
+          console.error('[vendorM2] ledger hook failed:', m2LogErr?.message || m2LogErr);
+        }
       }
     }
 

@@ -74,6 +74,14 @@ const vendorProductionFlowSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    /** Ledger-only outward tracking for M3 Management (floor qty unchanged on outward) */
+    m3Tracking: {
+      outwardTotal: { type: Number, default: 0, min: 0 },
+    },
+    /** Ledger-only outward tracking for M4 Management (floor qty unchanged on outward) */
+    m4Tracking: {
+      outwardTotal: { type: Number, default: 0, min: 0 },
+    },
     startedAt: { type: Date },
     completedAt: { type: Date },
   },

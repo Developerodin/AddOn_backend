@@ -105,7 +105,7 @@ export const getVendorProductionFlows = {
     vendor: Joi.string().custom(objectId),
     vendorPurchaseOrder: Joi.string().custom(objectId),
     product: Joi.string().custom(objectId),
-    currentFloorKey: Joi.string().valid('secondaryChecking', 'washing', 'boarding', 'branding', 'finalChecking', 'dispatch'),
+    currentFloorKey: Joi.string().valid('secondaryChecking', 'branding', 'finalChecking', 'dispatch'),
     search: Joi.string(),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
@@ -122,7 +122,7 @@ export const getVendorProductionFlow = {
 export const updateVendorProductionFlowFloor = {
   params: Joi.object().keys({
     vendorProductionFlowId: Joi.string().custom(objectId).required(),
-    floorKey: Joi.string().valid('secondaryChecking', 'washing', 'boarding', 'branding', 'finalChecking', 'dispatch').required(),
+    floorKey: Joi.string().valid('secondaryChecking', 'branding', 'finalChecking', 'dispatch').required(),
   }),
   body: Joi.object()
     .keys({
@@ -138,6 +138,7 @@ export const updateVendorProductionFlowFloor = {
       m2Delta: Joi.number().min(0),
       m3Delta: Joi.number().min(0),
       m4Delta: Joi.number().min(0),
+      vm4Delta: Joi.number().min(0),
 
       // Backward compatibility (replace semantics)
       received: Joi.number().min(0),
@@ -149,6 +150,7 @@ export const updateVendorProductionFlowFloor = {
       m2Quantity: Joi.number().min(0),
       m3Quantity: Joi.number().min(0),
       m4Quantity: Joi.number().min(0),
+      vm4Quantity: Joi.number().min(0),
       /** When true, m1–m4 quantities are absolute totals (process drawer). */
       setSplitTotals: Joi.boolean(),
       m1Transferred: Joi.number().min(0),
@@ -246,7 +248,7 @@ export const transferFinalCheckingM2ForRework = {
     vendorProductionFlowId: Joi.string().custom(objectId).required(),
   }),
   body: Joi.object().keys({
-    toFloorKey: Joi.string().valid('washing', 'boarding', 'branding').required(),
+    toFloorKey: Joi.string().valid('branding').required(),
     quantity: Joi.number().min(1).required(),
     remarks: Joi.string().allow('', null),
   }),
@@ -352,5 +354,125 @@ export const getVendorDispatchTransferNoteReport = {
 export const getVendorDispatchTransferNote = {
   params: Joi.object().keys({
     transferNoteId: Joi.string().custom(objectId).required(),
+  }),
+};
+
+// ==================== VENDOR M2 / M3 / M4 MANAGEMENT ====================
+
+const vendorM2SourceFloor = Joi.string().valid('secondaryChecking', 'finalChecking');
+
+export const getVendorM2Entries = {
+  query: Joi.object().keys({
+    vendorProductionFlowId: Joi.string().custom(objectId),
+    sourceFloor: vendorM2SourceFloor,
+    status: Joi.string().valid('OPEN', 'PARTIAL', 'RESOLVED'),
+    includeResolved: Joi.string().valid('true', 'false'),
+    vpoNumber: Joi.string().trim(),
+    search: Joi.string(),
+    limit: Joi.number().integer().min(1).max(1000),
+    page: Joi.number().integer().min(1),
+    sortBy: Joi.string(),
+  }),
+};
+
+export const getVendorM2Logs = {
+  query: Joi.object().keys({
+    vendorProductionFlowId: Joi.string().custom(objectId),
+    entryId: Joi.string(),
+    type: Joi.string().valid('ENTRY', 'MERGE_TO_M1', 'TRANSFER_TO_M3', 'TRANSFER_TO_M4'),
+    sourceFloor: vendorM2SourceFloor,
+    vpoNumber: Joi.string().trim(),
+    dateFrom: Joi.date(),
+    dateTo: Joi.date(),
+    search: Joi.string(),
+    limit: Joi.number().integer().min(1).max(1000),
+    page: Joi.number().integer().min(1),
+    sortBy: Joi.string(),
+  }),
+};
+
+const vendorM2EntryActionBody = {
+  params: Joi.object().keys({
+    entryId: Joi.string().required(),
+  }),
+  body: Joi.object().keys({
+    quantity: Joi.number().min(0.01).required(),
+    remarks: Joi.string().trim().min(1).required(),
+  }),
+};
+
+export const markVendorM2MergeToM1 = vendorM2EntryActionBody;
+export const markVendorM2TransferToM3 = vendorM2EntryActionBody;
+export const markVendorM2TransferToM4 = vendorM2EntryActionBody;
+
+export const getVendorM3Flows = {
+  query: Joi.object().keys({
+    vendor: Joi.string().custom(objectId),
+    vendorPurchaseOrder: Joi.string().custom(objectId),
+    search: Joi.string(),
+    limit: Joi.number().integer().min(1).max(1000),
+    page: Joi.number().integer().min(1),
+    sortBy: Joi.string(),
+  }),
+};
+
+export const getVendorM3Logs = {
+  query: Joi.object().keys({
+    vendorProductionFlowId: Joi.string().custom(objectId),
+    type: Joi.string().valid('ENTRY', 'OUTWARD'),
+    sourceFloor: vendorM2SourceFloor,
+    vpoNumber: Joi.string().trim(),
+    dateFrom: Joi.date(),
+    dateTo: Joi.date(),
+    search: Joi.string(),
+    limit: Joi.number().integer().min(1).max(1000),
+    page: Joi.number().integer().min(1),
+    sortBy: Joi.string(),
+  }),
+};
+
+export const markVendorM3Outward = {
+  params: Joi.object().keys({
+    flowId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object().keys({
+    quantity: Joi.number().min(0.01).required(),
+    remarks: Joi.string().trim().min(1).required(),
+  }),
+};
+
+export const getVendorM4Flows = {
+  query: Joi.object().keys({
+    vendor: Joi.string().custom(objectId),
+    vendorPurchaseOrder: Joi.string().custom(objectId),
+    search: Joi.string(),
+    limit: Joi.number().integer().min(1).max(1000),
+    page: Joi.number().integer().min(1),
+    sortBy: Joi.string(),
+  }),
+};
+
+export const getVendorM4Logs = {
+  query: Joi.object().keys({
+    vendorProductionFlowId: Joi.string().custom(objectId),
+    type: Joi.string().valid('ENTRY', 'OUTWARD'),
+    sourceFloor: Joi.string().valid('finalChecking'),
+    vpoNumber: Joi.string().trim(),
+    dateFrom: Joi.date(),
+    dateTo: Joi.date(),
+    search: Joi.string(),
+    limit: Joi.number().integer().min(1).max(1000),
+    page: Joi.number().integer().min(1),
+    sortBy: Joi.string(),
+  }),
+};
+
+export const markVendorM4Outward = {
+  params: Joi.object().keys({
+    flowId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object().keys({
+    quantity: Joi.number().min(0.01).required(),
+    remarks: Joi.string().trim().min(1).required(),
   }),
 };

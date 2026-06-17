@@ -14,6 +14,7 @@ const numericFloorFields = new Set([
   'm2Quantity',
   'm3Quantity',
   'm4Quantity',
+  'vm4Quantity',
   'm1Transferred',
   'm1Remaining',
   'm2Transferred',
@@ -39,7 +40,8 @@ export function resolveMode(body) {
     body?.m1Delta !== undefined ||
     body?.m2Delta !== undefined ||
     body?.m3Delta !== undefined ||
-    body?.m4Delta !== undefined;
+    body?.m4Delta !== undefined ||
+    body?.vm4Delta !== undefined;
   if (hasDelta) return 'increment';
   return 'replace';
 }
@@ -66,7 +68,8 @@ export function normalizeCheckingFloorSplitBody(floorKey, body) {
     next.m1Quantity !== undefined ||
     next.m2Quantity !== undefined ||
     next.m3Quantity !== undefined ||
-    next.m4Quantity !== undefined;
+    next.m4Quantity !== undefined ||
+    next.vm4Quantity !== undefined;
   if (!hasSplitAbsolute) return next;
 
   /**
@@ -88,8 +91,16 @@ export function normalizeCheckingFloorSplitBody(floorKey, body) {
     delete next.m3Quantity;
   }
   if (next.m4Quantity !== undefined) {
-    next.m4Delta = next.m4Quantity;
+    if (floorKey === 'secondaryChecking') {
+      next.vm4Delta = next.m4Quantity;
+    } else {
+      next.m4Delta = next.m4Quantity;
+    }
     delete next.m4Quantity;
+  }
+  if (next.vm4Quantity !== undefined) {
+    next.vm4Delta = next.vm4Quantity;
+    delete next.vm4Quantity;
   }
   return next;
 }
@@ -146,7 +157,7 @@ export function pickFloorSnapshot(flow, floorKey) {
  * `remaining` meaning:
  * - Branding / dispatch: received − transferred (not yet sent to next floor).
  * - Other non-checking floors: received − completed − transferred.
- * - secondaryChecking: received − m1 − m2 − m3 − m4 (not yet classified; independent of transferred).
+ * - secondaryChecking: received − m1 − m2 − m3 − vm4 (not yet classified; independent of transferred).
  * - finalChecking: received − transferred (pipeline handoff view).
  */
 /** Branding / dispatch: assert + transferable math use pipeline rules (transferred ≤ completed ≤ received). */
@@ -164,8 +175,8 @@ export function computeRemainingForFloor(floorKey, floor) {
     const m1Quantity = toFiniteNumber(floor.m1Quantity, 0);
     const m2Quantity = toFiniteNumber(floor.m2Quantity, 0);
     const m3Quantity = toFiniteNumber(floor.m3Quantity, 0);
-    const m4Quantity = toFiniteNumber(floor.m4Quantity, 0);
-    return Math.max(0, received - m1Quantity - m2Quantity - m3Quantity - m4Quantity);
+    const vm4Quantity = toFiniteNumber(floor.vm4Quantity ?? floor.m4Quantity, 0);
+    return Math.max(0, received - m1Quantity - m2Quantity - m3Quantity - vm4Quantity);
   }
   if (pipelineStandardFloorKeys.has(floorKey)) {
     return Math.max(0, received - transferred);
@@ -188,7 +199,7 @@ export function computeDerivedForFloor(floorKey, floor) {
     derived.m2Remaining = Math.max(0, m2Quantity - m2Transferred);
   }
 
-  /** Secondary: `completed` is M1 (good path) only — M2/M4 are only in their quantity fields. */
+  /** Secondary: `completed` is M1 (good path) only — M2/M3/VM4 are only in their quantity fields. */
   if (floorKey === 'secondaryChecking') {
     derived.completed = toFiniteNumber(floor.m1Quantity, 0);
   }
@@ -265,18 +276,19 @@ export function assertValidFloorState(floorKey, floor) {
     const m2Quantity = toFiniteNumber(floor.m2Quantity, 0);
     const m3Quantity = toFiniteNumber(floor.m3Quantity, 0);
     const m4Quantity = toFiniteNumber(floor.m4Quantity, 0);
+    const vm4Quantity = toFiniteNumber(floor.vm4Quantity ?? floor.m4Quantity, 0);
     const m1Transferred = toFiniteNumber(floor.m1Transferred, 0);
     const m2Transferred = toFiniteNumber(floor.m2Transferred, 0);
 
-    if (m1Quantity < 0 || m2Quantity < 0 || m3Quantity < 0 || m4Quantity < 0) {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'M1/M2/M3/M4 quantities cannot be negative');
+    if (m1Quantity < 0 || m2Quantity < 0 || m3Quantity < 0 || m4Quantity < 0 || vm4Quantity < 0) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'M1/M2/M3/M4/VM4 quantities cannot be negative');
     }
     if (floorKey === 'secondaryChecking') {
-      if (m1Quantity + m2Quantity + m3Quantity + m4Quantity > received) {
-        throw new ApiError(httpStatus.BAD_REQUEST, 'M1 + M2 + M3 + M4 cannot exceed received');
+      if (m1Quantity + m2Quantity + m3Quantity + vm4Quantity > received) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'M1 + M2 + M3 + VM4 cannot exceed received');
       }
-    } else if (m1Quantity + m2Quantity + m4Quantity > received) {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'M1 + M2 + M4 cannot exceed received');
+    } else if (m1Quantity + m2Quantity + m3Quantity + m4Quantity > received) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'M1 + M2 + M3 + M4 cannot exceed received');
     }
 
     if (m1Transferred < 0 || m2Transferred < 0) {
@@ -315,6 +327,7 @@ export function buildIncrementOps(floorKey, body) {
   const m2Delta = body?.m2Delta;
   const m3Delta = body?.m3Delta;
   const m4Delta = body?.m4Delta;
+  const vm4Delta = body?.vm4Delta;
 
   if (receivedDelta !== undefined) inc[floorPath(floorKey, 'received')] = toFiniteNumber(receivedDelta, 0);
   if (completedDelta !== undefined) inc[floorPath(floorKey, 'completed')] = toFiniteNumber(completedDelta, 0);
@@ -327,12 +340,23 @@ export function buildIncrementOps(floorKey, body) {
   }
   if (m2Delta !== undefined) inc[floorPath(floorKey, 'm2Quantity')] = toFiniteNumber(m2Delta, 0);
   if (m3Delta !== undefined) {
-    if (floorKey !== 'secondaryChecking') {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'm3Delta is only valid on secondaryChecking');
+    if (floorKey !== 'secondaryChecking' && floorKey !== 'finalChecking') {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'm3Delta is only valid on secondaryChecking or finalChecking');
     }
     inc[floorPath(floorKey, 'm3Quantity')] = toFiniteNumber(m3Delta, 0);
   }
-  if (m4Delta !== undefined) inc[floorPath(floorKey, 'm4Quantity')] = toFiniteNumber(m4Delta, 0);
+  if (m4Delta !== undefined) {
+    if (floorKey !== 'finalChecking') {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'm4Delta is only valid on finalChecking');
+    }
+    inc[floorPath(floorKey, 'm4Quantity')] = toFiniteNumber(m4Delta, 0);
+  }
+  if (vm4Delta !== undefined) {
+    if (floorKey !== 'secondaryChecking') {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'vm4Delta is only valid on secondaryChecking');
+    }
+    inc[floorPath(floorKey, 'vm4Quantity')] = toFiniteNumber(vm4Delta, 0);
+  }
 
   if (body?.repairStatus !== undefined) set[floorPath(floorKey, 'repairStatus')] = body.repairStatus;
   if (body?.repairRemarks !== undefined) set[floorPath(floorKey, 'repairRemarks')] = body.repairRemarks ?? '';
@@ -367,6 +391,7 @@ export function buildReplaceOps(floorKey, body) {
     'm2Quantity',
     'm3Quantity',
     'm4Quantity',
+    'vm4Quantity',
     'm1Transferred',
     'm1Remaining',
     'm2Transferred',

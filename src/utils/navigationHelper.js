@@ -91,11 +91,12 @@ export const DEFAULT_NAVIGATION = {
     'Vendor PO Raise': false,
     'Vendor PO Receive': false,
     'Secondary Checking': false,
-    'Washing': false,
-    'Boarding': false,
     'Branding': false,
     'Final Checking': false,
     'Dispatch': false,
+    'M2 Management': false,
+    'M3 Management': false,
+    'M4 Management': false,
     'Counting & Dispatch': false,
     'GRN': false,
     'Vendor PO Return': false,
@@ -191,11 +192,12 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Vendor PO Raise': true,
       'Vendor PO Receive': true,
       'Secondary Checking': true,
-      'Washing': true,
-      'Boarding': true,
       'Branding': true,
       'Final Checking': true,
       'Dispatch': true,
+      'M2 Management': true,
+      'M3 Management': true,
+      'M4 Management': true,
       'Counting & Dispatch': true,
       'GRN': true,
       'Vendor PO Return': true,
@@ -286,11 +288,12 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Vendor PO Raise': false,
       'Vendor PO Receive': false,
       'Secondary Checking': false,
-      'Washing': false,
-      'Boarding': false,
       'Branding': false,
       'Final Checking': false,
       'Dispatch': false,
+      'M2 Management': false,
+      'M3 Management': false,
+      'M4 Management': false,
       'Counting & Dispatch': false,
       'GRN': false,
       'Vendor PO Return': false,
@@ -517,7 +520,7 @@ export const validateNavigationStructure = (navigation) => {
     console.error('Validation failed: Vendor PO is not an object');
     return false;
   }
-  const vendorPOKeys = ['Vendor List', 'Vendor PO Raise', 'Vendor PO Receive', 'Secondary Checking', 'Washing', 'Boarding', 'Branding', 'Final Checking', 'Dispatch', 'Counting & Dispatch', 'GRN', 'Vendor PO Return', 'Vendor PO Return Challan'];
+  const vendorPOKeys = ['Vendor List', 'Vendor PO Raise', 'Vendor PO Receive', 'Secondary Checking', 'Branding', 'Final Checking', 'Dispatch', 'M2 Management', 'M3 Management', 'M4 Management', 'Counting & Dispatch', 'GRN', 'Vendor PO Return', 'Vendor PO Return Challan'];
   for (const key of vendorPOKeys) {
     if (!(key in navigation['Vendor PO']) || typeof navigation['Vendor PO'][key] !== 'boolean') {
       console.error(`Validation failed: Vendor PO.${key} is missing or not a boolean`);

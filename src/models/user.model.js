@@ -160,11 +160,12 @@ const userSchema = mongoose.Schema(
           'Vendor PO Raise': false,
           'Vendor PO Receive': false,
           'Secondary Checking': false,
-          'Washing': false,
-          'Boarding': false,
           'Branding': false,
           'Final Checking': false,
           'Dispatch': false,
+          'M2 Management': false,
+          'M3 Management': false,
+          'M4 Management': false,
           'Counting & Dispatch': false,
           'GRN': false
 

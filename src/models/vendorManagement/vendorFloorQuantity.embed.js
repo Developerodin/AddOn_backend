@@ -5,7 +5,7 @@ import { RepairStatus } from '../production/enums.js';
  * Embedded shapes aligned with {@link ../production/article.model.js} `floorQuantities`.
  * Vendor flow is fixed: secondaryChecking → branding → finalChecking → dispatch
  * (see {@link ./vendorProductionFlow.model.js} `vendorProductionFlowSequence`).
- * Secondary checking tracks M1, M2, M3, M4; final checking tracks M1, M2, M4 only.
+ * Secondary checking tracks M1, M2, M3, VM4 (vendor return qty); final checking tracks M1, M2, M3, M4.
  */
 
 export const receivedDataEntrySchema = new mongoose.Schema(
@@ -110,6 +110,7 @@ export const vendorFinalCheckingFloorSchema = new mongoose.Schema(
     transferred: { type: Number, default: 0 },
     m1Quantity: { type: Number, default: 0, min: 0 },
     m2Quantity: { type: Number, default: 0, min: 0 },
+    m3Quantity: { type: Number, default: 0, min: 0 },
     m4Quantity: { type: Number, default: 0, min: 0 },
     m1Transferred: { type: Number, default: 0, min: 0 },
     m1Remaining: { type: Number, default: 0, min: 0 },
@@ -123,7 +124,7 @@ export const vendorFinalCheckingFloorSchema = new mongoose.Schema(
     repairRemarks: { type: String, default: '' },
     /** Same shape as {@link article.model.js} `floorQuantities.finalChecking.transferredData` (styleCode / brand). */
     transferredData: { type: [transferredDataEntrySchema], default: [] },
-    /** Same shape as branding + article `finalChecking.receivedData` (styleCode / brand). Vendor has no M3. */
+    /** Same shape as branding + article `finalChecking.receivedData` (styleCode / brand). */
     receivedData: { type: [receivedDataBrandingEntrySchema], default: [] },
   },
   { _id: false }
@@ -139,7 +140,8 @@ export const vendorSecondaryCheckingFloorSchema = new mongoose.Schema(
     m1Quantity: { type: Number, default: 0, min: 0 },
     m2Quantity: { type: Number, default: 0, min: 0 },
     m3Quantity: { type: Number, default: 0, min: 0 },
-    m4Quantity: { type: Number, default: 0, min: 0 },
+    /** Vendor return / warranty qty — feeds PO Return, not M4 Management. */
+    vm4Quantity: { type: Number, default: 0, min: 0 },
     m1Transferred: { type: Number, default: 0, min: 0 },
     m1Remaining: { type: Number, default: 0, min: 0 },
     m2Transferred: { type: Number, default: 0, min: 0 },

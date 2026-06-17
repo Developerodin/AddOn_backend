@@ -132,22 +132,22 @@ export const finalizeVendorPoReturn = async (session, actor, reqUser) => {
       throw new ApiError(httpStatus.BAD_REQUEST, 'M4 return flow does not belong to this VPO');
     }
     const sc = flow.floorQuantities?.secondaryChecking || {};
-    const availableM4 = Number(sc.m4Quantity) || 0;
+    const availableVm4 = Number(sc.vm4Quantity ?? sc.m4Quantity) || 0;
     const qty = Number(row.m4Quantity) || 0;
-    if (qty <= 0 || qty > availableM4) {
+    if (qty <= 0 || qty > availableVm4) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        `M4 return qty ${qty} exceeds available M4 (${availableM4}) on flow`
+        `VM4 return qty ${qty} exceeds available VM4 (${availableVm4}) on flow`
       );
     }
-    sc.m4Quantity = availableM4 - qty;
+    sc.vm4Quantity = availableVm4 - qty;
     const derived = computeDerivedForFloor('secondaryChecking', {
       ...sc,
       received: Number(sc.received) || 0,
       m1Quantity: Number(sc.m1Quantity) || 0,
       m2Quantity: Number(sc.m2Quantity) || 0,
       m3Quantity: Number(sc.m3Quantity) || 0,
-      m4Quantity: sc.m4Quantity,
+      vm4Quantity: sc.vm4Quantity,
     });
     flow.floorQuantities.secondaryChecking = { ...sc, ...derived };
     await flow.save();

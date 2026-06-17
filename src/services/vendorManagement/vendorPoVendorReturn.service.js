@@ -235,9 +235,10 @@ export const addM4LineToSession = async (params) => {
   if (vpoNum && vpoNum !== session.vpoNumber) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Flow does not belong to selected VPO');
   }
-  const available = Number(flow.floorQuantities?.secondaryChecking?.m4Quantity) || 0;
+  const available = Number(flow.floorQuantities?.secondaryChecking?.vm4Quantity
+    ?? flow.floorQuantities?.secondaryChecking?.m4Quantity) || 0;
   if (qty > available) {
-    throw new ApiError(httpStatus.BAD_REQUEST, `Only ${available} M4 units available on this article`);
+    throw new ApiError(httpStatus.BAD_REQUEST, `Only ${available} VM4 units available on this article`);
   }
   const lotNumber = String(params.lotNumber || flow.referenceCode || '').trim();
   const pending = session.pendingM4Lines || [];
@@ -341,7 +342,8 @@ export const getM4ReturnCandidates = async (vpoNumber) => {
       referenceCode: f.referenceCode || '',
       productName: f.product?.name || '',
       vendorCode: f.product?.vendorCode || '',
-      m4Available: Number(f.floorQuantities?.secondaryChecking?.m4Quantity) || 0,
+      m4Available: Number(f.floorQuantities?.secondaryChecking?.vm4Quantity
+        ?? f.floorQuantities?.secondaryChecking?.m4Quantity) || 0,
     }))
     .filter((r) => r.m4Available > 0);
 };
