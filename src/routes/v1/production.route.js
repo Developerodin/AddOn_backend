@@ -240,6 +240,10 @@ router
   .route('/articles/:articleId/branding-type')
   .patch(validate(productionValidation.updateArticleBrandingType), productionController.updateArticleBrandingType);
 
+router
+  .route('/articles/:articleId/revert-floor-transfer')
+  .post(validate(productionValidation.revertFloorTransfer), productionController.revertFloorTransfer);
+
 // Fix data corruption for specific article
 router
   .route('/articles/:articleId/fix-corruption')

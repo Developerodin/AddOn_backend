@@ -17,6 +17,7 @@ import { computeConsumedPerDispatchRow } from '../../utils/dispatchWarehousePend
 import {
   brandKey,
   mergeTransferredDataByBrand,
+  subtractTransferredDataByBrand,
   rowsMatchByBrand,
   buildBrandBudgetFromReceived,
 } from '../../utils/brandQuantity.util.js';
@@ -1536,6 +1537,128 @@ export const updateArticleBrandingType = async (articleId, brandingType) => {
 
   article.brandingType = brandingType;
   await article.save();
+
+  return Article.findById(articleId)
+    .populate('machineId', 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor');
+};
+
+/**
+ * Revert a floor transfer (compensation when container staging fails after transfer).
+ * @param {string} articleId
+ * @param {Object} payload
+ * @param {string} payload.floor - Canonical floor name e.g. "Final Checking"
+ * @param {Array<{ transferred: number, styleCode?: string, brand?: string }>} payload.transferItems
+ * @param {number} [payload.m1Quantity]
+ * @param {number} [payload.m2Quantity]
+ * @param {number} [payload.m3Quantity]
+ * @param {number} [payload.m4Quantity]
+ * @param {Object} [user]
+ * @returns {Promise<Article>}
+ */
+export const revertFloorTransfer = async (articleId, payload, user = null) => {
+  const article = await Article.findById(articleId);
+  if (!article) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Article not found');
+  }
+
+  const floorMapping = {
+    FinalChecking: 'Final Checking',
+    finalchecking: 'Final Checking',
+    'final-checking': 'Final Checking',
+    final_checking: 'Final Checking',
+  };
+  const normalizedFloor = floorMapping[payload.floor] || payload.floor;
+  const transferItems = Array.isArray(payload.transferItems) ? payload.transferItems : [];
+  if (transferItems.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'transferItems required to revert floor transfer');
+  }
+
+  const revertQty = transferItems.reduce((s, i) => s + (Number(i.transferred) || 0), 0);
+  if (revertQty <= 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'transferItems total must be positive');
+  }
+
+  if (!FLOORS_WITH_STYLE_TRANSFER_ITEMS.includes(normalizedFloor)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, `Revert not supported for floor: ${normalizedFloor}`);
+  }
+
+  const floorKey = article.getFloorKey(normalizedFloor);
+  const floorData = article.floorQuantities?.[floorKey];
+  if (!floorData) {
+    throw new ApiError(httpStatus.BAD_REQUEST, `No floor data for ${normalizedFloor}`);
+  }
+
+  const currentTransferred = floorData.transferred || 0;
+  if (revertQty > currentTransferred) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Cannot revert ${revertQty} units — only ${currentTransferred} transferred on ${normalizedFloor}`
+    );
+  }
+
+  const previousTransferred = currentTransferred;
+  const previousCompleted = floorData.completed || 0;
+  const previousM1Transferred = floorData.m1Transferred || 0;
+
+  floorData.transferred = Math.max(0, currentTransferred - revertQty);
+  floorData.transferredData = subtractTransferredDataByBrand(floorData.transferredData, transferItems);
+
+  if (normalizedFloor === 'Final Checking' || normalizedFloor === 'Branding') {
+    floorData.m1Transferred = Math.max(0, previousM1Transferred - revertQty);
+    floorData.m1Remaining = Math.max(0, (floorData.m1Quantity || 0) - floorData.m1Transferred);
+  }
+
+  if (floorData.completed >= revertQty) {
+    floorData.completed = Math.max(floorData.transferred, floorData.completed - revertQty);
+  } else if (floorData.completed > floorData.transferred) {
+    floorData.completed = floorData.transferred;
+  }
+
+  floorData.remaining = Math.max(0, (floorData.received || 0) - (floorData.transferred || 0));
+
+  if (payload.m1Quantity != null && payload.m1Quantity > 0) {
+    floorData.m1Quantity = Math.max(0, (floorData.m1Quantity || 0) - payload.m1Quantity);
+    floorData.m1Remaining = Math.max(0, (floorData.m1Quantity || 0) - (floorData.m1Transferred || 0));
+  }
+  if (payload.m2Quantity != null && payload.m2Quantity > 0) {
+    floorData.m2Quantity = Math.max(0, (floorData.m2Quantity || 0) - payload.m2Quantity);
+  }
+  if (payload.m3Quantity != null && payload.m3Quantity > 0) {
+    floorData.m3Quantity = Math.max(0, (floorData.m3Quantity || 0) - payload.m3Quantity);
+  }
+  if (payload.m4Quantity != null && payload.m4Quantity > 0) {
+    floorData.m4Quantity = Math.max(0, (floorData.m4Quantity || 0) - payload.m4Quantity);
+  }
+
+  article.markModified(`floorQuantities.${floorKey}`);
+  article.markModified('floorQuantities');
+  article.progress = article.calculatedProgress;
+  await article.save();
+
+  try {
+    await ArticleLog.createLogEntry({
+      articleId: article._id.toString(),
+      orderId: article.orderId.toString(),
+      action: 'Transfer Reverted',
+      quantity: revertQty,
+      remarks: `Reverted ${revertQty} units on ${normalizedFloor} (compensating failed container staging)`,
+      previousValue: JSON.stringify({
+        transferred: previousTransferred,
+        completed: previousCompleted,
+        m1Transferred: previousM1Transferred,
+      }),
+      newValue: JSON.stringify({
+        transferred: floorData.transferred,
+        completed: floorData.completed,
+        m1Transferred: floorData.m1Transferred,
+      }),
+      changeReason: 'Transfer revert',
+      userId: user?.id || user?._id?.toString() || 'system',
+      floorSupervisorId: user?.id || user?._id?.toString() || 'system',
+    });
+  } catch (logError) {
+    console.error('Error creating transfer revert log:', logError);
+  }
 
   return Article.findById(articleId)
     .populate('machineId', 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor');

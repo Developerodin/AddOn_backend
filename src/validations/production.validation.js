@@ -216,6 +216,31 @@ const updateArticleProgress = {
   }),
 };
 
+const revertFloorTransfer = {
+  params: Joi.object().keys({
+    articleId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object().keys({
+    floor: Joi.string()
+      .valid('Final Checking', 'FinalChecking', 'Branding', 'Dispatch', 'Re-Boarding')
+      .required(),
+    transferItems: Joi.array()
+      .items(
+        Joi.object().keys({
+          transferred: Joi.number().integer().min(1).required(),
+          styleCode: Joi.string().trim().allow('').optional(),
+          brand: Joi.string().trim().allow('').optional(),
+        })
+      )
+      .min(1)
+      .required(),
+    m1Quantity: Joi.number().integer().min(0).optional(),
+    m2Quantity: Joi.number().integer().min(0).optional(),
+    m3Quantity: Joi.number().integer().min(0).optional(),
+    m4Quantity: Joi.number().integer().min(0).optional(),
+  }),
+};
+
 const transferArticle = {
   params: Joi.object().keys({
     floor: Joi.string().valid('Knitting', 'Linking', 'Checking', 'Washing', 'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Re-Boarding', 'Final Checking', 'Warehouse', 'Dispatch').required(),
@@ -796,6 +821,7 @@ export default {
   getDispatchTransferNoteReport,
   getDispatchTransferNote,
   updateArticleProgress,
+  revertFloorTransfer,
   transferArticle,
   getFloorStatistics,
   

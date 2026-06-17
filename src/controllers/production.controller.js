@@ -166,6 +166,12 @@ export const updateArticleBrandingType = catchAsync(async (req, res) => {
   res.send(article);
 });
 
+export const revertFloorTransfer = catchAsync(async (req, res) => {
+  const { articleId } = req.params;
+  const article = await productionService.revertFloorTransfer(articleId, req.body, req.user);
+  res.send(article);
+});
+
 // ==================== REPORTS AND ANALYTICS ====================
 
 export const getProductionDashboard = catchAsync(async (req, res) => {

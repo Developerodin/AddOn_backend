@@ -92,6 +92,58 @@ export function mergeTransferredDataByBrand(existingRows, incomingRows) {
 }
 
 /**
+ * Subtract brand-keyed transfer rows from existing transferredData (inverse of merge).
+ * @param {Array<{ transferred?: number, styleCode?: string, brand?: string, _id?: unknown }>} existingRows
+ * @param {Array<{ transferred?: number, styleCode?: string, brand?: string }>} rowsToSubtract
+ * @returns {Array<{ transferred: number, styleCode: string, brand: string, _id?: unknown }>}
+ */
+export function subtractTransferredDataByBrand(existingRows, rowsToSubtract) {
+  const existing = Array.isArray(existingRows) ? existingRows : [];
+  const incoming = Array.isArray(rowsToSubtract) ? rowsToSubtract : [];
+
+  const cloneRow = (r) => {
+    const o = typeof r?.toObject === 'function' ? r.toObject() : { ...r };
+    const base = {
+      styleCode: '',
+      brand: String(o.brand ?? '').trim(),
+      transferred: Math.max(0, Number(o.transferred ?? 0)),
+    };
+    if (o._id != null) base._id = o._id;
+    return base;
+  };
+
+  const collapsed = new Map();
+  for (const row of existing.map(cloneRow)) {
+    const key = brandKey(row.brand);
+    if (!key) continue;
+    collapsed.set(key, {
+      ...row,
+      brand: row.brand,
+      styleCode: '',
+      transferred: (collapsed.get(key)?.transferred ?? 0) + row.transferred,
+    });
+  }
+
+  for (const dec of incoming) {
+    const qty = Math.max(0, Number(dec?.transferred ?? 0));
+    if (qty <= 0) continue;
+    const brand = String(dec?.brand ?? '').trim();
+    const key = brandKey(brand);
+    if (!key) continue;
+    const prev = collapsed.get(key);
+    if (!prev) continue;
+    const nextQty = Math.max(0, prev.transferred - qty);
+    if (nextQty <= 0) {
+      collapsed.delete(key);
+    } else {
+      collapsed.set(key, { ...prev, transferred: nextQty });
+    }
+  }
+
+  return Array.from(collapsed.values());
+}
+
+/**
  * Build per-brand budget from receivedData minus transferredData.
  * @param {Array<{ transferred?: number, styleCode?: string, brand?: string }>} receivedData
  * @param {Array<{ transferred?: number, styleCode?: string, brand?: string }>} transferredData
