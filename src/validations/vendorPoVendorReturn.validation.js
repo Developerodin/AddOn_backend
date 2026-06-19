@@ -72,6 +72,13 @@ export const getArticleReturnCandidates = {
   }),
 };
 
+export const getArticleReturnBoxes = {
+  query: Joi.object().keys({
+    vpoNumber: Joi.string().required(),
+    vendorProductionFlowId: Joi.string().custom(objectId).required(),
+  }),
+};
+
 export const addVendorReturnArticleQtyLine = {
   params: Joi.object().keys({
     sessionId: Joi.string().custom(objectId).required(),

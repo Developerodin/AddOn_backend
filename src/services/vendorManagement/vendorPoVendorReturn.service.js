@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import VendorPoVendorReturn, {
   vendorPoReturnCancellationIntents,
 } from '../../models/vendorManagement/vendorPoVendorReturn.model.js';
-import { VendorPurchaseOrder, VendorProductionFlow } from '../../models/index.js';
+import { VendorPurchaseOrder, VendorProductionFlow, VendorBox } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import {
   assertBoxEligibleForReturn,
@@ -91,7 +91,7 @@ const enrichPendingArticleQtyLines = async (session) => {
       vendorCode: product.vendorCode || '',
       referenceCode: flow?.referenceCode || '',
       verifiedAvailable: breakdown.verifiedAvailable,
-      breakdown: { m1: breakdown.m1, m2: breakdown.m2, m3: breakdown.m3, m4: breakdown.m4 },
+      breakdown: { m1: breakdown.m1, m2: breakdown.m2, m3: breakdown.m3, vm4: breakdown.vm4, m4: breakdown.vm4 },
     };
   });
 };
@@ -324,6 +324,55 @@ export const getArticleReturnCandidates = async (vpoNumber) => {
     .populate({ path: 'product', select: 'name vendorCode' })
     .lean();
   return flows.map((f) => buildArticleCandidateFromFlow(f)).filter(Boolean);
+};
+
+/**
+ * List boxes available for return for a given article (production flow) on a VPO.
+ * Supports article-wise box selection: each box exposes box number, weight and quantity.
+ * @param {string} vpoNumber
+ * @param {string} flowId - vendor production flow id (identifies the article)
+ * @returns {Promise<Array<{ boxId: string, barcode: string, lotNumber: string, productName: string, vendorCode: string, boxWeight: number, numberOfUnits: number }>>}
+ */
+export const getArticleReturnBoxes = async (vpoNumber, flowId) => {
+  const vpoNum = String(vpoNumber || '').trim();
+  if (!vpoNum) throw new ApiError(httpStatus.BAD_REQUEST, 'vpoNumber is required');
+  if (!mongoose.Types.ObjectId.isValid(String(flowId))) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid flow id');
+  }
+  const vpo = await VendorPurchaseOrder.findOne({ vpoNumber: vpoNum }).select('_id').lean();
+  if (!vpo) throw new ApiError(httpStatus.NOT_FOUND, 'VPO not found');
+  const flow = await VendorProductionFlow.findById(flowId)
+    .select('product referenceCode vendorPurchaseOrder')
+    .lean();
+  if (!flow) throw new ApiError(httpStatus.NOT_FOUND, 'Production flow not found');
+  if (flow.vendorPurchaseOrder && String(flow.vendorPurchaseOrder) !== String(vpo._id)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Flow does not belong to selected VPO');
+  }
+
+  /** Only boxes not yet physically returned; scoped to this article's product on the VPO. */
+  const boxFilter = {
+    vendorPurchaseOrderId: vpo._id,
+    returnedToVendor: { $ne: true },
+  };
+  if (flow.product) boxFilter.productId = flow.product;
+
+  const boxes = await VendorBox.find(boxFilter)
+    .populate({ path: 'productId', select: 'vendorCode name' })
+    .sort({ lotNumber: 1, boxId: 1 })
+    .lean();
+
+  return boxes.map((b) => {
+    const product = b.productId && typeof b.productId === 'object' ? b.productId : {};
+    return {
+      boxId: b.boxId,
+      barcode: b.barcode || b.boxId,
+      lotNumber: b.lotNumber || '',
+      productName: b.productName || product.name || '',
+      vendorCode: product.vendorCode || '',
+      boxWeight: Number(b.boxWeight) || 0,
+      numberOfUnits: Number(b.numberOfUnits) || 0,
+    };
+  });
 };
 
 /**

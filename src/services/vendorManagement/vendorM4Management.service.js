@@ -201,6 +201,7 @@ export const getM4Flows = async (filter = {}, options = {}) => {
 
   const [flows, totalResults] = await Promise.all([
     VendorProductionFlow.find(mongoFilter)
+      .populate('product', 'name vendorCode factoryCode')
       .sort(options.sortBy ? options.sortBy.replace(':', ' ') : { updatedAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -218,6 +219,8 @@ export const getM4Flows = async (filter = {}, options = {}) => {
     return {
       _id: flow._id,
       referenceCode: flow.referenceCode,
+      productName: flow.product?.name || '',
+      productVendorCode: flow.product?.vendorCode || '',
       vpoNumber: po.vpoNumber || '',
       vendor: flow.vendor,
       vendorPurchaseOrder: flow.vendorPurchaseOrder,

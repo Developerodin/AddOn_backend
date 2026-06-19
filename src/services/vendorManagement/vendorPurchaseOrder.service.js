@@ -1,6 +1,18 @@
 import httpStatus from 'http-status';
 import mongoose from 'mongoose';
-import { VendorPurchaseOrder, VendorManagement, VendorBox, VendorProductionFlow } from '../../models/index.js';
+import {
+  VendorPurchaseOrder,
+  VendorManagement,
+  VendorBox,
+  VendorProductionFlow,
+  VendorGrn,
+  VendorPoVendorReturn,
+  VendorPoReturnChallan,
+  VendorM2Log,
+  VendorM3Log,
+  VendorM4Log,
+} from '../../models/index.js';
+import VendorDispatchStockTransferNote from '../../models/vendorManagement/vendorDispatchStockTransferNote.model.js';
 import ApiError from '../../utils/ApiError.js';
 import { vendorPurchaseOrderStatuses } from '../../models/vendorManagement/vendorPurchaseOrder.model.js';
 import getNextVendorPoNumberForYear from '../../utils/vendorPoNumber.util.js';
@@ -141,8 +153,34 @@ export const deleteVendorPurchaseOrderById = async (purchaseOrderId) => {
   if (!purchaseOrder) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Vendor purchase order not found');
   }
-  await VendorBox.deleteMany({ vendorPurchaseOrderId: purchaseOrderId });
-  await VendorProductionFlow.deleteMany({ vendorPurchaseOrder: purchaseOrderId });
+  const vpoNumber = String(purchaseOrder.vpoNumber || '').trim();
+
+  /**
+   * Cascade-delete everything derived from this order so no orphaned data is left behind
+   * on any floor:
+   *  - boxes (intake) and production flows (secondary checking, branding, final checking, dispatch)
+   *  - GRNs, vendor returns (VM4), return challans
+   *  - M2 / M3 / M4 floor logs (keyed by vpoNumber)
+   *  - dispatch stock-transfer notes for this PO
+   */
+  await Promise.all([
+    VendorBox.deleteMany({ vendorPurchaseOrderId: purchaseOrderId }),
+    VendorProductionFlow.deleteMany({ vendorPurchaseOrder: purchaseOrderId }),
+    VendorGrn.deleteMany({ vendorPurchaseOrder: purchaseOrderId }),
+    VendorPoVendorReturn.deleteMany({ vendorPurchaseOrder: purchaseOrderId }),
+    VendorPoReturnChallan.deleteMany({ vendorPurchaseOrder: purchaseOrderId }),
+    VendorDispatchStockTransferNote.deleteMany({
+      $or: [{ vendorPurchaseOrderId: purchaseOrderId }, ...(vpoNumber ? [{ vpoNumber }] : [])],
+    }),
+    ...(vpoNumber
+      ? [
+          VendorM2Log.deleteMany({ vpoNumber }),
+          VendorM3Log.deleteMany({ vpoNumber }),
+          VendorM4Log.deleteMany({ vpoNumber }),
+        ]
+      : []),
+  ]);
+
   await purchaseOrder.deleteOne();
   return purchaseOrder;
 };

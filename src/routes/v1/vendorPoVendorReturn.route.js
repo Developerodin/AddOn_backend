@@ -15,6 +15,10 @@ router
   .get(auth(), validate(validation.getArticleReturnCandidates), controller.getArticleCandidates);
 
 router
+  .route('/article-boxes')
+  .get(auth(), validate(validation.getArticleReturnBoxes), controller.getArticleBoxes);
+
+router
   .route('/m4-candidates')
   .get(auth(), validate(validation.getM4ReturnCandidates), controller.getM4Candidates);
 

@@ -21,6 +21,7 @@
  * @property {string} id
  * @property {string} name
  * @property {string} [factoryCode]
+ * @property {string} [vendorCode]
  * @property {string} [softwareCode]
  * @property {string} [internalCode]
  * @property {string} [knittingCode]
@@ -150,7 +151,7 @@ export function serializeWarehouseInventory(raw, options = {}) {
   const availNum = Number(d.availableQuantity);
   const available = Number.isFinite(availNum) ? availNum : Math.max(0, total - blocked);
 
-  const product = shapeRef(d.itemId, ['name', 'factoryCode', 'softwareCode', 'internalCode', 'knittingCode']);
+  const product = shapeRef(d.itemId, ['name', 'factoryCode', 'vendorCode', 'softwareCode', 'internalCode', 'knittingCode']);
   const styleCodeMaster = shapeRef(d.styleCodeId, ['styleCode', 'eanCode', 'mrp', 'brand', 'pack', 'status']);
 
   const out = {

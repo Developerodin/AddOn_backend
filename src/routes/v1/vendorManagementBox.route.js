@@ -23,6 +23,10 @@ router
   .post(auth(), validate(vendorBoxValidation.processVendorLot), vendorBoxController.processVendorLot);
 
 router
+  .route('/resync-lot')
+  .post(auth(), validate(vendorBoxValidation.resyncVendorLotBoxes), vendorBoxController.resyncVendorLotBoxes);
+
+router
   .route('/')
   .get(auth(), validate(vendorBoxValidation.getVendorBoxes), vendorBoxController.getVendorBoxes)
   .post(auth(), validate(vendorBoxValidation.createVendorBox), vendorBoxController.createVendorBox);

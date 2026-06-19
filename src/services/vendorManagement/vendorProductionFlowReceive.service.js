@@ -16,6 +16,7 @@ export const vendorFloorKeyToContainerActiveFloor = (floorKey) => {
   const map = {
     secondaryChecking: 'Secondary Checking',
     branding: 'Branding',
+    reBoarding: 'Re-Boarding',
     finalChecking: 'Final Checking',
     dispatch: 'Dispatch',
     warehouse: VENDOR_WAREHOUSE_INWARD_ACTIVE_FLOOR,
@@ -32,10 +33,27 @@ export const isVendorWarehouseInwardActiveFloor = (activeFloor) => {
 const FLOOR_NAME_TO_KEY = {
   'Secondary Checking': 'secondaryChecking',
   'Branding': 'branding',
+  'Re-Boarding': 'reBoarding',
   'Final Checking': 'finalChecking',
   'Dispatch': 'dispatch',
   [VENDOR_WAREHOUSE_INWARD_ACTIVE_FLOOR]: 'warehouse',
 };
+
+/**
+ * Floor that feeds Final Checking for this flow. With Embroidery the article passes through
+ * Re-Boarding, so Final Checking's cap/style source is reBoarding; otherwise it is branding.
+ * @param {Object} flow
+ * @returns {'reBoarding'|'branding'}
+ */
+function getVendorFinalCheckingSourceFloorKey(flow) {
+  const rb = flow?.floorQuantities?.reBoarding;
+  const hasReBoardingActivity =
+    rb &&
+    (Number(rb.transferred || 0) > 0 ||
+      Number(rb.received || 0) > 0 ||
+      (Array.isArray(rb.transferredData) && rb.transferredData.length > 0));
+  return hasReBoardingActivity ? 'reBoarding' : 'branding';
+}
 
 /**
  * Branding receive cannot exceed M1 quantity transferred from secondary checking.
@@ -68,53 +86,61 @@ function assertVendorBrandingReceiveWithinSecondaryCap(flow, quantity) {
 }
 
 /**
- * Cumulative FC receive per style cannot exceed what branding sent (sum of branding.transferredData per key).
- * Supports incremental containers: first scan +10, second +20 for same style → cap 30 from branding.
+ * Cumulative receive per style on `destFloorKey` cannot exceed what `sourceFloorKey` sent
+ * (sum of source.transferredData per key). Supports incremental containers: first scan +10,
+ * second +20 for same style → cap 30 from the source floor.
+ * Used for: branding → reBoarding, branding → finalChecking, reBoarding → finalChecking.
+ * @param {Object} flow
+ * @param {'branding'|'reBoarding'} sourceFloorKey
+ * @param {'reBoarding'|'finalChecking'} destFloorKey
+ * @param {Array<{ transferred: number, styleCode?: string, brand?: string }>} incomingRows
  */
-function assertVendorFcReceiveWithinBrandingCap(flow, incomingRows) {
-  const branding = flow.floorQuantities?.branding || {};
-  const brandingTotal = Number(branding.transferred || 0);
-  const brandingByStyle = aggregateTransferredByStyleKey(branding.transferredData);
+function assertVendorReceiveWithinSourceCap(flow, sourceFloorKey, destFloorKey, incomingRows) {
+  const source = flow.floorQuantities?.[sourceFloorKey] || {};
+  const sourceTotal = Number(source.transferred || 0);
+  const sourceByStyle = aggregateTransferredByStyleKey(source.transferredData);
+  const sourceLabel = sourceFloorKey === 'reBoarding' ? 're-boarding' : 'branding';
+  const destLabel = destFloorKey === 'reBoarding' ? 're-boarding' : 'final checking';
 
-  const fc = flow.floorQuantities?.finalChecking || {};
-  const fcExisting = aggregateTransferredByStyleKey(fc.receivedData);
+  const dest = flow.floorQuantities?.[destFloorKey] || {};
+  const destExisting = aggregateTransferredByStyleKey(dest.receivedData);
   const incomingMap = aggregateTransferredByStyleKey(incomingRows);
   const incomingTotal = [...incomingMap.values()].reduce((a, b) => a + b, 0);
   if (incomingTotal <= 0) return;
 
-  if (brandingTotal <= 0 && brandingByStyle.size === 0) {
+  if (sourceTotal <= 0 && sourceByStyle.size === 0) {
     throw new ApiError(
       httpStatus.BAD_REQUEST,
-      'Cannot receive at final checking: branding has not recorded an outbound transfer for this flow.'
+      `Cannot receive at ${destLabel}: ${sourceLabel} has not recorded an outbound transfer for this flow.`
     );
   }
 
-  if (brandingByStyle.size > 0) {
+  if (sourceByStyle.size > 0) {
     for (const [k, inc] of incomingMap) {
       if (inc <= 0) continue;
-      const cap = brandingByStyle.get(k);
+      const cap = sourceByStyle.get(k);
       if (cap === undefined) {
         throw new ApiError(
           httpStatus.BAD_REQUEST,
-          `Style/brand key "${k}" is not present in branding outbound lines. Each container line must match a styleCode/brand that branding already sent.`
+          `Style/brand key "${k}" is not present in ${sourceLabel} outbound lines. Each container line must match a styleCode/brand that ${sourceLabel} already sent.`
         );
       }
-      const after = (fcExisting.get(k) || 0) + inc;
+      const after = (destExisting.get(k) || 0) + inc;
       if (after > cap + 1e-6) {
         throw new ApiError(
           httpStatus.BAD_REQUEST,
-          `For "${k}": final checking would receive ${after} cumulative but branding only sent ${cap}. Second+ containers must carry only **new** units for that style (e.g. 10 then 20 more, not 30 as a repeat of the first 10).`
+          `For "${k}": ${destLabel} would receive ${after} cumulative but ${sourceLabel} only sent ${cap}. Second+ containers must carry only **new** units for that style (e.g. 10 then 20 more, not 30 as a repeat of the first 10).`
         );
       }
     }
     return;
   }
 
-  const fcAfter = Number(fc.received || 0) + incomingTotal;
-  if (fcAfter > brandingTotal + 1e-6) {
+  const destAfter = Number(dest.received || 0) + incomingTotal;
+  if (destAfter > sourceTotal + 1e-6) {
     throw new ApiError(
       httpStatus.BAD_REQUEST,
-      `Final checking total receive would be ${fcAfter} but branding only sent ${brandingTotal} in total.`
+      `${destLabel} total receive would be ${destAfter} but ${sourceLabel} only sent ${sourceTotal} in total.`
     );
   }
 }
@@ -173,28 +199,15 @@ function assertVendorDispatchReceiveWithinFinalCheckingCap(flow, incomingRows) {
 
 function resolveVendorFloorKey(floor) {
   const s = String(floor || '').trim();
-  if (['secondaryChecking', 'branding', 'finalChecking', 'dispatch'].includes(s)) return s;
+  if (['secondaryChecking', 'branding', 'reBoarding', 'finalChecking', 'dispatch'].includes(s)) return s;
   if (FLOOR_NAME_TO_KEY[s]) return FLOOR_NAME_TO_KEY[s];
-  const lower = s.replace(/\s+/g, '').toLowerCase();
+  const lower = s.replace(/[\s-]+/g, '').toLowerCase();
   if (lower === 'secondarychecking') return 'secondaryChecking';
   if (lower === 'branding') return 'branding';
+  if (lower === 'reboarding') return 'reBoarding';
   if (lower === 'finalchecking') return 'finalChecking';
   if (lower === 'dispatch') return 'dispatch';
   return null;
-}
-
-/**
- * True when this container was already accepted on the given floor (idempotent re-accept).
- * @param {Object} floorData
- * @param {*} containerId
- * @returns {boolean}
- */
-function floorAlreadyAcceptedContainer(floorData, containerId) {
-  if (!containerId || !Array.isArray(floorData?.receivedData)) return false;
-  const cid = String(containerId);
-  return floorData.receivedData.some(
-    (row) => row?.receivedInContainerId != null && String(row.receivedInContainerId) === cid
-  );
 }
 
 /**
@@ -224,11 +237,13 @@ export const updateVendorProductionFlowFloorReceivedData = async (flowId, payloa
     floorData.receivedData = [];
   }
 
-  const containerId = payload.receivedData?.receivedInContainerId ?? null;
-  if (containerId && floorAlreadyAcceptedContainer(floorData, containerId)) {
-    return { flow, receivedDataNewLines: [] };
-  }
-
+  /**
+   * No container-id idempotency guard here: vendor staging **re-uses** the same physical container
+   * across cycles (existingContainerBarcode), so a container id legitimately appears in this floor's
+   * receivedData from earlier batches. Double-accept of the *same* staged batch is already prevented at
+   * the container level — `acceptContainerByBarcode` clears `activeItems` after crediting, so re-scanning
+   * an unchanged container finds no items. Crediting here must run for every newly staged batch.
+   */
   const receivedDataLengthBefore = floorData.receivedData.length;
 
   let receivedTransferItems = payload.receivedTransferItems;
@@ -243,8 +258,37 @@ export const updateVendorProductionFlowFloorReceivedData = async (flowId, payloa
       ? payload.containerTransferItems
       : null;
 
-  if (containerTransferItems && (floorKey === 'finalChecking' || floorKey === 'dispatch')) {
+  if (containerTransferItems && (floorKey === 'reBoarding' || floorKey === 'finalChecking' || floorKey === 'dispatch')) {
     receivedTransferItems = containerTransferItems;
+  }
+
+  /** Re-Boarding receives the branding outbound style breakdown (Embroidery articles). */
+  if (
+    (!receivedTransferItems || receivedTransferItems.length === 0) &&
+    typeof quantity === 'number' &&
+    quantity > 0 &&
+    floorKey === 'reBoarding'
+  ) {
+    const branding = flow.floorQuantities?.branding;
+    const prevTransferredData = branding?.transferredData;
+    if (Array.isArray(prevTransferredData) && prevTransferredData.length > 0) {
+      const totalAvailable = prevTransferredData.reduce((s, i) => s + (i.transferred || 0), 0);
+      if (totalAvailable >= quantity) {
+        let remaining = quantity;
+        const items = [];
+        for (const i of prevTransferredData) {
+          if (remaining <= 0) break;
+          const take = Math.min(i.transferred || 0, remaining);
+          if (take > 0) {
+            items.push({ transferred: take, styleCode: i.styleCode || '', brand: i.brand || '' });
+            remaining -= take;
+          }
+        }
+        if (items.length > 0 && items.reduce((s, x) => s + x.transferred, 0) === quantity) {
+          receivedTransferItems = items;
+        }
+      }
+    }
   }
 
   if (
@@ -253,8 +297,9 @@ export const updateVendorProductionFlowFloorReceivedData = async (flowId, payloa
     quantity > 0 &&
     floorKey === 'finalChecking'
   ) {
-    const branding = flow.floorQuantities?.branding;
-    const prevTransferredData = branding?.transferredData;
+    const sourceFloorKey = getVendorFinalCheckingSourceFloorKey(flow);
+    const sourceFloor = flow.floorQuantities?.[sourceFloorKey];
+    const prevTransferredData = sourceFloor?.transferredData;
     if (Array.isArray(prevTransferredData) && prevTransferredData.length > 0) {
       const totalAvailable = prevTransferredData.reduce((s, i) => s + (i.transferred || 0), 0);
       if (totalAvailable >= quantity) {
@@ -303,6 +348,23 @@ export const updateVendorProductionFlowFloorReceivedData = async (flowId, payloa
     }
   }
 
+  if (floorKey === 'reBoarding') {
+    const capLines =
+      Array.isArray(receivedTransferItems) && receivedTransferItems.length > 0
+        ? receivedTransferItems.map((item) => ({
+            transferred: Number(item.transferred || 0),
+            styleCode: item.styleCode || '',
+            brand: item.brand || '',
+          }))
+        : typeof quantity === 'number' && quantity > 0
+          ? [{ transferred: quantity, styleCode: '', brand: '' }]
+          : [];
+    const capSum = capLines.reduce((s, x) => s + Math.max(0, x.transferred), 0);
+    if (capSum > 0) {
+      assertVendorReceiveWithinSourceCap(flow, 'branding', 'reBoarding', capLines);
+    }
+  }
+
   if (floorKey === 'finalChecking') {
     const capLines =
       Array.isArray(receivedTransferItems) && receivedTransferItems.length > 0
@@ -316,7 +378,7 @@ export const updateVendorProductionFlowFloorReceivedData = async (flowId, payloa
           : [];
     const capSum = capLines.reduce((s, x) => s + Math.max(0, x.transferred), 0);
     if (capSum > 0) {
-      assertVendorFcReceiveWithinBrandingCap(flow, capLines);
+      assertVendorReceiveWithinSourceCap(flow, getVendorFinalCheckingSourceFloorKey(flow), 'finalChecking', capLines);
     }
   }
 

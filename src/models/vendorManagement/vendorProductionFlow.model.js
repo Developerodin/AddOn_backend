@@ -4,17 +4,23 @@ import paginate from '../plugins/paginate.plugin.js';
 import {
   vendorDispatchFloorSchema,
   vendorBrandingFloorSchema,
+  vendorReBoardingFloorSchema,
   vendorFinalCheckingFloorSchema,
   vendorSecondaryCheckingFloorSchema,
 } from './vendorFloorQuantity.embed.js';
 
 /**
- * Fixed vendor production pipeline (only order that exists for this module):
- * secondaryChecking → branding → finalChecking → dispatch
+ * Vendor production pipeline:
+ * secondaryChecking → branding → reBoarding → finalChecking → dispatch
+ *
+ * `reBoarding` is only traversed when `brandingType` is `Embroidery`; for `Heat Transfer`
+ * (and legacy flows with no branding type) articles move branding → finalChecking directly.
+ * See {@link ../../services/vendorManagement/vendorProductionFlowFloorPatch.js} `resolveVendorNextFloorKey`.
  */
 export const vendorProductionFlowSequence = [
   'secondaryChecking',
   'branding',
+  'reBoarding',
   'finalChecking',
   'dispatch',
 ];
@@ -26,6 +32,7 @@ const floorQuantitiesSchema = new mongoose.Schema(
   {
     secondaryChecking: { type: vendorSecondaryCheckingFloorSchema, default: () => ({}) },
     branding: { type: vendorBrandingFloorSchema, default: () => ({}) },
+    reBoarding: { type: vendorReBoardingFloorSchema, default: () => ({}) },
     finalChecking: { type: vendorFinalCheckingFloorSchema, default: () => ({}) },
     dispatch: { type: vendorDispatchFloorSchema, default: () => ({}) },
   },
@@ -51,6 +58,16 @@ const vendorProductionFlowSchema = new mongoose.Schema(
     referenceCode: {
       type: String,
       trim: true,
+    },
+    /**
+     * Branding method chosen on the Branding floor. Drives floor routing:
+     * `Embroidery` → branding → reBoarding → finalChecking;
+     * `Heat Transfer` → branding → finalChecking.
+     */
+    brandingType: {
+      type: String,
+      enum: ['Heat Transfer', 'Embroidery'],
+      required: false,
     },
     plannedQuantity: {
       type: Number,

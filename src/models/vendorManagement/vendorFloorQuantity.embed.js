@@ -101,6 +101,25 @@ export const vendorBrandingFloorSchema = new mongoose.Schema(
   { _id: false }
 );
 
+/**
+ * Re-Boarding floor: optional stage between Branding and Final Checking, used only when
+ * {@link ./vendorProductionFlow.model.js} `brandingType` is `Embroidery`. Same counters and
+ * style/brand breakdown as the Branding floor (each `transferredData[].transferred` = qty to
+ * the next floor, i.e. final checking).
+ */
+export const vendorReBoardingFloorSchema = new mongoose.Schema(
+  {
+    received: { type: Number, default: 0 },
+    completed: { type: Number, default: 0 },
+    remaining: { type: Number, default: 0 },
+    transferred: { type: Number, default: 0 },
+    repairReceived: { type: Number, default: 0, min: 0 },
+    transferredData: { type: [transferredDataEntrySchema], default: [] },
+    receivedData: { type: [receivedDataBrandingEntrySchema], default: [] },
+  },
+  { _id: false }
+);
+
 /** Uses {@link transferredDataEntrySchema}: each row’s `transferred` = completed + forwarded for that line (next: dispatch path). */
 export const vendorFinalCheckingFloorSchema = new mongoose.Schema(
   {

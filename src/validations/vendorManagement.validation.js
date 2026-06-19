@@ -105,7 +105,7 @@ export const getVendorProductionFlows = {
     vendor: Joi.string().custom(objectId),
     vendorPurchaseOrder: Joi.string().custom(objectId),
     product: Joi.string().custom(objectId),
-    currentFloorKey: Joi.string().valid('secondaryChecking', 'branding', 'finalChecking', 'dispatch'),
+    currentFloorKey: Joi.string().valid('secondaryChecking', 'branding', 'reBoarding', 'finalChecking', 'dispatch'),
     search: Joi.string(),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
@@ -122,7 +122,7 @@ export const getVendorProductionFlow = {
 export const updateVendorProductionFlowFloor = {
   params: Joi.object().keys({
     vendorProductionFlowId: Joi.string().custom(objectId).required(),
-    floorKey: Joi.string().valid('secondaryChecking', 'branding', 'finalChecking', 'dispatch').required(),
+    floorKey: Joi.string().valid('secondaryChecking', 'branding', 'reBoarding', 'finalChecking', 'dispatch').required(),
   }),
   body: Joi.object()
     .keys({
@@ -169,6 +169,15 @@ export const updateVendorProductionFlowFloor = {
     .unknown(true),
 };
 
+export const updateVendorBrandingType = {
+  params: Joi.object().keys({
+    vendorProductionFlowId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object().keys({
+    brandingType: Joi.string().valid('Heat Transfer', 'Embroidery').required(),
+  }),
+};
+
 const vendorTransferItemSchema = Joi.object().keys({
   transferred: Joi.number().min(0).required(),
   styleCode: Joi.string().allow('', null),
@@ -182,9 +191,9 @@ export const transferVendorProductionFlow = {
   body: Joi.object()
     .keys({
       fromFloorKey: Joi.string()
-        .valid('secondaryChecking', 'branding', 'finalChecking', 'dispatch')
+        .valid('secondaryChecking', 'branding', 'reBoarding', 'finalChecking', 'dispatch')
         .required(),
-      toFloorKey: Joi.string().valid('branding', 'finalChecking', 'dispatch', 'warehouse').required(),
+      toFloorKey: Joi.string().valid('branding', 'reBoarding', 'finalChecking', 'dispatch', 'warehouse').required(),
       quantity: Joi.number().min(1).required(),
       /** Required for secondary→branding and branding→final checking — physical container that already exists */
       existingContainerBarcode: Joi.string().trim().allow('', null),

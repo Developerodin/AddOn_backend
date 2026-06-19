@@ -64,6 +64,14 @@ export const getArticleCandidates = catchAsync(async (req, res) => {
   res.send({ results });
 });
 
+export const getArticleBoxes = catchAsync(async (req, res) => {
+  const results = await vendorPoVendorReturnService.getArticleReturnBoxes(
+    req.query.vpoNumber,
+    req.query.vendorProductionFlowId
+  );
+  res.send({ results });
+});
+
 export const addArticleQtyLine = catchAsync(async (req, res) => {
   const result = await vendorPoVendorReturnService.addArticleQtyLineToSession({
     sessionId: req.params.sessionId,

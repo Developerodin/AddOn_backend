@@ -371,10 +371,13 @@ export const bulkCreateVendorBoxes = async (bulkData) => {
     );
     const inputNumberOfBoxes = Number(numberOfBoxes);
 
-    const shouldExpandAllPoItemsForLot =
-      lotPoItemsWithReceivedBoxes.length > 0 &&
-      (!vendorPoItemId ||
-        (Number.isFinite(inputNumberOfBoxes) && Math.trunc(inputNumberOfBoxes) === totalReceivedBoxesInLot && totalReceivedBoxesInLot > 0));
+    // Deterministic article binding:
+    //  - When the caller passes an explicit vendorPoItemId, create boxes ONLY for that
+    //    article (handled below). We never expand or fall back to poItems[0] in that case.
+    //  - When no vendorPoItemId is given but the lot carries per-article receivedBoxes
+    //    (e.g. auto-detect of all pending lots), expand into one creation group per article
+    //    so a multi-article lot is split correctly instead of dumped on the first article.
+    const shouldExpandAllPoItemsForLot = !vendorPoItemId && lotPoItemsWithReceivedBoxes.length > 0 && totalReceivedBoxesInLot > 0;
 
     if (shouldExpandAllPoItemsForLot) {
       for (const item of lotPoItemsWithReceivedBoxes) {
@@ -583,5 +586,83 @@ export const processVendorLot = async ({ vpoNumber, lotNumber }) => {
     vpoNumber: normalizedVpo,
     lotDetails: [{ lotNumber: normalizedLot, numberOfBoxes: lotFromPo.numberOfBoxes || 0 }],
   });
+};
+
+/**
+ * Re-sync (delete & recreate) the boxes of a single lot from the PO's current
+ * per-article receivedBoxes. Fixes lots whose boxes were created against the wrong
+ * article. Refuses if any box in the lot has already moved past intake
+ * (scanned/accepted on secondary checking, stored, or returned to vendor).
+ *
+ * @param {{ vpoNumber: string, lotNumber: string }} params
+ * @returns {Promise<{ deletedCount: number, createdCount: number, boxes: Object[], skippedLots: Object[] }>}
+ */
+export const resyncVendorLotBoxes = async ({ vpoNumber, lotNumber }) => {
+  const normalizedVpo = String(vpoNumber).trim();
+  const normalizedLot = String(lotNumber).trim();
+
+  const po = await VendorPurchaseOrder.findOne({ vpoNumber: normalizedVpo }).lean();
+  if (!po) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Vendor purchase order not found');
+  }
+
+  const lotFromPo = (po.receivedLotDetails || []).find(
+    (l) => String(l?.lotNumber || '').trim() === normalizedLot
+  );
+  if (!lotFromPo) {
+    throw new ApiError(httpStatus.NOT_FOUND, `Lot "${normalizedLot}" not found on VPO ${normalizedVpo}`);
+  }
+
+  const existingBoxes = await VendorBox.find({ vpoNumber: normalizedVpo, lotNumber: normalizedLot });
+
+  const blocked = existingBoxes.find(
+    (b) => b.secondaryCheckingAccepted || b.storedStatus || b.returnedToVendor
+  );
+  if (blocked) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Cannot re-sync lot ${normalizedLot}: box ${blocked.boxId} has already been scanned/stored/returned`
+    );
+  }
+
+  // Reverse not-yet-accepted units from the production flow, then delete the boxes.
+  // Aggregate units per article (one flow per product) so each flow is reversed exactly
+  // once — avoids lost-update races when several boxes in the lot share an article.
+  const unitsByProduct = new Map();
+  existingBoxes.forEach((box) => {
+    const units = Number(box.numberOfUnits) || 0;
+    if (units <= 0) return;
+    const key = String(box.productId || '');
+    const prev = unitsByProduct.get(key) || { box, units: 0 };
+    unitsByProduct.set(key, { box, units: prev.units + units });
+  });
+  await Promise.all(
+    [...unitsByProduct.values()].map(({ box, units }) =>
+      vendorProductionFlowService.reverseBoxFromProductionFlow(box, units)
+    )
+  );
+
+  const deletedCount = existingBoxes.length;
+  if (deletedCount > 0) {
+    await VendorBox.deleteMany({ _id: { $in: existingBoxes.map((b) => b._id) } });
+  }
+
+  // Recreate per article from the lot's current receivedBoxes.
+  const lotDetails = (lotFromPo.poItems || [])
+    .filter((p) => p?.poItem && Number(p.receivedBoxes) > 0)
+    .map((p) => ({
+      lotNumber: normalizedLot,
+      numberOfBoxes: Math.max(0, Math.trunc(Number(p.receivedBoxes) || 0)),
+      vendorPoItemId: String(p.poItem),
+    }));
+
+  if (!lotDetails.length) {
+    // Nothing to recreate (no per-article box counts). Reset lot so it can be re-received.
+    await updateLotStatusOnPo(normalizedVpo, normalizedLot, 'lot_pending');
+    return { deletedCount, createdCount: 0, boxes: [], skippedLots: [] };
+  }
+
+  const created = await bulkCreateVendorBoxes({ vpoNumber: normalizedVpo, lotDetails });
+  return { deletedCount, ...created };
 };
 /* eslint-enable no-underscore-dangle */

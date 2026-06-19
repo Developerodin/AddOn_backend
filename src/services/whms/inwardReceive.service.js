@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import httpStatus from 'http-status';
 import ApiError from '../../utils/ApiError.js';
 import pick from '../../utils/pick.js';
+import Product from '../../models/product.model.js';
 import { InwardReceive } from '../../models/whms/index.js';
 import { reconcileInwardReceiveWarehouseInventory } from './inwardReceiveWarehouseInventory.helper.js';
 import { promoteVendorDispatchToInwardReceive as promoteVendorDispatchToInwardReceiveHelper } from './inwardReceiveFromVendorDispatch.helper.js';
@@ -99,11 +100,53 @@ export const createInwardReceive = async (body) => {
   return record;
 };
 
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Resolve `vendorCode` for vendor-source inward rows (keyed on `articleNumber` = Product.factoryCode)
+ * and attach it as a top-level field so the WHMS inward screen can show the vendor's own code.
+ * Production-source rows are left untouched (they have only a factory code).
+ * @param {{ results?: Array<Object> }} paginated
+ */
+const attachVendorCodesToInwardRows = async (paginated) => {
+  const rows = paginated?.results || [];
+  if (!rows.length) return;
+  const codes = [
+    ...new Set(
+      rows
+        .filter((r) => String(r.inwardSource) === 'vendor' && r.articleNumber)
+        .map((r) => String(r.articleNumber).trim())
+        .filter(Boolean)
+    ),
+  ];
+  const codeToVendor = new Map();
+  if (codes.length) {
+    const products = await Product.find({
+      $or: codes.map((c) => ({ factoryCode: new RegExp(`^${escapeRegex(c)}$`, 'i') })),
+    })
+      .select('factoryCode vendorCode')
+      .lean();
+    for (const product of products) {
+      const fc = String(product.factoryCode ?? '').trim().toLowerCase();
+      if (fc) codeToVendor.set(fc, String(product.vendorCode ?? '').trim());
+    }
+  }
+  paginated.results = rows.map((row) => {
+    const obj = row?.toJSON ? row.toJSON() : row;
+    if (String(obj.inwardSource) === 'vendor') {
+      obj.vendorCode = codeToVendor.get(String(obj.articleNumber ?? '').trim().toLowerCase()) || '';
+    }
+    return obj;
+  });
+};
+
 export const queryInwardReceives = async (filter, options) => {
-  return InwardReceive.paginate(filter, {
+  const result = await InwardReceive.paginate(filter, {
     ...options,
     populate: options.populate ?? POPULATE_DEFAULT,
   });
+  await attachVendorCodesToInwardRows(result);
+  return result;
 };
 
 export const getInwardReceiveById = async (id) => {

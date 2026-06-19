@@ -57,3 +57,11 @@ export const patchTransport = catchAsync(async (req, res) => {
   );
   res.send(challan);
 });
+
+export const patchBoxes = catchAsync(async (req, res) => {
+  const challan = await vendorPoReturnChallanService.patchChallanReturnBoxes(
+    req.params.challanId,
+    req.body.boxes
+  );
+  res.send(challan);
+});

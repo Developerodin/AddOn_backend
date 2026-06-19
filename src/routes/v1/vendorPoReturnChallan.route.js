@@ -20,6 +20,10 @@ router
   .route('/:challanId/transport')
   .patch(auth(), validate(validation.patchVendorPoReturnChallanTransport), controller.patchTransport);
 
+router
+  .route('/:challanId/boxes')
+  .patch(auth(), validate(validation.patchVendorPoReturnChallanBoxes), controller.patchBoxes);
+
 router.route('/:challanId').get(auth(), validate(validation.getVendorPoReturnChallan), controller.getChallan);
 
 export default router;

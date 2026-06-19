@@ -126,6 +126,20 @@ export function getNextFloorKey(floorKey) {
   return idx >= 0 ? vendorProductionFlowSequence[idx + 1] || null : null;
 }
 
+/**
+ * Branding-type-aware next floor. The `reBoarding` stage is only traversed for `Embroidery`;
+ * `Heat Transfer` (and legacy flows with no branding type) skip straight to final checking.
+ * @param {string} floorKey
+ * @param {string} [brandingType] - 'Heat Transfer' | 'Embroidery'
+ * @returns {string|null}
+ */
+export function resolveVendorNextFloorKey(floorKey, brandingType) {
+  if (floorKey === 'branding') {
+    return brandingType === 'Embroidery' ? 'reBoarding' : 'finalChecking';
+  }
+  return getNextFloorKey(floorKey);
+}
+
 export function assertForwardFloorMove(fromFloorKey, toFloorKey) {
   const fromIdx = vendorProductionFlowSequence.indexOf(fromFloorKey);
   const toIdx = vendorProductionFlowSequence.indexOf(toFloorKey);
@@ -161,7 +175,7 @@ export function pickFloorSnapshot(flow, floorKey) {
  * - finalChecking: received − transferred (pipeline handoff view).
  */
 /** Branding / dispatch: assert + transferable math use pipeline rules (transferred ≤ completed ≤ received). */
-const pipelineStandardFloorKeys = new Set(['branding', 'dispatch']);
+const pipelineStandardFloorKeys = new Set(['branding', 'reBoarding', 'dispatch']);
 
 export function computeRemainingForFloor(floorKey, floor) {
   const received = toFiniteNumber(floor.received, 0);
@@ -263,13 +277,12 @@ export function assertValidFloorState(floorKey, floor) {
         throw new ApiError(httpStatus.BAD_REQUEST, 'Transferred cannot exceed completed');
       }
     } else {
-      /** secondaryChecking: `completed` tracks M1 only; `transferred` is M1 outbound — do not use completed+transferred ≤ received (double-counts). */
-      if (completed > received) {
-        throw new ApiError(httpStatus.BAD_REQUEST, 'Completed cannot exceed received');
-      }
-      if (transferred > received) {
-        throw new ApiError(httpStatus.BAD_REQUEST, 'Transferred cannot exceed received');
-      }
+      /**
+       * secondaryChecking is the physical counting floor: the operator's actual count
+       * (M1/M2/M3/VM4) may legitimately exceed the box-scanned `received`, because the
+       * real quantity is only known here. So we do NOT cap completed/transferred at
+       * `received` for this floor — only the transferred ≤ M1 invariant (below) applies.
+       */
     }
 
     const m1Quantity = toFiniteNumber(floor.m1Quantity, 0);
@@ -283,11 +296,11 @@ export function assertValidFloorState(floorKey, floor) {
     if (m1Quantity < 0 || m2Quantity < 0 || m3Quantity < 0 || m4Quantity < 0 || vm4Quantity < 0) {
       throw new ApiError(httpStatus.BAD_REQUEST, 'M1/M2/M3/M4/VM4 quantities cannot be negative');
     }
-    if (floorKey === 'secondaryChecking') {
-      if (m1Quantity + m2Quantity + m3Quantity + vm4Quantity > received) {
-        throw new ApiError(httpStatus.BAD_REQUEST, 'M1 + M2 + M3 + VM4 cannot exceed received');
-      }
-    } else if (m1Quantity + m2Quantity + m3Quantity + m4Quantity > received) {
+    /**
+     * Over-count is allowed on secondaryChecking (actual counting floor) — the classified
+     * total may exceed `received`. finalChecking keeps the cap.
+     */
+    if (floorKey === 'finalChecking' && m1Quantity + m2Quantity + m3Quantity + m4Quantity > received) {
       throw new ApiError(httpStatus.BAD_REQUEST, 'M1 + M2 + M3 + M4 cannot exceed received');
     }
 
@@ -361,7 +374,7 @@ export function buildIncrementOps(floorKey, body) {
   if (body?.repairStatus !== undefined) set[floorPath(floorKey, 'repairStatus')] = body.repairStatus;
   if (body?.repairRemarks !== undefined) set[floorPath(floorKey, 'repairRemarks')] = body.repairRemarks ?? '';
 
-  if (floorKey === 'branding' || floorKey === 'finalChecking' || floorKey === 'dispatch') {
+  if (floorKey === 'branding' || floorKey === 'reBoarding' || floorKey === 'finalChecking' || floorKey === 'dispatch') {
     if (body?.transferredData !== undefined) set[floorPath(floorKey, 'transferredData')] = body.transferredData;
     if (body?.receivedData !== undefined) set[floorPath(floorKey, 'receivedData')] = body.receivedData;
     /** Server-computed scalars from lines (see vendorProductionFlow.service merge + lineSum). */
@@ -400,10 +413,10 @@ export function buildReplaceOps(floorKey, body) {
     'repairRemarks',
   ];
 
-  if (floorKey === 'branding' || floorKey === 'finalChecking' || floorKey === 'dispatch') {
+  if (floorKey === 'branding' || floorKey === 'reBoarding' || floorKey === 'finalChecking' || floorKey === 'dispatch') {
     patchableKeys.push('transferredData', 'receivedData');
   }
-  if (floorKey === 'branding') {
+  if (floorKey === 'branding' || floorKey === 'reBoarding') {
     patchableKeys.push('repairReceived');
   }
   if (floorKey === 'secondaryChecking') {

@@ -66,10 +66,16 @@ const flattenPendingLinesFromFlows = (flows, stnAllocMap) => {
     );
 
     const product = flow.product;
-    const articleNumber =
+    const factoryCode =
       typeof product === 'object' && product?.factoryCode
         ? String(product.factoryCode).trim()
         : '';
+    const vendorCode =
+      typeof product === 'object' && product?.vendorCode
+        ? String(product.vendorCode).trim()
+        : '';
+    /** Display the vendor's own code; fall back to factory code so the column is never blank. */
+    const articleNumber = vendorCode || factoryCode;
 
     for (const row of pendingRows) {
       const qty = Number(row.transferred ?? 0);
@@ -80,6 +86,7 @@ const flattenPendingLinesFromFlows = (flows, stnAllocMap) => {
         vpoNumber: flow.vendorPurchaseOrder?.vpoNumber || '',
         vendorName: flow.vendor?.header?.vendorName || '',
         articleNumber,
+        factoryCode,
         brand: String(row.brand ?? '').trim(),
         qtyInPairs: qty,
       });
@@ -171,14 +178,16 @@ const displayBrandForLine = (lineBrand, factoryCode, brandMap) => {
  * @returns {Object}
  */
 const mapLineToStnFields = (line, nameMap, brandMap) => {
-  const fcKey = String(line.articleNumber ?? '').trim().toLowerCase();
-  const brandLabel = displayBrandForLine(line.brand, line.articleNumber, brandMap);
+  /** Name/brand catalog is keyed on factory code; the displayed articleNumber is the vendor code. */
+  const fcKey = String(line.factoryCode ?? '').trim().toLowerCase();
+  const brandLabel = displayBrandForLine(line.brand, line.factoryCode, brandMap);
   return {
     vendorProductionFlowId: line.vendorProductionFlowId,
     vendorPurchaseOrderId: line.vendorPurchaseOrderId,
     vpoNumber: line.vpoNumber || '',
     vendorName: line.vendorName || '',
     articleNumber: line.articleNumber || '—',
+    factoryCode: line.factoryCode || '',
     sapArticleNo: brandLabel,
     articleName: nameMap.get(fcKey) || '—',
     brand: brandLabel,
@@ -194,12 +203,14 @@ const mapLineToStnFields = (line, nameMap, brandMap) => {
  * @returns {Promise<Array<Object>>}
  */
 const enrichStnLinesWithCatalogBrands = async (lines) => {
-  const factoryCodes = (lines || []).map((line) => line.articleNumber).filter(Boolean);
+  /** Older STN docs may lack `factoryCode`; fall back to articleNumber for those legacy rows. */
+  const factoryCodes = (lines || []).map((line) => line.factoryCode || line.articleNumber).filter(Boolean);
   const brandMap = await resolveBrandLabelsByFactoryCode(factoryCodes);
   return (lines || []).map((line) => {
     const rawBrand = String(line.brand ?? '').trim();
     const normalizedRaw = rawBrand === '—' ? '' : rawBrand;
-    const brandLabel = displayBrandForLine(normalizedRaw, line.articleNumber, brandMap);
+    const lookupCode = line.factoryCode || line.articleNumber;
+    const brandLabel = displayBrandForLine(normalizedRaw, lookupCode, brandMap);
     return {
       ...line,
       brand: brandLabel,
@@ -276,7 +287,7 @@ export const createVendorDispatchTransferNote = async (body = {}, filter = {}, u
     throw new ApiError(httpStatus.BAD_REQUEST, 'No pending quantity available for transfer note');
   }
 
-  const factoryCodes = flatLines.map((l) => l.articleNumber);
+  const factoryCodes = flatLines.map((l) => l.factoryCode);
   const nameMap = await resolveArticleNamesByFactoryCode(factoryCodes);
   const brandMap = await resolveBrandLabelsByFactoryCode(factoryCodes);
   const { lines: linesWithContainers, totalBoxes } = await attachContainersToLines(flatLines);
@@ -437,7 +448,7 @@ export const previewVendorDispatchTransferNoteLines = async (filter = {}) => {
   const stnAllocMap = await loadActiveVendorStnAllocationMap();
   const flows = await collectAllPendingVendorFlows(filter);
   const flatLines = flattenPendingLinesFromFlows(flows, stnAllocMap);
-  const factoryCodes = flatLines.map((l) => l.articleNumber);
+  const factoryCodes = flatLines.map((l) => l.factoryCode);
   const nameMap = await resolveArticleNamesByFactoryCode(factoryCodes);
   const brandMap = await resolveBrandLabelsByFactoryCode(factoryCodes);
 

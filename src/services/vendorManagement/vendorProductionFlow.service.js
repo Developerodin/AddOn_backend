@@ -1,4 +1,5 @@
 import httpStatus from 'http-status';
+import mongoose from 'mongoose';
 import { VendorProductionFlow } from '../../models/index.js';
 import Product from '../../models/product.model.js';
 import ApiError from '../../utils/ApiError.js';
@@ -6,6 +7,8 @@ import { RepairStatus } from '../../models/production/enums.js';
 import { vendorProductionFlowSequence } from '../../models/vendorManagement/vendorProductionFlow.model.js';
 import { tryAutoIssueFromFlow } from './vendorGrn.service.js';
 import { recordVendorM2Entry } from './vendorM2Management.service.js';
+import { recordVendorM3Entry } from './vendorM3Management.service.js';
+import { recordVendorM4Entry } from './vendorM4Management.service.js';
 import {
   assertAllowedFloorKey,
   assertForwardFloorMove,
@@ -13,6 +16,7 @@ import {
   buildReplaceOps,
   computeDerivedForFloor,
   getNextFloorKey,
+  resolveVendorNextFloorKey,
   pickFloorSnapshot,
   resolveMode,
   normalizeCheckingFloorSplitBody,
@@ -68,13 +72,13 @@ async function maybeAutoTransferVendorFloor(
   mode,
   sessionOptions
 ) {
-  const nextFloorKey = getNextFloorKey(floorKey);
+  const nextFloorKey = resolveVendorNextFloorKey(floorKey, flow?.brandingType);
   if (!nextFloorKey) return;
 
   const shouldAutoTransfer = bodyForPatch?.autoTransferToNextFloor === true;
   /** Saving style/brand lines should still run forward pass when completed delta is 0 (e.g. totals unchanged). */
   const transferredDataPatch =
-    (floorKey === 'branding' || floorKey === 'finalChecking') &&
+    (floorKey === 'branding' || floorKey === 'reBoarding' || floorKey === 'finalChecking') &&
     Array.isArray(bodyForPatch?.transferredData) &&
     bodyForPatch.transferredData.length > 0;
 
@@ -105,10 +109,14 @@ async function maybeAutoTransferVendorFloor(
   const isChecking = VENDOR_CHECKING_FLOORS.has(floorKey);
   const nextBefore = pickFloorSnapshot(flow, nextFloorKey);
 
-  /** Container legs: SC→branding, branding→FC, optional FC→dispatch when `existingContainerBarcode` is sent. */
+  /**
+   * Container legs: SC→branding, branding→reBoarding, branding→FC, reBoarding→FC,
+   * optional FC→dispatch when `existingContainerBarcode` is sent.
+   */
   const containerLeg =
     (floorKey === 'secondaryChecking' && nextFloorKey === 'branding') ||
-    (floorKey === 'branding' && nextFloorKey === 'finalChecking');
+    (floorKey === 'branding' && (nextFloorKey === 'reBoarding' || nextFloorKey === 'finalChecking')) ||
+    (floorKey === 'reBoarding' && nextFloorKey === 'finalChecking');
   const fcDispatchStaging =
     floorKey === 'finalChecking' && nextFloorKey === 'dispatch' && bodyForPatch?.existingContainerBarcode;
   const usesContainer = containerLeg || fcDispatchStaging;
@@ -118,7 +126,7 @@ async function maybeAutoTransferVendorFloor(
     if (!bc || !String(bc).trim()) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        'existingContainerBarcode is required when auto-transferring to the next floor (secondary→branding or branding→final checking). Use a container that already exists.'
+        'existingContainerBarcode is required when auto-transferring to the next floor (secondary→branding, branding→re-boarding/final checking, or re-boarding→final checking). Use a container that already exists.'
       );
     }
   }
@@ -181,7 +189,7 @@ async function maybeAutoTransferVendorFloor(
       floorKey
     );
     const transferItemsForContainer =
-      nextFloorKey === 'finalChecking' || nextFloorKey === 'dispatch'
+      nextFloorKey === 'reBoarding' || nextFloorKey === 'finalChecking' || nextFloorKey === 'dispatch'
         ? receiptRows.map((r) => ({
             transferred: r.transferred,
             styleCode: r.styleCode,
@@ -190,15 +198,15 @@ async function maybeAutoTransferVendorFloor(
         : undefined;
 
     /**
-     * Branding→FC container leg: only $push breakdown rows when the floor patch did **not** already persist
-     * `transferredData`. Replace/increment handlers $set `floorQuantities.branding.transferredData` from the body;
-     * pushing here would duplicate the same lines (e.g. one PATCH with mode replace + autoTransfer).
+     * Branding / re-boarding → next container leg: only $push breakdown rows when the floor patch did **not**
+     * already persist `transferredData`. Replace/increment handlers $set `floorQuantities.<floor>.transferredData`
+     * from the body; pushing here would duplicate the same lines (e.g. one PATCH with mode replace + autoTransfer).
      */
     const patchAlreadyWroteTransferredData =
       Array.isArray(bodyForPatch?.transferredData) && bodyForPatch.transferredData.length > 0;
     if (
-      floorKey === 'branding' &&
-      nextFloorKey === 'finalChecking' &&
+      (floorKey === 'branding' || floorKey === 'reBoarding') &&
+      (nextFloorKey === 'reBoarding' || nextFloorKey === 'finalChecking') &&
       transferItemsForContainer?.length &&
       !patchAlreadyWroteTransferredData
     ) {
@@ -206,7 +214,7 @@ async function maybeAutoTransferVendorFloor(
         { _id: flowId },
         {
           $push: {
-            'floorQuantities.branding.transferredData': { $each: transferItemsForContainer },
+            [floorPath(floorKey, 'transferredData')]: { $each: transferItemsForContainer },
           },
         },
         sessionOptions
@@ -334,6 +342,57 @@ export const syncBoxToProductionFlow = async (box, quantityChange) => {
 };
 
 /**
+ * Reverse a box's contribution to its production flow's secondary-checking intake.
+ * Used when boxes are deleted before being accepted (e.g. re-syncing a lot's boxes).
+ * Only the not-yet-accepted `pendingFromBoxes` bucket is decremented — callers must
+ * ensure the box was never scanned/accepted onto the floor.
+ * @param {Object} box - VendorBox-like doc (vendor, vendorPurchaseOrderId, productId)
+ * @param {number} units - units to remove (the box's numberOfUnits)
+ */
+export const reverseBoxFromProductionFlow = async (box, units) => {
+  const qty = Number(units) || 0;
+  if (qty <= 0) return null;
+
+  const flow = await VendorProductionFlow.findOne({
+    vendor: box.vendor,
+    vendorPurchaseOrder: box.vendorPurchaseOrderId,
+    product: box.productId,
+  });
+  if (!flow) return null;
+
+  flow.plannedQuantity = Math.max(0, Number(flow.plannedQuantity || 0) - qty);
+  const sc = flow.floorQuantities?.secondaryChecking || {};
+  sc.pendingFromBoxes = Math.max(0, Number(sc.pendingFromBoxes || 0) - qty);
+  flow.floorQuantities.secondaryChecking = sc;
+  await flow.save();
+  return flow;
+};
+
+/**
+ * Set the branding method on a vendor flow (chosen on the Branding floor). Drives whether the
+ * article routes branding → reBoarding → finalChecking (Embroidery) or branding → finalChecking
+ * (Heat Transfer). See {@link ./vendorProductionFlowFloorPatch.js} `resolveVendorNextFloorKey`.
+ * @param {string} flowId
+ * @param {'Heat Transfer'|'Embroidery'} brandingType
+ * @returns {Promise<Object>}
+ */
+export const updateVendorBrandingType = async (flowId, brandingType) => {
+  if (!mongoose.Types.ObjectId.isValid(String(flowId))) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid flow id');
+  }
+  if (brandingType !== 'Heat Transfer' && brandingType !== 'Embroidery') {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'brandingType must be Heat Transfer or Embroidery');
+  }
+  const flow = await VendorProductionFlow.findById(flowId);
+  if (!flow) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Vendor production flow not found');
+  }
+  flow.brandingType = brandingType;
+  await flow.save();
+  return flow.toJSON ? flow.toJSON() : flow;
+};
+
+/**
  * Patch update for one vendor production floor.
  * @param {string} flowId
  * @param {string} floorKey
@@ -375,7 +434,7 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
      * - Client values for those fields are stripped.
      */
     if (
-      (floorKey === 'branding' || floorKey === 'finalChecking' || floorKey === 'dispatch') &&
+      (floorKey === 'branding' || floorKey === 'reBoarding' || floorKey === 'finalChecking' || floorKey === 'dispatch') &&
       bodyForPatch.transferredData !== undefined
     ) {
       if (!Array.isArray(bodyForPatch.transferredData)) {
@@ -603,6 +662,8 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
 
     if (updatedFlow && VENDOR_CHECKING_FLOORS.has(floorKey) && beforeFloorSnapshot) {
       const afterSnap = pickFloorSnapshot(updatedFlow, floorKey);
+
+      /** M2 ledger entry when M2 classified qty increases on this checking floor. */
       const m2Delta = afterSnap.m2Quantity - beforeFloorSnapshot.m2Quantity;
       if (m2Delta > 0) {
         try {
@@ -616,6 +677,42 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
           });
         } catch (m2LogErr) {
           console.error('[vendorM2] ledger hook failed:', m2LogErr?.message || m2LogErr);
+        }
+      }
+
+      /** M3 ledger entry — applies on both secondary checking and final checking. */
+      const m3Delta = afterSnap.m3Quantity - beforeFloorSnapshot.m3Quantity;
+      if (m3Delta > 0) {
+        try {
+          await recordVendorM3Entry({
+            flow: updatedFlow,
+            sourceFloor: floorKey,
+            deltaQuantity: m3Delta,
+            previousFloorTotal: beforeFloorSnapshot.m3Quantity,
+            newFloorTotal: afterSnap.m3Quantity,
+            user: reqUser,
+          });
+        } catch (m3LogErr) {
+          console.error('[vendorM3] ledger hook failed:', m3LogErr?.message || m3LogErr);
+        }
+      }
+
+      /** M4 ledger entry — only final checking carries M4 (secondary checking uses VM4 for vendor returns). */
+      if (floorKey === 'finalChecking') {
+        const m4Delta = afterSnap.m4Quantity - beforeFloorSnapshot.m4Quantity;
+        if (m4Delta > 0) {
+          try {
+            await recordVendorM4Entry({
+              flow: updatedFlow,
+              sourceFloor: floorKey,
+              deltaQuantity: m4Delta,
+              previousFloorTotal: beforeFloorSnapshot.m4Quantity,
+              newFloorTotal: afterSnap.m4Quantity,
+              user: reqUser,
+            });
+          } catch (m4LogErr) {
+            console.error('[vendorM4] ledger hook failed:', m4LogErr?.message || m4LogErr);
+          }
         }
       }
     }
@@ -658,12 +755,14 @@ export const transferVendorProductionFlowQuantity = async (flowId, fromFloorKey,
 
   const usesContainer =
     (fromFloorKey === 'secondaryChecking' && toFloorKey === 'branding') ||
-    (fromFloorKey === 'branding' && toFloorKey === 'finalChecking') ||
+    (fromFloorKey === 'branding' && (toFloorKey === 'reBoarding' || toFloorKey === 'finalChecking')) ||
+    (fromFloorKey === 'reBoarding' && toFloorKey === 'finalChecking') ||
     (fromFloorKey === 'finalChecking' && toFloorKey === 'dispatch' && opts.existingContainerBarcode);
 
   if (
     (fromFloorKey === 'secondaryChecking' && toFloorKey === 'branding') ||
-    (fromFloorKey === 'branding' && toFloorKey === 'finalChecking')
+    (fromFloorKey === 'branding' && (toFloorKey === 'reBoarding' || toFloorKey === 'finalChecking')) ||
+    (fromFloorKey === 'reBoarding' && toFloorKey === 'finalChecking')
   ) {
     const bc = opts.existingContainerBarcode;
     if (!bc || !String(bc).trim()) {
@@ -684,12 +783,16 @@ export const transferVendorProductionFlowQuantity = async (flowId, fromFloorKey,
     }
   }
 
-  if (fromFloorKey === 'branding' && toFloorKey === 'finalChecking') {
+  /** Style/brand breakdown is required when leaving branding or re-boarding (both carry styleCode/brand lines). */
+  if (
+    (fromFloorKey === 'branding' && (toFloorKey === 'reBoarding' || toFloorKey === 'finalChecking')) ||
+    (fromFloorKey === 'reBoarding' && toFloorKey === 'finalChecking')
+  ) {
     const items = opts.transferItems;
     if (!Array.isArray(items) || items.length === 0) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        'transferItems (styleCode / brand / transferred per line) is required when transferring from branding to final checking'
+        'transferItems (styleCode / brand / transferred per line) is required when transferring from branding or re-boarding to the next floor'
       );
     }
     const sum = items.reduce((s, row) => s + Math.max(0, Number(row?.transferred || 0)), 0);
@@ -769,7 +872,12 @@ export const transferVendorProductionFlowQuantity = async (flowId, fromFloorKey,
       sessionOptions
     );
 
-    if (fromFloorKey === 'branding' && toFloorKey === 'finalChecking' && Array.isArray(opts.transferItems)) {
+    /** Style/brand ledger for branding / re-boarding outbound (each line attributes qty sent to next floor). */
+    if (
+      ((fromFloorKey === 'branding' && (toFloorKey === 'reBoarding' || toFloorKey === 'finalChecking')) ||
+        (fromFloorKey === 'reBoarding' && toFloorKey === 'finalChecking')) &&
+      Array.isArray(opts.transferItems)
+    ) {
       const lines = opts.transferItems.map((row) => ({
         transferred: Math.max(0, Number(row?.transferred || 0)),
         styleCode: String(row?.styleCode || ''),
@@ -777,7 +885,7 @@ export const transferVendorProductionFlowQuantity = async (flowId, fromFloorKey,
       }));
       await VendorProductionFlow.updateOne(
         { _id: flowId },
-        { $push: { 'floorQuantities.branding.transferredData': { $each: lines } } },
+        { $push: { [floorPath(fromFloorKey, 'transferredData')]: { $each: lines } } },
         sessionOptions
       );
     }
@@ -801,7 +909,8 @@ export const transferVendorProductionFlowQuantity = async (flowId, fromFloorKey,
 
     if (usesContainer) {
       const transferItemsForContainer =
-        (toFloorKey === 'finalChecking' || toFloorKey === 'dispatch') && Array.isArray(opts.transferItems)
+        (toFloorKey === 'reBoarding' || toFloorKey === 'finalChecking' || toFloorKey === 'dispatch') &&
+        Array.isArray(opts.transferItems)
           ? opts.transferItems.map((row) => ({
               transferred: Math.max(0, Number(row?.transferred || 0)),
               styleCode: String(row?.styleCode || ''),

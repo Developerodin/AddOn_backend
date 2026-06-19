@@ -10,7 +10,7 @@ import WarehouseInventoryLog from '../../models/whms/warehouseInventoryLog.model
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const POPULATE_DEFAULT = [
-  { path: 'itemId', select: 'name factoryCode softwareCode internalCode knittingCode' },
+  { path: 'itemId', select: 'name factoryCode vendorCode softwareCode internalCode knittingCode' },
   { path: 'styleCodeId', select: 'styleCode eanCode mrp brand pack status' },
 ];
 

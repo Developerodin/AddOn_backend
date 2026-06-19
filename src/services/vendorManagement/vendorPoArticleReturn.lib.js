@@ -124,11 +124,17 @@ export const buildArticleCandidateFromFlow = (flow) => {
     vendorCode: product.vendorCode || '',
     productId: product._id || flow.product || null,
     verifiedAvailable: breakdown.verifiedAvailable,
+    /**
+     * `m4` mirrors the VM4 (vendor-return) bucket so the PO Return UI — which reads
+     * `breakdown.m4` — surfaces the VM4 qty entered during Secondary Checking. `vm4`
+     * is kept as the canonical key.
+     */
     breakdown: {
       m1: breakdown.m1,
       m2: breakdown.m2,
       m3: breakdown.m3,
       vm4: breakdown.vm4,
+      m4: breakdown.vm4,
     },
   };
 };

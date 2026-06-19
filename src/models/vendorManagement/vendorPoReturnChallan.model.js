@@ -37,6 +37,34 @@ const challanLineSchema = mongoose.Schema(
   { _id: false }
 );
 
+/**
+ * One article packed into a return box (article-wise returns): which article and how many units.
+ */
+const challanReturnBoxItemSchema = mongoose.Schema(
+  {
+    vendorProductionFlowId: { type: mongoose.Schema.Types.ObjectId, ref: 'VendorProductionFlow' },
+    productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
+    productName: { type: String, trim: true, default: '' },
+    vendorCode: { type: String, trim: true, default: '' },
+    quantity: { type: Number, min: 0, default: 0 },
+  },
+  { _id: false }
+);
+
+/**
+ * Physical box used to pack an article-wise return. `boxNumber` is the serial (Box 1, Box 2, …);
+ * `boxWeight` is the box weight (KG); `items` holds the article(s) + qty packed in this box.
+ * Used to build the return transfer note / challan box breakdown when goods are returned article-wise.
+ */
+const challanReturnBoxSchema = mongoose.Schema(
+  {
+    boxNumber: { type: Number, min: 1, required: true },
+    boxWeight: { type: Number, min: 0, default: 0 },
+    items: { type: [challanReturnBoxItemSchema], default: [] },
+  },
+  { _id: false }
+);
+
 const challanTotalsSchema = mongoose.Schema(
   {
     boxCount: { type: Number, default: 0, min: 0 },
@@ -89,6 +117,8 @@ const vendorPoReturnChallanSchema = mongoose.Schema(
     /** Garment vendor — receiver */
     vendor: partySchema,
     lines: { type: [challanLineSchema], default: [] },
+    /** Box packing for article-wise returns (operator-defined): box serial, weight, packed articles + qty. */
+    returnBoxes: { type: [challanReturnBoxSchema], default: [] },
     totals: { type: challanTotalsSchema, default: () => ({}) },
     cancellationIntent: { type: String, trim: true },
     remark: { type: String, trim: true, default: '' },

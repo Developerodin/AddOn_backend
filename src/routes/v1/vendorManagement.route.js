@@ -50,6 +50,12 @@ router.route('/production-flow/:vendorProductionFlowId/floors/:floorKey').patch(
   vendorManagementController.updateVendorProductionFlowFloor
 );
 
+router.route('/production-flow/:vendorProductionFlowId/branding-type').patch(
+  auth(),
+  validate(vendorManagementValidation.updateVendorBrandingType),
+  vendorManagementController.updateVendorBrandingType
+);
+
 router.route('/production-flow/:vendorProductionFlowId/transfer').patch(
   auth(),
   validate(vendorManagementValidation.transferVendorProductionFlow),

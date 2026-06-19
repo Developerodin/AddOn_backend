@@ -45,6 +45,11 @@ export const processVendorLot = catchAsync(async (req, res) => {
   res.status(httpStatus.CREATED).send(result);
 });
 
+export const resyncVendorLotBoxes = catchAsync(async (req, res) => {
+  const result = await vendorBoxService.resyncVendorLotBoxes(req.body);
+  res.status(httpStatus.OK).send(result);
+});
+
 export const scanAcceptForSecondaryChecking = catchAsync(async (req, res) => {
   const result = await vendorBoxService.scanAcceptVendorBoxForSecondaryChecking(
     req.body.barcode,

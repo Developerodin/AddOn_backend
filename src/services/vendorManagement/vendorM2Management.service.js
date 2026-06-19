@@ -348,7 +348,9 @@ export const getM2Entries = async (filter = {}, options = {}) => {
   });
 
   const flowIds = [...new Set(paginated.results.map((row) => row.vendorProductionFlowId).filter(Boolean))];
-  const flows = flowIds.length ? await VendorProductionFlow.find({ _id: { $in: flowIds } }) : [];
+  const flows = flowIds.length
+    ? await VendorProductionFlow.find({ _id: { $in: flowIds } }).populate('product', 'name vendorCode factoryCode')
+    : [];
   const flowById = new Map(flows.map((f) => [f._id.toString(), f]));
 
   const enrichedResults = paginated.results.map((row) => {
@@ -357,6 +359,8 @@ export const getM2Entries = async (filter = {}, options = {}) => {
     if (!flow || !row.sourceFloor) {
       return {
         ...plain,
+        productName: flow?.product?.name || '',
+        productVendorCode: flow?.product?.vendorCode || '',
         canMergeToM1: false,
         mergeBlockedReason: 'Flow or source floor not found',
       };
@@ -364,6 +368,8 @@ export const getM2Entries = async (filter = {}, options = {}) => {
     const assessment = assessVendorM2MergeEligibility(flow);
     return {
       ...plain,
+      productName: flow.product?.name || '',
+      productVendorCode: flow.product?.vendorCode || '',
       canMergeToM1: assessment.eligible,
       mergeBlockedReason: assessment.reason,
     };

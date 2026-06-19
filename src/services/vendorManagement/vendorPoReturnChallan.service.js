@@ -145,6 +145,56 @@ export const getChallansByVpo = async (vpoId) => {
   return rows.map(leanToClient);
 };
 
+const toNum = (value) => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+};
+
+/**
+ * Normalize a single packing box: re-number serially, coerce weights/qty, keep only items with qty > 0.
+ * @param {Object} box
+ * @param {number} index
+ */
+const normalizeReturnBox = (box, index) => {
+  const items = (Array.isArray(box?.items) ? box.items : [])
+    .map((it) => ({
+      vendorProductionFlowId:
+        it?.vendorProductionFlowId && mongoose.Types.ObjectId.isValid(it.vendorProductionFlowId)
+          ? it.vendorProductionFlowId
+          : null,
+      productId:
+        it?.productId && mongoose.Types.ObjectId.isValid(it.productId) ? it.productId : null,
+      productName: String(it?.productName ?? '').trim(),
+      vendorCode: String(it?.vendorCode ?? '').trim(),
+      quantity: Math.round(toNum(it?.quantity)),
+    }))
+    .filter((it) => it.quantity > 0);
+  return {
+    boxNumber: Number.isFinite(Number(box?.boxNumber)) && Number(box.boxNumber) > 0 ? Number(box.boxNumber) : index + 1,
+    boxWeight: toNum(box?.boxWeight),
+    items,
+  };
+};
+
+/**
+ * Save the box-packing for an article-wise return challan (box serial, weight, packed articles + qty).
+ * Recomputes `totals.boxCount` from the packed boxes so the transfer note reflects the packing.
+ * @param {string} challanId
+ * @param {Array<Object>} boxes
+ * @returns {Promise<Object>}
+ */
+export const patchChallanReturnBoxes = async (challanId, boxes) => {
+  const challan = await VendorPoReturnChallan.findById(challanId);
+  if (!challan) throw new ApiError(httpStatus.NOT_FOUND, 'Challan not found');
+  const list = Array.isArray(boxes) ? boxes : [];
+  const normalized = list.map((box, idx) => normalizeReturnBox(box, idx));
+  challan.returnBoxes = normalized;
+  challan.totals = challan.totals || {};
+  challan.totals.boxCount = normalized.length;
+  await challan.save();
+  return leanToClient(challan.toObject());
+};
+
 /**
  * Patch transport fields only (no revision).
  * @param {string} challanId
