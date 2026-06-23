@@ -21,8 +21,8 @@ const headerFields = {
     }),
 };
 
-/** Product ref by code only (matches Product.factoryCode or Product.internalCode). Raw Mongo product ids are not accepted. */
-const vendorProductInputRow = Joi.object({
+/** Product ref by code (matches Product.factoryCode or Product.internalCode). */
+const vendorProductCodeRow = Joi.object({
   factoryCode: Joi.string().trim().allow('', null),
   internalCode: Joi.string().trim().allow('', null),
   articleCode: Joi.string().trim().allow('', null),
@@ -39,6 +39,9 @@ const vendorProductInputRow = Joi.object({
   }
   return value;
 });
+
+/** Product ref: either a raw Mongo product id (string) or a code object `{ factoryCode | internalCode | articleCode }`. */
+const vendorProductInputRow = Joi.alternatives().try(Joi.string().custom(objectId), vendorProductCodeRow);
 
 const contactPersonsSchema = Joi.array()
   .items(

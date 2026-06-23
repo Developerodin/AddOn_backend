@@ -20,25 +20,34 @@ function productDocMatchesCode(doc, v) {
 
 /**
  * Normalize vendor `products` input to unique `ObjectId`s.
- * Each row must be `{ factoryCode }` and/or `{ internalCode }` / `{ articleCode }` (same article no. may live on either Product field). Raw Mongo product ids are not accepted.
+ * Each row is either a raw Mongo product id (string/ObjectId), or an object
+ * `{ factoryCode }` / `{ internalCode }` / `{ articleCode }` (same article no. may live on either Product field).
  * @param {unknown[]} [products]
  * @returns {Promise<mongoose.Types.ObjectId[]>}
  */
 async function resolveProductsInputToIds(products) {
   if (!products?.length) return [];
 
-  /** @typedef {{ value: string }} Slot */
+  /** @typedef {{ kind: 'id' | 'code', value: string }} Slot */
   /** @type {Slot[]} */
   const slots = [];
 
   for (const raw of products) {
-    const isPlainObject =
-      raw !== null && typeof raw === 'object' && !Array.isArray(raw) && !(raw instanceof mongoose.Types.ObjectId);
+    // Raw Mongo product id, as a string or ObjectId.
+    if (typeof raw === 'string' || raw instanceof mongoose.Types.ObjectId) {
+      const idStr = String(raw).trim();
+      if (!mongoose.Types.ObjectId.isValid(idStr)) {
+        throw new ApiError(httpStatus.BAD_REQUEST, `Invalid product id "${idStr}"`);
+      }
+      slots.push({ kind: 'id', value: idStr });
+      continue;
+    }
 
+    const isPlainObject = raw !== null && typeof raw === 'object' && !Array.isArray(raw);
     if (!isPlainObject) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        'Each product must be an object with factoryCode, internalCode, or articleCode (raw product ids are not accepted)'
+        'Each product must be a product id or an object with factoryCode, internalCode, or articleCode'
       );
     }
 
@@ -58,10 +67,11 @@ async function resolveProductsInputToIds(products) {
         'factoryCode, internalCode, and articleCode must be the same value when more than one is set'
       );
     }
-    slots.push({ value: parts[0] });
+    slots.push({ kind: 'code', value: parts[0] });
   }
 
-  const codeVals = [...new Set(slots.map((s) => s.value))];
+  // Resolve code rows by factoryCode/internalCode.
+  const codeVals = [...new Set(slots.filter((s) => s.kind === 'code').map((s) => s.value))];
   /** @type {Map<string, mongoose.Types.ObjectId>} */
   const codeMap = new Map();
   if (codeVals.length) {
@@ -89,10 +99,22 @@ async function resolveProductsInputToIds(products) {
     }
   }
 
+  // Verify raw id rows actually exist.
+  const idVals = [...new Set(slots.filter((s) => s.kind === 'id').map((s) => s.value))];
+  if (idVals.length) {
+    const docs = await Product.find({ _id: { $in: idVals } }).select('_id').lean();
+    const found = new Set(docs.map((d) => d._id.toString()));
+    for (const v of idVals) {
+      if (!found.has(v)) {
+        throw new ApiError(httpStatus.BAD_REQUEST, `No product found with id "${v}"`);
+      }
+    }
+  }
+
   const out = [];
   const seen = new Set();
   for (const s of slots) {
-    const oid = codeMap.get(s.value);
+    const oid = s.kind === 'id' ? new mongoose.Types.ObjectId(s.value) : codeMap.get(s.value);
     const key = oid.toString();
     if (!seen.has(key)) {
       seen.add(key);
