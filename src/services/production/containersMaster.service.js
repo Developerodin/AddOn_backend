@@ -3,9 +3,18 @@ import httpStatus from 'http-status';
 import ContainersMaster from '../../models/production/containersMaster.model.js';
 import { Article } from '../../models/production/index.js';
 import { VendorProductionFlow } from '../../models/index.js';
+import { ContainerStatus } from '../../models/production/enums.js';
 import ApiError from '../../utils/ApiError.js';
+import {
+  buildContainerNamingPatterns,
+  formatContainerName,
+  resolveContainerNamingPattern,
+} from '../../utils/containersMasterNaming.util.js';
 import * as articleService from './article.service.js';
 import * as vendorProductionFlowReceive from '../vendorManagement/vendorProductionFlowReceive.service.js';
+
+const BULK_CREATE_MAX = 500;
+const BULK_INSERT_BATCH = 100;
 
 /** Article fields to populate when fetching container with articles */
 const ARTICLE_POPULATE_SELECT = 'id articleNumber knittingCode plannedQuantity status priority linkingType orderId';
@@ -35,6 +44,84 @@ export const createContainersMaster = async (body) => {
     await doc.save();
   }
   return doc;
+};
+
+/**
+ * Naming patterns inferred from existing container names (for bulk create UI).
+ * @returns {Promise<{ patterns: Array<object>, defaultPatternId: string | null }>}
+ */
+export const getContainerNamingPatterns = async () => {
+  const docs = await ContainersMaster.find({ containerName: { $exists: true, $ne: '' } })
+    .select('containerName type tearWeight')
+    .lean();
+
+  const patterns = buildContainerNamingPatterns(docs);
+  return {
+    patterns,
+    defaultPatternId: patterns[0]?.id ?? null,
+  };
+};
+
+/**
+ * Bulk-create containers with auto-generated names continuing an existing pattern.
+ * @param {{ count: number, type: string, tearWeight: number, status?: string, namePatternId?: string }} body
+ * @returns {Promise<{ created: number, startNumber: number, endNumber: number, namePreview: string[], containers: object[] }>}
+ */
+export const bulkCreateContainersMaster = async (body) => {
+  const count = Number(body.count);
+  const tearWeight = Number(body.tearWeight);
+
+  if (!Number.isInteger(count) || count < 1 || count > BULK_CREATE_MAX) {
+    throw new ApiError(httpStatus.BAD_REQUEST, `count must be an integer between 1 and ${BULK_CREATE_MAX}`);
+  }
+  if (!Number.isFinite(tearWeight) || tearWeight < 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'tearWeight must be a non-negative number');
+  }
+
+  const [{ patterns }, existingCount] = await Promise.all([
+    getContainerNamingPatterns(),
+    ContainersMaster.countDocuments(),
+  ]);
+
+  const naming = resolveContainerNamingPattern(patterns, body.namePatternId, existingCount);
+  const status = body.status || ContainerStatus.ACTIVE;
+  const type = body.type;
+
+  const toInsert = Array.from({ length: count }, (_, index) => {
+    const number = naming.nextNumber + index;
+    const _id = new mongoose.Types.ObjectId();
+    return {
+      _id,
+      containerName: formatContainerName(naming.prefix, naming.separator, number),
+      barcode: _id.toString(),
+      status,
+      type,
+      tearWeight,
+    };
+  });
+
+  const created = [];
+  for (let offset = 0; offset < toInsert.length; offset += BULK_INSERT_BATCH) {
+    const batch = toInsert.slice(offset, offset + BULK_INSERT_BATCH);
+    const inserted = await ContainersMaster.insertMany(batch);
+    created.push(...inserted);
+  }
+
+  const startNumber = naming.nextNumber;
+  const endNumber = naming.nextNumber + count - 1;
+  const namePreview = [
+    formatContainerName(naming.prefix, naming.separator, startNumber),
+    count > 1 ? formatContainerName(naming.prefix, naming.separator, endNumber) : null,
+  ].filter(Boolean);
+
+  return {
+    created: created.length,
+    startNumber,
+    endNumber,
+    namingLabel: naming.label,
+    namePreview,
+    containers: created.map((doc) => (doc.toJSON ? doc.toJSON() : doc)),
+  };
 };
 
 /**

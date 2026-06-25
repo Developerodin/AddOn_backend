@@ -9,6 +9,16 @@ const createContainersMaster = catchAsync(async (req, res) => {
   res.status(httpStatus.CREATED).send(doc);
 });
 
+const getContainerNamingPatterns = catchAsync(async (req, res) => {
+  const result = await containersMasterService.getContainerNamingPatterns();
+  res.send(result);
+});
+
+const bulkCreateContainersMaster = catchAsync(async (req, res) => {
+  const result = await containersMasterService.bulkCreateContainersMaster(req.body);
+  res.status(httpStatus.CREATED).send(result);
+});
+
 const getContainersMasters = catchAsync(async (req, res) => {
   const filter = pick(req.query, ['containerName', 'status', 'type', 'activeArticle', 'activeFloor', 'search']);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
@@ -80,6 +90,8 @@ const deleteContainersMaster = catchAsync(async (req, res) => {
 
 export {
   createContainersMaster,
+  getContainerNamingPatterns,
+  bulkCreateContainersMaster,
   getContainersMasters,
   getContainersMaster,
   getContainerByBarcode,

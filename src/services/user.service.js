@@ -115,16 +115,11 @@ const updateUserNavigationById = async (userId, navigationBody) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
   }
   
-  // Canonical schema first, then role permissions, stored nav, and incoming updates
-  const canonicalNavigation = JSON.parse(JSON.stringify(DEFAULT_NAVIGATION));
-  const roleNavigation = getDefaultNavigationByRole(user.role || 'user');
-  const baseNavigation = mergeNavigation(
-    mergeNavigation(canonicalNavigation, roleNavigation),
-    user.navigation || {}
+  // Merge stored navigation with incoming updates (do not re-apply role template — opt-in per user)
+  const updatedNavigation = mergeNavigation(
+    mergeNavigation(JSON.parse(JSON.stringify(DEFAULT_NAVIGATION)), user.navigation || {}),
+    navigationBody.navigation
   );
-  
-  // Merge incoming navigation updates on top
-  const updatedNavigation = mergeNavigation(baseNavigation, navigationBody.navigation);
   
   // Validate the merged navigation structure
   if (!validateNavigationStructure(updatedNavigation)) {

@@ -61,6 +61,18 @@ export const createContainersMaster = {
   }),
 };
 
+export const getContainerNamingPatterns = {};
+
+export const bulkCreateContainersMaster = {
+  body: Joi.object().keys({
+    count: Joi.number().integer().min(1).max(500).required(),
+    type: Joi.string().valid(...typeValues).required(),
+    tearWeight: Joi.number().min(0).required(),
+    status: Joi.string().valid(...statusValues).default(ContainerStatus.ACTIVE),
+    namePatternId: Joi.string().trim().allow('', null),
+  }),
+};
+
 export const getContainersMasters = {
   query: Joi.object().keys({
     containerName: Joi.string().trim(),

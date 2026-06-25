@@ -7,6 +7,14 @@ import * as containersMasterController from '../../controllers/production/contai
 const router = express.Router();
 
 router
+  .route('/naming-patterns')
+  .get(auth(), validate(containersMasterValidation.getContainerNamingPatterns), containersMasterController.getContainerNamingPatterns);
+
+router
+  .route('/bulk')
+  .post(auth(), validate(containersMasterValidation.bulkCreateContainersMaster), containersMasterController.bulkCreateContainersMaster);
+
+router
   .route('/')
   .post(auth(), validate(containersMasterValidation.createContainersMaster), containersMasterController.createContainersMaster)
   .get(auth(), validate(containersMasterValidation.getContainersMasters), containersMasterController.getContainersMasters);

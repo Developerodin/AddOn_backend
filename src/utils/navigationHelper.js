@@ -131,7 +131,7 @@ export const ROLE_NAVIGATION_TEMPLATES = {
     Analytics: true,
     'Replenishment Agent': true,
     'File Manager': true,
-    'Help & Support': true,
+    'Help & Support': false,
     Users: true,
     'Production Planning': {
       'Production Orders': true,
@@ -229,7 +229,7 @@ export const ROLE_NAVIGATION_TEMPLATES = {
     Analytics: false,
     'Replenishment Agent': false,
     'File Manager': false,
-    'Help & Support': true,
+    'Help & Support': false,
     Users: false,
     'Production Planning': {
       'Production Orders': false,
