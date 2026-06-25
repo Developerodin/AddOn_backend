@@ -1,10 +1,23 @@
-const allPermissions = ['getUsers', 'manageUsers', 'getMachines', 'manageMachines', 'getOrders', 'manageOrders', 'getUserActivityLogs'];
+const basePermissions = [
+  'getUsers',
+  'manageUsers',
+  'getMachines',
+  'manageMachines',
+  'getOrders',
+  'manageOrders',
+  'getUserActivityLogs',
+  'getHelpSupportTickets',
+];
+
+const agentPermissions = [...basePermissions, 'manageHelpSupportTickets', 'getHelpSupportAnalytics'];
+
+const adminPermissions = [...agentPermissions, 'deleteHelpSupportTickets'];
 
 const allRoles = {
-  user: allPermissions,
-  accounts: allPermissions,
-  admin: allPermissions,
-  super_admin: allPermissions,
+  user: basePermissions,
+  accounts: agentPermissions,
+  admin: adminPermissions,
+  super_admin: adminPermissions,
 };
 
 const roles = Object.keys(allRoles);

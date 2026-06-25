@@ -2,6 +2,7 @@ import passport from 'passport';
 import httpStatus from 'http-status';
 import ApiError from '../utils/ApiError.js';
 import { roleRights } from '../config/roles.js';
+import { hasHelpSupportApiAccess } from '../utils/helpSupportRole.util.js';
 
 
 const verifyCallback = (req, resolve, reject, requiredRights) => async (err, user, info) => {
@@ -14,6 +15,9 @@ const verifyCallback = (req, resolve, reject, requiredRights) => async (err, use
     const userRights = roleRights.get(user.role);
     const hasRequiredRights = requiredRights.every((requiredRight) => userRights.includes(requiredRight));
     if (!hasRequiredRights && req.params.userId !== user.id) {
+      if (hasHelpSupportApiAccess(user, requiredRights)) {
+        return resolve();
+      }
       return reject(new ApiError(httpStatus.FORBIDDEN, 'Forbidden'));
     }
   }

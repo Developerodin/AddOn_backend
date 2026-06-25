@@ -44,6 +44,7 @@ import VendorPoReturnChallan from './vendorManagement/vendorPoReturnChallan.mode
 import VendorM2Log from './vendorManagement/vendorM2Log.model.js';
 import VendorM3Log from './vendorManagement/vendorM3Log.model.js';
 import VendorM4Log from './vendorManagement/vendorM4Log.model.js';
+import HelpSupportTicket from './helpSupport/ticket.model.js';
 
 export {
   Token,
@@ -92,4 +93,5 @@ export {
   VendorM2Log,
   VendorM3Log,
   VendorM4Log,
+  HelpSupportTicket,
 };

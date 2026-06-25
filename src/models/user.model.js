@@ -96,6 +96,7 @@ const userSchema = mongoose.Schema(
         Analytics: false,
         'Replenishment Agent': false,
         'File Manager': false,
+        'Help & Support': false,
         Users: false,
         'Production Planning': {
           'Production Orders': false,

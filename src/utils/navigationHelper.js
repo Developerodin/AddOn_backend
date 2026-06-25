@@ -28,6 +28,7 @@ export const DEFAULT_NAVIGATION = {
   Analytics: false,
   'Replenishment Agent': false,
   'File Manager': false,
+  'Help & Support': false,
   Users: false,
   'Production Planning': {
     'Production Orders': false,
@@ -130,6 +131,7 @@ export const ROLE_NAVIGATION_TEMPLATES = {
     Analytics: true,
     'Replenishment Agent': true,
     'File Manager': true,
+    'Help & Support': true,
     Users: true,
     'Production Planning': {
       'Production Orders': true,
@@ -227,6 +229,7 @@ export const ROLE_NAVIGATION_TEMPLATES = {
     Analytics: false,
     'Replenishment Agent': false,
     'File Manager': false,
+    'Help & Support': true,
     Users: false,
     'Production Planning': {
       'Production Orders': false,
@@ -381,7 +384,7 @@ export const validateNavigationStructure = (navigation) => {
   }
 
   // Check required top-level keys
-  const requiredKeys = ['Dashboard', 'Catalog', 'Sales', 'Stores', 'Analytics', 'Replenishment Agent', 'File Manager', 'Users', 'Production Planning', 'Yarn Management', 'Warehouse Management', 'Vendor PO'];
+  const requiredKeys = ['Dashboard', 'Catalog', 'Sales', 'Stores', 'Analytics', 'Replenishment Agent', 'File Manager', 'Help & Support', 'Users', 'Production Planning', 'Yarn Management', 'Warehouse Management', 'Vendor PO'];
   for (const key of requiredKeys) {
     if (!(key in navigation)) {
       console.error(`Validation failed: Missing top-level key: ${key}`);
