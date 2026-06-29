@@ -78,6 +78,18 @@ async function maybeAutoTransferVendorFloor(
   mode,
   sessionOptions
 ) {
+  if (
+    floorKey === 'branding' &&
+    bodyForPatch?.autoTransferToNextFloor === true &&
+    flow?.brandingType !== 'Heat Transfer' &&
+    flow?.brandingType !== 'Embroidery'
+  ) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Select branding type (Heat Transfer or Embroidery) before staging to the next floor.'
+    );
+  }
+
   const nextFloorKey = resolveVendorNextFloorKey(floorKey, flow?.brandingType);
   if (!nextFloorKey) return;
 

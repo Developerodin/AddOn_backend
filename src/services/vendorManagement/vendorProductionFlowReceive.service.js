@@ -486,10 +486,10 @@ export const stageVendorTransferOnExistingContainer = async ({
   if (!Number.isFinite(qty) || qty <= 0) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid quantity for vendor container');
   }
-  if (!['branding', 'finalChecking', 'dispatch', 'warehouse'].includes(toFloorKey)) {
+  if (!['branding', 'reBoarding', 'finalChecking', 'dispatch', 'warehouse'].includes(toFloorKey)) {
     throw new ApiError(
       httpStatus.BAD_REQUEST,
-      'Vendor staging is only used for Branding, Final Checking, Dispatch, or warehouse (WHMS handoff)'
+      'Vendor staging is only used for Branding, Re-Boarding, Final Checking, Dispatch, or warehouse (WHMS handoff)'
     );
   }
 
