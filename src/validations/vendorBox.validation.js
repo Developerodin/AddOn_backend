@@ -1,5 +1,13 @@
 import Joi from 'joi';
 import { objectId } from './custom.validation.js';
+import { MAX_VENDOR_BOX_UNIT_SYNC } from '../services/vendorManagement/vendorProductionFlowBoxReconcile.util.js';
+
+const vendorBoxUnitsRule = Joi.number()
+  .min(0)
+  .max(MAX_VENDOR_BOX_UNIT_SYNC)
+  .messages({
+    'number.max': `numberOfUnits cannot exceed ${MAX_VENDOR_BOX_UNIT_SYNC.toLocaleString()} (check for a scanned barcode in the units field)`,
+  });
 
 export const createVendorBox = {
   body: Joi.object().keys({
@@ -17,7 +25,7 @@ export const createVendorBox = {
     boxWeight: Joi.number().min(0),
     grossWeight: Joi.number().min(0),
     barcode: Joi.string().trim(),
-    numberOfUnits: Joi.number().min(0),
+    numberOfUnits: vendorBoxUnitsRule,
     tearweight: Joi.number().min(0),
     qcData: Joi.object().keys({
       user: Joi.string().custom(objectId),
@@ -44,7 +52,7 @@ export const bulkCreateVendorBoxes = {
           orderQty: Joi.number().min(0),
           boxWeight: Joi.number().min(0),
           grossWeight: Joi.number().min(0),
-          numberOfUnits: Joi.number().min(0),
+          numberOfUnits: vendorBoxUnitsRule,
           tearweight: Joi.number().min(0),
         })
       )
@@ -110,7 +118,7 @@ export const updateVendorBox = {
       boxWeight: Joi.number().min(0),
       grossWeight: Joi.number().min(0),
       barcode: Joi.string().trim(),
-      numberOfUnits: Joi.number().min(0),
+      numberOfUnits: vendorBoxUnitsRule,
       tearweight: Joi.number().min(0),
       qcData: Joi.object(),
       storageLocation: Joi.string().trim(),

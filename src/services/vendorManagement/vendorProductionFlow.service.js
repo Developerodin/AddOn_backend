@@ -34,6 +34,12 @@ import {
   parseVendorStyleKey,
   splitIntegerByWeights,
 } from '../../utils/vendorStyleQuantity.util.js';
+import {
+  assertSaneBoxUnitQty,
+  ensureSecondaryCheckingFlowForBox,
+  flowFilterFromBox,
+  reconcileSecondaryCheckingFromBoxes,
+} from './vendorProductionFlowBoxReconcile.util.js';
 
 const VENDOR_CHECKING_FLOORS = new Set(['secondaryChecking', 'finalChecking']);
 
@@ -268,104 +274,32 @@ export const normalizeTransferBreakdownForReceipt = (rows, expectedTotal, fromFl
 };
 
 /**
- * Syncs a VendorBox's units into the automated VendorProductionFlow.
- * Increments plannedQuantity and secondaryChecking.received based on quantityChange.
- * If no flow document exists for the VPO and Product, one is created.
+ * Syncs a vendor box into its production flow by reconciling from boxes (source of truth).
+ * Validates positive deltas; negative deltas skip validation and still reconcile.
  * @param {Object} box - The vendor box document
- * @param {number} quantityChange - Difference in units (positive for additions, negative for reductions)
+ * @param {number} [quantityChange] - Optional delta hint; positive values are sanity-checked
+ * @returns {Promise<object|null>} Reconciled flow or null
  */
-export const syncBoxToProductionFlow = async (box, quantityChange) => {
-  if (!quantityChange) return;
-
-  const filter = {
-    vendor: box.vendor,
-    vendorPurchaseOrder: box.vendorPurchaseOrderId,
-    product: box.productId,
-  };
-
-  const qty = Number(quantityChange) || 0;
-  if (qty <= 0) return;
-
-  let flow = await VendorProductionFlow.findOne(filter);
-  const lotNumber = box.lotNumber ? String(box.lotNumber) : '';
-  const lotMarker = lotNumber ? `lot:${lotNumber}` : '';
-  const lotEntry = {
-    receivedStatusFromPreviousFloor: lotMarker || `box:${box.boxId || ''}`,
-    lotNumber,
-    boxId: box.boxId || '',
-    receivedTimestamp: new Date(),
-  };
-
-  if (!flow) {
-    flow = await VendorProductionFlow.create({
-      ...filter,
-      currentFloorKey: 'secondaryChecking',
-      referenceCode: box.lotNumber || box.vpoNumber,
-      plannedQuantity: qty,
-      floorQuantities: {
-        secondaryChecking: {
-          received: 0,
-          remaining: 0,
-          pendingFromBoxes: qty,
-          receivedData: [lotEntry],
-        },
-      },
-      startedAt: new Date(),
-    });
-    return flow;
+export const syncBoxToProductionFlow = async (box, quantityChange = 0) => {
+  const rawQty = Number(quantityChange) || 0;
+  if (rawQty > 0) {
+    assertSaneBoxUnitQty(rawQty);
   }
 
-  flow.plannedQuantity = Number(flow.plannedQuantity || 0) + qty;
-  const sc = flow.floorQuantities?.secondaryChecking || {};
-  sc.pendingFromBoxes = Number(sc.pendingFromBoxes || 0) + qty;
-  sc.receivedData = Array.isArray(sc.receivedData) ? sc.receivedData : [];
-
-  const hasLotEntry = lotMarker
-    ? sc.receivedData.some((entry) => String(entry?.lotNumber || '') === lotNumber)
-    : false;
-  if (!hasLotEntry) {
-    sc.receivedData.push(lotEntry);
-  }
-
-  flow.floorQuantities.secondaryChecking = sc;
-  if (!flow.currentFloorKey) {
-    flow.currentFloorKey = 'secondaryChecking';
-  }
-  if (!flow.referenceCode) {
-    flow.referenceCode = box.lotNumber || box.vpoNumber;
-  }
-  if (!flow.startedAt) {
-    flow.startedAt = new Date();
-  }
-  await flow.save();
-  return flow;
+  await ensureSecondaryCheckingFlowForBox(box);
+  return reconcileSecondaryCheckingFromBoxes(flowFilterFromBox(box));
 };
 
 /**
- * Reverse a box's contribution to its production flow's secondary-checking intake.
- * Used when boxes are deleted before being accepted (e.g. re-syncing a lot's boxes).
- * Only the not-yet-accepted `pendingFromBoxes` bucket is decremented — callers must
- * ensure the box was never scanned/accepted onto the floor.
+ * Reverse a box's contribution by re-reconciling from remaining vendor boxes.
  * @param {Object} box - VendorBox-like doc (vendor, vendorPurchaseOrderId, productId)
- * @param {number} units - units to remove (the box's numberOfUnits)
+ * @returns {Promise<object|null>} Reconciled flow or null
  */
-export const reverseBoxFromProductionFlow = async (box, units) => {
-  const qty = Number(units) || 0;
-  if (qty <= 0) return null;
-
-  const flow = await VendorProductionFlow.findOne({
-    vendor: box.vendor,
-    vendorPurchaseOrder: box.vendorPurchaseOrderId,
-    product: box.productId,
-  });
+export const reverseBoxFromProductionFlow = async (box) => {
+  const filter = flowFilterFromBox(box);
+  const flow = await VendorProductionFlow.findOne(filter);
   if (!flow) return null;
-
-  flow.plannedQuantity = Math.max(0, Number(flow.plannedQuantity || 0) - qty);
-  const sc = flow.floorQuantities?.secondaryChecking || {};
-  sc.pendingFromBoxes = Math.max(0, Number(sc.pendingFromBoxes || 0) - qty);
-  flow.floorQuantities.secondaryChecking = sc;
-  await flow.save();
-  return flow;
+  return reconcileSecondaryCheckingFromBoxes(filter);
 };
 
 /**
@@ -1160,3 +1094,9 @@ export const backfillFinalCheckingReceivedDataFromBranding = async (options = {}
 
   return { examined, modified, dryRun };
 };
+
+export {
+  auditSecondaryCheckingDrift,
+  ensureSecondaryCheckingFlowForBox,
+  reconcileSecondaryCheckingFromBoxes,
+} from './vendorProductionFlowBoxReconcile.util.js';

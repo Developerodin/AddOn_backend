@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { VendorBox, VendorPurchaseOrder, VendorManagement, VendorProductionFlow } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
 import * as vendorProductionFlowService from './vendorProductionFlow.service.js';
+import { assertSaneBoxUnitQty } from './vendorProductionFlowBoxReconcile.util.js';
 import { tryAutoIssueFromFlow } from './vendorGrn.service.js';
 
 export const createVendorBox = async (vendorBoxBody) => {
@@ -23,6 +24,7 @@ export const createVendorBox = async (vendorBoxBody) => {
   }
   const box = await VendorBox.create(payload);
   if (box.numberOfUnits > 0) {
+    assertSaneBoxUnitQty(box.numberOfUnits, 'numberOfUnits');
     await vendorProductionFlowService.syncBoxToProductionFlow(box, box.numberOfUnits);
   }
   return box;
@@ -110,6 +112,12 @@ export const updateVendorBoxById = async (vendorBoxId, updateBody) => {
     }
   }
   const previousUnits = box.numberOfUnits || 0;
+  if (updateBody.numberOfUnits !== undefined && updateBody.numberOfUnits !== null) {
+    const nextUnits = Number(updateBody.numberOfUnits);
+    if (Number.isFinite(nextUnits) && nextUnits > 0) {
+      assertSaneBoxUnitQty(nextUnits, 'numberOfUnits');
+    }
+  }
   Object.assign(box, updateBody);
   await box.save();
   const currentUnits = box.numberOfUnits || 0;
@@ -180,6 +188,7 @@ export const scanAcceptVendorBoxForSecondaryChecking = async (barcode, reqUser =
   if (units <= 0) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Box has no units to accept (numberOfUnits is 0)');
   }
+  assertSaneBoxUnitQty(units, 'numberOfUnits');
 
   const filter = {
     vendor: box.vendor,
@@ -192,58 +201,28 @@ export const scanAcceptVendorBoxForSecondaryChecking = async (barcode, reqUser =
     ? await VendorProductionFlow.countDocuments({ vendorPurchaseOrder: box.vendorPurchaseOrderId })
     : 0;
   const existingArticleFlow = await VendorProductionFlow.findOne(filter).lean();
-
-  let flow = existingArticleFlow
-    ? await VendorProductionFlow.findById(existingArticleFlow._id)
-    : null;
   const isNewArticle = !existingArticleFlow;
   const isNewOrder = existingOrderFlowCount === 0;
 
-  if (!flow) {
-    await vendorProductionFlowService.syncBoxToProductionFlow(box, units);
-    flow = await VendorProductionFlow.findOne(filter);
-  }
-
-  let acceptQty = 0;
-  if (flow) {
-    const sc = flow.floorQuantities?.secondaryChecking || {};
-    let pending = Number(sc.pendingFromBoxes || 0);
-    if (pending < units) {
-      await vendorProductionFlowService.syncBoxToProductionFlow(box, units);
-      flow = await VendorProductionFlow.findById(flow._id);
-      if (!flow) {
-        throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Production flow missing after box sync');
-      }
-      pending = Number(flow.floorQuantities?.secondaryChecking?.pendingFromBoxes || 0);
-    }
-    acceptQty = Math.min(units, pending);
-
-    if (acceptQty > 0) {
-      const scAfter = flow.floorQuantities?.secondaryChecking || {};
-      scAfter.pendingFromBoxes = Math.max(0, pending - acceptQty);
-      scAfter.received = Number(scAfter.received || 0) + acceptQty;
-      scAfter.remaining = Number(scAfter.remaining || 0) + acceptQty;
-      flow.floorQuantities.secondaryChecking = scAfter;
-      await flow.save();
-    }
-  } else {
-    acceptQty = units;
-  }
+  await vendorProductionFlowService.syncBoxToProductionFlow(box, units);
 
   box.secondaryCheckingAccepted = true;
   box.secondaryCheckingAcceptedAt = new Date();
   await box.save();
 
-  const updatedFlow = flow
-    ? await VendorProductionFlow.findById(flow._id)
+  const updatedFlow = await vendorProductionFlowService.reconcileSecondaryCheckingFromBoxes(filter);
+  const acceptQty = units;
+
+  const populatedFlow = updatedFlow
+    ? await VendorProductionFlow.findById(updatedFlow._id)
         .populate({ path: 'vendor', select: 'header' })
         .populate({ path: 'vendorPurchaseOrder', select: 'vpoNumber vendorName currentStatus' })
         .populate({ path: 'product', select: 'name softwareCode internalCode status vendorCode' })
     : null;
 
-  if (updatedFlow && reqUser) {
+  if (populatedFlow && reqUser) {
     try {
-      await tryAutoIssueFromFlow(String(updatedFlow._id), reqUser);
+      await tryAutoIssueFromFlow(String(populatedFlow._id), reqUser);
     } catch (grnErr) {
       console.error('[vendorGrn] auto-issue after box scan failed:', grnErr?.message || grnErr);
     }
@@ -251,10 +230,10 @@ export const scanAcceptVendorBoxForSecondaryChecking = async (barcode, reqUser =
 
   return {
     box,
-    flow: updatedFlow,
+    flow: populatedFlow,
     acceptedUnits: acceptQty,
-    vpoNumber: box.vpoNumber || updatedFlow?.vendorPurchaseOrder?.vpoNumber || '',
-    productName: box.productName || updatedFlow?.product?.name || '',
+    vpoNumber: box.vpoNumber || populatedFlow?.vendorPurchaseOrder?.vpoNumber || '',
+    productName: box.productName || populatedFlow?.product?.name || '',
     isNewOrder,
     isNewArticle,
   };
@@ -522,12 +501,23 @@ export const bulkCreateVendorBoxes = async (bulkData) => {
   }
 
   const inserted = await VendorBox.create(boxesToCreate);
+  const productKeys = new Set(
+    inserted.map((box) =>
+      JSON.stringify({
+        vendor: String(box.vendor),
+        vendorPurchaseOrder: String(box.vendorPurchaseOrderId),
+        product: String(box.productId),
+      })
+    )
+  );
   await Promise.all(
-    inserted.map(async (box) => {
-      const units = Number(box.numberOfUnits) || 0;
-      if (units > 0) {
-        await vendorProductionFlowService.syncBoxToProductionFlow(box, units);
-      }
+    [...productKeys].map((key) => {
+      const parsed = JSON.parse(key);
+      return vendorProductionFlowService.reconcileSecondaryCheckingFromBoxes({
+        vendor: parsed.vendor,
+        vendorPurchaseOrder: parsed.vendorPurchaseOrder,
+        product: parsed.product,
+      });
     })
   );
 
@@ -625,27 +615,29 @@ export const resyncVendorLotBoxes = async ({ vpoNumber, lotNumber }) => {
     );
   }
 
-  // Reverse not-yet-accepted units from the production flow, then delete the boxes.
-  // Aggregate units per article (one flow per product) so each flow is reversed exactly
-  // once — avoids lost-update races when several boxes in the lot share an article.
-  const unitsByProduct = new Map();
+  // Delete boxes first, then reconcile each affected article flow from remaining boxes.
+  const reconcileSamples = new Map();
   existingBoxes.forEach((box) => {
-    const units = Number(box.numberOfUnits) || 0;
-    if (units <= 0) return;
     const key = String(box.productId || '');
-    const prev = unitsByProduct.get(key) || { box, units: 0 };
-    unitsByProduct.set(key, { box, units: prev.units + units });
+    if (!reconcileSamples.has(key)) {
+      reconcileSamples.set(key, box);
+    }
   });
-  await Promise.all(
-    [...unitsByProduct.values()].map(({ box, units }) =>
-      vendorProductionFlowService.reverseBoxFromProductionFlow(box, units)
-    )
-  );
 
   const deletedCount = existingBoxes.length;
   if (deletedCount > 0) {
     await VendorBox.deleteMany({ _id: { $in: existingBoxes.map((b) => b._id) } });
   }
+
+  await Promise.all(
+    [...reconcileSamples.values()].map((box) =>
+      vendorProductionFlowService.reconcileSecondaryCheckingFromBoxes({
+        vendor: box.vendor,
+        vendorPurchaseOrder: box.vendorPurchaseOrderId,
+        product: box.productId,
+      })
+    )
+  );
 
   // Recreate per article from the lot's current receivedBoxes.
   const lotDetails = (lotFromPo.poItems || [])
