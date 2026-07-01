@@ -132,13 +132,19 @@ export const bulkImportWarehouseOrders = {
       .items(
         Joi.object({
           clientType: Joi.string().valid(...clientTypes).required(),
-          clientName: Joi.string().required().trim(),
+          clientId: Joi.string().custom(objectId).optional(),
+          clientName: Joi.string().allow('').trim(),
           addonOrderId: Joi.string().allow('').trim(),
           date: Joi.alternatives().try(Joi.date(), Joi.string().trim()).allow('', null),
           status: Joi.string().valid(...orderStatuses).default('pending'),
           styleCodeSinglePair: Joi.array().items(bulkSinglePairItem).default([]),
           styleCodeMultiPair: Joi.array().items(bulkMultiPairItem).default([]),
         }).custom((value, helpers) => {
+          const hasClientId = value.clientId != null && String(value.clientId).trim() !== '';
+          const hasClientName = value.clientName != null && String(value.clientName).trim() !== '';
+          if (!hasClientId && !hasClientName) {
+            return helpers.error('any.custom', { message: 'Either clientId or clientName is required per order' });
+          }
           const singleCount = Array.isArray(value.styleCodeSinglePair) ? value.styleCodeSinglePair.length : 0;
           const multiCount = Array.isArray(value.styleCodeMultiPair) ? value.styleCodeMultiPair.length : 0;
           if (singleCount + multiCount === 0) {

@@ -200,14 +200,31 @@ const parseFlexibleDate = (raw) => {
   return Number.isNaN(iso.getTime()) ? null : iso;
 };
 
+const WAREHOUSE_CLIENT_TYPES = new Set(['Store', 'Trade', 'Departmental', 'Ecom']);
+
 /**
- * Resolve a WarehouseClient by name + type.
- * For Store clients the name is matched against storeProfile.brand / billCode / sapCode.
- * For other types it is matched against retailerName or distributorName.
+ * Normalize bulk-import client type strings (e.g. "store" → "Store").
+ * @param {string} raw
+ * @returns {string|null}
  */
-const resolveClientByName = async (clientName, clientType) => {
+const normalizeBulkImportClientType = (raw) => {
+  const v = String(raw ?? '').trim();
+  if (!v) return null;
+  const title = v.charAt(0).toUpperCase() + v.slice(1).toLowerCase();
+  if (WAREHOUSE_CLIENT_TYPES.has(title)) return title;
+  if (v === 'Departmental' || /^departmental$/i.test(v)) return 'Departmental';
+  if (/^ecom$/i.test(v)) return 'Ecom';
+  return WAREHOUSE_CLIENT_TYPES.has(v) ? v : null;
+};
+
+/**
+ * Find WarehouseClient docs by display name + type (may return multiple when names collide).
+ * Store: storeProfile.brand / billCode / sapCode / retekCode.
+ * Other types: retailerName or distributorName.
+ */
+const findClientsByName = async (clientName, clientType) => {
   const name = String(clientName).trim();
-  if (!name) return null;
+  if (!name) return [];
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const regex = new RegExp(`^${escaped}$`, 'i');
 
@@ -217,12 +234,49 @@ const resolveClientByName = async (clientName, clientType) => {
       { 'storeProfile.brand': regex },
       { 'storeProfile.billCode': regex },
       { 'storeProfile.sapCode': regex },
+      { 'storeProfile.retekCode': regex },
     ];
   } else {
     filter.$or = [{ retailerName: regex }, { distributorName: regex }];
   }
 
-  return WarehouseClient.findOne(filter).lean();
+  return WarehouseClient.find(filter).lean();
+};
+
+/**
+ * Resolve client for bulk import — prefer explicit MongoDB clientId; fall back to name with duplicate guard.
+ * @param {{ clientId?: string, clientName?: string, clientType: string }} row
+ */
+const resolveClientForBulkImport = async (row) => {
+  const clientType = normalizeBulkImportClientType(row.clientType);
+  if (!clientType) throw new Error(`Invalid clientType "${row.clientType}"`);
+
+  const clientId = row.clientId != null ? String(row.clientId).trim() : '';
+  if (clientId) {
+    const client = await WarehouseClient.findById(clientId).lean();
+    if (!client) throw new Error(`Client id "${clientId}" not found`);
+    if (client.type !== clientType) {
+      throw new Error(`clientType "${clientType}" does not match client id "${clientId}" (actual: ${client.type})`);
+    }
+    return { client, clientType };
+  }
+
+  const clientName = String(row.clientName ?? '').trim();
+  if (!clientName) throw new Error('Either clientId or clientName is required');
+
+  const matches = await findClientsByName(clientName, clientType);
+  if (matches.length === 0) {
+    throw new Error(`Client "${clientName}" not found for type "${clientType}"`);
+  }
+  if (matches.length > 1) {
+    const ids = matches.map((c) => String(c._id)).join(', ');
+    throw new Error(
+      `Multiple clients (${matches.length}) match "${clientName}" for type "${clientType}". ` +
+        `Use clientId to disambiguate. Matching ids: ${ids}`
+    );
+  }
+
+  return { client: matches[0], clientType };
 };
 
 /**
@@ -268,14 +322,16 @@ export const bulkImportWarehouseOrders = async (orders, batchSize = 50) => {
     const row = orders[i];
     try {
       if (!row.clientType) throw new Error('clientType is required');
-      if (!row.clientName) throw new Error('clientName is required');
 
-      const client = await resolveClientByName(row.clientName, row.clientType);
-      if (!client) throw new Error(`Client "${row.clientName}" not found for type "${row.clientType}"`);
+      const { client, clientType } = await resolveClientForBulkImport(row);
 
       const clientName =
         client.type === 'Store'
-          ? client.storeProfile?.brand || client.storeProfile?.billCode || client.storeProfile?.sapCode || 'Store'
+          ? client.storeProfile?.brand ||
+            client.storeProfile?.billCode ||
+            client.storeProfile?.sapCode ||
+            client.storeProfile?.retekCode ||
+            'Store'
           : client.retailerName || client.distributorName || 'Client';
 
       const parsedDate = parseFlexibleDate(row.date);
@@ -321,7 +377,7 @@ export const bulkImportWarehouseOrders = async (orders, batchSize = 50) => {
       const created = await WarehouseOrder.create({
         orderNumber,
         date: parsedDate || new Date(),
-        clientType: row.clientType,
+        clientType,
         clientId: client._id,
         clientName,
         ...(addonOrderId !== undefined ? { addonOrderId } : {}),
@@ -336,7 +392,10 @@ export const bulkImportWarehouseOrders = async (orders, batchSize = 50) => {
       results.failed += 1;
       results.errors.push({
         index: i,
+        row: i + 1,
         clientName: row.clientName,
+        clientId: row.clientId,
+        reason: error.message,
         error: error.message,
       });
     }

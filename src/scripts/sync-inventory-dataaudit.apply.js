@@ -202,20 +202,10 @@ export async function loadBoxesByBarcodes(barcodes) {
  */
 export function buildConeUpdate(row, cone, rackVal) {
   const gross = row.grossWeight != null ? num(row.grossWeight) : null;
-  const tear = num(cone.tearWeight);
   const excelNet = row.netWeight != null ? num(row.netWeight) : null;
 
   if (gross == null || gross <= WEIGHT_EPS_KG) {
     return { ok: false, status: 'skip_invalid_weight', message: 'Gross weight missing or ≤ 0' };
-  }
-
-  const computedNet = gross - tear;
-  if (computedNet <= WEIGHT_EPS_KG) {
-    return {
-      ok: false,
-      status: 'skip_invalid_weight',
-      message: `Computed net (${computedNet.toFixed(4)}) ≤ 0 (gross=${gross}, tear=${tear})`,
-    };
   }
 
   if (excelNet != null && excelNet > gross + WEIGHT_EPS_KG) {
@@ -226,6 +216,8 @@ export function buildConeUpdate(row, cone, rackVal) {
     };
   }
 
+  const netWeight = excelNet != null ? excelNet : gross;
+
   /** @type {Record<string, unknown>} */
   const payload = { coneWeight: gross };
 
@@ -235,16 +227,16 @@ export function buildConeUpdate(row, cone, rackVal) {
 
   const before = {
     coneWeight: num(cone.coneWeight),
-    tearWeight: tear,
-    netWeight: num(cone.coneWeight) - tear,
+    grossWeight: num(cone.coneWeight),
+    netWeight: num(cone.coneWeight),
     coneStorageId: cone.coneStorageId != null ? String(cone.coneStorageId) : '',
     issueStatus: String(cone.issueStatus || ''),
   };
 
   const after = {
     coneWeight: gross,
-    tearWeight: tear,
-    netWeight: computedNet,
+    grossWeight: gross,
+    netWeight,
     coneStorageId:
       rackVal.status === 'ok' && rackVal.resolvedRack
         ? rackVal.resolvedRack
@@ -282,13 +274,13 @@ export function buildBoxUpdate(row, box, rackVal) {
     };
   }
 
-  const tearweight = Math.max(0, gross - net);
-
+  /**
+   * boxWeight is NET; grossWeight is scale gross (receiving UI / rack display).
+   */
   /** @type {Record<string, unknown>} */
   const payload = {
-    boxWeight: gross,
+    boxWeight: net,
     grossWeight: gross,
-    tearweight,
     numberOfCones: row.numberOfCones != null ? num(row.numberOfCones) : num(box.numberOfCones),
   };
 
@@ -300,17 +292,15 @@ export function buildBoxUpdate(row, box, rackVal) {
   const before = {
     boxWeight: num(box.boxWeight),
     grossWeight: num(box.grossWeight),
-    tearweight: num(box.tearweight),
-    netWeight: num(box.boxWeight) - num(box.tearweight),
+    netWeight: num(box.boxWeight),
     numberOfCones: num(box.numberOfCones),
     storageLocation: box.storageLocation != null ? String(box.storageLocation) : '',
     storedStatus: Boolean(box.storedStatus),
   };
 
   const after = {
-    boxWeight: gross,
+    boxWeight: net,
     grossWeight: gross,
-    tearweight,
     netWeight: net,
     numberOfCones: payload.numberOfCones,
     storageLocation:
@@ -635,7 +625,7 @@ export async function findConesNotInExcel(excelBarcodes) {
 
   const docs = await YarnCone.find(query)
     .select(
-      'barcode boxId poNumber yarnName yarnCatalogId coneWeight tearWeight coneStorageId issueStatus'
+      'barcode boxId poNumber yarnName yarnCatalogId coneWeight coneStorageId issueStatus'
     )
     .lean();
 
@@ -645,9 +635,8 @@ export async function findConesNotInExcel(excelBarcodes) {
     boxId: c.boxId ?? '',
     poNumber: c.poNumber ?? '',
     yarnName: c.yarnName ?? '',
-    coneWeight: num(c.coneWeight),
-    tearWeight: num(c.tearWeight),
-    netWeight: num(c.coneWeight) - num(c.tearWeight),
+    grossWeight: num(c.coneWeight),
+    netWeight: num(c.coneWeight),
     coneStorageId: c.coneStorageId ?? '',
     issueStatus: c.issueStatus ?? '',
   }));
@@ -672,7 +661,7 @@ export async function findBoxesNotInExcel(excelBarcodes) {
 
   const docs = await YarnBox.find(query)
     .select(
-      'barcode boxId poNumber yarnName yarnCatalogId boxWeight grossWeight tearweight numberOfCones storageLocation storedStatus'
+      'barcode boxId poNumber yarnName yarnCatalogId boxWeight grossWeight numberOfCones storageLocation storedStatus'
     )
     .lean();
 
@@ -681,10 +670,8 @@ export async function findBoxesNotInExcel(excelBarcodes) {
     boxId: b.boxId ?? '',
     poNumber: b.poNumber ?? '',
     yarnName: b.yarnName ?? '',
-    boxWeight: num(b.boxWeight),
     grossWeight: num(b.grossWeight),
-    tearweight: num(b.tearweight),
-    netWeight: num(b.boxWeight) - num(b.tearweight),
+    netWeight: num(b.boxWeight),
     numberOfCones: num(b.numberOfCones),
     storageLocation: b.storageLocation ?? '',
     storedStatus: Boolean(b.storedStatus),
