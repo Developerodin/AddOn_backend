@@ -1,0 +1,22 @@
+{
+  "mode": "dry-run",
+  "syncDirUsed": "/Users/akshaypareek/Projects/Addon/Addon_main/AddOn_backend/reports/dataaudit-sync-29062026-apply",
+  "conesFile": "/Users/akshaypareek/Projects/Addon/Addon_main/AddOn_backend/reports/dataaudit-sync-29062026-apply/cones-not-in-excel.xlsx",
+  "boxesFile": "/Users/akshaypareek/Projects/Addon/Addon_main/AddOn_backend/reports/dataaudit-sync-29062026-apply/boxes-not-in-excel.xlsx",
+  "coneInputRows": 1620,
+  "boxInputRows": 131,
+  "coneBuckets": {
+    "can_zero": 1617,
+    "block_issued": 3
+  },
+  "boxBuckets": {
+    "block_issued_cones_on_box": 76,
+    "lt_with_st_cones": 28,
+    "can_zero": 27
+  },
+  "conesUpdated": 0,
+  "conesWouldUpdate": 1617,
+  "boxesUpdated": 0,
+  "boxesWouldUpdate": 27,
+  "catalogIdsSynced": 0
+}

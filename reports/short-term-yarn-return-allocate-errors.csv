@@ -1,1 +1,0 @@
-cone_barcode,order_no,article_number,csv_issue_status,db_issue_status_before,action,status,reason,actual_weight,location_to_allocate,weight_before,weight_after,storage_before,storage_after,return_txn_id,issue_txn_id,order_id,article_id

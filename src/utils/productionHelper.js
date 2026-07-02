@@ -128,6 +128,43 @@ export const FLOORS_USING_CONTAINER_RECEIVE = [
 export const usesContainerReceive = (fromFloor) => FLOORS_USING_CONTAINER_RECEIVE.includes(fromFloor);
 
 /**
+ * Floor key for the step immediately before `targetFloor` in a product flow order.
+ * Used when validating container accept caps (e.g. Dispatch ← previous floor in process).
+ * @param {string[]} floorOrder - From article.getFloorOrder()
+ * @param {string} targetFloor - Production floor enum name (e.g. 'Dispatch')
+ * @param {(floor: string) => string|null} getFloorKey - Maps floor name to floorQuantities key
+ * @param {string} fallbackKey - When target is missing or is first in order
+ * @returns {string}
+ */
+export const resolveFeederFloorKeyBefore = (floorOrder, targetFloor, getFloorKey, fallbackKey) => {
+  if (!Array.isArray(floorOrder)) {
+    return fallbackKey;
+  }
+  const idx = floorOrder.indexOf(targetFloor);
+  if (idx <= 0) {
+    return fallbackKey;
+  }
+  return getFloorKey(floorOrder[idx - 1]) || fallbackKey;
+};
+
+/**
+ * Floor name immediately before `targetFloor` in a product flow order (for error hints).
+ * @param {string[]} floorOrder
+ * @param {string} targetFloor
+ * @returns {string|null}
+ */
+export const resolvePreviousFloorNameInOrder = (floorOrder, targetFloor) => {
+  if (!Array.isArray(floorOrder)) {
+    return null;
+  }
+  const idx = floorOrder.indexOf(targetFloor);
+  if (idx <= 0) {
+    return null;
+  }
+  return floorOrder[idx - 1];
+};
+
+/**
  * Get next floor in the sequence based on linking type
  * @param {string} currentFloor - Current floor name
  * @param {string} linkingType - Linking type

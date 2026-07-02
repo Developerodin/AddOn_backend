@@ -2,7 +2,7 @@ import httpStatus from 'http-status';
 import { Article, ArticleLog, ProductionOrder } from '../../models/production/index.js';
 import Product from '../../models/product.model.js';
 import ApiError from '../../utils/ApiError.js';
-import { getFloorOrderByLinkingType, getFloorKey, compareFloors, usesContainerReceive } from '../../utils/productionHelper.js';
+import { getFloorOrderByLinkingType, getFloorKey, compareFloors, usesContainerReceive, resolveFeederFloorKeyBefore, resolvePreviousFloorNameInOrder } from '../../utils/productionHelper.js';
 import { 
   createQuantityUpdateLog, 
   createTransferLog, 
@@ -57,12 +57,34 @@ const resolveStyleSourceFloorKeyForReceive = async (article, normalizedFloor) =>
     }
     return 'branding';
   }
+  if (normalizedFloor === 'Dispatch') {
+    try {
+      const floorOrder = await article.getFloorOrder();
+      return resolveFeederFloorKeyBefore(floorOrder, 'Dispatch', (f) => article.getFloorKey(f), 'finalChecking');
+    } catch {
+      return 'finalChecking';
+    }
+  }
   const staticMap = {
     Branding: 'secondaryChecking',
-    Dispatch: 'finalChecking',
     Warehouse: 'dispatch',
   };
   return staticMap[normalizedFloor] || null;
+};
+
+/**
+ * Previous floor name in the article's product flow (for transfer/receive error hints).
+ * @param {import('../../models/production/article.model.js').default} article
+ * @param {string} normalizedFloor
+ * @returns {Promise<string|null>}
+ */
+const resolvePreviousFloorNameForReceive = async (article, normalizedFloor) => {
+  try {
+    const floorOrder = await article.getFloorOrder();
+    return resolvePreviousFloorNameInOrder(floorOrder, normalizedFloor);
+  } catch {
+    return null;
+  }
 };
 
 /**
@@ -566,11 +588,13 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
       transferQuantity = maxTransferable;
     } else if (transferQuantity > maxTransferable) {
       const received = floorData?.received || 0;
-      const hint = normalizedFloor === 'Final Checking' && received === 0
-        ? ' Final Checking has no received work yet. Accept containers from Branding first (scan container barcode to receive).'
-        : normalizedFloor === 'Dispatch' && received === 0
-          ? ' Dispatch has no received work yet; transfer from Final Checking first.'
-          : '';
+      let hint = '';
+      if (normalizedFloor === 'Final Checking' && received === 0) {
+        hint = ' Final Checking has no received work yet. Accept containers from Branding first (scan container barcode to receive).';
+      } else if (normalizedFloor === 'Dispatch' && received === 0) {
+        const prevFloor = (await resolvePreviousFloorNameForReceive(article, normalizedFloor)) || 'Final Checking';
+        hint = ` Dispatch has no received work yet; transfer from ${prevFloor} first.`;
+      }
       throw new ApiError(httpStatus.BAD_REQUEST, `transferItems total (${transferQuantity}) exceeds transferable (${maxTransferable}) on ${normalizedFloor}.${hint}`);
     }
   }

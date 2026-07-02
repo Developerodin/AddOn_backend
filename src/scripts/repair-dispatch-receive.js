@@ -24,6 +24,7 @@ import config from '../config/config.js';
 import Article from '../models/production/article.model.js';
 import ProductionOrder from '../models/production/productionOrder.model.js';
 import ContainersMaster from '../models/production/containersMaster.model.js';
+import { resolveFeederFloorKeyBefore } from '../utils/productionHelper.js';
 import * as articleService from '../services/production/article.service.js';
 
 const WRITE = process.argv.includes('--write');
@@ -37,11 +38,23 @@ const ORDER = argValue('--order') || 'ORD-000078';
 const ARTICLE = argValue('--article') || 'A001';
 const BARCODE = argValue('--barcode') || '699865138112b2ead7034081';
 
-function pendingDispatchQty(article) {
-  const fc = article.floorQuantities?.finalChecking;
-  const fcTransferred = Number(fc?.m1Transferred ?? fc?.transferred ?? 0);
+/**
+ * Pending dispatch receive from the floor that actually feeds Dispatch for this article's process.
+ * @param {import('../models/production/article.model.js').default} article
+ * @returns {Promise<number>}
+ */
+async function pendingDispatchQty(article) {
+  let sourceKey = 'finalChecking';
+  try {
+    const floorOrder = await article.getFloorOrder();
+    sourceKey = resolveFeederFloorKeyBefore(floorOrder, 'Dispatch', (f) => article.getFloorKey(f), 'finalChecking');
+  } catch {
+    // keep finalChecking fallback
+  }
+  const source = article.floorQuantities?.[sourceKey] || {};
+  const transferred = Number(source.m1Transferred ?? source.transferred ?? 0);
   const dispatchReceived = Number(article.floorQuantities?.dispatch?.received ?? 0);
-  return Math.max(0, fcTransferred - dispatchReceived);
+  return Math.max(0, transferred - dispatchReceived);
 }
 
 async function main() {
@@ -53,9 +66,9 @@ async function main() {
   const article = await Article.findOne({ orderId: order._id, articleNumber: ARTICLE });
   if (!article) throw new Error(`Article not found: ${ARTICLE}`);
 
-  const qty = pendingDispatchQty(article);
+  const qty = await pendingDispatchQty(article);
   if (qty <= 0) {
-    throw new Error('No pending dispatch receive — already received or nothing transferred from Final Checking');
+    throw new Error('No pending dispatch receive — already received or nothing transferred from the previous floor');
   }
 
   const container = await ContainersMaster.findOne({
