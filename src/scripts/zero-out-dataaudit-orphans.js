@@ -7,9 +7,13 @@
  * marks safe cones as used (zero weight, clear rack), zeros LT boxes, blocks issued/production
  * cones, and separates LT boxes that still have ST cones for manual follow-up.
  *
+ * For the full one-shot cleanup (cones + all box force modes), use:
+ *   node src/scripts/apply-dataaudit-orphan-cleanup.js --from-sync-dir=... --apply
+ *
  * Usage:
  *   NODE_ENV=development node src/scripts/zero-out-dataaudit-orphans.js --dry-run
  *   NODE_ENV=development node src/scripts/zero-out-dataaudit-orphans.js --from-sync-dir=./reports/dataaudit-sync-... --apply
+ *   NODE_ENV=development node src/scripts/zero-out-dataaudit-orphans.js --from-sync-dir=... --full-cleanup --apply
  *
  * Flags:
  *   --from-sync-dir=PATH   Directory with cones/boxes-not-in-excel.xlsx (default: latest reports/dataaudit-sync-*)
@@ -19,6 +23,9 @@
  *   --out-dir=PATH         Report output (default ./reports/dataaudit-zero-out-<timestamp>)
  *   --dry-run              Default unless --apply
  *   --apply                Persist updates + inventory sync
+ *   --full-cleanup         Enable --force-lt-with-st-cones + --force-issued-cones-on-box (used by apply-dataaudit-orphan-cleanup.js)
+ *   --force-lt-with-st-cones       Zero ST cones on box first, then zero LT box (confirmed fully used)
+ *   --force-issued-cones-on-box    Zero box even when issued cones remain (issued cones untouched)
  *   --mongo-url=URL
  */
 
@@ -57,6 +64,11 @@ const CONES_FILE = getArg('--cones-file=');
 const BOXES_FILE = getArg('--boxes-file=');
 const OUT_DIR_ARG = getArg('--out-dir=');
 const APPLY = process.argv.includes('--apply');
+const FULL_CLEANUP = process.argv.includes('--full-cleanup');
+const FORCE_LT_WITH_ST_CONES =
+  process.argv.includes('--force-lt-with-st-cones') || FULL_CLEANUP;
+const FORCE_ISSUED_CONES_ON_BOX =
+  process.argv.includes('--force-issued-cones-on-box') || FULL_CLEANUP;
 const CONES_ONLY = process.argv.includes('--cones-only');
 const BOXES_ONLY = process.argv.includes('--boxes-only');
 const PROCESS_CONES = !BOXES_ONLY;
@@ -112,6 +124,9 @@ function defaultOutDir() {
 
 async function main() {
   logger.info(`Mode: ${APPLY ? 'APPLY (writes enabled)' : 'DRY RUN (no writes)'}`);
+  if (FULL_CLEANUP) {
+    logger.info('Full cleanup: cones (skip issued) + all boxes (force LT ST cones + force issued-on-box)');
+  }
 
   const { conesFile, boxesFile, syncDirUsed } = resolveInputFiles({
     fromSyncDir: FROM_SYNC_DIR,
@@ -174,7 +189,10 @@ async function main() {
     logger.info(`Classifying ${boxRows.length} box(es)…`);
     const classified = await classifyAllBoxes(boxRows);
     logger.info(`Box buckets: ${JSON.stringify(summarizeBuckets(classified))}`);
-    const { results, catalogIds: boxCatalogIds } = await processBoxes(classified, APPLY);
+    const { results, catalogIds: boxCatalogIds } = await processBoxes(classified, APPLY, {
+      forceLtWithStCones: FORCE_LT_WITH_ST_CONES,
+      forceIssuedConesOnBox: FORCE_ISSUED_CONES_ON_BOX,
+    });
     boxResults = results;
     catalogIds = new Set([...catalogIds, ...boxCatalogIds]);
   }
@@ -192,6 +210,9 @@ async function main() {
   const outDir = OUT_DIR_ARG ? path.resolve(process.cwd(), OUT_DIR_ARG) : defaultOutDir();
   const summary = {
     mode: APPLY ? 'apply' : 'dry-run',
+    fullCleanup: FULL_CLEANUP,
+    forceLtWithStCones: FORCE_LT_WITH_ST_CONES,
+    forceIssuedConesOnBox: FORCE_ISSUED_CONES_ON_BOX,
     syncDirUsed: syncDirUsed ?? null,
     conesFile: conesFile ?? null,
     boxesFile: boxesFile ?? null,
@@ -201,8 +222,10 @@ async function main() {
     boxBuckets: summarizeBuckets(boxResults),
     conesUpdated: coneResults.filter((r) => r.status === 'updated').length,
     conesWouldUpdate: coneResults.filter((r) => r.status === 'would_update').length,
+    conesApplyErrors: coneResults.filter((r) => r.status === 'error').length,
     boxesUpdated: boxResults.filter((r) => r.status === 'updated').length,
     boxesWouldUpdate: boxResults.filter((r) => r.status === 'would_update').length,
+    boxesApplyErrors: boxResults.filter((r) => r.status === 'error').length,
     catalogIdsSynced: APPLY ? catalogIds.size : 0,
   };
 

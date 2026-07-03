@@ -111,6 +111,99 @@ export function buildBoxZeroAfter() {
 }
 
 /**
+ * Marks a single ST cone as used and clears rack storage by barcode.
+ * @param {string} barcode
+ * @param {boolean} apply
+ * @returns {Promise<{ status: string, barcode: string, message?: string, yarnCatalogId?: string }>}
+ */
+export async function zeroStConeByBarcode(barcode, apply) {
+  const trimmed = String(barcode || '').trim();
+  if (!trimmed) {
+    return { status: 'error', barcode: '', message: 'empty_barcode' };
+  }
+
+  const cone = await YarnCone.findOne({ barcode: trimmed });
+  if (!cone) {
+    return { status: 'error', barcode: trimmed, message: 'cone_not_in_db' };
+  }
+
+  const priorNet = Number(cone.coneWeight ?? 0) - Number(cone.tearWeight ?? 0);
+  const issueWeight =
+    priorNet > WEIGHT_EPS ? priorNet : Math.max(0, Number(cone.issueWeight ?? 0));
+
+  /** @type {Record<string, unknown>} */
+  const $set = {
+    issueStatus: 'used',
+    coneWeight: 0,
+    tearWeight: 0,
+    issueWeight,
+    issueDate: new Date(),
+  };
+
+  /** @type {Record<string, string>} */
+  const $unset = { coneStorageId: '' };
+  if (!cone.orderId && !cone.articleId) {
+    $unset.orderId = '';
+    $unset.articleId = '';
+  }
+
+  const yarnCatalogId = cone.yarnCatalogId ? String(cone.yarnCatalogId) : '';
+
+  if (!apply) {
+    return { status: 'would_update', barcode: trimmed, yarnCatalogId };
+  }
+
+  try {
+    await YarnCone.updateOne({ _id: cone._id }, { $set, $unset });
+    return { status: 'updated', barcode: trimmed, yarnCatalogId };
+  } catch (err) {
+    return {
+      status: 'error',
+      barcode: trimmed,
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * Zeros all ST cones on an LT box, then zeros the box (--force-lt-with-st-cones).
+ * @param {BoxClassifyResult} classified
+ * @param {boolean} apply
+ * @returns {Promise<BoxApplyResult & { stConesZeroed?: number, stConeErrors?: string[], coneCatalogIds?: string[] }>}
+ */
+export async function applyBoxZeroForceLtStCones(classified, apply) {
+  const stCones = /** @type {Array<{ barcode: string }>} */ (classified.stCones || []);
+  /** @type {string[]} */
+  const stConeErrors = [];
+  /** @type {string[]} */
+  const coneCatalogIds = [];
+  let stConesZeroed = 0;
+
+  for (const c of stCones) {
+    const coneResult = await zeroStConeByBarcode(c.barcode, apply);
+    if (coneResult.status === 'updated' || coneResult.status === 'would_update') {
+      stConesZeroed += 1;
+      if (coneResult.yarnCatalogId) coneCatalogIds.push(coneResult.yarnCatalogId);
+    } else {
+      stConeErrors.push(`${c.barcode}: ${coneResult.message ?? coneResult.status}`);
+    }
+  }
+
+  if (stConeErrors.length > 0) {
+    return {
+      status: 'error',
+      message: `st_cone_zero_failed (${stConeErrors.length})`,
+      stConesZeroed,
+      stConeErrors,
+      coneCatalogIds,
+    };
+  }
+
+  const boxResult = await applyBoxZero({ ...classified, bucket: 'can_zero' }, apply);
+  return { ...boxResult, stConesZeroed, stConeErrors: [], coneCatalogIds };
+}
+
+/**
  * Applies zero-out to a classified box when bucket is can_zero.
  * @param {BoxClassifyResult} classified
  * @param {boolean} apply
@@ -178,9 +271,11 @@ export async function processCones(classified, apply) {
  * Processes classified boxes: apply zero-out and collect catalog IDs.
  * @param {BoxClassifyResult[]} classified
  * @param {boolean} apply
+ * @param {{ forceLtWithStCones?: boolean, forceIssuedConesOnBox?: boolean }} [options]
  * @returns {Promise<{ results: Array<BoxClassifyResult & BoxApplyResult>, catalogIds: Set<string> }>}
  */
-export async function processBoxes(classified, apply) {
+export async function processBoxes(classified, apply, options = {}) {
+  const { forceLtWithStCones = false, forceIssuedConesOnBox = false } = options;
   /** @type {Set<string>} */
   const catalogIds = new Set();
   /** @type {Array<BoxClassifyResult & BoxApplyResult>} */
@@ -191,6 +286,20 @@ export async function processBoxes(classified, apply) {
       const applyResult = await applyBoxZero(row, apply);
       if (row.yarnCatalogId) catalogIds.add(row.yarnCatalogId);
       results.push({ ...row, ...applyResult });
+    } else if (row.bucket === 'lt_with_st_cones' && forceLtWithStCones) {
+      const applyResult = await applyBoxZeroForceLtStCones(row, apply);
+      if (row.yarnCatalogId) catalogIds.add(row.yarnCatalogId);
+      for (const id of applyResult.coneCatalogIds || []) catalogIds.add(id);
+      results.push({ ...row, ...applyResult, forcedLtStCones: true });
+    } else if (row.bucket === 'block_issued_cones_on_box' && forceIssuedConesOnBox) {
+      const applyResult = await applyBoxZero({ ...row, bucket: 'can_zero' }, apply);
+      if (row.yarnCatalogId) catalogIds.add(row.yarnCatalogId);
+      results.push({
+        ...row,
+        ...applyResult,
+        forcedIssuedConesOnBox: true,
+        issuedConesKept: Array.isArray(row.issuedStCones) ? row.issuedStCones.length : 0,
+      });
     } else {
       results.push({ ...row, status: row.bucket });
     }

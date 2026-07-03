@@ -188,21 +188,43 @@ export function writeAllReports(outDir, coneResults, boxResults, summary) {
     )
     .map(flattenConeRow);
 
-  const boxesZeroed = boxResults.filter((r) => r.bucket === 'can_zero').map(flattenBoxRow);
-  const boxesBlockedOther = boxResults
-    .filter((r) =>
-      ['block_issued_cones_on_box', 'block_not_found', 'already_zeroed'].includes(String(r.bucket))
+  const boxesZeroed = boxResults
+    .filter(
+      (r) =>
+        r.bucket === 'can_zero' ||
+        (r.bucket === 'lt_with_st_cones' && ['updated', 'would_update'].includes(String(r.status))) ||
+        (r.bucket === 'block_issued_cones_on_box' &&
+          ['updated', 'would_update'].includes(String(r.status)))
     )
     .map(flattenBoxRow);
-  const ltWithStCones = expandLtWithStConesRows(boxResults);
+  const boxesBlockedOther = boxResults
+    .filter((r) => {
+      if (['block_not_found', 'already_zeroed'].includes(String(r.bucket))) return true;
+      if (r.bucket === 'block_issued_cones_on_box' && !['updated', 'would_update'].includes(String(r.status))) {
+        return true;
+      }
+      if (r.bucket === 'lt_with_st_cones' && !['updated', 'would_update'].includes(String(r.status))) {
+        return true;
+      }
+      return false;
+    })
+    .map(flattenBoxRow);
+  const ltWithStCones = expandLtWithStConesRows(
+    boxResults.filter((r) => !['updated', 'would_update'].includes(String(r.status)))
+  );
+
+  const conesErrors = coneResults.filter((r) => r.status === 'error').map(flattenConeRow);
+  const boxesErrors = boxResults.filter((r) => r.status === 'error').map(flattenBoxRow);
 
   const paths = {
     conesZeroed: path.join(outDir, 'cones-zeroed.csv'),
     conesBlockedIssued: path.join(outDir, 'cones-blocked-issued.csv'),
     conesBlockedOther: path.join(outDir, 'cones-blocked-other.csv'),
+    conesErrors: path.join(outDir, 'cones-apply-errors.csv'),
     boxesZeroed: path.join(outDir, 'boxes-zeroed.csv'),
     boxesLtWithStCones: path.join(outDir, 'boxes-lt-with-st-cones.xlsx'),
     boxesBlockedOther: path.join(outDir, 'boxes-blocked-other.csv'),
+    boxesErrors: path.join(outDir, 'boxes-apply-errors.csv'),
     summary: path.join(outDir, 'summary.json'),
   };
 
@@ -217,11 +239,21 @@ export function writeAllReports(outDir, coneResults, boxResults, summary) {
     toCsv(conesBlockedOther.length ? conesBlockedOther : [{ note: 'No rows' }]),
     'utf8'
   );
+  fs.writeFileSync(
+    paths.conesErrors,
+    toCsv(conesErrors.length ? conesErrors : [{ note: 'No rows' }]),
+    'utf8'
+  );
   fs.writeFileSync(paths.boxesZeroed, toCsv(boxesZeroed.length ? boxesZeroed : [{ note: 'No rows' }]), 'utf8');
   writeXlsx(paths.boxesLtWithStCones, 'LtWithStCones', ltWithStCones);
   fs.writeFileSync(
     paths.boxesBlockedOther,
     toCsv(boxesBlockedOther.length ? boxesBlockedOther : [{ note: 'No rows' }]),
+    'utf8'
+  );
+  fs.writeFileSync(
+    paths.boxesErrors,
+    toCsv(boxesErrors.length ? boxesErrors : [{ note: 'No rows' }]),
     'utf8'
   );
   fs.writeFileSync(paths.summary, JSON.stringify(summary, null, 2), 'utf8');
