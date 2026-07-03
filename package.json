@@ -60,6 +60,8 @@
     "verify:yarn-catalog-names": "cross-env NODE_ENV=development node src/scripts/verify-yarn-catalog-yarn-names.js",
     "boxes:zero-out-from-excel": "cross-env NODE_ENV=development node src/scripts/zero-out-yarn-boxes-from-excel.js",
     "cones:mark-used-from-excel": "cross-env NODE_ENV=development node src/scripts/mark-yarn-cones-used-from-excel.js",
+    "restore:upload-mistaken-used": "cross-env NODE_ENV=development node src/scripts/restore-upload-mistaken-used.js",
+    "restore:upload-mistaken-used:apply": "cross-env NODE_ENV=development node src/scripts/restore-upload-mistaken-used.js --apply",
     "sync:dataaudit-inventory": "cross-env NODE_ENV=development node src/scripts/sync-inventory-from-dataaudit.js",
     "orphans:zero-out-dataaudit": "cross-env NODE_ENV=development node src/scripts/zero-out-dataaudit-orphans.js",
     "orphans:cleanup-dataaudit": "cross-env NODE_ENV=development node src/scripts/apply-dataaudit-orphan-cleanup.js",
