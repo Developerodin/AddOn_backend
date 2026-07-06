@@ -134,7 +134,7 @@ export const buildSnapshotFromFlow = ({ flow, vpo, boxes = [] }) => {
     const lotM1 = prorateVerified(m1, lotScan || expectedQty, totalScan || verifiedQty);
     const lotM2 = prorateVerified(m2, lotScan || expectedQty, totalScan || verifiedQty);
     const lotM3 = prorateVerified(m3, lotScan || expectedQty, totalScan || verifiedQty);
-    const lotM4 = prorateVerified(m4, lotScan || expectedQty, totalScan || verifiedQty);
+    const lotM4 = prorateVerified(vm4, lotScan || expectedQty, totalScan || verifiedQty);
 
     return {
       lotNumber,
