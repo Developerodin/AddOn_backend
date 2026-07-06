@@ -2,9 +2,11 @@ import mongoose from 'mongoose';
 import httpStatus from 'http-status';
 import ApiError from '../../utils/ApiError.js';
 import PickList from '../../models/whms/pickList.model.js';
+import StyleCode from '../../models/styleCode.model.js';
 import StyleCodePairs from '../../models/styleCodePairs.model.js';
 import WarehouseInventory from '../../models/whms/warehouseInventory.model.js';
 import { appendWarehouseInventoryLog } from './warehouseInventory.service.js';
+import { buildArticleAttrsByStyleCodeId } from './warehouseOrderCatalogEnrich.js';
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -78,14 +80,48 @@ async function applyPickDeltaToInventory({ session, styleCode, deltaPickupQuanti
 }
 
 /**
- * Auto-create picklist entries when a warehouse order is created.
- *
- * Single-pair items  → 1 picklist row  (skuCode === styleCode)
- * Multi-pair items   → N picklist rows (skuCode = pairStyleCode,
- *                      styleCode = each individual code inside the pair)
+ * Resolve catalogue colour/pattern keyed by styleCode string.
+ * @param {string[]} styleCodes
+ * @returns {Promise<Map<string, { colour: string; pattern: string }>>}
  */
-export const createPickListForOrder = async (order) => {
-  const docs = [];
+async function buildArticleAttrsByStyleCodeString(styleCodes) {
+  const unique = [...new Set(styleCodes.map((code) => String(code || '').trim()).filter(Boolean))];
+  const result = new Map();
+  if (!unique.length) return result;
+
+  const docs = await StyleCode.find({ styleCode: { $in: unique } }).select('_id styleCode').lean();
+  if (!docs.length) return result;
+
+  const attrsById = await buildArticleAttrsByStyleCodeId(docs.map((doc) => String(doc._id)));
+  for (const doc of docs) {
+    const attrs = attrsById.get(String(doc._id)) || { colour: '', pattern: '' };
+    result.set(doc.styleCode, attrs);
+  }
+  return result;
+}
+
+/**
+ * Resolve shade for a pick row from order line colour and catalogue attrs.
+ * Multi-pair child rows prefer catalogue colour (stored per individual style code).
+ * @param {string|undefined|null} orderLineColour
+ * @param {{ colour?: string }} catalogAttrs
+ * @param {boolean} preferCatalogue
+ * @returns {string}
+ */
+function resolvePickRowShade(orderLineColour, catalogAttrs, preferCatalogue = false) {
+  const lineColour = String(orderLineColour || '').trim();
+  const catalogColour = String(catalogAttrs?.colour || '').trim();
+  if (preferCatalogue) return catalogColour || lineColour;
+  return lineColour || catalogColour;
+}
+
+/**
+ * Build expected pick-list row payloads from a warehouse order document.
+ * Multi-pair child rows use catalogue colour per individual styleCode.
+ * @param {import('../../models/whms/warehouseOrder.model.js').default|object} order
+ * @returns {Promise<object[]>}
+ */
+async function buildExpectedPickRowsFromOrder(order) {
   const orderSnapshot = order.toObject ? order.toObject() : { ...order };
   const base = {
     orderId: order._id,
@@ -94,26 +130,39 @@ export const createPickListForOrder = async (order) => {
     orderDetails: orderSnapshot,
   };
 
+  const rows = [];
   const singleItems = Array.isArray(order.styleCodeSinglePair) ? order.styleCodeSinglePair : [];
+  const singleAttrsByCode = await buildArticleAttrsByStyleCodeString(
+    singleItems.map((item) => item.styleCode).filter(Boolean)
+  );
+
   for (const item of singleItems) {
-    docs.push({
+    const catalogAttrs = singleAttrsByCode.get(item.styleCode) || { colour: '', pattern: '' };
+    rows.push({
       ...base,
       size: item.pack || '',
-      shade: item.colour || '',
+      shade: resolvePickRowShade(item.colour, catalogAttrs, false),
       skuCode: item.styleCode,
       styleCode: item.styleCode,
       quantity: item.quantity,
-      pickupQuantity: 0,
     });
   }
 
   const multiItems = Array.isArray(order.styleCodeMultiPair) ? order.styleCodeMultiPair : [];
   if (multiItems.length) {
-    const pairIds = multiItems.map((i) => i.styleCodeMultiPairId).filter(Boolean);
+    const pairIds = multiItems.map((item) => item.styleCodeMultiPairId).filter(Boolean);
     const pairs = await StyleCodePairs.find({ _id: { $in: pairIds } })
       .populate('styleCodes', 'styleCode')
       .lean();
-    const pairMap = new Map(pairs.map((p) => [String(p._id), p]));
+    const pairMap = new Map(pairs.map((pair) => [String(pair._id), pair]));
+
+    const childStyleCodes = [];
+    for (const pair of pairs) {
+      for (const child of pair.styleCodes || []) {
+        if (child?.styleCode) childStyleCodes.push(child.styleCode);
+      }
+    }
+    const childAttrsByCode = await buildArticleAttrsByStyleCodeString(childStyleCodes);
 
     for (const item of multiItems) {
       const pair = pairMap.get(String(item.styleCodeMultiPairId));
@@ -123,32 +172,77 @@ export const createPickListForOrder = async (order) => {
       const childCodes = Array.isArray(pair.styleCodes) ? pair.styleCodes : [];
 
       if (childCodes.length === 0) {
-        docs.push({
+        const catalogAttrs = childAttrsByCode.get(skuCode) || { colour: '', pattern: '' };
+        rows.push({
           ...base,
           size: item.pack || '',
-          shade: item.colour || '',
+          shade: resolvePickRowShade(item.colour, catalogAttrs, false),
           skuCode,
           styleCode: skuCode,
           quantity: item.quantity,
-          pickupQuantity: 0,
         });
       } else {
         for (const child of childCodes) {
-          docs.push({
+          const catalogAttrs = childAttrsByCode.get(child.styleCode) || { colour: '', pattern: '' };
+          rows.push({
             ...base,
             size: item.pack || '',
-            shade: item.colour || '',
+            shade: resolvePickRowShade(item.colour, catalogAttrs, true),
             skuCode,
             styleCode: child.styleCode,
             quantity: item.quantity,
-            pickupQuantity: 0,
           });
         }
       }
     }
   }
 
-  const mergedDocs = mergePickListRowsByKey(docs);
+  return rows;
+}
+
+/**
+ * Fill missing shade values from product catalogue (per individual styleCode).
+ * @param {object[]} groups
+ * @returns {Promise<object[]>}
+ */
+async function enrichPickListGroupsWithCatalogueShades(groups) {
+  if (!Array.isArray(groups) || !groups.length) return groups;
+
+  const styleCodesNeedingShade = [];
+  for (const group of groups) {
+    for (const item of group.items || []) {
+      if (!String(item.shade || '').trim() && item.styleCode) {
+        styleCodesNeedingShade.push(item.styleCode);
+      }
+    }
+  }
+  if (!styleCodesNeedingShade.length) return groups;
+
+  const attrsByCode = await buildArticleAttrsByStyleCodeString(styleCodesNeedingShade);
+  return groups.map((group) => ({
+    ...group,
+    items: (group.items || []).map((item) => {
+      const existing = String(item.shade || '').trim();
+      if (existing) return item;
+      const catalogColour = String(attrsByCode.get(item.styleCode)?.colour || '').trim();
+      if (!catalogColour) return item;
+      return { ...item, shade: catalogColour };
+    }),
+  }));
+}
+
+/**
+ * Auto-create picklist entries when a warehouse order is created.
+ *
+ * Single-pair items  → 1 picklist row  (skuCode === styleCode)
+ * Multi-pair items   → N picklist rows (skuCode = pairStyleCode,
+ *                      styleCode = each individual code inside the pair)
+ */
+export const createPickListForOrder = async (order) => {
+  const mergedDocs = mergePickListRowsByKey(await buildExpectedPickRowsFromOrder(order)).map((row) => ({
+    ...row,
+    pickupQuantity: 0,
+  }));
   if (mergedDocs.length) {
     await PickList.insertMany(mergedDocs);
   }
@@ -202,67 +296,7 @@ export const syncPickListOrderMetadata = async (order) => {
  * Keeps pickup progress for unchanged rows, and only creates/updates/deletes changed rows.
  */
 export const syncPickListForOrderLineItems = async (order) => {
-  const orderSnapshot = order.toObject ? order.toObject() : { ...order };
-  const base = {
-    orderId: order._id,
-    orderNumber: order.orderNumber,
-    addonOrderId: order.addonOrderId,
-    orderDetails: orderSnapshot,
-  };
-
-  const expectedRows = [];
-  const singleItems = Array.isArray(order.styleCodeSinglePair) ? order.styleCodeSinglePair : [];
-  for (const item of singleItems) {
-    expectedRows.push({
-      ...base,
-      size: item.pack || '',
-      shade: item.colour || '',
-      skuCode: item.styleCode,
-      styleCode: item.styleCode,
-      quantity: item.quantity,
-    });
-  }
-
-  const multiItems = Array.isArray(order.styleCodeMultiPair) ? order.styleCodeMultiPair : [];
-  if (multiItems.length) {
-    const pairIds = multiItems.map((i) => i.styleCodeMultiPairId).filter(Boolean);
-    const pairs = await StyleCodePairs.find({ _id: { $in: pairIds } })
-      .populate('styleCodes', 'styleCode')
-      .lean();
-    const pairMap = new Map(pairs.map((p) => [String(p._id), p]));
-
-    for (const item of multiItems) {
-      const pair = pairMap.get(String(item.styleCodeMultiPairId));
-      if (!pair) continue;
-
-      const skuCode = pair.pairStyleCode || item.styleCode;
-      const childCodes = Array.isArray(pair.styleCodes) ? pair.styleCodes : [];
-
-      if (childCodes.length === 0) {
-        expectedRows.push({
-          ...base,
-          size: item.pack || '',
-          shade: item.colour || '',
-          skuCode,
-          styleCode: skuCode,
-          quantity: item.quantity,
-        });
-      } else {
-        for (const child of childCodes) {
-          expectedRows.push({
-            ...base,
-            size: item.pack || '',
-            shade: item.colour || '',
-            skuCode,
-            styleCode: child.styleCode,
-            quantity: item.quantity,
-          });
-        }
-      }
-    }
-  }
-
-  const mergedExpected = mergePickListRowsByKey(expectedRows);
+  const mergedExpected = mergePickListRowsByKey(await buildExpectedPickRowsFromOrder(order));
 
   const existingRows = await PickList.find({ orderId: order._id }).sort({ createdAt: 1 });
   const existingBuckets = new Map();
@@ -576,7 +610,7 @@ export const queryPickListsGroupedByOrder = async (filter, options) => {
   const [summary] = await PickList.aggregate(summaryPipeline);
 
   const resultsPipeline = [...basePipeline, { $skip: skip }, { $limit: limit }];
-  const results = await PickList.aggregate(resultsPipeline);
+  const results = await enrichPickListGroupsWithCatalogueShades(await PickList.aggregate(resultsPipeline));
 
   return {
     results,

@@ -8,6 +8,10 @@ import {
   syncPickListForOrderLineItems,
   syncPickListOrderMetadata,
 } from './pickList.service.js';
+import {
+  buildArticleAttrsByStyleCodeId,
+  coalesceLineField,
+} from './warehouseOrderCatalogEnrich.js';
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -288,8 +292,8 @@ const resolveClientForBulkImport = async (row) => {
  *  - date (DD/MM/YYYY or DD-MM-YYYY)
  *  - status (string)
  *  - addonOrderId (optional — external / customer Addon order reference)
- *  - styleCodeSinglePair[].styleCode (code string — resolved to styleCodeId, pack & type auto-filled)
- *  - styleCodeMultiPair[].styleCode  (code string — resolved to styleCodeMultiPairId, pack auto-filled)
+ *  - styleCodeSinglePair[].styleCode (code string — resolved to styleCodeId; pack, type, colour, pattern auto-filled from catalogue)
+ *  - styleCodeMultiPair[].styleCode  (code string — resolved to styleCodeMultiPairId; pack, type, colour, pattern auto-filled when omitted)
  */
 export const bulkImportWarehouseOrders = async (orders, batchSize = 50) => {
   const results = {
@@ -317,6 +321,27 @@ export const bulkImportWarehouseOrders = async (orders, batchSize = 50) => {
   const singleByCode = new Map(singleDocs.map((d) => [d.styleCode, d]));
   const multiByCode = new Map(multiDocs.map((d) => [d.pairStyleCode, d]));
 
+  const linkedStyleCodeIds = new Set();
+  multiDocs.forEach((d) => {
+    (d.styleCodes || []).forEach((id) => linkedStyleCodeIds.add(String(id)));
+  });
+
+  const missingLinkedIds = [...linkedStyleCodeIds].filter(
+    (id) => !singleDocs.some((d) => String(d._id) === id),
+  );
+  const linkedStyleDocs =
+    missingLinkedIds.length > 0
+      ? await StyleCode.find({ _id: { $in: missingLinkedIds } }).lean()
+      : [];
+  const styleCodeById = new Map(
+    [...singleDocs, ...linkedStyleDocs].map((d) => [String(d._id), d]),
+  );
+
+  const articleAttrsByStyleCodeId = await buildArticleAttrsByStyleCodeId([
+    ...singleDocs.map((d) => String(d._id)),
+    ...linkedStyleCodeIds,
+  ]);
+
   // ── Process orders strictly one-by-one to keep orderNumber unique ──
   for (let i = 0; i < orders.length; i += 1) {
     const row = orders[i];
@@ -340,13 +365,17 @@ export const bulkImportWarehouseOrders = async (orders, batchSize = 50) => {
         const code = String(item.styleCode || '').trim();
         const doc = singleByCode.get(code);
         if (!doc) throw new Error(`Single-pair styleCode "${code}" not found (item ${sIdx + 1})`);
+        const catalogAttrs = articleAttrsByStyleCodeId.get(String(doc._id)) || {
+          colour: '',
+          pattern: '',
+        };
         return {
           styleCodeId: doc._id,
           styleCode: doc.styleCode,
           pack: doc.pack || '',
-          type: doc.brand || '',
-          colour: item.colour || item.color || '',
-          pattern: item.pattern || '',
+          type: coalesceLineField(item.type, doc.brand),
+          colour: coalesceLineField(item.colour || item.color, catalogAttrs.colour),
+          pattern: coalesceLineField(item.pattern, catalogAttrs.pattern),
           quantity: Number(item.quantity),
         };
       });
@@ -355,13 +384,18 @@ export const bulkImportWarehouseOrders = async (orders, batchSize = 50) => {
         const code = String(item.styleCode || '').trim();
         const doc = multiByCode.get(code);
         if (!doc) throw new Error(`Multi-pair styleCode "${code}" not found (item ${mIdx + 1})`);
+        const firstLinkedId = doc.styleCodes?.[0] ? String(doc.styleCodes[0]) : '';
+        const linkedStyle = firstLinkedId ? styleCodeById.get(firstLinkedId) : null;
+        const catalogAttrs = firstLinkedId
+          ? articleAttrsByStyleCodeId.get(firstLinkedId) || { colour: '', pattern: '' }
+          : { colour: '', pattern: '' };
         return {
           styleCodeMultiPairId: doc._id,
           styleCode: doc.pairStyleCode,
           pack: String(doc.pack || ''),
-          type: item.type || '',
-          colour: item.colour || item.color || '',
-          pattern: item.pattern || '',
+          type: coalesceLineField(item.type, linkedStyle?.brand),
+          colour: coalesceLineField(item.colour || item.color, catalogAttrs.colour),
+          pattern: coalesceLineField(item.pattern, catalogAttrs.pattern),
           quantity: Number(item.quantity),
         };
       });

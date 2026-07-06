@@ -19,6 +19,8 @@ const storeProfileSchema = Joi.object().keys({
   storeLandlineNo: Joi.string().allow('').trim(),
   smNameAndContact: Joi.string().allow('').trim(),
   storeMailId: Joi.string().allow('').trim(),
+  abmNameAndContact: Joi.string().allow('').trim(),
+  abmMailId: Joi.string().allow('').trim(),
 });
 
 const sharedFields = {

@@ -25,6 +25,8 @@
  * @property {string} [softwareCode]
  * @property {string} [internalCode]
  * @property {string} [knittingCode]
+ * @property {string} [category] — populated Category.name when itemId is linked
+ * @property {string} [image] — S3 URL from Product.image
  *
  * @typedef {Object} WarehouseInventoryStyleMasterDTO
  * @property {string} id
@@ -136,6 +138,23 @@ export function serializeWarehouseInventoryLogPage(pageResult) {
 }
 
 /**
+ * Product ref on inventory rows — includes resolved category name when populated.
+ * @param {unknown} ref
+ * @returns {Record<string, unknown>|null}
+ */
+function shapeProductRef(ref) {
+  const base = shapeRef(ref, ['name', 'factoryCode', 'vendorCode', 'softwareCode', 'internalCode', 'knittingCode', 'image']);
+  if (!base) return null;
+  if (ref && typeof ref === 'object') {
+    const cat = /** @type {Record<string, unknown>} */ (ref).category;
+    if (cat && typeof cat === 'object' && cat.name != null && String(cat.name).trim()) {
+      base.category = String(cat.name).trim();
+    }
+  }
+  return base;
+}
+
+/**
  * @param {unknown} raw — mongoose doc (with toJSON) or plain lean object
  * @param {{ logCount?: number }} [options]
  * @returns {WarehouseInventoryDTO|null}
@@ -151,7 +170,7 @@ export function serializeWarehouseInventory(raw, options = {}) {
   const availNum = Number(d.availableQuantity);
   const available = Number.isFinite(availNum) ? availNum : Math.max(0, total - blocked);
 
-  const product = shapeRef(d.itemId, ['name', 'factoryCode', 'vendorCode', 'softwareCode', 'internalCode', 'knittingCode']);
+  const product = shapeProductRef(d.itemId);
   const styleCodeMaster = shapeRef(d.styleCodeId, ['styleCode', 'eanCode', 'mrp', 'brand', 'pack', 'status']);
 
   const out = {

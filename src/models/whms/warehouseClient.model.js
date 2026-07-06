@@ -33,6 +33,9 @@ const warehouseClientStoreProfileSchema = mongoose.Schema(
     /** SM Name & Contact No. */
     smNameAndContact: { type: String, trim: true, default: '' },
     storeMailId: { type: String, trim: true, lowercase: true, default: '' },
+    /** ABM Name & Contact No. */
+    abmNameAndContact: { type: String, trim: true, default: '' },
+    abmMailId: { type: String, trim: true, lowercase: true, default: '' },
   },
   { _id: false }
 );
