@@ -1,9 +1,12 @@
 import Joi from 'joi';
 import { objectId } from '../custom.validation.js';
+import { WarehouseOrderFlowStatus } from '../../models/whms/warehouseOrder.model.js';
 
 const clientTypes = ['Store', 'Trade', 'Departmental', 'Ecom'];
 
 const orderStatuses = ['draft', 'pending', 'in-progress', 'packed', 'dispatched', 'cancelled'];
+
+const flowStatuses = Object.values(WarehouseOrderFlowStatus);
 
 const singlePairItem = Joi.object({
   styleCodeId: Joi.string().custom(objectId).required(),
@@ -61,6 +64,18 @@ export const getWarehouseOrders = {
         const invalid = parts.filter((p) => !orderStatuses.includes(p));
         if (invalid.length) {
           return helpers.error('any.only', { valids: orderStatuses });
+        }
+        return value;
+      }),
+    flowStatus: Joi.string().valid(...flowStatuses),
+    flowStatusIn: Joi.string()
+      .trim()
+      .custom((value, helpers) => {
+        if (!value) return value;
+        const parts = value.split(',').map((s) => s.trim()).filter(Boolean);
+        const invalid = parts.filter((p) => !flowStatuses.includes(p));
+        if (invalid.length) {
+          return helpers.error('any.only', { valids: flowStatuses });
         }
         return value;
       }),

@@ -152,6 +152,10 @@ const userSchema = mongoose.Schema(
           'Inward': false,
           'Clients': false,
           'Pick&Pack': false,
+          'Scanning': false,
+          'Billing': false,
+          'Dispatch': false,
+          'Returns': false,
           'Layout': false,
           'Stock': false,
           'Reports': false

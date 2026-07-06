@@ -25,8 +25,23 @@ const getPickListsByOrder = catchAsync(async (req, res) => {
 });
 
 const updatePickList = catchAsync(async (req, res) => {
-  const record = await pickListService.updatePickListById(req.params.pickListId, req.body);
+  const record = await pickListService.updatePickListById(req.params.pickListId, req.body, req.user);
   res.send(record);
+});
+
+const getPickListPrintPayload = catchAsync(async (req, res) => {
+  const payload = await pickListService.buildPickListPrintPayload(req.params.orderId);
+  res.send(payload);
+});
+
+const getPickListVariance = catchAsync(async (req, res) => {
+  const result = await pickListService.buildPickListVariance(req.params.orderId);
+  res.send(result);
+});
+
+const getOrderBarcodeLabels = catchAsync(async (req, res) => {
+  const result = await pickListService.buildBarcodeLabelsPayload(req.params.orderId);
+  res.send(result);
 });
 
 const deletePickList = catchAsync(async (req, res) => {
@@ -62,4 +77,7 @@ export {
   updatePickList,
   deletePickList,
   deletePickListsByOrder,
+  getPickListPrintPayload,
+  getPickListVariance,
+  getOrderBarcodeLabels,
 };

@@ -83,6 +83,10 @@ export const DEFAULT_NAVIGATION = {
     'Inward': false,
     'Clients': false,
     'Pick&Pack': false,
+    'Scanning': false,
+    'Billing': false,
+    'Dispatch': false,
+    'Returns': false,
     'Layout': false,
     'Stock': false,
     'Reports': false
@@ -186,6 +190,10 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Inward': true,
       'Clients': true,
       'Pick&Pack': true,
+      'Scanning': true,
+      'Billing': true,
+      'Dispatch': true,
+      'Returns': true,
       'Layout': true,
       'Stock': true,
       'Reports': true
@@ -284,6 +292,10 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Inward': false,
       'Clients': false,
       'Pick&Pack': false,
+      'Scanning': false,
+      'Billing': false,
+      'Dispatch': false,
+      'Returns': false,
       'Layout': false,
       'Stock': false,
       'Reports': false
@@ -512,7 +524,7 @@ export const validateNavigationStructure = (navigation) => {
     console.error('Validation failed: Warehouse Management is not an object');
     return false;
   }
-  const warehouseKeys = ['Orders', 'Inward', 'Clients', 'Pick&Pack', 'Layout', 'Stock', 'Reports'];
+  const warehouseKeys = ['Orders', 'Inward', 'Clients', 'Pick&Pack', 'Scanning', 'Billing', 'Dispatch', 'Returns', 'Layout', 'Stock', 'Reports'];
   for (const key of warehouseKeys) {
     if (!(key in navigation['Warehouse Management']) || typeof navigation['Warehouse Management'][key] !== 'boolean') {
       console.error(`Validation failed: Warehouse Management.${key} is missing or not a boolean`);

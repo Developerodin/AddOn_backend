@@ -96,6 +96,10 @@ const createUser = {
         'Inward': Joi.boolean(),
         'Clients': Joi.boolean(),
         'Pick&Pack': Joi.boolean(),
+        'Scanning': Joi.boolean(),
+        'Billing': Joi.boolean(),
+        'Dispatch': Joi.boolean(),
+        'Returns': Joi.boolean(),
         'Layout': Joi.boolean(),
         'Stock': Joi.boolean(),
         'Reports': Joi.boolean()
@@ -327,6 +331,10 @@ const updateUserNavigation = {
           'Inward': Joi.boolean(),
           'Clients': Joi.boolean(),
           'Pick&Pack': Joi.boolean(),
+          'Scanning': Joi.boolean(),
+          'Billing': Joi.boolean(),
+          'Dispatch': Joi.boolean(),
+          'Returns': Joi.boolean(),
           'Layout': Joi.boolean(),
           'Stock': Joi.boolean(),
           'Reports': Joi.boolean()

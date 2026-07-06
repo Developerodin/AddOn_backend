@@ -5,8 +5,48 @@ import PickList from '../../models/whms/pickList.model.js';
 import StyleCode from '../../models/styleCode.model.js';
 import StyleCodePairs from '../../models/styleCodePairs.model.js';
 import WarehouseInventory from '../../models/whms/warehouseInventory.model.js';
+import WarehouseOrder, {
+  WarehouseOrderFlowStatus,
+  flowStatusForCoarseStatus,
+} from '../../models/whms/warehouseOrder.model.js';
+import { roleRights } from '../../config/roles.js';
 import { appendWarehouseInventoryLog } from './warehouseInventory.service.js';
 import { buildArticleAttrsByStyleCodeId } from './warehouseOrderCatalogEnrich.js';
+
+/**
+ * Stages where pick quantities may still be edited. `picking-done` is a hard gate
+ * (spec: supervisor verifies, no qty edits); the Barcode Team re-opens editing at
+ * `barcode-in-progress`, and everything from `packing-done` onwards is locked.
+ */
+const QTY_EDITABLE_FLOW_STATUSES = new Set([
+  WarehouseOrderFlowStatus.ORDER_CREATED,
+  WarehouseOrderFlowStatus.PICKING,
+  WarehouseOrderFlowStatus.BARCODE_IN_PROGRESS,
+]);
+
+/**
+ * Throw unless the order's stage (and the caller's role, during the barcode stage)
+ * allows pick-quantity edits. `user` may be null for legacy callers — stage gating
+ * still applies, role gating is skipped.
+ */
+const assertPickQtyEditable = async (orderId, user) => {
+  const order = await WarehouseOrder.findById(orderId).select('flowStatus status');
+  if (!order) return; // orphan pick rows — keep legacy behaviour
+
+  const flowStatus = order.flowStatus || WarehouseOrderFlowStatus.ORDER_CREATED;
+  if (!QTY_EDITABLE_FLOW_STATUSES.has(flowStatus)) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Pick quantities are locked while the order is in "${flowStatus}"`
+    );
+  }
+  if (flowStatus === WarehouseOrderFlowStatus.BARCODE_IN_PROGRESS && user) {
+    const rights = roleRights.get(user.role) || [];
+    if (!rights.includes('whmsBarcode')) {
+      throw new ApiError(httpStatus.FORBIDDEN, 'Only the Barcode Team can update picked quantities at this stage');
+    }
+  }
+};
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -409,13 +449,17 @@ export const setPickerNameForOrder = async (orderId, pickerName) => {
   return { orderId, pickerName: name };
 };
 
-export const updatePickListById = async (id, updateBody) => {
+export const updatePickListById = async (id, updateBody, user = null) => {
   const session = await mongoose.startSession();
   try {
     let updatedId = id;
     await session.withTransaction(async () => {
       const doc = await PickList.findById(id).session(session);
       if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Pick list entry not found');
+
+      if (updateBody.pickupQuantity !== undefined) {
+        await assertPickQtyEditable(doc.orderId, user);
+      }
 
       const prevPickup = Number(doc.pickupQuantity ?? 0);
       Object.assign(doc, updateBody);
@@ -457,6 +501,122 @@ export const deletePickListById = async (id) => {
 
 export const deletePickListsByOrderId = async (orderId) => {
   return PickList.deleteMany({ orderId });
+};
+
+/**
+ * Print-ready pick list payload for one order. Kept as an isolated serializer so
+ * the physical pick-list format can change without touching pick data logic.
+ */
+export const buildPickListPrintPayload = async (orderId) => {
+  const order = await WarehouseOrder.findById(orderId).populate('clientId');
+  if (!order) throw new ApiError(httpStatus.NOT_FOUND, 'Warehouse order not found');
+
+  const rows = await PickList.find({ orderId }).sort({ styleCode: 1, size: 1 }).lean();
+  if (!rows.length) throw new ApiError(httpStatus.NOT_FOUND, 'No pick list exists for this order');
+
+  return {
+    order: {
+      id: String(order._id),
+      orderNumber: order.orderNumber,
+      addonOrderId: order.addonOrderId,
+      date: order.date,
+      clientType: order.clientType,
+      clientName: order.clientName,
+      flowStatus: order.flowStatus,
+      pickerName: rows[0]?.pickerName || '',
+    },
+    items: rows.map((row, index) => ({
+      srNo: index + 1,
+      skuCode: row.skuCode,
+      styleCode: row.styleCode,
+      size: row.size || '',
+      shade: row.shade || '',
+      quantity: row.quantity,
+      pickupQuantity: row.pickupQuantity ?? 0,
+      status: row.status,
+    })),
+    totals: {
+      totalItems: rows.length,
+      totalQuantity: rows.reduce((s, r) => s + Number(r.quantity || 0), 0),
+      totalPickupQuantity: rows.reduce((s, r) => s + Number(r.pickupQuantity || 0), 0),
+    },
+    generatedAt: new Date(),
+  };
+};
+
+/**
+ * Shortage/excess report per pick row for the Barcode Team screen.
+ * variance = pickupQuantity - quantity (negative → short, positive → excess).
+ */
+export const buildPickListVariance = async (orderId) => {
+  const order = await WarehouseOrder.findById(orderId).select('orderNumber flowStatus clientName');
+  if (!order) throw new ApiError(httpStatus.NOT_FOUND, 'Warehouse order not found');
+
+  const rows = await PickList.find({ orderId }).sort({ styleCode: 1, size: 1 }).lean();
+  const items = rows.map((row) => {
+    const quantity = Number(row.quantity || 0);
+    const pickupQuantity = Number(row.pickupQuantity || 0);
+    const variance = pickupQuantity - quantity;
+    return {
+      id: String(row._id),
+      skuCode: row.skuCode,
+      styleCode: row.styleCode,
+      size: row.size || '',
+      shade: row.shade || '',
+      quantity,
+      pickupQuantity,
+      variance,
+      varianceType: variance === 0 ? 'ok' : variance < 0 ? 'short' : 'excess',
+      status: row.status,
+    };
+  });
+
+  return {
+    orderId: String(order._id),
+    orderNumber: order.orderNumber,
+    clientName: order.clientName,
+    flowStatus: order.flowStatus,
+    items,
+    summary: {
+      totalItems: items.length,
+      okCount: items.filter((i) => i.varianceType === 'ok').length,
+      shortCount: items.filter((i) => i.varianceType === 'short').length,
+      excessCount: items.filter((i) => i.varianceType === 'excess').length,
+      totalQuantity: items.reduce((s, i) => s + i.quantity, 0),
+      totalPickupQuantity: items.reduce((s, i) => s + i.pickupQuantity, 0),
+    },
+  };
+};
+
+/**
+ * Barcode label payload for the Barcode Team: one row per pick line with the
+ * actually-picked quantity (labels to print). Barcode content = styleCode.
+ */
+export const buildBarcodeLabelsPayload = async (orderId) => {
+  const order = await WarehouseOrder.findById(orderId).select('orderNumber addonOrderId clientName flowStatus');
+  if (!order) throw new ApiError(httpStatus.NOT_FOUND, 'Warehouse order not found');
+
+  const rows = await PickList.find({ orderId }).sort({ styleCode: 1, size: 1 }).lean();
+  const labels = rows
+    .filter((row) => Number(row.pickupQuantity || 0) > 0)
+    .map((row) => ({
+      pickListId: String(row._id),
+      barcode: row.styleCode,
+      skuCode: row.skuCode,
+      styleCode: row.styleCode,
+      size: row.size || '',
+      shade: row.shade || '',
+      quantity: Number(row.pickupQuantity || 0),
+    }));
+
+  return {
+    orderId: String(order._id),
+    orderNumber: order.orderNumber,
+    clientName: order.clientName,
+    flowStatus: order.flowStatus,
+    labels,
+    totalLabels: labels.reduce((s, l) => s + l.quantity, 0),
+  };
 };
 
 /**
@@ -610,7 +770,16 @@ export const queryPickListsGroupedByOrder = async (filter, options) => {
   const [summary] = await PickList.aggregate(summaryPipeline);
 
   const resultsPipeline = [...basePipeline, { $skip: skip }, { $limit: limit }];
-  const results = await enrichPickListGroupsWithCatalogueShades(await PickList.aggregate(resultsPipeline));
+  const rawResults = await enrichPickListGroupsWithCatalogueShades(await PickList.aggregate(resultsPipeline));
+  const results = rawResults.map((group) => {
+    const order = group.order && typeof group.order === 'object' ? group.order : {};
+    const flowStatus = order.flowStatus || flowStatusForCoarseStatus(order.status);
+    return {
+      ...group,
+      flowStatus,
+      order: { ...order, flowStatus },
+    };
+  });
 
   return {
     results,

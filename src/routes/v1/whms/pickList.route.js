@@ -23,6 +23,22 @@ router
   );
 
 router
+  .route('/order/:orderId/print')
+  .get(
+    auth('getOrders'),
+    validate(pickListValidation.getPickListsByOrder),
+    pickListController.getPickListPrintPayload
+  );
+
+router
+  .route('/order/:orderId/variance')
+  .get(
+    auth('getOrders'),
+    validate(pickListValidation.getPickListsByOrder),
+    pickListController.getPickListVariance
+  );
+
+router
   .route('/order/:orderId')
   .get(
     auth('getOrders'),

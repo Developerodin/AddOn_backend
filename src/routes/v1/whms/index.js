@@ -8,8 +8,10 @@ import warehouseOrderRoute from './warehouseOrder.route.js';
 import approvalsRoute from './approvals.route.js';
 import consolidationRoute from './consolidation.route.js';
 import gapReportRoute from './gapReport.route.js';
-import pickPackRoute from './pickPack.route.js';
 import pickListRoute from './pickList.route.js';
+import scanningRoute from './scanning.route.js';
+import invoiceRoute from './invoice.route.js';
+import warehouseReturnRoute from './warehouseReturn.route.js';
 
 const router = express.Router();
 
@@ -22,7 +24,9 @@ router.use('/warehouse-orders', warehouseOrderRoute);
 router.use('/approvals', approvalsRoute);
 router.use('/consolidation', consolidationRoute);
 router.use('/gap-report', gapReportRoute);
-router.use('/pick-pack', pickPackRoute);
 router.use('/pick-list', pickListRoute);
+router.use('/scanning', scanningRoute);
+router.use('/invoices', invoiceRoute);
+router.use('/returns', warehouseReturnRoute);
 
 export default router;

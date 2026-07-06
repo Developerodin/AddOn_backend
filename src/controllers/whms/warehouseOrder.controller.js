@@ -14,6 +14,8 @@ const getWarehouseOrders = catchAsync(async (req, res) => {
     pick(req.query, [
       'status',
       'statusIn',
+      'flowStatus',
+      'flowStatusIn',
       'clientType',
       'clientId',
       'orderNumber',

@@ -1,6 +1,7 @@
 import httpStatus from 'http-status';
 import ApiError from '../../utils/ApiError.js';
 import { WarehouseClient, WarehouseOrder } from '../../models/whms/index.js';
+import { flowStatusForCoarseStatus } from '../../models/whms/warehouseOrder.model.js';
 import StyleCode from '../../models/styleCode.model.js';
 import StyleCodePairs from '../../models/styleCodePairs.model.js';
 import {
@@ -29,6 +30,7 @@ const generateWarehouseOrderNumber = async () => {
  * - dateFrom/dateTo: filter by order `date`
  * - createdFrom/createdTo: filter by document createdAt
  * - status (single), statusIn (comma-separated, e.g. pending,in-progress)
+ * - flowStatus (single), flowStatusIn (comma-separated, e.g. picking-done,barcode-in-progress)
  * - clientType, clientId, orderNumber
  * - styleCodeId, styleCodeMultiPairId: filter orders containing those items
  */
@@ -43,6 +45,15 @@ export const buildWarehouseOrderFilter = (query) => {
     if (parts.length) filter.status = { $in: parts };
   } else if (query.status) {
     filter.status = query.status;
+  }
+  if (query.flowStatusIn && String(query.flowStatusIn).trim()) {
+    const parts = String(query.flowStatusIn)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (parts.length) filter.flowStatus = { $in: parts };
+  } else if (query.flowStatus) {
+    filter.flowStatus = query.flowStatus;
   }
   if (query.clientType) filter.clientType = query.clientType;
   if (query.clientId) filter.clientId = query.clientId;
@@ -127,6 +138,7 @@ export const createWarehouseOrder = async (body) => {
   const doc = await WarehouseOrder.create({
     ...body,
     clientName,
+    ...(body.status ? { flowStatus: flowStatusForCoarseStatus(body.status) } : {}),
   });
 
   await createPickListForOrder(doc);
@@ -159,6 +171,12 @@ export const updateWarehouseOrderById = async (id, updateBody) => {
 
   if (lineItemsTouched) {
     await enrichWarehouseOrderStyleCodes(updateBody);
+  }
+
+  // Legacy status edits (old UI) keep flowStatus roughly in sync. Granular stage moves
+  // must use the flow-status endpoint (orderFlow.service), which owns flowHistory.
+  if (updateBody.status !== undefined && updateBody.flowStatus === undefined) {
+    updateBody.flowStatus = flowStatusForCoarseStatus(updateBody.status);
   }
 
   Object.assign(doc, updateBody);
@@ -418,6 +436,7 @@ export const bulkImportWarehouseOrders = async (orders, batchSize = 50) => {
         styleCodeSinglePair: singleItems,
         styleCodeMultiPair: multiItems,
         status: row.status || 'pending',
+        flowStatus: flowStatusForCoarseStatus(row.status || 'pending'),
       });
 
       await createPickListForOrder(created);

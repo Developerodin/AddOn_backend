@@ -55,6 +55,15 @@ const warehouseInventorySchema = mongoose.Schema(
       default: 0,
       min: 0,
     },
+    /**
+     * Damaged stock from returns — tracked separately, NOT part of totalQuantity
+     * or availableQuantity (not saleable).
+     */
+    damagedQuantity: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
   },
   { timestamps: true }
 );
