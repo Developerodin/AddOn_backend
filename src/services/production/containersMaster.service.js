@@ -26,9 +26,9 @@ const vendorProductionFlowPopulateForContainer = {
   path: 'activeItems.vendorProductionFlow',
   select: VENDOR_FLOW_LEAN_SELECT,
   populate: [
-    { path: 'vendor', select: 'vendorName vendorCode' },
-    { path: 'vendorPurchaseOrder', select: 'vpoNumber' },
-    { path: 'product', select: 'factoryCode name' },
+    { path: 'vendor', select: 'header.vendorName header.vendorCode' },
+    { path: 'vendorPurchaseOrder', select: 'vpoNumber vendorName' },
+    { path: 'product', select: 'factoryCode name vendorCode' },
   ],
 };
 
@@ -208,9 +208,9 @@ const enrichContainerWithArticles = async (doc) => {
   const vendorFlows = vpfIdSet.length
     ? await VendorProductionFlow.find({ _id: { $in: vpfIdSet } })
         .select(VENDOR_FLOW_LEAN_SELECT)
-        .populate('vendor', 'vendorName vendorCode')
-        .populate('vendorPurchaseOrder', 'vpoNumber')
-        .populate('product', 'factoryCode name')
+        .populate('vendor', 'header.vendorName header.vendorCode')
+        .populate('vendorPurchaseOrder', 'vpoNumber vendorName')
+        .populate('product', 'factoryCode name vendorCode')
         .lean()
     : [];
   const vendorFlowMap = new Map(vendorFlows.map((f) => [f._id.toString(), f]));
