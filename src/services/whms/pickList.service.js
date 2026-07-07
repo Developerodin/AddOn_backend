@@ -12,6 +12,7 @@ import WarehouseOrder, {
 import { roleRights } from '../../config/roles.js';
 import { appendWarehouseInventoryLog } from './warehouseInventory.service.js';
 import { buildArticleAttrsByStyleCodeId } from './warehouseOrderCatalogEnrich.js';
+import { runWithOptionalMongoTransaction } from '../../utils/mongoDeployment.js';
 
 /**
  * Stages where pick quantities may still be edited. `picking-done` is a hard gate
@@ -63,7 +64,9 @@ async function applyPickDeltaToInventory({ session, styleCode, deltaPickupQuanti
   if (!styleCode || !deltaPickupQuantity) return;
   if (!Number.isFinite(deltaPickupQuantity)) return;
 
-  const inv = await WarehouseInventory.findOne({ styleCode }).session(session);
+  let invQuery = WarehouseInventory.findOne({ styleCode });
+  if (session) invQuery = invQuery.session(session);
+  const inv = await invQuery;
 
   if (deltaPickupQuantity > 0) {
     if (!inv) {
@@ -97,7 +100,7 @@ async function applyPickDeltaToInventory({ session, styleCode, deltaPickupQuanti
         },
       },
     ],
-    { new: true, session }
+    { new: true, ...(session ? { session } : {}) }
   );
 
   if (!updated) return;
@@ -455,47 +458,46 @@ export const setPickerNameForOrder = async (orderId, pickerName) => {
 };
 
 export const updatePickListById = async (id, updateBody, user = null) => {
-  const session = await mongoose.startSession();
-  try {
-    let updatedId = id;
-    await session.withTransaction(async () => {
-      const doc = await PickList.findById(id).session(session);
-      if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Pick list entry not found');
+  let updatedId = id;
 
-      if (updateBody.pickupQuantity !== undefined) {
-        await assertPickQtyEditable(doc.orderId, user);
-      }
+  await runWithOptionalMongoTransaction(async (session) => {
+    let docQuery = PickList.findById(id);
+    if (session) docQuery = docQuery.session(session);
+    const doc = await docQuery;
+    if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Pick list entry not found');
 
-      const prevPickup = Number(doc.pickupQuantity ?? 0);
-      Object.assign(doc, updateBody);
+    if (updateBody.pickupQuantity !== undefined) {
+      await assertPickQtyEditable(doc.orderId, user);
+    }
 
-      const nextPickup = Number(doc.pickupQuantity ?? 0);
-      const delta = nextPickup - prevPickup;
+    const prevPickup = Number(doc.pickupQuantity ?? 0);
+    Object.assign(doc, updateBody);
 
-      if (delta !== 0) {
-        await applyPickDeltaToInventory({
-          session,
-          styleCode: doc.styleCode,
-          deltaPickupQuantity: delta,
-          pickListId: String(doc._id),
-        });
-      }
+    const nextPickup = Number(doc.pickupQuantity ?? 0);
+    const delta = nextPickup - prevPickup;
 
-      if (doc.pickupQuantity > 0 && doc.pickupQuantity < doc.quantity) {
-        doc.status = 'partial';
-      } else if (doc.pickupQuantity >= doc.quantity) {
-        doc.status = 'picked';
-      } else {
-        doc.status = 'pending';
-      }
+    if (delta !== 0) {
+      await applyPickDeltaToInventory({
+        session,
+        styleCode: doc.styleCode,
+        deltaPickupQuantity: delta,
+        pickListId: String(doc._id),
+      });
+    }
 
-      await doc.save({ session });
-      updatedId = String(doc._id);
-    });
-    return getPickListById(updatedId);
-  } finally {
-    session.endSession();
-  }
+    if (doc.pickupQuantity > 0 && doc.pickupQuantity < doc.quantity) {
+      doc.status = 'partial';
+    } else if (doc.pickupQuantity >= doc.quantity) {
+      doc.status = 'picked';
+    } else {
+      doc.status = 'pending';
+    }
+
+    await doc.save(session ? { session } : undefined);
+    updatedId = String(doc._id);
+  }, 'pickList.update');
+
+  return getPickListById(updatedId);
 };
 
 export const deletePickListById = async (id) => {
