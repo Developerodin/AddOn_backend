@@ -178,12 +178,14 @@ async function buildExpectedPickRowsFromOrder(order) {
 
   for (const item of singleItems) {
     const catalogAttrs = singleAttrsByCode.get(item.styleCode) || { colour: '', pattern: '' };
+    const preferCatalogue = !String(item.colour || '').trim();
     rows.push({
       ...base,
       size: item.pack || '',
-      shade: resolvePickRowShade(item.colour, catalogAttrs, false),
+      shade: resolvePickRowShade(item.colour, catalogAttrs, preferCatalogue),
       skuCode: item.styleCode,
       styleCode: item.styleCode,
+      styleCodeId: item.styleCodeId || null,
       quantity: item.quantity,
     });
   }
@@ -219,6 +221,7 @@ async function buildExpectedPickRowsFromOrder(order) {
           shade: resolvePickRowShade(item.colour, catalogAttrs, false),
           skuCode,
           styleCode: skuCode,
+          styleCodeId: null,
           quantity: item.quantity,
         });
       } else {
@@ -230,6 +233,7 @@ async function buildExpectedPickRowsFromOrder(order) {
             shade: resolvePickRowShade(item.colour, catalogAttrs, true),
             skuCode,
             styleCode: child.styleCode,
+            styleCodeId: child._id || null,
             quantity: item.quantity,
           });
         }
@@ -376,6 +380,7 @@ export const syncPickListForOrderLineItems = async (order) => {
             shade: expected.shade,
             skuCode: expected.skuCode,
             styleCode: expected.styleCode,
+            styleCodeId: expected.styleCodeId ?? null,
             quantity: expected.quantity,
             pickupQuantity: nextPickup,
             status: getPickupStatus(nextPickup, Number(expected.quantity || 0)),
@@ -632,6 +637,37 @@ export const buildPickListAggFilter = (query) => {
 };
 
 /**
+ * Mongo $lookup stage: join warehouse inventory by styleCodeId, fallback to case-insensitive styleCode.
+ * @returns {object}
+ */
+const stockLookupStage = () => ({
+  $lookup: {
+    from: 'stocks',
+    let: { scId: '$styleCodeId', sc: '$styleCode' },
+    pipeline: [
+      {
+        $match: {
+          $expr: {
+            $cond: {
+              if: { $ne: ['$$scId', null] },
+              then: { $eq: ['$styleCodeId', '$$scId'] },
+              else: {
+                $eq: [
+                  { $toLower: { $ifNull: ['$styleCode', ''] } },
+                  { $toLower: { $ifNull: ['$$sc', ''] } },
+                ],
+              },
+            },
+          },
+        },
+      },
+      { $limit: 1 },
+    ],
+    as: 'inv',
+  },
+});
+
+/**
  * Return pick-list data grouped by order with pagination & summary counts.
  */
 export const queryPickListsGroupedByOrder = async (filter, options) => {
@@ -641,16 +677,8 @@ export const queryPickListsGroupedByOrder = async (filter, options) => {
 
   const basePipeline = [
     { $match: filter },
-    // Attach live stock (WarehouseInventory) by styleCode before grouping.
-    // Inventory collection name is legacy `stocks` (see WarehouseInventory model).
-    {
-      $lookup: {
-        from: 'stocks',
-        localField: 'styleCode',
-        foreignField: 'styleCode',
-        as: 'inv',
-      },
-    },
+    // Attach live stock (WarehouseInventory) by styleCodeId, fallback to styleCode string.
+    stockLookupStage(),
     { $unwind: { path: '$inv', preserveNullAndEmptyArrays: true } },
     {
       $addFields: {

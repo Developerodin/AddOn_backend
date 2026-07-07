@@ -124,6 +124,12 @@ export const deleteWarehouseOrder = {
   }),
 };
 
+export const getCatalogueAttrs = {
+  query: Joi.object().keys({
+    styleCodeIds: Joi.string().trim().required(),
+  }),
+};
+
 const bulkSinglePairItem = Joi.object({
   styleCode: Joi.string().required().trim(),
   colour: Joi.string().allow('').trim(),

@@ -4,6 +4,8 @@ import { WarehouseClient, WarehouseOrder } from '../../models/whms/index.js';
 import { flowStatusForCoarseStatus } from '../../models/whms/warehouseOrder.model.js';
 import StyleCode from '../../models/styleCode.model.js';
 import StyleCodePairs from '../../models/styleCodePairs.model.js';
+import Product from '../../models/product.model.js';
+import WarehouseInventory from '../../models/whms/warehouseInventory.model.js';
 import {
   createPickListForOrder,
   syncPickListForOrderLineItems,
@@ -92,31 +94,135 @@ export const buildWarehouseOrderFilter = (query) => {
   return filter;
 };
 
-/** Auto-fill styleCode strings on line items when the client only sends ids (create/update). */
-const enrichWarehouseOrderStyleCodes = async (payload) => {
+/**
+ * Auto-fill styleCode strings and catalogue colour/pattern/type on line items (create/update).
+ * User-entered values are preserved via coalesceLineField.
+ * @param {object} payload
+ * @returns {Promise<void>}
+ */
+const enrichWarehouseOrderLineItems = async (payload) => {
   if (!payload || typeof payload !== 'object') return;
 
   const singleItems = Array.isArray(payload.styleCodeSinglePair) ? payload.styleCodeSinglePair : [];
-  if (singleItems.length && singleItems.some((i) => !i?.styleCode)) {
-    const ids = singleItems.map((i) => i?.styleCodeId).filter(Boolean);
-    const rows = await StyleCode.find({ _id: { $in: ids } }).select('styleCode');
-    const byId = new Map(rows.map((r) => [String(r._id), r.styleCode]));
-    payload.styleCodeSinglePair = singleItems.map((i) => ({
-      ...i,
-      styleCode: i.styleCode || byId.get(String(i.styleCodeId)) || '',
-    }));
+  const multiItems = Array.isArray(payload.styleCodeMultiPair) ? payload.styleCodeMultiPair : [];
+
+  if (!singleItems.length && !multiItems.length) return;
+
+  const singleIds = singleItems.map((i) => i?.styleCodeId).filter(Boolean);
+  const multiIds = multiItems.map((i) => i?.styleCodeMultiPairId).filter(Boolean);
+
+  const [singleDocs, multiDocs] = await Promise.all([
+    singleIds.length
+      ? StyleCode.find({ _id: { $in: singleIds } }).select('styleCode brand pack').lean()
+      : [],
+    multiIds.length
+      ? StyleCodePairs.find({ _id: { $in: multiIds } }).select('pairStyleCode pack styleCodes').lean()
+      : [],
+  ]);
+
+  const singleById = new Map(singleDocs.map((d) => [String(d._id), d]));
+  const multiById = new Map(multiDocs.map((d) => [String(d._id), d]));
+
+  const linkedStyleCodeIds = new Set(singleIds.map(String));
+  multiDocs.forEach((d) => {
+    (d.styleCodes || []).forEach((id) => linkedStyleCodeIds.add(String(id)));
+  });
+
+  const missingLinkedIds = [...linkedStyleCodeIds].filter((id) => !singleById.has(id));
+  const linkedStyleDocs =
+    missingLinkedIds.length > 0
+      ? await StyleCode.find({ _id: { $in: missingLinkedIds } }).select('styleCode brand pack').lean()
+      : [];
+  const styleCodeById = new Map([
+    ...singleDocs.map((d) => [String(d._id), d]),
+    ...linkedStyleDocs.map((d) => [String(d._id), d]),
+  ]);
+
+  const articleAttrsByStyleCodeId = await buildArticleAttrsByStyleCodeId([...linkedStyleCodeIds]);
+
+  if (singleItems.length) {
+    payload.styleCodeSinglePair = singleItems.map((item) => {
+      const doc = singleById.get(String(item.styleCodeId));
+      const catalogAttrs = articleAttrsByStyleCodeId.get(String(item.styleCodeId)) || {
+        colour: '',
+        pattern: '',
+      };
+      return {
+        ...item,
+        styleCode: item.styleCode || doc?.styleCode || '',
+        pack: coalesceLineField(item.pack, doc?.pack),
+        type: coalesceLineField(item.type, doc?.brand),
+        colour: coalesceLineField(item.colour || item.color, catalogAttrs.colour),
+        pattern: coalesceLineField(item.pattern, catalogAttrs.pattern),
+      };
+    });
   }
 
-  const multiItems = Array.isArray(payload.styleCodeMultiPair) ? payload.styleCodeMultiPair : [];
-  if (multiItems.length && multiItems.some((i) => !i?.styleCode)) {
-    const ids = multiItems.map((i) => i?.styleCodeMultiPairId).filter(Boolean);
-    const rows = await StyleCodePairs.find({ _id: { $in: ids } }).select('pairStyleCode');
-    const byId = new Map(rows.map((r) => [String(r._id), r.pairStyleCode]));
-    payload.styleCodeMultiPair = multiItems.map((i) => ({
-      ...i,
-      styleCode: i.styleCode || byId.get(String(i.styleCodeMultiPairId)) || '',
-    }));
+  if (multiItems.length) {
+    payload.styleCodeMultiPair = multiItems.map((item) => {
+      const doc = multiById.get(String(item.styleCodeMultiPairId));
+      return {
+        ...item,
+        styleCode: item.styleCode || doc?.pairStyleCode || '',
+        pack: coalesceLineField(item.pack, doc?.pack != null ? String(doc.pack) : ''),
+        colour: '',
+        type: '',
+        pattern: '',
+      };
+    });
   }
+};
+
+/**
+ * Batch-resolve catalogue colour/pattern and row diagnostics for style-code ids (WHMS UI).
+ * @param {string[]} styleCodeIds
+ * @returns {Promise<Record<string, {
+ *   colour: string;
+ *   pattern: string;
+ *   styleCode: string;
+ *   styleCodeExists: boolean;
+ *   hasLinkedProduct: boolean;
+ *   availableStock: number;
+ * }>>}
+ */
+export const getCatalogueAttrsByStyleCodeIds = async (styleCodeIds) => {
+  const uniqueIds = [...new Set(styleCodeIds.map(String).filter(Boolean))];
+  const out = {};
+  if (!uniqueIds.length) return out;
+
+  const [attrsMap, styleCodeDocs, stockDocs, linkedProducts] = await Promise.all([
+    buildArticleAttrsByStyleCodeId(uniqueIds),
+    StyleCode.find({ _id: { $in: uniqueIds } }).select('_id styleCode').lean(),
+    WarehouseInventory.find({ styleCodeId: { $in: uniqueIds } })
+      .select('styleCodeId availableQuantity')
+      .lean(),
+    Product.find({ styleCodes: { $in: uniqueIds } }).select('styleCodes').lean(),
+  ]);
+
+  const styleCodeById = new Map(styleCodeDocs.map((doc) => [String(doc._id), doc]));
+  const stockById = new Map(
+    stockDocs.map((doc) => [String(doc.styleCodeId), Number(doc.availableQuantity) || 0])
+  );
+  const linkedProductIds = new Set();
+  for (const product of linkedProducts) {
+    for (const scId of product.styleCodes || []) {
+      linkedProductIds.add(String(scId));
+    }
+  }
+
+  for (const id of uniqueIds) {
+    const attrs = attrsMap.get(id) || { colour: '', pattern: '' };
+    const styleDoc = styleCodeById.get(id);
+    out[id] = {
+      colour: attrs.colour || '',
+      pattern: attrs.pattern || '',
+      styleCode: styleDoc?.styleCode || '',
+      styleCodeExists: Boolean(styleDoc),
+      hasLinkedProduct: linkedProductIds.has(id),
+      availableStock: stockById.get(id) ?? 0,
+    };
+  }
+  return out;
 };
 
 export const createWarehouseOrder = async (body) => {
@@ -133,7 +239,7 @@ export const createWarehouseOrder = async (body) => {
       ? client.storeProfile?.brand || client.storeProfile?.billCode || client.storeProfile?.sapCode || 'Store'
       : client.retailerName || client.distributorName || 'Client';
 
-  await enrichWarehouseOrderStyleCodes(body);
+  await enrichWarehouseOrderLineItems(body);
 
   const doc = await WarehouseOrder.create({
     ...body,
@@ -170,7 +276,7 @@ export const updateWarehouseOrderById = async (id, updateBody) => {
     Object.prototype.hasOwnProperty.call(updateBody, 'styleCodeMultiPair');
 
   if (lineItemsTouched) {
-    await enrichWarehouseOrderStyleCodes(updateBody);
+    await enrichWarehouseOrderLineItems(updateBody);
   }
 
   // Legacy status edits (old UI) keep flowStatus roughly in sync. Granular stage moves

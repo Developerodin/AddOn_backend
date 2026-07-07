@@ -103,6 +103,14 @@ router
   );
 
 router
+  .route('/catalogue-attrs')
+  .get(
+    auth('getOrders'),
+    validate(warehouseOrderValidation.getCatalogueAttrs),
+    warehouseOrderController.getCatalogueAttrs
+  );
+
+router
   .route('/:orderId')
   .get(
     auth('getOrders'),

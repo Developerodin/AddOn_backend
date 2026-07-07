@@ -165,6 +165,16 @@ export const completeSession = async (sessionId, user, { force = false, remarks 
     { system: true }
   );
 
+  if (!hasMismatch) {
+    await transitionOrder(
+      String(session.orderId),
+      WarehouseOrderFlowStatus.SENT_TO_BILLING,
+      user,
+      { remarks: 'Auto-sent to billing after successful scan' },
+      { system: true }
+    );
+  }
+
   return serializeSession(session);
 };
 

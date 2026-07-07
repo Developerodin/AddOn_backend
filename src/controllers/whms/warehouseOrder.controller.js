@@ -54,6 +54,19 @@ const bulkImportWarehouseOrders = catchAsync(async (req, res) => {
   res.status(httpStatus.CREATED).send(result);
 });
 
+const getCatalogueAttrs = catchAsync(async (req, res) => {
+  const raw = String(req.query.styleCodeIds || '');
+  const styleCodeIds = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!styleCodeIds.length) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'styleCodeIds query param is required');
+  }
+  const attrs = await warehouseOrderService.getCatalogueAttrsByStyleCodeIds(styleCodeIds);
+  res.send({ attrs });
+});
+
 export {
   createWarehouseOrder,
   getWarehouseOrders,
@@ -61,5 +74,6 @@ export {
   updateWarehouseOrder,
   deleteWarehouseOrder,
   bulkImportWarehouseOrders,
+  getCatalogueAttrs,
 };
 

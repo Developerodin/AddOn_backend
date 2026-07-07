@@ -28,6 +28,12 @@ const pickListSchema = mongoose.Schema(
 
     skuCode: { type: String, required: true, trim: true },
     styleCode: { type: String, required: true, trim: true },
+    styleCodeId: {
+      type: mongoose.SchemaTypes.ObjectId,
+      ref: 'StyleCode',
+      required: false,
+      default: null,
+    },
 
     asst: { type: String, trim: true },
     sapStock: { type: Number },
@@ -49,6 +55,7 @@ const pickListSchema = mongoose.Schema(
 
 pickListSchema.index({ orderId: 1 });
 pickListSchema.index({ skuCode: 1 });
+pickListSchema.index({ styleCodeId: 1 });
 pickListSchema.index({ status: 1, createdAt: -1 });
 
 pickListSchema.plugin(toJSON);

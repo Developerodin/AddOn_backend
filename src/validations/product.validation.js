@@ -56,6 +56,7 @@ const getProducts = {
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
     populate: Joi.string(),
+    search: Joi.string(),
   }),
 };
 
