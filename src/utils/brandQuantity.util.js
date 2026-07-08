@@ -479,6 +479,19 @@ function styleCodeForBrand(brand, receivedData, productStyleCodes) {
 }
 
 /**
+ * Resolve a master style code for a brand from floor receivedData or product catalog.
+ * Used when production transfers store brand-only rows (styleCode cleared).
+ *
+ * @param {string} brand
+ * @param {Array<{ styleCode?: string, brand?: string }>} receivedData
+ * @param {Array<{ brand?: string, styleCode?: string }>|undefined|null} productStyleCodes
+ * @returns {string}
+ */
+export function resolveStyleCodeForBrand(brand, receivedData, productStyleCodes) {
+  return styleCodeForBrand(brand, receivedData, productStyleCodes);
+}
+
+/**
  * Enrich M2 merge transfer items with styleCode from receivedData or product catalog.
  * @param {Array<{ transferred?: number, styleCode?: string, brand?: string }>} transferItems
  * @param {Array<{ styleCode?: string, brand?: string }>} receivedData

@@ -1,5 +1,9 @@
 import { ProductionOrder } from '../../models/production/index.js';
+import Product from '../../models/product.model.js';
 import InwardReceive, { InwardReceiveStatus, InwardReceiveSource } from '../../models/whms/inwardReceive.model.js';
+import { resolveStyleCodeForBrand } from '../../utils/brandQuantity.util.js';
+
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * After warehouse container accept, one InwardReceive per new `warehouse.receivedData` line.
@@ -31,6 +35,20 @@ export async function createInwardReceivesForWarehouseAccept(article, newLines, 
     const qty = Number(line.transferred) || 0;
     if (qty <= 0) continue;
 
+    let styleCode = String(line.styleCode ?? '').trim();
+    const brand = String(line.brand ?? '').trim();
+    if (!styleCode && brand) {
+      const factoryCode = String(article.articleNumber ?? '').trim();
+      if (factoryCode) {
+        const product = await Product.findOne({
+          factoryCode: new RegExp(`^${escapeRegex(factoryCode)}$`, 'i'),
+        })
+          .populate('styleCodes', 'styleCode brand')
+          .lean();
+        styleCode = resolveStyleCodeForBrand(brand, [], product?.styleCodes);
+      }
+    }
+
     await InwardReceive.create({
       inwardSource: InwardReceiveSource.PRODUCTION,
       articleId: article._id,
@@ -38,8 +56,8 @@ export async function createInwardReceivesForWarehouseAccept(article, newLines, 
       articleNumber: article.articleNumber || '',
       QuantityFromFactory: qty,
       receivedQuantity: 0,
-      styleCode: line.styleCode || '',
-      brand: line.brand || '',
+      styleCode,
+      brand,
       status: InwardReceiveStatus.PENDING,
       orderData: {
         productionOrder: orderSnapshot,
