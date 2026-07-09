@@ -12,6 +12,30 @@ export const WarehouseClientType = {
 const CLIENT_TYPES = Object.values(WarehouseClientType);
 
 /**
+ * Build combined legacy name/contact from split fields.
+ * @param {string} name
+ * @param {string} contact
+ */
+const buildCombinedNameContact = (name, contact) => {
+  const n = String(name ?? '').trim();
+  const c = String(contact ?? '').trim();
+  if (n && c) return `${n} / ${c}`;
+  return n || c;
+};
+
+/**
+ * Sync split SM/ABM fields into legacy combined fields on storeProfile.
+ * @param {Record<string, unknown>} profile
+ */
+const syncStoreProfileCombinedFields = (profile) => {
+  if (!profile || typeof profile !== 'object') return;
+  const sm = buildCombinedNameContact(profile.smName, profile.smContact);
+  if (sm) profile.smNameAndContact = sm;
+  const abm = buildCombinedNameContact(profile.abmName, profile.abmContact);
+  if (abm) profile.abmNameAndContact = abm;
+};
+
+/**
  * Extra attributes when {@link WarehouseClientType.STORE} — Bill-to / store master style fields.
  * Other client types leave this undefined.
  */
@@ -28,12 +52,17 @@ const warehouseClientStoreProfileSchema = mongoose.Schema(
     brandSub: { type: String, trim: true, default: '' },
     openingDate: { type: Date, default: null },
     address: { type: String, trim: true, default: '' },
+    pincode: { type: String, trim: true, default: '' },
     gst: { type: String, trim: true, default: '' },
     storeLandlineNo: { type: String, trim: true, default: '' },
-    /** SM Name & Contact No. */
+    smName: { type: String, trim: true, default: '' },
+    smContact: { type: String, trim: true, default: '' },
+    /** Legacy combined — kept in sync from smName + smContact */
     smNameAndContact: { type: String, trim: true, default: '' },
     storeMailId: { type: String, trim: true, lowercase: true, default: '' },
-    /** ABM Name & Contact No. */
+    abmName: { type: String, trim: true, default: '' },
+    abmContact: { type: String, trim: true, default: '' },
+    /** Legacy combined — kept in sync from abmName + abmContact */
     abmNameAndContact: { type: String, trim: true, default: '' },
     abmMailId: { type: String, trim: true, lowercase: true, default: '' },
   },
@@ -48,12 +77,7 @@ const warehouseClientSchema = mongoose.Schema(
       min: 0,
       default: null,
     },
-    distributorName: {
-      type: String,
-      trim: true,
-      default: '',
-    },
-    /** ParentKey - Code */
+    /** SAP code (Trade / Dept / Ecom) */
     parentKeyCode: {
       type: String,
       trim: true,
@@ -122,15 +146,6 @@ const warehouseClientSchema = mongoose.Schema(
       trim: true,
       default: '',
     },
-    rsm: { type: String, trim: true, default: '' },
-    asm: { type: String, trim: true, default: '' },
-    se: { type: String, trim: true, default: '' },
-    dso: { type: String, trim: true, default: '' },
-    outlet: {
-      type: String,
-      trim: true,
-      default: '',
-    },
     /** Populated when `type` is Store */
     storeProfile: {
       type: warehouseClientStoreProfileSchema,
@@ -151,7 +166,7 @@ const warehouseClientSchema = mongoose.Schema(
   { timestamps: true }
 );
 
-warehouseClientSchema.index({ distributorName: 1, retailerName: 1 });
+warehouseClientSchema.index({ retailerName: 1 });
 warehouseClientSchema.index({ type: 1, city: 1 });
 warehouseClientSchema.index({ gstin: 1 });
 
@@ -160,12 +175,22 @@ warehouseClientSchema.pre('validate', function warehouseClientStoreProfileSync(n
     this.storeProfile = undefined;
   } else if (this.storeProfile == null) {
     this.storeProfile = {};
+  } else {
+    syncStoreProfileCombinedFields(this.storeProfile);
+  }
+  next();
+});
+
+warehouseClientSchema.pre('save', function warehouseClientStoreProfileSaveSync(next) {
+  if (this.type === WarehouseClientType.STORE && this.storeProfile) {
+    syncStoreProfileCombinedFields(this.storeProfile);
+    this.markModified('storeProfile');
   }
   next();
 });
 
 /**
- * Store clients: API JSON omits wholesale root fields (distributor, retailer, gstin, …).
+ * Store clients: API JSON omits wholesale root fields (retailer, gstin, …).
  * Only store-relevant data is returned after the global toJSON plugin runs (id, timestamps).
  */
 warehouseClientSchema.set('toJSON', {

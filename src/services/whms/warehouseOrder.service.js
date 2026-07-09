@@ -228,7 +228,7 @@ export const getCatalogueAttrsByStyleCodeIds = async (styleCodeIds) => {
 export const createWarehouseOrder = async (body) => {
   if (!body.orderNumber) body.orderNumber = await generateWarehouseOrderNumber();
 
-  const client = await WarehouseClient.findById(body.clientId).select('type retailerName distributorName storeProfile');
+  const client = await WarehouseClient.findById(body.clientId).select('type retailerName parentKeyCode storeProfile');
   if (!client) throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid clientId');
   if (client.type !== body.clientType) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'clientType does not match clientId');
@@ -237,7 +237,7 @@ export const createWarehouseOrder = async (body) => {
   const clientName =
     client.type === 'Store'
       ? client.storeProfile?.brand || client.storeProfile?.billCode || client.storeProfile?.sapCode || 'Store'
-      : client.retailerName || client.distributorName || 'Client';
+      : client.retailerName || client.parentKeyCode || 'Client';
 
   await enrichWarehouseOrderLineItems(body);
 
@@ -348,7 +348,7 @@ const normalizeBulkImportClientType = (raw) => {
 /**
  * Find WarehouseClient docs by display name + type (may return multiple when names collide).
  * Store: storeProfile.brand / billCode / sapCode / retekCode.
- * Other types: retailerName or distributorName.
+ * Other types: retailerName or parentKeyCode (SAP code).
  */
 const findClientsByName = async (clientName, clientType) => {
   const name = String(clientName).trim();
@@ -365,7 +365,7 @@ const findClientsByName = async (clientName, clientType) => {
       { 'storeProfile.retekCode': regex },
     ];
   } else {
-    filter.$or = [{ retailerName: regex }, { distributorName: regex }];
+    filter.$or = [{ retailerName: regex }, { parentKeyCode: regex }];
   }
 
   return WarehouseClient.find(filter).lean();
@@ -481,7 +481,7 @@ export const bulkImportWarehouseOrders = async (orders, batchSize = 50) => {
             client.storeProfile?.sapCode ||
             client.storeProfile?.retekCode ||
             'Store'
-          : client.retailerName || client.distributorName || 'Client';
+          : client.retailerName || client.parentKeyCode || 'Client';
 
       const parsedDate = parseFlexibleDate(row.date);
 

@@ -7,7 +7,6 @@ const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$
 
 const ROOT_PATCH_KEYS = [
   'slNo',
-  'distributorName',
   'parentKeyCode',
   'retailerName',
   'type',
@@ -21,11 +20,6 @@ const ROOT_PATCH_KEYS = [
   'gstin',
   'email',
   'phone1',
-  'rsm',
-  'asm',
-  'se',
-  'dso',
-  'outlet',
   'status',
   'remarks',
 ];
@@ -61,17 +55,17 @@ export const buildWarehouseClientFilter = (query) => {
     andClause.push({
       $or: [
         { retailerName: { $regex: term, $options: 'i' } },
-        { distributorName: { $regex: term, $options: 'i' } },
         { parentKeyCode: { $regex: term, $options: 'i' } },
         { gstin: { $regex: term, $options: 'i' } },
         { contactPerson: { $regex: term, $options: 'i' } },
-        { outlet: { $regex: term, $options: 'i' } },
         { 'storeProfile.brand': { $regex: term, $options: 'i' } },
         { 'storeProfile.brandSub': { $regex: term, $options: 'i' } },
         { 'storeProfile.sapCode': { $regex: term, $options: 'i' } },
         { 'storeProfile.billCode': { $regex: term, $options: 'i' } },
         { 'storeProfile.retekCode': { $regex: term, $options: 'i' } },
         { 'storeProfile.classification': { $regex: term, $options: 'i' } },
+        { 'storeProfile.smName': { $regex: term, $options: 'i' } },
+        { 'storeProfile.abmName': { $regex: term, $options: 'i' } },
       ],
     });
   }
@@ -163,14 +157,21 @@ export const updateWarehouseClientById = async (id, body) => {
 
   if (nextType === WarehouseClientType.STORE) {
     if (doc.type === WarehouseClientType.STORE) {
-      if (body.storeProfile === undefined) {
+      const storeOnlyKeys = ['status', 'remarks', 'slNo'];
+      const rootPatch = pick(body, storeOnlyKeys);
+      if (body.storeProfile !== undefined) {
+        const current = doc.storeProfile && typeof doc.storeProfile.toObject === 'function'
+          ? doc.storeProfile.toObject()
+          : doc.storeProfile || {};
+        doc.storeProfile = { ...current, ...body.storeProfile };
+        doc.markModified('storeProfile');
+      }
+      if (Object.keys(rootPatch).length > 0) {
+        Object.assign(doc, rootPatch);
+      }
+      if (body.storeProfile === undefined && Object.keys(rootPatch).length === 0) {
         throw new ApiError(httpStatus.BAD_REQUEST, 'No updatable fields provided');
       }
-      const current = doc.storeProfile && typeof doc.storeProfile.toObject === 'function'
-        ? doc.storeProfile.toObject()
-        : doc.storeProfile || {};
-      doc.storeProfile = { ...current, ...body.storeProfile };
-      doc.markModified('storeProfile');
       await doc.save();
       return WarehouseClient.findById(doc._id);
     }
