@@ -48,6 +48,7 @@ import teamMasterRoute from './teamMaster.route.js';
 import containersMasterRoute from './containersMaster.route.js';
 import whmsRoute from './whms/index.js';
 import helpSupportRoute from './helpSupport/index.js';
+import websiteOrderRoute from './integrations/websiteOrder.route.js';
 import config from '../../config/config.js';
 import userActivityLog from '../../middlewares/userActivityLog.js';
 
@@ -248,6 +249,10 @@ const defaultRoutes = [
   {
     path: '/help-support',
     route: helpSupportRoute,
+  },
+  {
+    path: '/integrations/website-orders',
+    route: websiteOrderRoute,
   },
 ];
 

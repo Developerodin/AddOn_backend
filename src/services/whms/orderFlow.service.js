@@ -8,6 +8,7 @@ import WarehouseOrder, {
 } from '../../models/whms/warehouseOrder.model.js';
 import PickList from '../../models/whms/pickList.model.js';
 import ScanSession from '../../models/whms/scanSession.model.js';
+import { notifyWebsiteFromOrder } from '../integrations/websiteOrderOutbound.service.js';
 
 /**
  * Allowed transitions per current flow status. Each stage may also step back to
@@ -165,6 +166,7 @@ export const transitionOrder = async (orderId, toStatus, user, payload = {}, int
   });
 
   await order.save({ session: internal.session });
+  notifyWebsiteFromOrder(order, 'status_update');
   return order;
 };
 

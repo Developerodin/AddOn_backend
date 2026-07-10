@@ -83,6 +83,7 @@ export const getWarehouseOrders = {
     clientId: Joi.string().custom(objectId),
     orderNumber: Joi.string().trim(),
     addonOrderId: Joi.string().trim(),
+    source: Joi.string().trim(),
     q: Joi.string().trim(),
     dateFrom: Joi.date(),
     dateTo: Joi.date(),

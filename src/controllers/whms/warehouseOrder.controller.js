@@ -26,6 +26,7 @@ const getWarehouseOrders = catchAsync(async (req, res) => {
       'createdTo',
       'styleCodeId',
       'styleCodeMultiPairId',
+      'source',
     ])
   );
   const options = pick(req.query, ['sortBy', 'limit', 'page']);

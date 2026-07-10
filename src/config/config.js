@@ -33,6 +33,12 @@ const envVarsSchema = Joi.object()
     AWS_REGION: Joi.string().required().description('AWS region'),
     AWS_BUCKET_NAME: Joi.string().required().description('AWS S3 bucket name'),
     OPENAI_API_KEY: Joi.string().required().description('OpenAI API key'),
+    WEBSITE_ORDER_SYNC_API_KEY: Joi.string().allow('').default('').description('shared key for website↔warehouse sync'),
+    ADDONWEB_BASE_URL: Joi.string().uri().allow('').default('').description('OpenCart base url'),
+    ADDONWEB_WHMS_RECEIVE_PATH: Joi.string()
+      .default('index.php?route=extension/addon/whms_sync.receive')
+      .description('OpenCart WHMS receive route path'),
+    WEBSITE_ORDER_SYNC_ALLOWED_IPS: Joi.string().allow('').default(''),
   })
   .unknown();
 
@@ -85,6 +91,15 @@ const config = {
   },
   openai: {
     apiKey: envVars.OPENAI_API_KEY,
+  },
+  integrations: {
+    websiteOrderSyncApiKey: envVars.WEBSITE_ORDER_SYNC_API_KEY || '',
+    addonwebBaseUrl: envVars.ADDONWEB_BASE_URL || '',
+    addonwebReceivePath: envVars.ADDONWEB_WHMS_RECEIVE_PATH,
+    allowedIps: String(envVars.WEBSITE_ORDER_SYNC_ALLOWED_IPS || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
   },
 };
 

@@ -11,6 +11,7 @@ import {
   syncPickListForOrderLineItems,
   syncPickListOrderMetadata,
 } from './pickList.service.js';
+import { notifyWebsiteFromOrder } from '../integrations/websiteOrderOutbound.service.js';
 import {
   buildArticleAttrsByStyleCodeId,
   coalesceLineField,
@@ -64,6 +65,9 @@ export const buildWarehouseOrderFilter = (query) => {
   }
   if (query.addonOrderId && String(query.addonOrderId).trim()) {
     filter.addonOrderId = new RegExp(`^${escapeRegex(String(query.addonOrderId).trim())}`, 'i');
+  }
+  if (query.source && String(query.source).trim()) {
+    filter['meta.source'] = String(query.source).trim();
   }
 
   if (query.q && String(query.q).trim()) {
@@ -287,6 +291,10 @@ export const updateWarehouseOrderById = async (id, updateBody) => {
 
   Object.assign(doc, updateBody);
   await doc.save();
+
+  if (updateBody.status === 'cancelled' || doc.flowStatus === 'cancelled') {
+    notifyWebsiteFromOrder(doc, 'status_update');
+  }
 
   if (lineItemsTouched) {
     await syncPickListForOrderLineItems(doc);

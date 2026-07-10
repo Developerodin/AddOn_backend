@@ -7,10 +7,12 @@ import { mongoSupportsTransactions } from './utils/mongoDeployment.js';
 import { testS3Connection } from './utils/s3Connection.js';
 import { startOrderSyncJob } from './cron/orderSync.cron.js';
 import { startYarnDailySnapshotJob, stopYarnDailySnapshotJob } from './cron/yarnDailySnapshot.cron.js';
+import { startWebsiteOrderOutboundJob, stopWebsiteOrderOutboundJob } from './cron/websiteOrderOutbound.cron.js';
 
 let server;
 let orderSyncCronJob;
 let yarnSnapshotCronJob;
+let websiteOrderOutboundCronJob;
 
 const mongoOptions = {
   ...config.mongoose.options,
@@ -32,6 +34,10 @@ mongoose.connect(config.mongoose.url, mongoOptions).then(async () => {
   // Start order sync cron job
   const cronSchedule = process.env.ORDER_SYNC_CRON_SCHEDULE || '*/30 * * * *'; // Every 30 minutes
   orderSyncCronJob = startOrderSyncJob(cronSchedule);
+
+  // Start website order outbound sync (addonweb ← warehouse)
+  const websiteOutboundSchedule = process.env.WEBSITE_ORDER_OUTBOUND_CRON || '*/2 * * * *';
+  websiteOrderOutboundCronJob = startWebsiteOrderOutboundJob(websiteOutboundSchedule);
 
   // Start yarn daily closing snapshot job (feature-flagged)
   if (process.env.YARN_DAILY_SNAPSHOT_ENABLED === 'true') {
@@ -58,6 +64,7 @@ const exitHandler = () => {
         logger.info('Order sync cron job stopped');
       }
       stopYarnDailySnapshotJob(yarnSnapshotCronJob);
+      stopWebsiteOrderOutboundJob(websiteOrderOutboundCronJob);
       process.exit(1);
     });
   } else {
@@ -80,6 +87,7 @@ process.on('SIGTERM', () => {
     logger.info('Order sync cron job stopped');
   }
   stopYarnDailySnapshotJob(yarnSnapshotCronJob);
+  stopWebsiteOrderOutboundJob(websiteOrderOutboundCronJob);
   if (server) {
     server.close();
   }

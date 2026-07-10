@@ -223,6 +223,7 @@ warehouseOrderSchema.index({ date: -1 });
 warehouseOrderSchema.index({ status: 1, createdAt: -1 });
 warehouseOrderSchema.index({ flowStatus: 1, createdAt: -1 });
 warehouseOrderSchema.index({ clientType: 1, clientId: 1, createdAt: -1 });
+warehouseOrderSchema.index({ addonOrderId: 1 }, { unique: true, sparse: true });
 
 warehouseOrderSchema.plugin(toJSON);
 warehouseOrderSchema.plugin(paginate);

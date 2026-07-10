@@ -6,6 +6,7 @@ import WarehouseInventory from '../../models/whms/warehouseInventory.model.js';
 import WhmsInvoice from '../../models/whms/invoice.model.js';
 import { appendWarehouseInventoryLog } from './warehouseInventory.service.js';
 import { transitionOrder } from './orderFlow.service.js';
+import { notifyWebsiteFromOrder } from '../integrations/websiteOrderOutbound.service.js';
 
 const DISPATCH_MODES = Object.freeze([
   WarehouseOrderFlowStatus.DISPATCHED,
@@ -37,6 +38,8 @@ export const setDispatchDetails = async (orderId, user, details) => {
     ...details,
   };
   await order.save();
+
+  notifyWebsiteFromOrder(order, 'tracking_update');
 
   if (order.flowStatus === WarehouseOrderFlowStatus.BILLED) {
     return transitionOrder(
@@ -73,6 +76,8 @@ export const dispatchOrder = async (orderId, user, { mode, remarks = '' }) => {
 
   const updated = await transitionOrder(orderId, mode, user, { remarks }, { viaDispatch: true, system: true });
 
+  notifyWebsiteFromOrder(updated, 'status_update');
+
   // Traceability: one log row per picked style (delta 0 — stock left at pick time).
   const pickRows = await PickList.find({ orderId, pickupQuantity: { $gt: 0 } }).lean();
   for (const row of pickRows) {
@@ -108,6 +113,7 @@ export const setDeliveryStatus = async (orderId, user, { deliveredDate, remarks 
     deliveredDate: deliveredDate ? new Date(deliveredDate) : new Date(),
   };
   await updated.save();
+  notifyWebsiteFromOrder(updated, 'status_update');
   return updated;
 };
 
