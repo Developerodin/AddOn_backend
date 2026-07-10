@@ -75,10 +75,6 @@ export const enqueueWebsitePush = async (order, event = 'status_update') => {
     status: 'pending',
     attempts: 0,
   });
-
-  order.meta = { ...meta, lastPushedWhmsFlowStatus: order.flowStatus };
-  order.markModified('meta');
-  await order.save();
 };
 
 /**
@@ -156,7 +152,12 @@ export const processOutboundQueue = async () => {
       const order = await WarehouseOrder.findById(job.warehouseOrderId);
       if (order) {
         const meta = order.meta && typeof order.meta.toObject === 'function' ? order.meta.toObject() : order.meta || {};
-        order.meta = { ...meta, lastWebsitePushAt: new Date(), lastWebsitePushError: '' };
+        order.meta = {
+          ...meta,
+          lastPushedWhmsFlowStatus: order.flowStatus,
+          lastWebsitePushAt: new Date(),
+          lastWebsitePushError: '',
+        };
         order.markModified('meta');
         await order.save();
       }

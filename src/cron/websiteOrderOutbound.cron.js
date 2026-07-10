@@ -8,6 +8,14 @@ import { processOutboundQueue } from '../services/integrations/websiteOrderOutbo
  * @returns {import('cron').CronJob}
  */
 export const startWebsiteOrderOutboundJob = (schedule = '*/2 * * * *') => {
+  const baseUrl = (process.env.ADDONWEB_BASE_URL || '').trim();
+  const apiKey = (process.env.WEBSITE_ORDER_SYNC_API_KEY || '').trim();
+  if (!baseUrl || !apiKey) {
+    logger.warn(
+      '[WebsiteOrderSync] Outbound disabled: set ADDONWEB_BASE_URL and WEBSITE_ORDER_SYNC_API_KEY on the warehouse server'
+    );
+  }
+
   const job = new CronJob(
     schedule,
   async () => {
