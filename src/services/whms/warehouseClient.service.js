@@ -2,6 +2,7 @@ import httpStatus from 'http-status';
 import ApiError from '../../utils/ApiError.js';
 import pick from '../../utils/pick.js';
 import WarehouseClient, { WarehouseClientType } from '../../models/whms/warehouseClient.model.js';
+import { TRADE_REQUIRED_WEB_SYNC_FIELDS } from '../integrations/websiteOrderClientSync.util.js';
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -68,6 +69,17 @@ export const buildWarehouseClientFilter = (query) => {
         { 'storeProfile.abmName': { $regex: term, $options: 'i' } },
       ],
     });
+  }
+
+  if (query.source && String(query.source).trim()) {
+    filter['meta.source'] = String(query.source).trim();
+  }
+
+  if (query.incomplete === '1' || query.incomplete === true || query.incomplete === 'true') {
+    const emptyFieldOr = TRADE_REQUIRED_WEB_SYNC_FIELDS.map((field) => ({
+      $or: [{ [field]: '' }, { [field]: null }, { [field]: { $exists: false } }],
+    }));
+    andClause.push({ $or: emptyFieldOr });
   }
 
   if (andClause.length > 0) {

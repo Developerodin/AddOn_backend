@@ -8,6 +8,13 @@ import WebsiteOrderSyncLog from '../../models/integrations/websiteOrderSyncLog.m
 import { createWarehouseClient } from '../whms/warehouseClient.service.js';
 import { createWarehouseOrder } from '../whms/warehouseOrder.service.js';
 import { transitionOrder } from '../whms/orderFlow.service.js';
+import { notifyWebsiteFromOrder } from './websiteOrderOutbound.service.js';
+import {
+  buildClientPatchFromWebsite,
+  buildWebsiteClientMeta,
+  getTradeClientIncompleteFields,
+  mergeWebsiteFieldsIntoClient,
+} from './websiteOrderClientSync.util.js';
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -59,67 +66,104 @@ const mapLines = async (products) => {
 };
 
 /**
+ * Apply website customer data to an existing or new Trade client document.
+ * @param {import('mongoose').Document} client
+ * @param {object} customer
+ * @param {string} addonOrderId
+ * @param {boolean} clientCreated
+ */
+const finalizeTradeClientFromWebsite = async (client, customer, addonOrderId, clientCreated) => {
+  const patch = buildClientPatchFromWebsite(customer);
+  mergeWebsiteFieldsIntoClient(client, patch);
+
+  if (patch.parentKeyCode && !str(client.parentKeyCode)) {
+    client.parentKeyCode = patch.parentKeyCode;
+  }
+
+  const incompleteFields = getTradeClientIncompleteFields(client);
+  const meta = buildWebsiteClientMeta(customer, clientCreated, incompleteFields);
+  client.meta = { ...(client.meta && typeof client.meta.toObject === 'function' ? client.meta.toObject() : client.meta || {}), ...meta };
+  client.markModified('meta');
+
+  if (clientCreated && !str(client.remarks)) {
+    client.remarks = `Auto-created from addonweb order ${addonOrderId}`;
+  }
+
+  await client.save();
+  return incompleteFields;
+};
+
+const str = (value) => String(value ?? '').trim();
+
+/**
  * Resolve an existing Trade client or create one from website customer data.
  * @param {object} customer
  * @param {string} addonOrderId
- * @returns {Promise<{ client: object, clientCreated: boolean }>}
+ * @returns {Promise<{ client: object, clientCreated: boolean, clientIncompleteFields: string[] }>}
  */
 const resolveOrCreateTradeClient = async (customer, addonOrderId) => {
+  const patch = buildClientPatchFromWebsite(customer);
+  const email = patch.email;
+  const gstin = patch.gstin;
+  const companyName = patch.retailerName;
   const opencartCustomerId = Number(customer?.opencartCustomerId) || 0;
-  const companyName = String(customer?.companyName || customer?.retailerName || '').trim();
-  const email = String(customer?.email || '').trim().toLowerCase();
-  const gstin = String(customer?.gstin || '').trim();
+
+  let client = null;
 
   if (opencartCustomerId) {
-    const byKey = await WarehouseClient.findOne({
+    client = await WarehouseClient.findOne({
       type: WarehouseClientType.TRADE,
       parentKeyCode: `OC-${opencartCustomerId}`,
     });
-    if (byKey) return { client: byKey, clientCreated: false };
   }
 
-  if (email) {
-    const byEmail = await WarehouseClient.findOne({
+  if (!client && email) {
+    client = await WarehouseClient.findOne({
       type: WarehouseClientType.TRADE,
       email: new RegExp(`^${escapeRegex(email)}$`, 'i'),
     });
-    if (byEmail) return { client: byEmail, clientCreated: false };
   }
 
-  if (gstin) {
-    const byGst = await WarehouseClient.findOne({ type: WarehouseClientType.TRADE, gstin });
-    if (byGst) return { client: byGst, clientCreated: false };
+  if (!client && gstin) {
+    client = await WarehouseClient.findOne({ type: WarehouseClientType.TRADE, gstin });
   }
 
-  if (companyName) {
-    const byName = await WarehouseClient.findOne({
+  if (!client && companyName) {
+    client = await WarehouseClient.findOne({
       type: WarehouseClientType.TRADE,
       retailerName: new RegExp(`^${escapeRegex(companyName)}$`, 'i'),
     });
-    if (byName) return { client: byName, clientCreated: false };
   }
 
   if (!companyName && !email) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'customer.companyName or customer.email is required');
   }
 
-  const client = await createWarehouseClient({
+  if (client) {
+    const incompleteFields = await finalizeTradeClientFromWebsite(client, customer, addonOrderId, false);
+    return { client, clientCreated: false, clientIncompleteFields: incompleteFields };
+  }
+
+  const created = await createWarehouseClient({
     type: WarehouseClientType.TRADE,
     retailerName: companyName || email,
-    contactPerson: String(customer?.contactPerson || '').trim(),
-    mobilePhone: String(customer?.telephone || customer?.mobilePhone || '').trim(),
+    contactPerson: patch.contactPerson,
+    mobilePhone: patch.mobilePhone,
     email,
-    address: String(customer?.address1 || customer?.address || '').trim(),
-    city: String(customer?.city || '').trim(),
-    zipCode: String(customer?.postcode || customer?.zipCode || '').trim(),
-    state: String(customer?.zone || customer?.state || '').trim(),
+    address: patch.address,
+    city: patch.city,
+    zipCode: patch.zipCode,
+    state: patch.state,
     gstin,
-    parentKeyCode: opencartCustomerId ? `OC-${opencartCustomerId}` : '',
+    parentKeyCode: patch.parentKeyCode,
     status: 'active',
     remarks: `Auto-created from addonweb order ${addonOrderId}`,
+    meta: buildWebsiteClientMeta(customer, true, getTradeClientIncompleteFields(patch)),
   });
 
-  return { client, clientCreated: true };
+  const fresh = await WarehouseClient.findById(created._id || created.id);
+  const incompleteFields = getTradeClientIncompleteFields(fresh);
+  return { client: fresh, clientCreated: true, clientIncompleteFields: incompleteFields };
 };
 
 /**
@@ -164,7 +208,10 @@ export const ingestWebsiteOrder = async (payload) => {
   }
 
   try {
-    const { client, clientCreated } = await resolveOrCreateTradeClient(payload.customer, addonOrderId);
+    const { client, clientCreated, clientIncompleteFields } = await resolveOrCreateTradeClient(
+      payload.customer,
+      addonOrderId
+    );
     const { singlePair, syncErrors } = await mapLines(payload.products);
 
     if (!singlePair.length) {
@@ -204,8 +251,16 @@ export const ingestWebsiteOrder = async (payload) => {
         approvedBy: payload.approvedBy,
         syncErrors,
         ingestedAt: new Date(),
+        clientCreated,
+        clientIncompleteFields,
+        warehouseClientId: String(client._id),
       },
     });
+
+    const savedOrder = await WarehouseOrder.findById(order._id || order.id);
+    if (savedOrder && orderStatus === 'pending') {
+      notifyWebsiteFromOrder(savedOrder, 'status_update');
+    }
 
     const logStatus = syncErrors.length ? 'draft' : 'created';
     await writeSyncLog({
@@ -224,6 +279,7 @@ export const ingestWebsiteOrder = async (payload) => {
       warehouseClientId: String(client._id),
       warehouseOrderNumber: order.orderNumber,
       clientCreated,
+      clientIncompleteFields,
       syncErrors,
     };
   } catch (error) {

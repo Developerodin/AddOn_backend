@@ -306,8 +306,18 @@ export const updateWarehouseOrderById = async (id, updateBody) => {
 };
 
 export const deleteWarehouseOrderById = async (id) => {
-  const doc = await WarehouseOrder.findByIdAndDelete(id);
+  const doc = await WarehouseOrder.findById(id);
   if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Warehouse order not found');
+
+  const meta = doc.meta && typeof doc.meta.toObject === 'function' ? doc.meta.toObject() : doc.meta || {};
+  if (meta.source === 'addonweb') {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Website orders cannot be deleted. Cancel the order instead to sync with the website.'
+    );
+  }
+
+  await WarehouseOrder.findByIdAndDelete(id);
   return doc;
 };
 

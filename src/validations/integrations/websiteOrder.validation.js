@@ -5,7 +5,7 @@ const customerSchema = Joi.object({
   companyName: Joi.string().allow('').trim(),
   retailerName: Joi.string().allow('').trim(),
   contactPerson: Joi.string().allow('').trim(),
-  email: Joi.string().email().allow('').trim(),
+  email: Joi.alternatives().try(Joi.string().valid(''), Joi.string().email().trim()),
   telephone: Joi.string().allow('').trim(),
   mobilePhone: Joi.string().allow('').trim(),
   address1: Joi.string().allow('').trim(),
@@ -15,7 +15,13 @@ const customerSchema = Joi.object({
   zipCode: Joi.string().allow('').trim(),
   zone: Joi.string().allow('').trim(),
   state: Joi.string().allow('').trim(),
+  country: Joi.string().allow('').trim(),
   gstin: Joi.string().allow('').trim(),
+  shippingAddress1: Joi.string().allow('').trim(),
+  shippingCity: Joi.string().allow('').trim(),
+  shippingPostcode: Joi.string().allow('').trim(),
+  shippingZone: Joi.string().allow('').trim(),
+  shippingCountry: Joi.string().allow('').trim(),
 });
 
 const productOptionSchema = Joi.object({

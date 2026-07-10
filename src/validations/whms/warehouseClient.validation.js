@@ -80,6 +80,8 @@ const listQueryKeys = {
   state: Joi.string().trim(),
   parentKeyCode: Joi.string().trim(),
   search: Joi.string().trim(),
+  source: Joi.string().trim(),
+  incomplete: Joi.alternatives().try(Joi.boolean(), Joi.string().valid('1', 'true', '0', 'false')),
   sortBy: Joi.string(),
   limit: Joi.number().integer(),
   page: Joi.number().integer(),

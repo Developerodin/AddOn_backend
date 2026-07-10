@@ -162,6 +162,10 @@ const warehouseClientSchema = mongoose.Schema(
       trim: true,
       default: '',
     },
+    meta: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
   },
   { timestamps: true }
 );
@@ -169,6 +173,7 @@ const warehouseClientSchema = mongoose.Schema(
 warehouseClientSchema.index({ retailerName: 1 });
 warehouseClientSchema.index({ type: 1, city: 1 });
 warehouseClientSchema.index({ gstin: 1 });
+warehouseClientSchema.index({ 'meta.source': 1, 'meta.autoCreated': 1 });
 
 warehouseClientSchema.pre('validate', function warehouseClientStoreProfileSync(next) {
   if (this.type !== WarehouseClientType.STORE) {
