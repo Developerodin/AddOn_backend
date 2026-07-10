@@ -11,7 +11,10 @@ import {
   syncPickListForOrderLineItems,
   syncPickListOrderMetadata,
 } from './pickList.service.js';
-import { notifyWebsiteFromOrder } from '../integrations/websiteOrderOutbound.service.js';
+import {
+  notifyWebsiteFromOrderAsync,
+  isWebsiteSourcedOrder,
+} from '../integrations/websiteOrderOutbound.service.js';
 import {
   buildArticleAttrsByStyleCodeId,
   coalesceLineField,
@@ -292,8 +295,11 @@ export const updateWarehouseOrderById = async (id, updateBody) => {
   Object.assign(doc, updateBody);
   await doc.save();
 
-  if (updateBody.status === 'cancelled' || doc.flowStatus === 'cancelled') {
-    notifyWebsiteFromOrder(doc, 'status_update');
+  if (
+    (updateBody.status === 'cancelled' || doc.flowStatus === 'cancelled') &&
+    isWebsiteSourcedOrder(doc)
+  ) {
+    await notifyWebsiteFromOrderAsync(doc, 'status_update');
   }
 
   if (lineItemsTouched) {

@@ -9,6 +9,18 @@ const MAX_ATTEMPTS = 10;
 const BATCH_SIZE = 20;
 
 /**
+ * True when an order should receive website outbound pushes.
+ * @param {object} order
+ * @returns {boolean}
+ */
+export const isWebsiteSourcedOrder = (order) => {
+  if (!order?.addonOrderId) return false;
+  const meta = order.meta && typeof order.meta.toObject === 'function' ? order.meta.toObject() : order.meta || {};
+  if (meta.source === 'addonweb') return true;
+  return /^WEB-\d+$/i.test(String(order.addonOrderId).trim());
+};
+
+/**
  * Build outbound payload for the website receiver endpoint.
  * @param {object} order - Mongoose warehouse order document
  * @param {object} target - from mapWhmsToWebsite
@@ -50,7 +62,7 @@ export const buildOutboundPayload = (order, target, event, syncToken) => {
  * @param {'status_update'|'tracking_update'|'cancel'} event
  */
 export const enqueueWebsitePush = async (order, event = 'status_update') => {
-  if (!order?.addonOrderId || order?.meta?.source !== 'addonweb') return;
+  if (!isWebsiteSourcedOrder(order)) return;
 
   const target = mapWhmsToWebsite(order.flowStatus);
   if (!target && event === 'status_update') return;
@@ -207,7 +219,7 @@ export const processOutboundQueue = async () => {
 export const manualPushToWebsite = async (warehouseOrderId) => {
   const order = await WarehouseOrder.findById(warehouseOrderId);
   if (!order) throw new Error('Warehouse order not found');
-  if (order.meta?.source !== 'addonweb') throw new Error('Not a website-sourced order');
+  if (!isWebsiteSourcedOrder(order)) throw new Error('Not a website-sourced order');
 
   const meta = order.meta && typeof order.meta.toObject === 'function' ? order.meta.toObject() : order.meta || {};
   order.meta = { ...meta, lastPushedWhmsFlowStatus: undefined };
@@ -220,12 +232,24 @@ export const manualPushToWebsite = async (warehouseOrderId) => {
 };
 
 /**
+ * Queue and immediately flush a website push (awaitable — use from save/cancel handlers).
+ * @param {object} order
+ * @param {string} event
+ * @returns {Promise<{ processed: number, sent: number, failed: number }>}
+ */
+export const notifyWebsiteFromOrderAsync = async (order, event = 'status_update') => {
+  await enqueueWebsitePush(order, event);
+  return processOutboundQueue();
+};
+
+/**
  * Fire-and-forget website push from fulfilment hooks.
+ * Flushes the outbound queue immediately so CRM actions reflect on the website without waiting for cron.
  * @param {object} order
  * @param {string} event
  */
 export const notifyWebsiteFromOrder = (order, event = 'status_update') => {
-  enqueueWebsitePush(order, event).catch((e) => {
+  notifyWebsiteFromOrderAsync(order, event).catch((e) => {
     logger.error('website push enqueue failed', e);
   });
 };
