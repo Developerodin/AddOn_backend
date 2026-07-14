@@ -16,6 +16,11 @@ const pickListSchema = mongoose.Schema(
       ref: 'WarehouseOrder',
       required: true,
     },
+    batchId: {
+      type: mongoose.SchemaTypes.ObjectId,
+      ref: 'PickListBatch',
+      default: null,
+    },
     orderNumber: { type: String, trim: true },
     addonOrderId: { type: String, trim: true },
 
@@ -54,6 +59,7 @@ const pickListSchema = mongoose.Schema(
 );
 
 pickListSchema.index({ orderId: 1 });
+pickListSchema.index({ batchId: 1 });
 pickListSchema.index({ skuCode: 1 });
 pickListSchema.index({ styleCodeId: 1 });
 pickListSchema.index({ status: 1, createdAt: -1 });

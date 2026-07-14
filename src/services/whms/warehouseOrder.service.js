@@ -6,6 +6,7 @@ import StyleCode from '../../models/styleCode.model.js';
 import StyleCodePairs from '../../models/styleCodePairs.model.js';
 import Product from '../../models/product.model.js';
 import WarehouseInventory from '../../models/whms/warehouseInventory.model.js';
+import PickListBatch, { PickListBatchStatus } from '../../models/whms/pickListBatch.model.js';
 import {
   createPickListForOrder,
   syncPickListForOrderLineItems,
@@ -281,6 +282,16 @@ export const updateWarehouseOrderById = async (id, updateBody) => {
   const lineItemsTouched =
     Object.prototype.hasOwnProperty.call(updateBody, 'styleCodeSinglePair') ||
     Object.prototype.hasOwnProperty.call(updateBody, 'styleCodeMultiPair');
+
+  if (lineItemsTouched && doc.activeBatchId) {
+    const batch = await PickListBatch.findById(doc.activeBatchId).select('status batchNumber');
+    if (batch && batch.status === PickListBatchStatus.PICKING) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Order line items cannot be edited while pick-list batch "${batch.batchNumber}" is active`
+      );
+    }
+  }
 
   if (lineItemsTouched) {
     await enrichWarehouseOrderLineItems(updateBody);

@@ -37,6 +37,7 @@ const scanSessionSchema = mongoose.Schema(
   {
     orderId: { type: mongoose.SchemaTypes.ObjectId, ref: 'WarehouseOrder', required: true },
     orderNumber: { type: String, trim: true },
+    batchId: { type: mongoose.SchemaTypes.ObjectId, ref: 'PickListBatch', default: null },
     status: {
       type: String,
       enum: Object.values(ScanSessionStatus),
@@ -53,6 +54,9 @@ const scanSessionSchema = mongoose.Schema(
     /** Set when a supervisor completes despite mismatches. */
     mismatchOverride: { type: Boolean, default: false },
     overrideRemarks: { type: String, trim: true, default: '' },
+    /** Set when scanning team closes an order with fewer units than expected. */
+    closedWithShortQty: { type: Boolean, default: false },
+    shortCloseRemarks: { type: String, trim: true, default: '' },
   },
   { timestamps: true }
 );

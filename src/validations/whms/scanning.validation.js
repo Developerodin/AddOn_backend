@@ -50,6 +50,7 @@ export const completeSession = {
   }),
   body: Joi.object().keys({
     force: Joi.boolean().default(false),
+    closeWithShortQty: Joi.boolean().default(false),
     remarks: Joi.string().allow('').trim().max(1000),
   }),
 };

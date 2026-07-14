@@ -55,9 +55,12 @@ export const createSession = async (orderId, user) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'No picked quantities found for this order');
   }
 
+  const batchId = order.activeBatchId || pickRows[0]?.batchId || null;
+
   const session = await ScanSession.create({
     orderId,
     orderNumber: order.orderNumber,
+    batchId,
     items: pickRows.map((row) => ({
       pickListId: row._id,
       skuCode: row.skuCode,
@@ -131,46 +134,84 @@ export const updateScanItem = async (sessionId, itemId, { scannedQty }) => {
 
 /**
  * Complete the session. Blocks when any row is short/excess/pending unless
- * `force` (mismatch override) is set with remarks; then moves the order to
- * scanning-done.
+ * `force` (mismatch override) or `closeWithShortQty` is set with remarks; then
+ * moves the order to scanning-done.
  */
-export const completeSession = async (sessionId, user, { force = false, remarks = '' } = {}) => {
+export const completeSession = async (
+  sessionId,
+  user,
+  { force = false, closeWithShortQty = false, remarks = '' } = {}
+) => {
   const session = await getOpenSession(sessionId);
 
   const summary = sessionSummary(session);
+  const hasShortOrPending = summary.short + summary.pending > 0;
+  const hasExcess = summary.excess > 0;
   const hasMismatch = summary.short + summary.excess + summary.pending > 0;
-  if (hasMismatch && !force) {
+
+  if (closeWithShortQty) {
+    if (hasExcess && !force) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Cannot close with short qty: ${summary.excess} item(s) have excess scans. Reduce scanned quantities first.`
+      );
+    }
+    if (!hasShortOrPending && !force) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'All items are fully matched — use Complete instead of Close with Short Qty'
+      );
+    }
+    session.closedWithShortQty = true;
+    session.shortCloseRemarks = String(remarks || '').trim();
+    session.mismatchOverride = hasMismatch;
+    if (session.shortCloseRemarks) {
+      session.overrideRemarks = session.shortCloseRemarks;
+    }
+  } else if (hasMismatch && !force) {
     throw new ApiError(
       httpStatus.BAD_REQUEST,
       `Scanning has mismatches (${summary.pending} pending, ${summary.short} short, ${summary.excess} excess). Resolve them or complete with force + remarks.`
     );
-  }
-  if (hasMismatch && force && !String(remarks || '').trim()) {
+  } else if (hasMismatch && force && !String(remarks || '').trim()) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Remarks are required when completing with mismatches');
+  }
+
+  if (!closeWithShortQty && hasMismatch && force) {
+    session.mismatchOverride = true;
+    session.overrideRemarks = String(remarks || '').trim();
   }
 
   session.status = ScanSessionStatus.COMPLETED;
   session.completedBy = user?._id ?? user?.id ?? null;
   session.completedByName = user?.name || user?.email || '';
   session.completedAt = new Date();
-  session.mismatchOverride = hasMismatch;
-  session.overrideRemarks = String(remarks || '').trim();
   await session.save();
+
+  const completionRemark = closeWithShortQty
+    ? `Closed with short qty${session.shortCloseRemarks ? `: ${session.shortCloseRemarks}` : ''}`
+    : hasMismatch
+      ? `Completed with mismatch override: ${session.overrideRemarks}`
+      : 'Scanning completed';
 
   await transitionOrder(
     String(session.orderId),
     WarehouseOrderFlowStatus.SCANNING_DONE,
     user,
-    { remarks: hasMismatch ? `Completed with mismatch override: ${session.overrideRemarks}` : 'Scanning completed' },
+    { remarks: completionRemark },
     { system: true }
   );
 
-  if (!hasMismatch) {
+  if (!hasMismatch || closeWithShortQty) {
     await transitionOrder(
       String(session.orderId),
       WarehouseOrderFlowStatus.SENT_TO_BILLING,
       user,
-      { remarks: 'Auto-sent to billing after successful scan' },
+      {
+        remarks: closeWithShortQty
+          ? 'Auto-sent to billing after short-qty close'
+          : 'Auto-sent to billing after successful scan',
+      },
       { system: true }
     );
   }

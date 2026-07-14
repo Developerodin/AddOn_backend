@@ -195,6 +195,9 @@ const warehouseOrderSchema = mongoose.Schema(
     dispatch: { type: dispatchDetailsSchema, default: undefined },
     invoiceId: { type: mongoose.SchemaTypes.ObjectId, ref: 'WhmsInvoice', default: null },
 
+    /** Active pick-list batch while order is in combined/single batch picking flow. */
+    activeBatchId: { type: mongoose.SchemaTypes.ObjectId, ref: 'PickListBatch', default: null },
+
     meta: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   { timestamps: true }

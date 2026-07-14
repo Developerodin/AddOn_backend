@@ -259,23 +259,71 @@ async function main() {
     `availableStock=${availOnRow}`
   );
 
-  await flow(token, orderId, 'picking', 'Flow → picking');
-
-  for (const row of pickRows) {
-    const pickId = row.id || row._id;
-    const qty = Math.min(ORDER_QTY, Number(row.quantity || ORDER_QTY));
-    const patchRes = await request('PATCH', `/v1/whms/pick-list/${pickId}`, token, { pickupQuantity: qty });
-    expectStatus(`Pick qty saved (${row.styleCode || pickId})`, patchRes, 200);
+  const batchRes = await request('POST', '/v1/whms/pick-list-batches', token, { orderIds: [orderId] });
+  if (!expectStatus('Create pick-list batch (single)', batchRes, 201)) {
+    await mongoose.disconnect();
+    process.exit(1);
   }
+  const batchId = batchRes.data?.id || batchRes.data?._id;
+  const batchItems = batchRes.data?.items || [];
+  record('Batch items aggregated', batchItems.length > 0, `${batchItems.length} item(s)`);
+
+  const picks = batchItems.map((item) => ({
+    itemKey: item.itemKey,
+    pickedQty: Math.min(ORDER_QTY, Number(item.requiredQty || ORDER_QTY)),
+  }));
+  const savePicksRes = await request('PATCH', `/v1/whms/pick-list-batches/${batchId}/picks`, token, { picks });
+  expectStatus('Batch picks saved', savePicksRes, 200);
 
   const invAfterPick = await WarehouseInventory.findOne({ styleCode: stock.styleCode }).lean();
   const stockDeducted = Number(invAfterPick?.availableQuantity || 0) <= stock.available - ORDER_QTY + 1;
-  record('Inventory deducted after pick', stockDeducted, `avail now=${invAfterPick?.availableQuantity}`);
+  record('Inventory deducted after batch pick', stockDeducted, `avail now=${invAfterPick?.availableQuantity}`);
 
-  await flow(token, orderId, 'picking-done', 'Flow → picking-done');
-  await flow(token, orderId, 'barcode-in-progress', 'Flow → barcode-in-progress');
-  await flow(token, orderId, 'packing-done', 'Flow → packing-done');
-  await flow(token, orderId, 'sent-to-scanning', 'Flow → sent-to-scanning');
+  const barcodeRes = await request('GET', `/v1/whms/pick-list-batches/${batchId}/barcodes`, token);
+  expectStatus('Batch barcode payload', barcodeRes, 200);
+
+  const sendScanRes = await request('POST', `/v1/whms/pick-list-batches/${batchId}/send-to-scanning`, token, {});
+  expectStatus('Batch → sent-to-scanning', sendScanRes, 200);
+
+  // Combined batch: two fresh orders, same style — qty should aggregate (4 + 4 = 8)
+  const combOrderA = await request('POST', '/v1/whms/warehouse-orders', token, {
+    ...orderBody,
+    addonOrderId: `E2E-CA-${Date.now()}`,
+    styleCodeSinglePair: [{ ...orderBody.styleCodeSinglePair[0], quantity: 4 }],
+  });
+  const combOrderB = await request('POST', '/v1/whms/warehouse-orders', token, {
+    ...orderBody,
+    addonOrderId: `E2E-CB-${Date.now()}`,
+    styleCodeSinglePair: [{ ...orderBody.styleCodeSinglePair[0], quantity: 4 }],
+  });
+  if (expectStatus('Create combined test order A', combOrderA, 201) && expectStatus('Create combined test order B', combOrderB, 201)) {
+    const combIdA = combOrderA.data?.id || combOrderA.data?._id;
+    const combIdB = combOrderB.data?.id || combOrderB.data?._id;
+    const combinedRes = await request('POST', '/v1/whms/pick-list-batches', token, {
+      orderIds: [combIdA, combIdB],
+    });
+    if (expectStatus('Create combined pick-list batch', combinedRes, 201)) {
+      const cBatchId = combinedRes.data?.id || combinedRes.data?._id;
+      const cItems = combinedRes.data?.items || [];
+      const aggItem = cItems.find((i) => i.styleCode === stock.styleCode);
+      const aggOk = Number(aggItem?.requiredQty || 0) === 8;
+      record('Combined style qty aggregated (4+4=8)', aggOk, `required=${aggItem?.requiredQty}`);
+      const cPicks = cItems.map((item) => ({
+        itemKey: item.itemKey,
+        pickedQty: Number(item.requiredQty || 0),
+      }));
+      expectStatus(
+        'Combined batch picks saved',
+        await request('PATCH', `/v1/whms/pick-list-batches/${cBatchId}/picks`, token, { picks: cPicks }),
+        200
+      );
+      expectStatus(
+        'Combined batch → sent-to-scanning',
+        await request('POST', `/v1/whms/pick-list-batches/${cBatchId}/send-to-scanning`, token, {}),
+        200
+      );
+    }
+  }
 
   const sessionRes = await request('POST', '/v1/whms/scanning/sessions', token, { orderId });
   if (!expectStatus('Create scan session', sessionRes, 201)) {
@@ -297,7 +345,12 @@ async function main() {
   const completeRes = await request('POST', `/v1/whms/scanning/sessions/${sessionId}/complete`, token, {});
   expectStatus('Complete scan session → scanning-done', completeRes, 200);
 
-  await flow(token, orderId, 'sent-to-billing', 'Flow → sent-to-billing');
+  const orderAfterScan = await WarehouseOrder.findById(orderId).select('flowStatus').lean();
+  if (orderAfterScan?.flowStatus !== 'sent-to-billing') {
+    await flow(token, orderId, 'sent-to-billing', 'Flow → sent-to-billing');
+  } else {
+    record('Flow → sent-to-billing', true, 'auto after successful scan');
+  }
 
   const invRes = await request('POST', `/v1/whms/invoices/from-order/${orderId}`, token, {
     rates: [{ styleCode: stock.styleCode, rate: 100 }],
