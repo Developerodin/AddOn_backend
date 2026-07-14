@@ -1,16 +1,22 @@
 #!/usr/bin/env node
 /**
- * Clear warehouse fulfilment order data for a fresh E2E flow test.
+ * Clear warehouse fulfilment order-flow data (fresh start for orders pipeline).
  *
  * Deletes ALL documents in:
- *   - WarehouseReturn, WhmsInvoice, ScanSession, PickList
+ *   - WarehouseReturn (RTO/RTV)
+ *   - WhmsInvoice (billing)
+ *   - ScanSession (scan history)
+ *   - PickList + PickListBatch (pick & pack)
  *   - DispatchApproval, VarianceApproval (type=order only)
- *   - ConsolidationBatch, WhmsOrder (legacy), WarehouseOrder
+ *   - ConsolidationBatch, WhmsOrder (legacy)
+ *   - WarehouseOrder (main WHMS orders)
  *
- * Does NOT touch: warehouse clients, inward/receive, inventory stock levels,
- * or inventory logs (picks already deducted stock — re-seed stock separately if needed).
+ * Does NOT touch:
+ *   - Warehouse clients, inward/receive, factory requirements
+ *   - Warehouse inventory stock levels or inventory logs
+ *   (picks may have deducted stock — re-seed/adjust stock separately if needed)
  *
- * Usage:
+ * Usage (from AddOn_backend/):
  *   node src/scripts/clear-whms-orders.js            # dry-run (counts only)
  *   node src/scripts/clear-whms-orders.js --execute  # irreversible delete
  */
@@ -21,6 +27,7 @@ import config from '../config/config.js';
 import { connectMongooseForScript } from '../../scripts/lib/mongoScriptConnect.js';
 import WarehouseOrder from '../models/whms/warehouseOrder.model.js';
 import PickList from '../models/whms/pickList.model.js';
+import PickListBatch from '../models/whms/pickListBatch.model.js';
 import ScanSession from '../models/whms/scanSession.model.js';
 import WhmsInvoice from '../models/whms/invoice.model.js';
 import WarehouseReturn from '../models/whms/warehouseReturn.model.js';
@@ -31,12 +38,14 @@ import ConsolidationBatch from '../models/whms/consolidationBatch.model.js';
 
 const execute = process.argv.includes('--execute');
 
+/** Child collections first, warehouse orders last. */
 /** @type {Array<[string, import('mongoose').Model<unknown>, object?]>} */
 const TARGETS = [
   ['Returns (RTO/RTV)', WarehouseReturn],
-  ['Invoices', WhmsInvoice],
-  ['Scan sessions', ScanSession],
+  ['Invoices (billing)', WhmsInvoice],
+  ['Scan sessions (scan history)', ScanSession],
   ['Pick list rows', PickList],
+  ['Pick list batches (combined pick)', PickListBatch],
   ['Dispatch approvals (legacy)', DispatchApproval],
   ['Variance approvals (orders)', VarianceApproval, { type: 'order' }],
   ['Consolidation batches (legacy)', ConsolidationBatch],
@@ -73,18 +82,25 @@ async function main() {
 
   if (!execute) {
     console.log('\nDry-run only. Re-run with --execute to delete everything above.');
-    console.log('Note: inventory stock / pick logs are NOT reset — only order fulfilment docs.\n');
+    console.log('Example: node src/scripts/clear-whms-orders.js --execute');
+    console.log('Note: inventory stock / inventory logs are NOT reset — only order fulfilment docs.\n');
     await mongoose.disconnect();
     return;
   }
 
   console.log('\nDeleting…');
+  let totalDeleted = 0;
   for (const [label, Model, filter] of TARGETS) {
     // eslint-disable-next-line no-await-in-loop
-    await runTarget(label, Model, filter, true);
+    const count = await Model.countDocuments(filter);
+    if (count > 0) {
+      const res = await Model.deleteMany(filter);
+      totalDeleted += res.deletedCount || 0;
+      console.log(`  ${label}: deleted ${res.deletedCount}`);
+    }
   }
 
-  console.log('\nDone — warehouse orders and fulfilment data cleared.\n');
+  console.log(`\nDone — cleared ${totalDeleted} warehouse fulfilment document(s).\n`);
   await mongoose.disconnect();
 }
 
