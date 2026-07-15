@@ -42,7 +42,7 @@ const containersMasterSchema = new mongoose.Schema(
     },
     /**
      * Each row: exactly one of `article` (factory) or `vendorProductionFlow` (vendor pipeline).
-     * Optional `transferItems` (styleCode / brand / transferred) when staging branding → final checking.
+     * Optional `transferItems` (styleCode / brand / transferred / brandingType) when staging vendor floor transfers.
      */
     activeItems: {
       type: [
@@ -60,6 +60,8 @@ const containersMasterSchema = new mongoose.Schema(
                 transferred: { type: Number, default: 0, min: 0 },
                 styleCode: { type: String, default: '', trim: true },
                 brand: { type: String, default: '', trim: true },
+                /** Heat Transfer | Embroidery — drives Final Checking source inference on accept. */
+                brandingType: { type: String, default: '', trim: true },
               },
             ],
             default: undefined,

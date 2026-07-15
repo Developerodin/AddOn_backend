@@ -445,6 +445,13 @@ export const queryVendorProductionFlows = async (filter, options, search) => {
       { 'floorQuantities.dispatch.remaining': { $gt: 0 } },
       { 'floorQuantities.dispatch.transferred': { $gt: 0 } },
     ];
+  } else if (filter.currentFloorKey === 'reBoarding') {
+    mongoFilter.$or = [
+      { currentFloorKey: 'reBoarding' },
+      { 'floorQuantities.reBoarding.received': { $gt: 0 } },
+      { 'floorQuantities.reBoarding.remaining': { $gt: 0 } },
+      { 'floorQuantities.reBoarding.transferred': { $gt: 0 } },
+    ];
   } else if (filter.currentFloorKey) {
     mongoFilter.currentFloorKey = String(filter.currentFloorKey);
   }

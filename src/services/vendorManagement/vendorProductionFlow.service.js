@@ -30,8 +30,16 @@ import { stageVendorTransferOnExistingContainer } from './vendorProductionFlowRe
 import { transferVendorDispatchToWarehouseQuantity } from './vendorDispatchWarehouseTransfer.service.js';
 import {
   aggregateTransferredByStyleKey,
+  assertFinalCheckingTransferredWithinInboundChannelCap,
+  buildFinalCheckingOutboundMaps,
+  inferFinalCheckingReceivedDataBrandingTypes,
+  mergeBrandingTransferredDataByLineKey,
   mergeTransferredDataByStyleKey,
+  consolidateTransferredDataByStyleKey,
+  normalizeVendorBrandingType,
+  enrichBrandingTransferredDataRows,
   parseVendorStyleKey,
+  resolveHomogeneousBrandingTypeFromRows,
   splitIntegerByWeights,
 } from '../../utils/vendorStyleQuantity.util.js';
 import {
@@ -78,19 +86,33 @@ async function maybeAutoTransferVendorFloor(
   mode,
   sessionOptions
 ) {
-  if (
-    floorKey === 'branding' &&
-    bodyForPatch?.autoTransferToNextFloor === true &&
-    flow?.brandingType !== 'Heat Transfer' &&
-    flow?.brandingType !== 'Embroidery'
-  ) {
-    throw new ApiError(
-      httpStatus.BAD_REQUEST,
-      'Select branding type (Heat Transfer or Embroidery) before staging to the next floor.'
-    );
+  /** Per-line branding type on delta rows drives routing; flow-level type is legacy fallback only. */
+  let brandingTransferType = flow?.brandingType;
+  if (floorKey === 'branding' && bodyForPatch?.autoTransferToNextFloor === true) {
+    const deltaRows = Array.isArray(bodyForPatch?._incomingBrandingDelta)
+      ? bodyForPatch._incomingBrandingDelta
+      : bodyForPatch?.transferredData;
+    try {
+      brandingTransferType = resolveHomogeneousBrandingTypeFromRows(deltaRows, flow?.brandingType);
+    } catch (err) {
+      const code = err?.message;
+      if (code === 'MIXED_BRANDING_TYPE') {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          'All lines in one staging batch must use the same branding type (Heat Transfer or Embroidery). Stage HT and Embroidery separately.'
+        );
+      }
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Select branding type (Heat Transfer or Embroidery) on each line before staging to the next floor.'
+      );
+    }
   }
 
-  const nextFloorKey = resolveVendorNextFloorKey(floorKey, flow?.brandingType);
+  const nextFloorKey =
+    floorKey === 'branding' && bodyForPatch?.autoTransferToNextFloor === true
+      ? resolveVendorNextFloorKey(floorKey, brandingTransferType)
+      : resolveVendorNextFloorKey(floorKey, flow?.brandingType);
   if (!nextFloorKey) return;
 
   const shouldAutoTransfer = bodyForPatch?.autoTransferToNextFloor === true;
@@ -201,8 +223,12 @@ async function maybeAutoTransferVendorFloor(
   );
 
   if (usesContainer) {
+    const breakdownSource =
+      floorKey === 'branding' && Array.isArray(bodyForPatch?._incomingBrandingDelta)
+        ? bodyForPatch._incomingBrandingDelta
+        : bodyForPatch?.transferredData;
     const receiptRows = normalizeTransferBreakdownForReceipt(
-      bodyForPatch?.transferredData,
+      breakdownSource,
       transferable,
       floorKey
     );
@@ -212,6 +238,15 @@ async function maybeAutoTransferVendorFloor(
             transferred: r.transferred,
             styleCode: r.styleCode,
             brand: r.brand,
+            ...(r.brandingType
+              ? { brandingType: r.brandingType }
+              : floorKey === 'branding' && nextFloorKey === 'reBoarding'
+                ? { brandingType: 'Embroidery' }
+                : floorKey === 'branding' && nextFloorKey === 'finalChecking'
+                  ? { brandingType: 'Heat Transfer' }
+                  : floorKey === 'reBoarding' && nextFloorKey === 'finalChecking'
+                    ? { brandingType: 'Embroidery' }
+                    : {}),
           }))
         : undefined;
 
@@ -268,6 +303,7 @@ export const normalizeTransferBreakdownForReceipt = (rows, expectedTotal, fromFl
       transferred: allocated,
       styleCode: String(row?.styleCode || ''),
       brand: String(row?.brand || ''),
+      ...(row?.brandingType ? { brandingType: row.brandingType } : {}),
     });
     remaining -= allocated;
   }
@@ -375,7 +411,8 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
 
     /**
      * Branding / final checking: when `transferredData` is present, counters are **server-owned**.
-     * - Merge keyed lines by style+brand (add qty); unkeyed rows append.
+     * - Branding + finalChecking merge keyed lines by style+brand+brandingType (add qty); other floors by style+brand.
+     * - Unkeyed rows append.
      * - `completed` and `transferred` = sum(lines); `remaining` is derived (never taken from client).
      * - Client values for those fields are stripped.
      */
@@ -388,7 +425,26 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
       }
       const prior = flow.floorQuantities?.[floorKey]?.transferredData;
       if (bodyForPatch.transferredData.length > 0) {
-        bodyForPatch.transferredData = mergeTransferredDataByStyleKey(prior, bodyForPatch.transferredData);
+        /** Preserve incoming delta before merge — auto-transfer routing uses per-line branding type. */
+        if (floorKey === 'branding') {
+          bodyForPatch._incomingBrandingDelta = [...bodyForPatch.transferredData];
+          bodyForPatch.transferredData = mergeBrandingTransferredDataByLineKey(
+            prior,
+            bodyForPatch.transferredData,
+            flow.brandingType
+          );
+        } else if (floorKey === 'finalChecking') {
+          bodyForPatch.transferredData = consolidateTransferredDataByStyleKey(
+            mergeTransferredDataByStyleKey(prior, bodyForPatch.transferredData)
+          );
+          assertFinalCheckingTransferredWithinInboundChannelCap(
+            bodyForPatch.transferredData,
+            flow.floorQuantities?.finalChecking?.receivedData,
+            flow
+          );
+        } else {
+          bodyForPatch.transferredData = mergeTransferredDataByStyleKey(prior, bodyForPatch.transferredData);
+        }
       }
 
       delete bodyForPatch.completed;
@@ -861,6 +917,15 @@ export const transferVendorProductionFlowQuantity = async (flowId, fromFloorKey,
               transferred: Math.max(0, Number(row?.transferred || 0)),
               styleCode: String(row?.styleCode || ''),
               brand: String(row?.brand || ''),
+              ...(row?.brandingType
+                ? { brandingType: row.brandingType }
+                : fromFloorKey === 'branding' && toFloorKey === 'reBoarding'
+                  ? { brandingType: 'Embroidery' }
+                  : fromFloorKey === 'branding' && toFloorKey === 'finalChecking'
+                    ? { brandingType: 'Heat Transfer' }
+                    : fromFloorKey === 'reBoarding' && toFloorKey === 'finalChecking'
+                      ? { brandingType: 'Embroidery' }
+                      : {}),
             }))
           : undefined;
       const c = await stageVendorTransferOnExistingContainer({
@@ -1099,6 +1164,101 @@ export const backfillFinalCheckingReceivedDataFromBranding = async (options = {}
       await VendorProductionFlow.updateOne(
         { _id: flow._id },
         { $set: { 'floorQuantities.finalChecking.receivedData': receiptRows } }
+      );
+    }
+    modified += 1;
+  }
+
+  return { examined, modified, dryRun };
+};
+
+/**
+ * Backfill missing `brandingType` on existing `finalChecking.receivedData` lines using upstream outbound ledgers.
+ * @param {{ dryRun?: boolean, referenceCode?: string, vendorPurchaseOrderId?: string }} [options]
+ * @returns {Promise<{ examined: number, modified: number, dryRun: boolean }>}
+ */
+export const backfillFinalCheckingReceivedDataBrandingTypes = async (options = {}) => {
+  const { dryRun = false, referenceCode, vendorPurchaseOrderId } = options;
+  const filter = {
+    'floorQuantities.finalChecking.receivedData.0': { $exists: true },
+  };
+  if (referenceCode) {
+    filter.referenceCode = referenceCode;
+  }
+  if (vendorPurchaseOrderId) {
+    filter.vendorPurchaseOrder = vendorPurchaseOrderId;
+  }
+
+  const cursor = VendorProductionFlow.find(filter).cursor();
+  let examined = 0;
+  let modified = 0;
+
+  for await (const flow of cursor) {
+    examined += 1;
+    const fc = flow.floorQuantities?.finalChecking || {};
+    const receivedData = Array.isArray(fc.receivedData) ? fc.receivedData : [];
+    const needsBackfill = receivedData.some((r) => !normalizeVendorBrandingType(r?.brandingType));
+    if (!needsBackfill) continue;
+
+    const { htOutbound, rbOutbound } = buildFinalCheckingOutboundMaps(flow);
+    const enriched = inferFinalCheckingReceivedDataBrandingTypes(receivedData, htOutbound, rbOutbound);
+    const changed = enriched.some((row, i) => {
+      const prior = receivedData[i];
+      return normalizeVendorBrandingType(row?.brandingType) !== normalizeVendorBrandingType(prior?.brandingType);
+    });
+    if (!changed) continue;
+
+    if (!dryRun) {
+      await VendorProductionFlow.updateOne(
+        { _id: flow._id },
+        { $set: { 'floorQuantities.finalChecking.receivedData': enriched } }
+      );
+    }
+    modified += 1;
+  }
+
+  return { examined, modified, dryRun };
+};
+
+/**
+ * Backfill missing `brandingType` on existing `branding.transferredData` lines (legacy HT rows).
+ * @param {{ dryRun?: boolean, referenceCode?: string, vendorPurchaseOrderId?: string }} [options]
+ * @returns {Promise<{ examined: number, modified: number, dryRun: boolean }>}
+ */
+export const backfillBrandingTransferredDataBrandingTypes = async (options = {}) => {
+  const { dryRun = false, referenceCode, vendorPurchaseOrderId } = options;
+  const filter = {
+    'floorQuantities.branding.transferredData.0': { $exists: true },
+  };
+  if (referenceCode) {
+    filter.referenceCode = referenceCode;
+  }
+  if (vendorPurchaseOrderId) {
+    filter.vendorPurchaseOrder = vendorPurchaseOrderId;
+  }
+
+  const cursor = VendorProductionFlow.find(filter).cursor();
+  let examined = 0;
+  let modified = 0;
+
+  for await (const flow of cursor) {
+    examined += 1;
+    const branding = flow.floorQuantities?.branding || {};
+    const transferredData = Array.isArray(branding.transferredData) ? branding.transferredData : [];
+    const needsBackfill = transferredData.some((r) => !normalizeVendorBrandingType(r?.brandingType));
+    if (!needsBackfill) continue;
+
+    const enriched = enrichBrandingTransferredDataRows(transferredData, flow.brandingType);
+    const changed = enriched.some((row, i) => {
+      const prior = transferredData[i];
+      return normalizeVendorBrandingType(row?.brandingType) !== normalizeVendorBrandingType(prior?.brandingType);
+    });
+    if (!changed) continue;
+
+    if (!dryRun) {
+      await VendorProductionFlow.updateOne(
+        { _id: flow._id },
+        { $set: { 'floorQuantities.branding.transferredData': enriched } }
       );
     }
     modified += 1;

@@ -5,7 +5,7 @@ import ContainersMaster from '../../models/production/containersMaster.model.js'
 import { ContainerStatus } from '../../models/production/enums.js';
 import ApiError from '../../utils/ApiError.js';
 import { computeDerivedForFloor, pickFloorSnapshot } from './vendorProductionFlowFloorPatch.js';
-import { aggregateTransferredByStyleKey } from '../../utils/vendorStyleQuantity.util.js';
+import { aggregateTransferredByStyleKey, aggregateFinalCheckingReceivedForSourceCap, filterBrandingOutboundForDestination, normalizeVendorBrandingType } from '../../utils/vendorStyleQuantity.util.js';
 import { promoteVendorDispatchToInwardReceive } from '../whms/inwardReceiveFromVendorDispatch.helper.js';
 
 /** WHMS: container accept after dispatch→warehouse transfer stages this floor. */
@@ -40,19 +40,107 @@ const FLOOR_NAME_TO_KEY = {
 };
 
 /**
- * Floor that feeds Final Checking for this flow. With Embroidery the article passes through
- * Re-Boarding, so Final Checking's cap/style source is reBoarding; otherwise it is branding.
+ * Map container / payload lines into cap-check rows, preserving optional brandingType.
+ * @param {Array<{ transferred?: number, styleCode?: string, brand?: string, brandingType?: string }>|undefined} items
+ * @param {number|undefined} quantityFallback
+ * @returns {Array<{ transferred: number, styleCode: string, brand: string, brandingType?: string }>}
+ */
+function mapReceiveCapLines(items, quantityFallback) {
+  if (Array.isArray(items) && items.length > 0) {
+    return items.map((item) => {
+      const line = {
+        transferred: Number(item.transferred || 0),
+        styleCode: item.styleCode || '',
+        brand: item.brand || '',
+      };
+      const bt = normalizeVendorBrandingType(item?.brandingType);
+      if (bt) line.brandingType = bt;
+      return line;
+    });
+  }
+  if (typeof quantityFallback === 'number' && quantityFallback > 0) {
+    return [{ transferred: quantityFallback, styleCode: '', brand: '' }];
+  }
+  return [];
+}
+
+/**
+ * Sum incoming qty whose style keys appear in an outbound style-key map.
+ * @param {Map<string, number>} incomingMap
+ * @param {Map<string, number>} outboundMap
+ * @returns {number}
+ */
+function scoreIncomingAgainstOutbound(incomingMap, outboundMap) {
+  let score = 0;
+  for (const [k, qty] of incomingMap) {
+    if (qty <= 0) continue;
+    if (outboundMap.has(k)) score += qty;
+  }
+  return score;
+}
+
+/**
+ * Infer FC receive source from style keys vs outbound ledgers (HT branding vs RB embroidery).
+ * @param {Object} flow
+ * @param {Array<{ transferred?: number, styleCode?: string, brand?: string }>} incomingRows
+ * @returns {'reBoarding'|'branding'|null}
+ */
+function resolveFinalCheckingSourceFromStyleKeys(flow, incomingRows) {
+  const incomingMap = aggregateTransferredByStyleKey(incomingRows || []);
+  if (incomingMap.size === 0) return null;
+
+  const htBrandingOutbound = aggregateSourceOutboundForReceiveCap(flow, 'branding', 'finalChecking');
+  const rbOutbound = aggregateSourceOutboundForReceiveCap(flow, 'reBoarding', 'finalChecking');
+
+  const matchesBranding = scoreIncomingAgainstOutbound(incomingMap, htBrandingOutbound);
+  const matchesRB = scoreIncomingAgainstOutbound(incomingMap, rbOutbound);
+
+  if (matchesBranding > 0 && matchesRB === 0) return 'branding';
+  if (matchesRB > 0 && matchesBranding === 0) return 'reBoarding';
+  if (matchesBranding > 0 && matchesRB > 0) {
+    return matchesBranding >= matchesRB ? 'branding' : 'reBoarding';
+  }
+  return null;
+}
+
+/**
+ * Infer whether a Final Checking container accept came from branding (HT) or re-boarding (Embroidery).
+ * @param {Object} flow
+ * @param {Array<{ brandingType?: string }>} [incomingRows]
+ * @returns {'reBoarding'|'branding'}
+ */
+function resolveFinalCheckingSourceForReceive(flow, incomingRows) {
+  const rows = incomingRows || [];
+  if (rows.some((r) => normalizeVendorBrandingType(r?.brandingType) === 'Embroidery')) {
+    return 'reBoarding';
+  }
+  if (rows.some((r) => normalizeVendorBrandingType(r?.brandingType) === 'Heat Transfer')) {
+    return 'branding';
+  }
+
+  const fromStyle = resolveFinalCheckingSourceFromStyleKeys(flow, rows);
+  if (fromStyle) return fromStyle;
+
+  return getVendorFinalCheckingSourceFloorKey(flow);
+}
+
+/**
+ * Floor that feeds Final Checking when source cannot be inferred from line branding type or style keys.
+ * Uses outbound ledgers only — re-boarding **received** must not force RB as source for HT containers.
  * @param {Object} flow
  * @returns {'reBoarding'|'branding'}
  */
 function getVendorFinalCheckingSourceFloorKey(flow) {
-  const rb = flow?.floorQuantities?.reBoarding;
-  const hasReBoardingActivity =
-    rb &&
-    (Number(rb.transferred || 0) > 0 ||
-      Number(rb.received || 0) > 0 ||
-      (Array.isArray(rb.transferredData) && rb.transferredData.length > 0));
-  return hasReBoardingActivity ? 'reBoarding' : 'branding';
+  const htBrandingOutbound = aggregateSourceOutboundForReceiveCap(flow, 'branding', 'finalChecking');
+  const rbOutbound = aggregateSourceOutboundForReceiveCap(flow, 'reBoarding', 'finalChecking');
+
+  const hasHTBrandingOutbound = htBrandingOutbound.size > 0;
+  const hasRBOutbound =
+    rbOutbound.size > 0 || Number(flow?.floorQuantities?.reBoarding?.transferred || 0) > 0;
+
+  if (hasRBOutbound && !hasHTBrandingOutbound) return 'reBoarding';
+  if (hasHTBrandingOutbound && !hasRBOutbound) return 'branding';
+  return 'branding';
 }
 
 /**
@@ -86,6 +174,23 @@ function assertVendorBrandingReceiveWithinSecondaryCap(flow, quantity) {
 }
 
 /**
+ * Build style-key map for receive cap checks. Branding source rows are filtered by destination
+ * (Embroidery → reBoarding, Heat Transfer → finalChecking direct).
+ * @param {Object} flow
+ * @param {'branding'|'reBoarding'} sourceFloorKey
+ * @param {'reBoarding'|'finalChecking'} destFloorKey
+ * @returns {Map<string, number>}
+ */
+function aggregateSourceOutboundForReceiveCap(flow, sourceFloorKey, destFloorKey) {
+  const source = flow.floorQuantities?.[sourceFloorKey] || {};
+  let rows = source.transferredData;
+  if (sourceFloorKey === 'branding') {
+    rows = filterBrandingOutboundForDestination(rows, destFloorKey, flow?.brandingType);
+  }
+  return aggregateTransferredByStyleKey(rows);
+}
+
+/**
  * Cumulative receive per style on `destFloorKey` cannot exceed what `sourceFloorKey` sent
  * (sum of source.transferredData per key). Supports incremental containers: first scan +10,
  * second +20 for same style → cap 30 from the source floor.
@@ -95,16 +200,64 @@ function assertVendorBrandingReceiveWithinSecondaryCap(flow, quantity) {
  * @param {'reBoarding'|'finalChecking'} destFloorKey
  * @param {Array<{ transferred: number, styleCode?: string, brand?: string }>} incomingRows
  */
-function assertVendorReceiveWithinSourceCap(flow, sourceFloorKey, destFloorKey, incomingRows) {
+function getSourceOutboundTotalForCap(flow, sourceFloorKey, destFloorKey) {
+  const sourceByStyle = aggregateSourceOutboundForReceiveCap(flow, sourceFloorKey, destFloorKey);
+  if (sourceByStyle.size > 0) {
+    return [...sourceByStyle.values()].reduce((a, b) => a + b, 0);
+  }
   const source = flow.floorQuantities?.[sourceFloorKey] || {};
-  const sourceTotal = Number(source.transferred || 0);
-  const sourceByStyle = aggregateTransferredByStyleKey(source.transferredData);
+  return Number(source.transferred || 0);
+}
+
+/**
+ * Infer brandingType stamped onto finalChecking receive lines when the container omits it.
+ * @param {'branding'|'reBoarding'} sourceFloorKey
+ * @returns {'Heat Transfer'|'Embroidery'}
+ */
+function inferFinalCheckingReceiveBrandingType(sourceFloorKey) {
+  return sourceFloorKey === 'reBoarding' ? 'Embroidery' : 'Heat Transfer';
+}
+
+/**
+ * Normalize incoming cap lines for finalChecking — ensure brandingType matches resolved source floor.
+ * @param {Array<{ transferred?: number, styleCode?: string, brand?: string, brandingType?: string }>} incomingRows
+ * @param {'branding'|'reBoarding'} sourceFloorKey
+ * @returns {Array<{ transferred: number, styleCode: string, brand: string, brandingType?: string }>}
+ */
+function normalizeFinalCheckingCapLines(incomingRows, sourceFloorKey) {
+  const inferred = inferFinalCheckingReceiveBrandingType(sourceFloorKey);
+  return (incomingRows || []).map((row) => {
+    const line = {
+      transferred: Number(row?.transferred || 0),
+      styleCode: row?.styleCode || '',
+      brand: row?.brand || '',
+    };
+    const bt = normalizeVendorBrandingType(row?.brandingType) || inferred;
+    line.brandingType = bt;
+    return line;
+  });
+}
+
+function assertVendorReceiveWithinSourceCap(flow, sourceFloorKey, destFloorKey, incomingRows) {
+  const sourceByStyle = aggregateSourceOutboundForReceiveCap(flow, sourceFloorKey, destFloorKey);
+  const sourceTotal = getSourceOutboundTotalForCap(flow, sourceFloorKey, destFloorKey);
   const sourceLabel = sourceFloorKey === 'reBoarding' ? 're-boarding' : 'branding';
   const destLabel = destFloorKey === 'reBoarding' ? 're-boarding' : 'final checking';
 
   const dest = flow.floorQuantities?.[destFloorKey] || {};
-  const destExisting = aggregateTransferredByStyleKey(dest.receivedData);
-  const incomingMap = aggregateTransferredByStyleKey(incomingRows);
+  const normalizedIncoming =
+    destFloorKey === 'finalChecking'
+      ? normalizeFinalCheckingCapLines(incomingRows, sourceFloorKey)
+      : incomingRows;
+  const destExisting =
+    destFloorKey === 'finalChecking'
+      ? aggregateFinalCheckingReceivedForSourceCap(
+          dest.receivedData,
+          sourceFloorKey,
+          aggregateSourceOutboundForReceiveCap(flow, 'branding', 'finalChecking')
+        )
+      : aggregateTransferredByStyleKey(dest.receivedData);
+  const incomingMap = aggregateTransferredByStyleKey(normalizedIncoming);
   const incomingTotal = [...incomingMap.values()].reduce((a, b) => a + b, 0);
   if (incomingTotal <= 0) return;
 
@@ -262,7 +415,7 @@ export const updateVendorProductionFlowFloorReceivedData = async (flowId, payloa
     receivedTransferItems = containerTransferItems;
   }
 
-  /** Re-Boarding receives the branding outbound style breakdown (Embroidery articles). */
+  /** Re-Boarding receives the branding outbound style breakdown (Embroidery articles only). */
   if (
     (!receivedTransferItems || receivedTransferItems.length === 0) &&
     typeof quantity === 'number' &&
@@ -270,7 +423,11 @@ export const updateVendorProductionFlowFloorReceivedData = async (flowId, payloa
     floorKey === 'reBoarding'
   ) {
     const branding = flow.floorQuantities?.branding;
-    const prevTransferredData = branding?.transferredData;
+    const prevTransferredData = filterBrandingOutboundForDestination(
+      branding?.transferredData,
+      'reBoarding',
+      flow?.brandingType
+    );
     if (Array.isArray(prevTransferredData) && prevTransferredData.length > 0) {
       const totalAvailable = prevTransferredData.reduce((s, i) => s + (i.transferred || 0), 0);
       if (totalAvailable >= quantity) {
@@ -297,9 +454,16 @@ export const updateVendorProductionFlowFloorReceivedData = async (flowId, payloa
     quantity > 0 &&
     floorKey === 'finalChecking'
   ) {
-    const sourceFloorKey = getVendorFinalCheckingSourceFloorKey(flow);
+    const sourceFloorKey = resolveFinalCheckingSourceForReceive(flow, receivedTransferItems);
     const sourceFloor = flow.floorQuantities?.[sourceFloorKey];
-    const prevTransferredData = sourceFloor?.transferredData;
+    let prevTransferredData = sourceFloor?.transferredData;
+    if (sourceFloorKey === 'branding') {
+      prevTransferredData = filterBrandingOutboundForDestination(
+        prevTransferredData,
+        'finalChecking',
+        flow?.brandingType
+      );
+    }
     if (Array.isArray(prevTransferredData) && prevTransferredData.length > 0) {
       const totalAvailable = prevTransferredData.reduce((s, i) => s + (i.transferred || 0), 0);
       if (totalAvailable >= quantity) {
@@ -349,16 +513,7 @@ export const updateVendorProductionFlowFloorReceivedData = async (flowId, payloa
   }
 
   if (floorKey === 'reBoarding') {
-    const capLines =
-      Array.isArray(receivedTransferItems) && receivedTransferItems.length > 0
-        ? receivedTransferItems.map((item) => ({
-            transferred: Number(item.transferred || 0),
-            styleCode: item.styleCode || '',
-            brand: item.brand || '',
-          }))
-        : typeof quantity === 'number' && quantity > 0
-          ? [{ transferred: quantity, styleCode: '', brand: '' }]
-          : [];
+    const capLines = mapReceiveCapLines(receivedTransferItems, quantity);
     const capSum = capLines.reduce((s, x) => s + Math.max(0, x.transferred), 0);
     if (capSum > 0) {
       assertVendorReceiveWithinSourceCap(flow, 'branding', 'reBoarding', capLines);
@@ -366,19 +521,15 @@ export const updateVendorProductionFlowFloorReceivedData = async (flowId, payloa
   }
 
   if (floorKey === 'finalChecking') {
-    const capLines =
-      Array.isArray(receivedTransferItems) && receivedTransferItems.length > 0
-        ? receivedTransferItems.map((item) => ({
-            transferred: Number(item.transferred || 0),
-            styleCode: item.styleCode || '',
-            brand: item.brand || '',
-          }))
-        : typeof quantity === 'number' && quantity > 0
-          ? [{ transferred: quantity, styleCode: '', brand: '' }]
-          : [];
+    const capLines = mapReceiveCapLines(receivedTransferItems, quantity);
     const capSum = capLines.reduce((s, x) => s + Math.max(0, x.transferred), 0);
     if (capSum > 0) {
-      assertVendorReceiveWithinSourceCap(flow, getVendorFinalCheckingSourceFloorKey(flow), 'finalChecking', capLines);
+      const fcSourceKey = resolveFinalCheckingSourceForReceive(flow, capLines);
+      assertVendorReceiveWithinSourceCap(flow, fcSourceKey, 'finalChecking', capLines);
+      receivedTransferItems = normalizeFinalCheckingCapLines(
+        receivedTransferItems || capLines,
+        fcSourceKey
+      );
     }
   }
 
@@ -403,14 +554,17 @@ export const updateVendorProductionFlowFloorReceivedData = async (flowId, payloa
     quantity = receivedTransferItems.reduce((sum, item) => sum + (item.transferred || 0), 0);
     const rd = payload.receivedData || {};
     receivedTransferItems.forEach((item) => {
-      floorData.receivedData.push({
+      const entry = {
         receivedStatusFromPreviousFloor: rd.receivedStatusFromPreviousFloor != null ? rd.receivedStatusFromPreviousFloor : '',
         receivedInContainerId: rd.receivedInContainerId || null,
         receivedTimestamp: rd.receivedTimestamp ? new Date(rd.receivedTimestamp) : new Date(),
         transferred: item.transferred,
         styleCode: item.styleCode || '',
         brand: item.brand || '',
-      });
+      };
+      const bt = normalizeVendorBrandingType(item?.brandingType);
+      if (bt) entry.brandingType = bt;
+      floorData.receivedData.push(entry);
     });
   } else {
     const rd = payload.receivedData || {};
@@ -526,11 +680,16 @@ export const stageVendorTransferOnExistingContainer = async ({
     quantity: qty,
   };
   if (Array.isArray(transferItems) && transferItems.length > 0) {
-    item.transferItems = transferItems.map((t) => ({
-      transferred: Math.max(0, Number(t.transferred || 0)),
-      styleCode: String(t.styleCode || ''),
-      brand: String(t.brand || ''),
-    }));
+    item.transferItems = transferItems.map((t) => {
+      const row = {
+        transferred: Math.max(0, Number(t.transferred || 0)),
+        styleCode: String(t.styleCode || ''),
+        brand: String(t.brand || ''),
+      };
+      const bt = normalizeVendorBrandingType(t?.brandingType);
+      if (bt) row.brandingType = bt;
+      return row;
+    });
   }
 
   if (!doc.activeItems) doc.activeItems = [];

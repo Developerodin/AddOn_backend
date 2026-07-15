@@ -27,6 +27,12 @@ export const receivedDataBrandingEntrySchema = new mongoose.Schema(
     transferred: { type: Number, default: 0 },
     styleCode: { type: String, default: '' },
     brand: { type: String, default: '' },
+    /** Heat Transfer (branding → FC direct) vs Embroidery (re-boarding → FC). */
+    brandingType: {
+      type: String,
+      enum: ['Heat Transfer', 'Embroidery'],
+      required: false,
+    },
   },
   { _id: false }
 );
@@ -47,6 +53,12 @@ export const transferredDataEntrySchema = new mongoose.Schema(
     transferred: { type: Number, required: true, min: 0 },
     styleCode: { type: String, default: '' },
     brand: { type: String, default: '' },
+    /** Per-line branding method (Branding floor). Drives routing: Embroidery → reBoarding, Heat Transfer → finalChecking. */
+    brandingType: {
+      type: String,
+      enum: ['Heat Transfer', 'Embroidery'],
+      required: false,
+    },
   },
   { _id: false }
 );

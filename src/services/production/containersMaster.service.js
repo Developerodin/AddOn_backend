@@ -531,11 +531,16 @@ export const acceptContainerByBarcode = async (barcode, body = {}) => {
         if (idMatches) {
           vendorOverrideMatched = true;
           if (Array.isArray(vendorReceive.transferItems) && vendorReceive.transferItems.length > 0) {
-            transferItems = vendorReceive.transferItems.map((t) => ({
-              transferred: Math.max(0, Number(t.transferred || 0)),
-              styleCode: String(t.styleCode || ''),
-              brand: String(t.brand || ''),
-            }));
+            transferItems = vendorReceive.transferItems.map((t) => {
+              const row = {
+                transferred: Math.max(0, Number(t.transferred || 0)),
+                styleCode: String(t.styleCode || ''),
+                brand: String(t.brand || ''),
+              };
+              const bt = String(t.brandingType ?? '').trim();
+              if (bt === 'Heat Transfer' || bt === 'Embroidery') row.brandingType = bt;
+              return row;
+            });
             quantity = transferItems.reduce((s, t) => s + t.transferred, 0);
           } else if (vendorReceive.quantity != null) {
             const q = Number(vendorReceive.quantity);
