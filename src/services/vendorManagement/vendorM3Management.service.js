@@ -9,6 +9,7 @@ const VENDOR_M3_FLOOR_KEYS = ['secondaryChecking', 'finalChecking'];
 
 /**
  * Per-floor M3 breakdown for a vendor production flow.
+ * `onHand` is SC + FC summed only for the outward ledger — floors are not merged in the UI.
  * @param {Object} flow
  * @returns {Object}
  */

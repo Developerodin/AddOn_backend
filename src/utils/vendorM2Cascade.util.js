@@ -67,7 +67,8 @@ export function recalcVendorQcFloorRemaining(fd, floorKey) {
   fd.m2Remaining = Math.max(0, m2 - (fd.m2Transferred || 0));
 
   if (floorKey === 'finalChecking') {
-    fd.remaining = Math.max(0, (fd.received || 0) - (fd.transferred || 0));
+    const m1Quantity = fd.m1Quantity || 0;
+    fd.remaining = Math.max(0, (fd.received || 0) - m1Quantity - m2 - m3 - m4);
   } else {
     fd.remaining = Math.max(0, (fd.received || 0) - m1T - m2 - m3 - m4);
   }

@@ -172,7 +172,7 @@ export function pickFloorSnapshot(flow, floorKey) {
  * - Branding / dispatch: received − transferred (not yet sent to next floor).
  * - Other non-checking floors: received − completed − transferred.
  * - secondaryChecking: received − m1 − m2 − m3 − vm4 (not yet classified; independent of transferred).
- * - finalChecking: received − transferred (pipeline handoff view).
+ * - finalChecking: received − m1 − m2 − m3 − m4 (not yet classified on QC floor).
  */
 /** Branding / dispatch: assert + transferable math use pipeline rules (transferred ≤ completed ≤ received). */
 const pipelineStandardFloorKeys = new Set(['branding', 'reBoarding', 'dispatch']);
@@ -181,9 +181,13 @@ export function computeRemainingForFloor(floorKey, floor) {
   const received = toFiniteNumber(floor.received, 0);
   const completed = toFiniteNumber(floor.completed, 0);
   const transferred = toFiniteNumber(floor.transferred, 0);
-  /** Same idea as branding: units not yet sent to the next floor (dispatch), not “completed + transferred” disjoint pools. */
+  /** Units not yet classified into M1/M2/M3/M4 on the QC floor. */
   if (floorKey === 'finalChecking') {
-    return Math.max(0, received - transferred);
+    const m1Quantity = toFiniteNumber(floor.m1Quantity, 0);
+    const m2Quantity = toFiniteNumber(floor.m2Quantity, 0);
+    const m3Quantity = toFiniteNumber(floor.m3Quantity, 0);
+    const m4Quantity = toFiniteNumber(floor.m4Quantity, 0);
+    return Math.max(0, received - m1Quantity - m2Quantity - m3Quantity - m4Quantity);
   }
   if (floorKey === 'secondaryChecking') {
     const m1Quantity = toFiniteNumber(floor.m1Quantity, 0);
