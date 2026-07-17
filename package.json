@@ -69,6 +69,8 @@
     "report:lt-boxes-with-st-cones": "cross-env NODE_ENV=development node src/scripts/report-lt-boxes-with-st-cones.js",
     "fix:lt-boxes-transferred-to-st": "cross-env NODE_ENV=development node src/scripts/fix-lt-boxes-transferred-to-st.js",
     "fix:lt-boxes-transferred-to-st:apply": "cross-env NODE_ENV=development node src/scripts/fix-lt-boxes-transferred-to-st.js --apply",
+    "fix:remove-mistaken-lt-box-cones": "cross-env NODE_ENV=development node src/scripts/remove-mistaken-lt-box-cones.js",
+    "fix:remove-mistaken-lt-box-cones:apply": "cross-env NODE_ENV=development node src/scripts/remove-mistaken-lt-box-cones.js --apply",
     "yarn:st-return-allocate": "cross-env NODE_ENV=development node src/scripts/process-short-term-yarn-return-allocate.js",
     "yarn:st-return-allocate:dry-run": "cross-env NODE_ENV=development node src/scripts/process-short-term-yarn-return-allocate.js --dry-run",
     "yarn:st-return-allocate:verify": "cross-env NODE_ENV=development node src/scripts/verify-short-term-yarn-return-allocate.js",
