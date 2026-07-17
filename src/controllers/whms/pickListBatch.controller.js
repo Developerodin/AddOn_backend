@@ -13,7 +13,7 @@ const createBatch = catchAsync(async (req, res) => {
 
 const getBatches = catchAsync(async (req, res) => {
   const filter = pickListBatchService.buildBatchFilter(
-    pick(req.query, ['status', 'type', 'orderId', 'q'])
+    pick(req.query, ['status', 'type', 'orderId', 'q', 'pickComplete'])
   );
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
   const result = await pickListBatchService.queryBatches(filter, options);
@@ -60,6 +60,15 @@ const getBatchBarcodes = catchAsync(async (req, res) => {
   res.send(payload);
 });
 
+const logBarcodePrint = catchAsync(async (req, res) => {
+  const result = await pickListBatchService.logBarcodePrint(
+    req.params.batchId,
+    req.body,
+    req.user
+  );
+  res.status(httpStatus.CREATED).send(result);
+});
+
 const sendBatchToScanning = catchAsync(async (req, res) => {
   const batch = await pickListBatchService.sendBatchToScanning(req.params.batchId, req.user);
   res.send(batch);
@@ -83,6 +92,7 @@ export {
   saveBatchPicks,
   setBatchPicker,
   getBatchBarcodes,
+  logBarcodePrint,
   sendBatchToScanning,
   cancelBatch,
   getBatchForOrder,

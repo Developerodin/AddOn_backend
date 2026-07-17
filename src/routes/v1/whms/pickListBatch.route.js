@@ -41,6 +41,11 @@ router
     auth('getOrders'),
     validate(pickListBatchValidation.getBatchBarcodes),
     pickListBatchController.getBatchBarcodes
+  )
+  .post(
+    auth('manageOrders'),
+    validate(pickListBatchValidation.logBarcodePrint),
+    pickListBatchController.logBarcodePrint
   );
 
 router

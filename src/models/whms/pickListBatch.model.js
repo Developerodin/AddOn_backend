@@ -26,6 +26,30 @@ const batchAllocationSchema = mongoose.Schema(
   { _id: false }
 );
 
+const barcodePrintLabelSchema = mongoose.Schema(
+  {
+    styleCode: { type: String, trim: true, default: '' },
+    skuCode: { type: String, trim: true, default: '' },
+    size: { type: String, trim: true, default: '' },
+    shade: { type: String, trim: true, default: '' },
+    quantity: { type: Number, required: true, min: 0 },
+  },
+  { _id: false }
+);
+
+const barcodePrintHistorySchema = mongoose.Schema(
+  {
+    styleCode: { type: String, trim: true, default: '' },
+    quantity: { type: Number, required: true, min: 1 },
+    mode: { type: String, enum: ['all', 'custom'], required: true },
+    labels: { type: [barcodePrintLabelSchema], default: [] },
+    printedBy: { type: mongoose.SchemaTypes.ObjectId, ref: 'User', default: null },
+    printedByName: { type: String, trim: true, default: '' },
+    printedAt: { type: Date, default: Date.now },
+  },
+  { _id: true }
+);
+
 const batchItemSchema = mongoose.Schema(
   {
     itemKey: { type: String, required: true, trim: true },
@@ -58,6 +82,7 @@ const pickListBatchSchema = mongoose.Schema(
     createdBy: { type: mongoose.SchemaTypes.ObjectId, ref: 'User', default: null },
     createdByName: { type: String, trim: true, default: '' },
     sentToScanningAt: { type: Date, default: null },
+    barcodePrintHistory: { type: [barcodePrintHistorySchema], default: [] },
   },
   { timestamps: true }
 );

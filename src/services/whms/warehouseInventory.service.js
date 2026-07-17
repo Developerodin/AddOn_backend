@@ -29,6 +29,97 @@ export const appendWarehouseInventoryLog = async (payload) => {
   return WarehouseInventoryLog.create(payload);
 };
 
+/**
+ * Apply a blocked-quantity delta for warehouse order reservations.
+ * Positive delta reserves stock; negative delta releases reservation.
+ *
+ * @param {object} args
+ * @param {import('mongoose').ClientSession} [args.session]
+ * @param {string} args.styleCode
+ * @param {number} args.deltaBlocked
+ * @param {string} [args.orderId]
+ * @param {string} [args.orderNumber]
+ * @param {string} [args.action]
+ * @param {string} [args.message]
+ */
+export const applyWarehouseInventoryBlockedDelta = async ({
+  session,
+  styleCode,
+  deltaBlocked,
+  orderId = null,
+  orderNumber = null,
+  action = 'order_block',
+  message = '',
+}) => {
+  if (!styleCode || !deltaBlocked || !Number.isFinite(deltaBlocked)) return;
+
+  if (deltaBlocked > 0) {
+    let invQuery = WarehouseInventory.findOne({ styleCode });
+    if (session) invQuery = invQuery.session(session);
+    const inv = await invQuery;
+    if (!inv) {
+      throw new ApiError(httpStatus.BAD_REQUEST, `No inventory row found for styleCode "${styleCode}"`);
+    }
+    const total = Number(inv.totalQuantity ?? 0);
+    const blocked = Number(inv.blockedQuantity ?? 0);
+    if (blocked + deltaBlocked > total) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Insufficient available stock for styleCode "${styleCode}" (total: ${total}, blocked: ${blocked}, requested block: ${deltaBlocked})`
+      );
+    }
+  }
+
+  const updated = await WarehouseInventory.findOneAndUpdate(
+    { styleCode },
+    [
+      {
+        $set: {
+          blockedQuantity: {
+            $min: [
+              '$totalQuantity',
+              {
+                $max: [0, { $add: [{ $ifNull: ['$blockedQuantity', 0] }, deltaBlocked] }],
+              },
+            ],
+          },
+        },
+      },
+      {
+        $set: {
+          availableQuantity: {
+            $max: [0, { $subtract: ['$totalQuantity', { $ifNull: ['$blockedQuantity', 0] }] }],
+          },
+        },
+      },
+    ],
+    { new: true, ...(session ? { session } : {}) }
+  );
+
+  if (!updated) {
+    if (deltaBlocked > 0) {
+      throw new ApiError(httpStatus.BAD_REQUEST, `No inventory row found for styleCode "${styleCode}"`);
+    }
+    return;
+  }
+
+  const totalAfter = Number(updated.totalQuantity ?? 0);
+  const blockedAfter = Number(updated.blockedQuantity ?? 0);
+  await appendWarehouseInventoryLog({
+    warehouseInventoryId: updated._id,
+    styleCodeId: updated.styleCodeId,
+    styleCode: updated.styleCode,
+    action,
+    message: message || `Warehouse order block change (${orderNumber || orderId || 'n/a'})`,
+    blockedDelta: deltaBlocked,
+    totalQuantityAfter: totalAfter,
+    blockedQuantityAfter: blockedAfter,
+    availableQuantityAfter: Math.max(0, totalAfter - blockedAfter),
+    userId: null,
+    meta: orderId ? { orderId: String(orderId), orderNumber } : undefined,
+  });
+};
+
 /** Log first-time stock row (create path). Merge path uses {@link applyWarehouseInventoryMerge}. */
 const appendLogForNewInventoryDocument = async (doc) => {
   const total = doc.totalQuantity ?? 0;

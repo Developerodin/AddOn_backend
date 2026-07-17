@@ -90,6 +90,9 @@ async function applyPickDeltaToInventory({ session, styleCode, deltaPickupQuanti
       {
         $set: {
           totalQuantity: { $add: ['$totalQuantity', -deltaPickupQuantity] },
+          blockedQuantity: {
+            $max: [0, { $add: [{ $ifNull: ['$blockedQuantity', 0] }, -deltaPickupQuantity] }],
+          },
         },
       },
       {
@@ -114,7 +117,7 @@ async function applyPickDeltaToInventory({ session, styleCode, deltaPickupQuanti
     action: 'picklist_pick',
     message: `PickList pickupQuantity change (${pickListId})`,
     quantityDelta: -deltaPickupQuantity,
-    blockedDelta: 0,
+    blockedDelta: -deltaPickupQuantity,
     totalQuantityAfter: totalAfter,
     blockedQuantityAfter: blockedAfter,
     availableQuantityAfter: Math.max(0, totalAfter - blockedAfter),
@@ -318,6 +321,31 @@ const mergePickListRowsByKey = (rows) => {
     }
   }
   return [...map.values()];
+};
+
+/**
+ * Sum order line quantities by individual styleCode (post merge) for inventory blocking.
+ * @param {import('../../models/whms/warehouseOrder.model.js').default|object} order
+ * @returns {Promise<Map<string, number>>}
+ */
+export const getOrderReservedQuantitiesByStyleCode = async (order) => {
+  const rows = mergePickListRowsByKey(await buildExpectedPickRowsFromOrder(order));
+  return aggregateQtyByStyleCodeFromPickRows(rows);
+};
+
+/**
+ * @param {object[]} rows
+ * @returns {Map<string, number>}
+ */
+const aggregateQtyByStyleCodeFromPickRows = (rows) => {
+  const map = new Map();
+  for (const row of rows || []) {
+    const code = String(row.styleCode || '').trim();
+    const qty = Number(row.quantity || 0);
+    if (!code || qty <= 0) continue;
+    map.set(code, (map.get(code) || 0) + qty);
+  }
+  return map;
 };
 
 const getPickupStatus = (pickupQuantity, quantity) => {

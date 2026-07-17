@@ -13,6 +13,12 @@ import {
   syncPickListOrderMetadata,
 } from './pickList.service.js';
 import {
+  blockInventoryForWarehouseOrder,
+  releaseInventoryBlockForWarehouseOrder,
+  syncInventoryBlockForWarehouseOrderLineItems,
+} from './warehouseOrderInventoryBlock.helper.js';
+import PickList from '../../models/whms/pickList.model.js';
+import {
   notifyWebsiteFromOrderAsync,
   isWebsiteSourcedOrder,
 } from '../integrations/websiteOrderOutbound.service.js';
@@ -256,6 +262,7 @@ export const createWarehouseOrder = async (body) => {
   });
 
   await createPickListForOrder(doc);
+  await blockInventoryForWarehouseOrder(doc);
 
   return WarehouseOrder.findById(doc._id).populate('clientId');
 };
@@ -303,20 +310,34 @@ export const updateWarehouseOrderById = async (id, updateBody) => {
     updateBody.flowStatus = flowStatusForCoarseStatus(updateBody.status);
   }
 
+  const prevStatus = doc.status;
+  const prevFlowStatus = doc.flowStatus;
+
   Object.assign(doc, updateBody);
   await doc.save();
 
-  if (
-    (updateBody.status === 'cancelled' || doc.flowStatus === 'cancelled') &&
-    isWebsiteSourcedOrder(doc)
-  ) {
-    await notifyWebsiteFromOrderAsync(doc, 'status_update');
-  }
+  const isCancelledNow =
+    doc.status === 'cancelled' || doc.flowStatus === 'cancelled';
+  const wasCancelledBefore =
+    prevStatus === 'cancelled' || prevFlowStatus === 'cancelled';
 
-  if (lineItemsTouched) {
+  if (isCancelledNow && !wasCancelledBefore) {
+    await releaseInventoryBlockForWarehouseOrder(doc._id);
+  } else if (lineItemsTouched && !isCancelledNow) {
+    const previousPickRows = await PickList.find({ orderId: doc._id }).lean();
+    await syncPickListForOrderLineItems(doc);
+    await syncInventoryBlockForWarehouseOrderLineItems(doc, previousPickRows);
+  } else if (lineItemsTouched) {
     await syncPickListForOrderLineItems(doc);
   } else {
     await syncPickListOrderMetadata(doc);
+  }
+
+  if (
+    isCancelledNow &&
+    isWebsiteSourcedOrder(doc)
+  ) {
+    await notifyWebsiteFromOrderAsync(doc, 'status_update');
   }
 
   return getWarehouseOrderById(id);
@@ -334,6 +355,7 @@ export const deleteWarehouseOrderById = async (id) => {
     );
   }
 
+  await releaseInventoryBlockForWarehouseOrder(doc._id);
   await WarehouseOrder.findByIdAndDelete(id);
   return doc;
 };
@@ -581,6 +603,7 @@ export const bulkImportWarehouseOrders = async (orders, batchSize = 50) => {
       });
 
       await createPickListForOrder(created);
+      await blockInventoryForWarehouseOrder(created);
       results.created += 1;
     } catch (error) {
       results.failed += 1;

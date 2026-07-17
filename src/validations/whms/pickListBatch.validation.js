@@ -17,6 +17,7 @@ export const getBatches = {
     status: Joi.string().valid(...batchStatuses),
     type: Joi.string().valid(...batchTypes),
     orderId: Joi.string().custom(objectId),
+    pickComplete: Joi.boolean(),
     q: Joi.string().trim(),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
@@ -80,6 +81,31 @@ export const getBatchBarcodes = {
     styleCode: Joi.string().trim(),
     extraQty: Joi.number().integer().min(0).default(0),
   }),
+};
+
+export const logBarcodePrint = {
+  params: Joi.object().keys({
+    batchId: Joi.string().custom(objectId).required(),
+  }),
+  body: Joi.object()
+    .keys({
+      styleCode: Joi.string().trim().allow(''),
+      mode: Joi.string().valid('all', 'custom').required(),
+      quantity: Joi.number().integer().min(1).required(),
+      labels: Joi.array()
+        .items(
+          Joi.object().keys({
+            styleCode: Joi.string().trim().allow(''),
+            skuCode: Joi.string().trim().allow(''),
+            size: Joi.string().trim().allow(''),
+            shade: Joi.string().trim().allow(''),
+            quantity: Joi.number().integer().min(0).required(),
+          })
+        )
+        .min(1)
+        .required(),
+    })
+    .required(),
 };
 
 export const sendBatchToScanning = {

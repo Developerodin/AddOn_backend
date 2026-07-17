@@ -141,8 +141,19 @@ function serializeBatch(batch) {
   const items = doc.items || [];
   const totalRequired = items.reduce((s, i) => s + Number(i.requiredQty || 0), 0);
   const totalPicked = items.reduce((s, i) => s + Number(i.pickedQty || 0), 0);
+  const barcodePrintHistory = (doc.barcodePrintHistory || []).map((entry) => ({
+    ...entry,
+    id: entry.id || (entry._id != null ? String(entry._id) : undefined),
+    _id: undefined,
+  }));
+  // toJSON plugin strips timestamps for most models; restore from the source doc when missing.
+  const createdAt = doc.createdAt ?? batch.createdAt;
+  const updatedAt = doc.updatedAt ?? batch.updatedAt;
   return {
     ...doc,
+    ...(createdAt != null ? { createdAt } : {}),
+    ...(updatedAt != null ? { updatedAt } : {}),
+    barcodePrintHistory,
     summary: {
       itemCount: items.length,
       orderCount: (doc.orderIds || []).length,
@@ -225,21 +236,85 @@ export const createBatch = async ({ orderIds, user }) => {
 };
 
 /**
+ * Mongo $expr: every batch item has pickedQty >= requiredQty (non-empty items array).
+ * @returns {object}
+ */
+function fullyPickedExpr() {
+  return {
+    $and: [
+      { $gt: [{ $size: { $ifNull: ['$items', []] } }, 0] },
+      {
+        $allElementsTrue: {
+          $map: {
+            input: { $ifNull: ['$items', []] },
+            as: 'item',
+            in: {
+              $gte: [
+                { $ifNull: ['$$item.pickedQty', 0] },
+                { $ifNull: ['$$item.requiredQty', 0] },
+              ],
+            },
+          },
+        },
+      },
+    ],
+  };
+}
+
+/**
  * Build Mongo filter for batch list queries.
  * @param {object} query
  * @returns {object}
  */
 export const buildBatchFilter = (query) => {
-  const filter = {};
-  if (query.status) filter.status = query.status;
-  if (query.type) filter.type = query.type;
-  if (query.orderId) filter.orderIds = query.orderId;
+  const and = [];
+
+  if (query.status) and.push({ status: query.status });
+  if (query.type) and.push({ type: query.type });
+  if (query.orderId) and.push({ orderIds: query.orderId });
   if (query.q && String(query.q).trim()) {
     const term = escapeRegex(String(query.q).trim());
     const regex = new RegExp(term, 'i');
-    filter.$or = [{ batchNumber: regex }, { orderNumbers: regex }];
+    and.push({ $or: [{ batchNumber: regex }, { orderNumbers: regex }] });
   }
-  return filter;
+
+  const pickComplete = query.pickComplete;
+  if (pickComplete === true || pickComplete === 'true') {
+    and.push({
+      $or: [
+        { status: PickListBatchStatus.SENT_TO_SCANNING },
+        { status: PickListBatchStatus.CANCELLED },
+        { $expr: fullyPickedExpr() },
+      ],
+    });
+  } else if (pickComplete === false || pickComplete === 'false') {
+    and.push({ status: PickListBatchStatus.PICKING });
+    and.push({
+      $expr: {
+        $gt: [
+          {
+            $size: {
+              $filter: {
+                input: { $ifNull: ['$items', []] },
+                as: 'item',
+                cond: {
+                  $lt: [
+                    { $ifNull: ['$$item.pickedQty', 0] },
+                    { $ifNull: ['$$item.requiredQty', 0] },
+                  ],
+                },
+              },
+            },
+          },
+          0,
+        ],
+      },
+    });
+  }
+
+  if (and.length === 0) return {};
+  if (and.length === 1) return and[0];
+  return { $and: and };
 };
 
 /**
@@ -281,6 +356,8 @@ export const getBatchById = async (batchId) => {
     ...item,
     availableStock: Number(stockByCode.get(item.styleCode)?.availableQuantity ?? 0),
   }));
+
+  serialized.barcodePrintSummary = summarizeBarcodePrintHistory(serialized.barcodePrintHistory || []);
 
   const orders = await WarehouseOrder.find({ _id: { $in: batch.orderIds } })
     .select('orderNumber addonOrderId clientName flowStatus activeBatchId')
@@ -426,6 +503,94 @@ export const buildBarcodePayload = async (batchId, { styleCode, extraQty = 0 } =
     labels,
   };
 };
+
+/**
+ * Record a barcode print event on a pick-list batch.
+ * @param {string} batchId
+ * @param {{ styleCode?: string, mode: string, quantity: number, labels: object[] }} payload
+ * @param {object|null} user
+ * @returns {Promise<object>}
+ */
+export const logBarcodePrint = async (batchId, payload, user) => {
+  const batch = await PickListBatch.findById(batchId);
+  if (!batch) throw new ApiError(httpStatus.NOT_FOUND, 'Pick-list batch not found');
+
+  const styleCode = String(payload.styleCode || '').trim();
+  const mode = payload.mode === 'custom' ? 'custom' : 'all';
+  const quantity = Math.max(1, Number(payload.quantity || 0));
+  const labels = (payload.labels || []).map((label) => ({
+    styleCode: label.styleCode || '',
+    skuCode: label.skuCode || '',
+    size: label.size || '',
+    shade: label.shade || '',
+    quantity: Math.max(0, Number(label.quantity || 0)),
+  }));
+
+  if (!labels.length) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'At least one label entry is required to log a print');
+  }
+
+  const entry = {
+    styleCode,
+    quantity,
+    mode,
+    labels,
+    printedBy: user?._id ?? user?.id ?? null,
+    printedByName: user?.name || user?.email || '',
+    printedAt: new Date(),
+  };
+
+  batch.barcodePrintHistory = batch.barcodePrintHistory || [];
+  batch.barcodePrintHistory.push(entry);
+  await batch.save();
+
+  const serialized = serializeBatch(batch);
+  const history = serialized.barcodePrintHistory || [];
+  const latest = history[history.length - 1];
+
+  return {
+    entry: latest,
+    printNumber: history.filter((h) => (h.styleCode || '') === styleCode).length,
+    totalPrintedForScope: history
+      .filter((h) => (h.styleCode || '') === styleCode)
+      .reduce((sum, h) => sum + Number(h.quantity || 0), 0),
+    barcodePrintHistory: history,
+    barcodePrintSummary: summarizeBarcodePrintHistory(history),
+  };
+};
+
+/**
+ * Summarize barcode print history per style code for a batch.
+ * @param {object[]} history
+ * @returns {object[]}
+ */
+export function summarizeBarcodePrintHistory(history) {
+  const byStyle = new Map();
+
+  for (const entry of history || []) {
+    const key = entry.styleCode || '__all__';
+    if (!byStyle.has(key)) {
+      byStyle.set(key, {
+        styleCode: entry.styleCode || '',
+        scopeLabel: entry.styleCode || 'All styles',
+        totalPrinted: 0,
+        printCount: 0,
+        events: [],
+      });
+    }
+    const row = byStyle.get(key);
+    row.totalPrinted += Number(entry.quantity || 0);
+    row.printCount += 1;
+    row.events.push(entry);
+  }
+
+  return [...byStyle.values()].map((row) => ({
+    ...row,
+    events: row.events.sort(
+      (a, b) => new Date(b.printedAt || 0).getTime() - new Date(a.printedAt || 0).getTime()
+    ),
+  }));
+}
 
 /**
  * Advance all orders in a batch through picking stages to sent-to-scanning.
