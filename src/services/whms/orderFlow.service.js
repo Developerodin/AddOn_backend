@@ -1,6 +1,6 @@
 import httpStatus from 'http-status';
 import ApiError from '../../utils/ApiError.js';
-import { roleRights } from '../../config/roles.js';
+import { userHasWhmsRight } from '../../utils/whmsNavigationAccess.util.js';
 import WarehouseOrder, {
   WarehouseOrderFlowStatus as F,
   coarseStatusForFlowStatus,
@@ -51,12 +51,6 @@ const TRANSITION_PERMISSIONS = Object.freeze({
   [F.DELIVERED]: 'whmsDispatch',
   [F.CANCELLED]: 'manageOrders',
 });
-
-const userHasRight = (user, right) => {
-  if (!user || !right) return false;
-  const rights = roleRights.get(user.role) || [];
-  return rights.includes(right);
-};
 
 /** Effective flow status — falls back to a mapping from the coarse status for pre-migration docs. */
 export const effectiveFlowStatus = (order) => order.flowStatus || flowStatusForCoarseStatus(order.status);
@@ -146,7 +140,7 @@ export const transitionOrder = async (orderId, toStatus, user, payload = {}, int
 
   if (!internal.system) {
     const requiredRight = TRANSITION_PERMISSIONS[toStatus];
-    if (requiredRight && !userHasRight(user, requiredRight)) {
+    if (requiredRight && !userHasWhmsRight(user, requiredRight)) {
       throw new ApiError(httpStatus.FORBIDDEN, `Your role is not allowed to move orders to "${toStatus}"`);
     }
   }
@@ -177,7 +171,7 @@ export const allowedNextStatuses = (order, user) => {
   if (!user) return nexts;
   return nexts.filter((to) => {
     const right = TRANSITION_PERMISSIONS[to];
-    return !right || userHasRight(user, right);
+    return !right || userHasWhmsRight(user, right);
   });
 };
 

@@ -3,6 +3,7 @@ import httpStatus from 'http-status';
 import ApiError from '../utils/ApiError.js';
 import { roleRights } from '../config/roles.js';
 import { hasHelpSupportApiAccess } from '../utils/helpSupportRole.util.js';
+import { hasWhmsApiAccess } from '../utils/whmsNavigationAccess.util.js';
 
 
 const verifyCallback = (req, resolve, reject, requiredRights) => async (err, user, info) => {
@@ -16,6 +17,9 @@ const verifyCallback = (req, resolve, reject, requiredRights) => async (err, use
     const hasRequiredRights = requiredRights.every((requiredRight) => userRights.includes(requiredRight));
     if (!hasRequiredRights && req.params.userId !== user.id) {
       if (hasHelpSupportApiAccess(user, requiredRights)) {
+        return resolve();
+      }
+      if (hasWhmsApiAccess(user, requiredRights)) {
         return resolve();
       }
       return reject(new ApiError(httpStatus.FORBIDDEN, 'Forbidden'));
