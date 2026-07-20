@@ -10,6 +10,7 @@ import ApiError from '../../utils/ApiError.js';
 import {
   buildSnapshotFromFlow,
   buildGrnHeaderFromFlow,
+  collectLotNumbers,
   computeSnapshotDiff,
 } from './vendorGrnSnapshot.builder.js';
 import { isScReadyForGrn } from './vendorGrnScComplete.util.js';
@@ -105,16 +106,161 @@ const loadFlowContext = async (flowId) => {
 };
 
 /**
- * Find active GRN containing a flow line.
- * @param {string} flowId
+ * Find active GRN for a VPO + invoice/lot number (grouping key).
+ * @param {string|import('mongoose').Types.ObjectId} vpoId
+ * @param {string} lotNumber
  */
-const findActiveGrnForFlow = async (flowId) =>
-  VendorGrn.findOne({
+const findActiveGrnForInvoice = async (vpoId, lotNumber) => {
+  const lot = String(lotNumber || '').trim();
+  if (!vpoId || !lot) return null;
+  return VendorGrn.findOne({
     status: 'active',
-    'lots.items.vendorProductionFlowId': flowId,
+    vendorPurchaseOrder: vpoId,
+    'lots.lotNumber': lot,
   })
     .sort({ createdAt: -1 })
     .lean();
+};
+
+/**
+ * Merge per-flow lot snapshots into one invoice-level GRN snapshot.
+ * @param {Array<{ lots: Array<Object>, totals: Object }>} snapshots
+ * @returns {{ lots: Array<Object>, totals: Object }}
+ */
+const mergeInvoiceSnapshots = (snapshots) => {
+  const lotMap = new Map();
+  const totals = { expected: 0, verified: 0, variance: 0, m1: 0, m2: 0, m3: 0, m4: 0 };
+
+  snapshots.forEach((snap) => {
+    (snap.lots || []).forEach((lot) => {
+      const key = String(lot.lotNumber || '').trim();
+      if (!key) return;
+      const existing = lotMap.get(key);
+      if (!existing) {
+        lotMap.set(key, {
+          lotNumber: key,
+          numberOfBoxes: Number(lot.numberOfBoxes) || 0,
+          totalUnits: Number(lot.totalUnits) || 0,
+          items: [...(lot.items || [])],
+        });
+        return;
+      }
+      existing.numberOfBoxes = Math.max(existing.numberOfBoxes, Number(lot.numberOfBoxes) || 0);
+      existing.totalUnits += Number(lot.totalUnits) || 0;
+      (lot.items || []).forEach((item) => {
+        const flowId = String(item.vendorProductionFlowId || '');
+        const idx = existing.items.findIndex(
+          (it) => String(it.vendorProductionFlowId || '') === flowId
+        );
+        if (idx >= 0) existing.items[idx] = item;
+        else existing.items.push(item);
+      });
+    });
+    totals.expected += Number(snap.totals?.expected) || 0;
+    totals.verified += Number(snap.totals?.verified) || 0;
+    totals.variance += Number(snap.totals?.variance) || 0;
+    totals.m1 += Number(snap.totals?.m1) || 0;
+    totals.m2 += Number(snap.totals?.m2) || 0;
+    totals.m3 += Number(snap.totals?.m3) || 0;
+    totals.m4 += Number(snap.totals?.m4) || 0;
+  });
+
+  return { lots: [...lotMap.values()], totals };
+};
+
+/**
+ * Build merged GRN snapshot for all classified flows sharing an invoice on a VPO.
+ * @param {string|import('mongoose').Types.ObjectId} vpoId
+ * @param {string} lotNumber
+ */
+const buildInvoiceGrnSnapshot = async (vpoId, lotNumber) => {
+  const lot = String(lotNumber || '').trim();
+  if (!vpoId || !lot) return null;
+
+  const vpo = await VendorPurchaseOrder.findById(vpoId).lean();
+  if (!vpo) return null;
+
+  const boxes = await VendorBox.find({
+    vendorPurchaseOrderId: vpoId,
+    lotNumber: lot,
+    secondaryCheckingAccepted: true,
+  }).lean();
+
+  const productIds = [...new Set(boxes.map((b) => String(b.productId)).filter(Boolean))];
+  const flowQuery = productIds.length
+    ? {
+        vendorPurchaseOrder: vpoId,
+        $or: [
+          { product: { $in: productIds } },
+          { 'floorQuantities.secondaryChecking.receivedData.lotNumber': lot },
+        ],
+      }
+    : {
+        vendorPurchaseOrder: vpoId,
+        'floorQuantities.secondaryChecking.receivedData.lotNumber': lot,
+      };
+
+  const flows = await VendorProductionFlow.find(flowQuery)
+    .populate({ path: 'product', select: 'name vendorCode' })
+    .lean();
+
+  const snapshots = [];
+  for (const flow of flows) {
+    const sc = flow.floorQuantities?.secondaryChecking || {};
+    const classified =
+      Number(sc.m1Quantity || 0) +
+      Number(sc.m2Quantity || 0) +
+      Number(sc.m3Quantity || 0) +
+      Number(sc.vm4Quantity ?? sc.m4Quantity ?? 0);
+    if (classified <= 0) continue;
+
+    const flowProductId = String(flow.product?._id || flow.product || '');
+    const flowBoxes = boxes.filter((b) => String(b.productId) === flowProductId);
+    const snap = buildSnapshotFromFlow({
+      flow,
+      vpo,
+      boxes: flowBoxes,
+      lotNumberFilter: lot,
+    });
+    if ((snap.lots || []).length > 0 && (snap.totals?.verified || 0) > 0) {
+      snapshots.push(snap);
+    }
+  }
+
+  if (snapshots.length === 0) return null;
+  return mergeInvoiceSnapshots(snapshots);
+};
+
+/**
+ * Whether every flow with scan-accepted boxes on this invoice is SC-complete.
+ * @param {string|import('mongoose').Types.ObjectId} vpoId
+ * @param {string} lotNumber
+ */
+const evaluateInvoiceGrnCompleteness = async (vpoId, lotNumber) => {
+  const lot = String(lotNumber || '').trim();
+  if (!vpoId || !lot) return { incomplete: true };
+
+  const boxes = await VendorBox.find({
+    vendorPurchaseOrderId: vpoId,
+    lotNumber: lot,
+    secondaryCheckingAccepted: true,
+  })
+    .select('productId')
+    .lean();
+
+  const productIds = [...new Set(boxes.map((b) => b.productId).filter(Boolean))];
+  if (productIds.length === 0) return { incomplete: true };
+
+  const flows = await VendorProductionFlow.find({
+    vendorPurchaseOrder: vpoId,
+    product: { $in: productIds },
+  })
+    .select('floorQuantities.secondaryChecking')
+    .lean();
+
+  const incomplete = flows.some((flow) => !isScReadyForGrn(flow.floorQuantities?.secondaryChecking));
+  return { incomplete };
+};
 
 /**
  * Insert GRN with E11000 retry on grnNumber collision.
@@ -134,7 +280,43 @@ const insertWithRetry = async (payload) => {
 };
 
 /**
- * Issue a new GRN from a production flow snapshot.
+ * Persist a new active GRN from a pre-built snapshot.
+ * @param {Object} params
+ */
+const createGrnFromSnapshot = async ({
+  snapshot,
+  flow,
+  vpo,
+  reqUser,
+  opts = {},
+  incomplete = false,
+}) => {
+  const grnNumber = await generateVendorGrnNumber();
+  const variance = snapshot.totals?.variance || 0;
+  const payload = {
+    grnNumber,
+    baseGrnNumber: grnNumber,
+    grnDate: new Date(),
+    status: 'active',
+    revisionOf: null,
+    revisionNo: 0,
+    ...buildGrnHeaderFromFlow(flow, vpo),
+    lots: snapshot.lots,
+    totals: snapshot.totals,
+    secondaryCheckingCompletedAt: incomplete ? null : new Date(),
+    incompleteClassification: incomplete,
+    discrepancyDetails: variance !== 0 ? (opts.discrepancyDetails || '') : '',
+    notes: opts.notes || '',
+    createdBy: buildCreatedBy(reqUser),
+  };
+
+  const grn = await insertWithRetry(payload);
+  await linkGrnToVpo(vpo._id, grn._id);
+  return leanToClient(grn.toObject());
+};
+
+/**
+ * Issue or update GRN(s) for the invoice number(s) on a production flow.
  * @param {string} flowId
  * @param {Object} reqUser
  * @param {Object} [opts]
@@ -159,38 +341,50 @@ export const issueGrnFromFlow = async (flowId, reqUser, opts = {}) => {
     throw new ApiError(httpStatus.BAD_REQUEST, msg);
   }
 
-  const existing = await findActiveGrnForFlow(flowId);
-  const snapshot = buildSnapshotFromFlow({ flow, vpo, boxes });
-  const header = buildGrnHeaderFromFlow(flow, vpo);
-
-  if (existing) {
-    const sameTotals = JSON.stringify(existing.totals) === JSON.stringify(snapshot.totals);
-    if (sameTotals) return leanToClient(existing);
-    return reviseGrn(existing, flow, vpo, boxes, reqUser, opts.revisionReason || 'Secondary checking quantities updated');
+  const invoiceLots = collectLotNumbers(flow, boxes);
+  if (invoiceLots.length === 0) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Cannot issue GRN — invoice number is missing on this flow');
   }
 
-  const grnNumber = await generateVendorGrnNumber();
-  const variance = snapshot.totals?.variance || 0;
-  const payload = {
-    grnNumber,
-    baseGrnNumber: grnNumber,
-    grnDate: new Date(),
-    status: 'active',
-    revisionOf: null,
-    revisionNo: 0,
-    ...header,
-    lots: snapshot.lots,
-    totals: snapshot.totals,
-    secondaryCheckingCompletedAt: incomplete ? null : new Date(),
-    incompleteClassification: incomplete,
-    discrepancyDetails: variance !== 0 ? (opts.discrepancyDetails || '') : '',
-    notes: opts.notes || '',
-    createdBy: buildCreatedBy(reqUser),
-  };
+  let resultGrn = null;
+  for (const lotNumber of invoiceLots) {
+    const snapshot = await buildInvoiceGrnSnapshot(vpo._id, lotNumber);
+    if (!snapshot || (snapshot.totals?.verified || 0) <= 0) continue;
 
-  const grn = await insertWithRetry(payload);
-  await linkGrnToVpo(vpo._id, grn._id);
-  return leanToClient(grn.toObject());
+    const { incomplete: invoiceIncomplete } = await evaluateInvoiceGrnCompleteness(vpo._id, lotNumber);
+    const existing = await findActiveGrnForInvoice(vpo._id, lotNumber);
+    if (existing) {
+      const sameTotals = JSON.stringify(existing.totals) === JSON.stringify(snapshot.totals);
+      if (sameTotals) {
+        resultGrn = leanToClient(existing);
+        continue;
+      }
+      resultGrn = await reviseGrn(
+        existing,
+        flow,
+        vpo,
+        snapshot,
+        reqUser,
+        opts.revisionReason || 'Secondary checking quantities updated',
+        invoiceIncomplete
+      );
+      continue;
+    }
+
+    resultGrn = await createGrnFromSnapshot({
+      snapshot,
+      flow,
+      vpo,
+      reqUser,
+      opts,
+      incomplete: invoiceIncomplete,
+    });
+  }
+
+  if (!resultGrn) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Cannot issue GRN — no verified quantity for invoice on this VPO');
+  }
+  return resultGrn;
 };
 
 /**
@@ -198,18 +392,25 @@ export const issueGrnFromFlow = async (flowId, reqUser, opts = {}) => {
  * @param {Object} parentGrn
  * @param {Object} flow
  * @param {Object} vpo
- * @param {Array<Object>} boxes
+ * @param {Object} snapshot - merged invoice snapshot
  * @param {Object} reqUser
  * @param {string} reason
  */
-export const reviseGrn = async (parentGrn, flow, vpo, boxes, reqUser, reason) => {
-  const snapshot = buildSnapshotFromFlow({ flow, vpo, boxes });
+export const reviseGrn = async (
+  parentGrn,
+  flow,
+  vpo,
+  snapshot,
+  reqUser,
+  reason,
+  incomplete = null
+) => {
   const diff = computeSnapshotDiff(parentGrn, snapshot);
   const baseNumber = parentGrn.baseGrnNumber || parentGrn.grnNumber.replace(/-R\d+$/, '');
   const nextRevisionNo = (parentGrn.revisionNo || 0) + 1;
   const revisionNumber = `${baseNumber}-R${nextRevisionNo}`;
-  const sc = flow.floorQuantities?.secondaryChecking || {};
-  const incomplete = !isScReadyForGrn(sc);
+  const invoiceIncomplete =
+    incomplete == null ? !isScReadyForGrn(flow.floorQuantities?.secondaryChecking) : incomplete;
 
   const payload = {
     grnNumber: revisionNumber,
@@ -223,8 +424,8 @@ export const reviseGrn = async (parentGrn, flow, vpo, boxes, reqUser, reason) =>
     ...buildGrnHeaderFromFlow(flow, vpo),
     lots: snapshot.lots,
     totals: snapshot.totals,
-    secondaryCheckingCompletedAt: incomplete ? null : new Date(),
-    incompleteClassification: incomplete,
+    secondaryCheckingCompletedAt: invoiceIncomplete ? null : new Date(),
+    incompleteClassification: invoiceIncomplete,
     discrepancyDetails: parentGrn.discrepancyDetails || '',
     notes: parentGrn.notes || '',
     createdBy: buildCreatedBy(reqUser),
@@ -328,10 +529,18 @@ export const getGrnsByLot = async (lotNumber, opts = {}) => {
 };
 
 /**
- * Active GRN for a flow (if any).
+ * Active GRN for a flow (if any) — resolved via invoice/lot grouping key.
  * @param {string} flowId
  */
-export const getActiveGrnForFlow = async (flowId) => leanToClient(await findActiveGrnForFlow(flowId));
+export const getActiveGrnForFlow = async (flowId) => {
+  const { flow, vpo, boxes } = await loadFlowContext(flowId);
+  const invoiceLots = collectLotNumbers(flow, boxes);
+  for (const lotNumber of invoiceLots) {
+    const grn = await findActiveGrnForInvoice(vpo._id, lotNumber);
+    if (grn) return leanToClient(grn);
+  }
+  return null;
+};
 
 /**
  * @param {string} grnId

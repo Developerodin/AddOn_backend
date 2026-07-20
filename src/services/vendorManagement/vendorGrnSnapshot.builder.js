@@ -37,7 +37,7 @@ const resolvePoItemId = (vpo, product) => {
  * @param {Array<Object>} boxes
  * @returns {string[]}
  */
-const collectLotNumbers = (flow, boxes = []) => {
+export const collectLotNumbers = (flow, boxes = []) => {
   const sc = flow?.floorQuantities?.secondaryChecking || {};
   const fromData = (sc.receivedData || [])
     .map((r) => trimSafe(r.lotNumber))
@@ -86,9 +86,10 @@ const prorateVerified = (verifiedQty, lotScan, totalScan) => {
  * @param {Object} params.flow - populated VendorProductionFlow
  * @param {Object} params.vpo - populated VendorPurchaseOrder
  * @param {Array<Object>} [params.boxes] - accepted VendorBox docs for this flow
+ * @param {string|null} [params.lotNumberFilter] - restrict snapshot to one invoice/lot
  * @returns {{ lots: Array<Object>, totals: Object }}
  */
-export const buildSnapshotFromFlow = ({ flow, vpo, boxes = [] }) => {
+export const buildSnapshotFromFlow = ({ flow, vpo, boxes = [], lotNumberFilter = null }) => {
   const sc = flow?.floorQuantities?.secondaryChecking || {};
   const m1 = toNumber(sc.m1Quantity);
   const m2 = toNumber(sc.m2Quantity);
@@ -98,7 +99,12 @@ export const buildSnapshotFromFlow = ({ flow, vpo, boxes = [] }) => {
   const scanAcceptedQty = toNumber(sc.received);
   const product = flow?.product && typeof flow.product === 'object' ? flow.product : {};
   const poItemId = resolvePoItemId(vpo, product);
-  const lotNumbers = collectLotNumbers(flow, boxes);
+  let lotNumbers = collectLotNumbers(flow, boxes);
+  const filterLot = trimSafe(lotNumberFilter);
+  if (filterLot) {
+    lotNumbers = lotNumbers.filter((lot) => lot === filterLot);
+    if (lotNumbers.length === 0) lotNumbers = [filterLot];
+  }
 
   const scanByLot = new Map();
   lotNumbers.forEach((lot) => scanByLot.set(lot, 0));

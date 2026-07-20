@@ -55,6 +55,7 @@ const toJSON = (schema) => {
         'WarehouseOrder',
         'PickListBatch',
         'HelpSupportTicket',
+        'VendorBox',
       ];
       // Get model name from document constructor or schema
       const modelName = doc?.constructor?.modelName || schema.modelName;
