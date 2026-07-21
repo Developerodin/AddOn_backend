@@ -12,6 +12,7 @@ export const getYarnRequisitionList = {
       page: Joi.number().integer().min(1).optional(),
       limit: Joi.number().integer().min(1).max(200).optional(),
       skipRecalculation: Joi.string().valid('true', 'false').optional(),
+      includeLiveStock: Joi.string().valid('true', 'false').optional(),
       yarnName: Joi.string().trim().max(200).allow('').optional(),
       lastUpdatedFrom: Joi.date().iso().optional(),
       lastUpdatedTo: Joi.date().iso().optional(),

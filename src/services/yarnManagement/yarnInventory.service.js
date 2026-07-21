@@ -326,9 +326,35 @@ export const computeInventoryFromStorage = async (yarnId) => {
 };
 
 /**
+ * Builds Mongo match for yarnName from single substring or exact name list.
+ * @param {Object} filters
+ * @param {string} [filters.yarn_name] - case-insensitive substring
+ * @param {string[]} [filters.yarn_names] - exact names (case-insensitive)
+ * @returns {Record<string, unknown>}
+ */
+const buildYarnNameMatch = (filters = {}) => {
+  const names = Array.isArray(filters.yarn_names)
+    ? filters.yarn_names.map((n) => String(n).trim()).filter(Boolean)
+    : [];
+  if (names.length > 0) {
+    return {
+      yarnName: {
+        $in: names.map(
+          (n) => new RegExp(`^${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
+        ),
+      },
+    };
+  }
+  if (filters.yarn_name) {
+    return { yarnName: { $regex: filters.yarn_name, $options: 'i' } };
+  }
+  return {};
+};
+
+/**
  * Aggregate inventory from storage using MongoDB aggregation pipelines.
  * Runs grouping server-side instead of fetching all docs into JS.
- * @param {Object} filters - Optional yarn_name filter
+ * @param {Object} filters - Optional yarn_name or yarn_names filter
  * @returns {Promise<Map<string, Object>>} - Map of yarnName -> { lt, st, unallocated, blocked, yarnId?, inventoryStatus }
  * 
  * Storage Logic:
@@ -341,13 +367,11 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
   const toNum = (v) => Math.max(0, Number(v ?? 0));
   const { ltBarcodes, stBarcodes } = await getSlotBarcodes();
 
-  const yarnNameMatch = filters.yarn_name
-    ? { yarnName: { $regex: filters.yarn_name, $options: 'i' } }
-    : {};
+  const yarnNameMatch = buildYarnNameMatch(filters);
 
   // Pre-aggregate cone weights per boxId (used to detect fully-transferred LT boxes)
   const coneWeightByBoxPipeline = [
-    { $match: { coneStorageId: { $exists: true, $nin: [null, ''] }, ...activeYarnConeMatch } },
+    { $match: { coneStorageId: { $exists: true, $nin: [null, ''] }, ...yarnNameMatch, ...activeYarnConeMatch } },
     { $group: { _id: '$boxId', totalConeWeight: { $sum: { $ifNull: ['$coneWeight', 0] } } } },
   ];
 
@@ -524,6 +548,96 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
   }
 
   return inventoryMap;
+};
+
+const roundKg3 = (n) => Math.round(Number(n || 0) * 1000) / 1000;
+
+/** Empty live-stock breakdown for a catalog id with no physical stock. */
+const EMPTY_LIVE_STOCK = Object.freeze({
+  longTermKg: 0,
+  shortTermKg: 0,
+  unallocatedKg: 0,
+  blockedKg: 0,
+  availableKg: 0,
+  totalStockKg: 0,
+});
+
+/**
+ * Live inventory breakdown for a batch of yarn catalog ids (single aggregation pass).
+ * Available = LT + ST − blocked (unallocated is separate, not counted in available).
+ *
+ * @param {Array<string|import('mongoose').Types.ObjectId>} yarnCatalogIds
+ * @returns {Promise<Map<string, { longTermKg: number, shortTermKg: number, unallocatedKg: number, blockedKg: number, availableKg: number, totalStockKg: number }>>}
+ */
+export const getInventoryBreakdownForCatalogIds = async (yarnCatalogIds) => {
+  const uniqueIds = [
+    ...new Set(
+      (yarnCatalogIds || [])
+        .map((id) => (id != null ? String(id) : ''))
+        .filter((id) => id && mongoose.Types.ObjectId.isValid(id))
+    ),
+  ];
+  if (uniqueIds.length === 0) {
+    return new Map();
+  }
+
+  const objectIds = uniqueIds.map((id) => new mongoose.Types.ObjectId(id));
+  const catalogs = await YarnCatalog.find({ _id: { $in: objectIds } }).select('_id yarnName').lean();
+  const yarnNames = catalogs.map((c) => (c.yarnName || '').trim()).filter(Boolean);
+
+  const inventoryMap =
+    yarnNames.length > 0
+      ? await aggregateInventoryFromStorage({ yarn_names: yarnNames })
+      : new Map();
+
+  /** Case-insensitive lookup — aggregation keys are trimmed box/cone yarn names. */
+  const findInvForCatalogName = (name) => {
+    const trimmed = (name || '').trim();
+    if (!trimmed) return undefined;
+    if (inventoryMap.has(trimmed)) return inventoryMap.get(trimmed);
+    const lower = trimmed.toLowerCase();
+    for (const [key, val] of inventoryMap) {
+      if (key.toLowerCase() === lower) return val;
+    }
+    return undefined;
+  };
+
+  /** @type {Map<string, typeof EMPTY_LIVE_STOCK>} */
+  const result = new Map();
+
+  for (const cat of catalogs) {
+    const catKey = String(cat._id);
+    const inv = findInvForCatalogName(cat.yarnName);
+
+    if (!inv) {
+      result.set(catKey, { ...EMPTY_LIVE_STOCK });
+      continue;
+    }
+
+    const lt = roundKg3(inv.longTermInventory?.totalNetWeight ?? 0);
+    const st = roundKg3(inv.shortTermInventory?.totalNetWeight ?? 0);
+    const un = roundKg3(inv.unallocatedInventory?.totalNetWeight ?? 0);
+    const blocked = roundKg3(inv.blockedNetWeight ?? 0);
+    const totalStock = roundKg3(lt + st);
+    const available = roundKg3(Math.max(0, lt + st - blocked));
+
+    result.set(catKey, {
+      longTermKg: lt,
+      shortTermKg: st,
+      unallocatedKg: un,
+      blockedKg: blocked,
+      availableKg: available,
+      totalStockKg: totalStock,
+    });
+  }
+
+  for (const id of uniqueIds) {
+    if (!result.has(id)) {
+      result.set(id, { ...EMPTY_LIVE_STOCK });
+    }
+  }
+
+  return result;
 };
 
 /**

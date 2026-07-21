@@ -181,6 +181,35 @@ const attachDraftPoQuantities = async (requisitionRows) => {
 };
 
 /**
+ * Merges live warehouse stock breakdown onto paginated requisition rows.
+ * @param {Array<Record<string, unknown>>} requisitionRows
+ * @returns {Promise<Array<Record<string, unknown>>>}
+ */
+const attachLiveStockBreakdown = async (requisitionRows) => {
+  const catalogIds = [];
+  for (const row of requisitionRows) {
+    const raw = row.yarnCatalogId?._id ?? row.yarnCatalogId;
+    if (raw) catalogIds.push(raw);
+  }
+  const breakdownMap = await yarnInventoryService.getInventoryBreakdownForCatalogIds(catalogIds);
+
+  return requisitionRows.map((row) => {
+    const raw = row.yarnCatalogId?._id ?? row.yarnCatalogId;
+    const key = raw != null ? String(raw) : '';
+    if (!key) return row;
+    const liveStock = breakdownMap.get(key) ?? {
+      longTermKg: 0,
+      shortTermKg: 0,
+      unallocatedKg: 0,
+      blockedKg: 0,
+      availableKg: 0,
+      totalStockKg: 0,
+    };
+    return { ...row, liveStock };
+  });
+};
+
+/**
  * @param {Object} params
  * @param {string} params.startDate
  * @param {string} params.endDate
@@ -195,6 +224,7 @@ const attachDraftPoQuantities = async (requisitionRows) => {
  * @param {string} [params.sortBy] - one of yarnName, created, lastUpdated, minQty, availableQty, blockedQty
  * @param {string} [params.sortOrder] - asc | desc (default desc except yarnName asc tie-break friendly)
  * @param {boolean} [params.skipRecalculation] - skip expensive per-row recalculation (for summary/count calls)
+ * @param {boolean} [params.includeLiveStock] - attach live LT/ST/unallocated/available from warehouse
  * @param {string} [params.workflowStage] - in_requisition | sent_to_draft | order_placed | dismissed
  * @param {boolean|string} [params.includeDismissed] - when true keep dismissed rows in results
  * @param {string} [params.preferredSupplierId] - ObjectId hex for supplier equality
@@ -210,6 +240,7 @@ export const getYarnRequisitionList = async ({
   page,
   limit,
   skipRecalculation,
+  includeLiveStock,
   yarnName,
   lastUpdatedFrom,
   lastUpdatedTo,
@@ -330,6 +361,10 @@ export const getYarnRequisitionList = async ({
   }
 
   results = await attachDraftPoQuantities(results);
+
+  if (includeLiveStock) {
+    results = await attachLiveStockBreakdown(results);
+  }
 
   const alertSummary = await YarnRequisition.aggregate([
     { $match: filter },
