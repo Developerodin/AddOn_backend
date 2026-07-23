@@ -6,6 +6,7 @@ import VendorDispatchStockTransferNote, {
 } from '../../models/vendorManagement/vendorDispatchStockTransferNote.model.js';
 import { ContainersMaster } from '../../models/production/index.js';
 import Product from '../../models/product.model.js';
+import VendorProductionFlow from '../../models/vendorManagement/vendorProductionFlow.model.js';
 import ApiError from '../../utils/ApiError.js';
 import * as vendorManagementService from '../vendorManagement/vendorManagement.service.js';
 import {
@@ -85,6 +86,7 @@ const flattenPendingLinesFromFlows = (flows, stnAllocMap) => {
         vendorPurchaseOrderId: flow.vendorPurchaseOrder?._id || flow.vendorPurchaseOrder || null,
         vpoNumber: flow.vendorPurchaseOrder?.vpoNumber || '',
         vendorName: flow.vendor?.header?.vendorName || '',
+        invoiceNumber: String(flow.referenceCode ?? '').trim(),
         articleNumber,
         factoryCode,
         brand: String(row.brand ?? '').trim(),
@@ -186,6 +188,7 @@ const mapLineToStnFields = (line, nameMap, brandMap) => {
     vendorPurchaseOrderId: line.vendorPurchaseOrderId,
     vpoNumber: line.vpoNumber || '',
     vendorName: line.vendorName || '',
+    invoiceNumber: line.invoiceNumber || '',
     articleNumber: line.articleNumber || '—',
     factoryCode: line.factoryCode || '',
     sapArticleNo: brandLabel,
@@ -268,6 +271,52 @@ const attachContainersToLines = async (lines) => {
   });
 
   return { lines: enriched, totalBoxes: distinctContainerIds.size };
+};
+
+/**
+ * Resolve invoice numbers for STN lines via vendor production flow referenceCode.
+ * @param {Array<{ vendorProductionFlowId?: unknown, invoiceNumber?: string }>} lines
+ * @returns {Promise<Map<string, string>>}
+ */
+const resolveInvoiceNumbersByFlowId = async (lines) => {
+  const flowIds = [
+    ...new Set(
+      (lines || [])
+        .filter((line) => !String(line.invoiceNumber ?? '').trim() && line.vendorProductionFlowId)
+        .map((line) => String(line.vendorProductionFlowId))
+    ),
+  ].filter((id) => mongoose.Types.ObjectId.isValid(id));
+
+  const map = new Map();
+  if (!flowIds.length) return map;
+
+  const objectIds = flowIds.map((id) => new mongoose.Types.ObjectId(id));
+  const flows = await VendorProductionFlow.find({ _id: { $in: objectIds } })
+    .select('referenceCode')
+    .lean();
+
+  for (const flow of flows) {
+    const invoice = String(flow.referenceCode ?? '').trim();
+    if (invoice) map.set(String(flow._id), invoice);
+  }
+  return map;
+};
+
+/**
+ * Attach invoice numbers to STN lines (stored value or flow.referenceCode fallback).
+ * @param {Array<Object>} lines
+ * @returns {Promise<Array<Object>>}
+ */
+const enrichStnLinesWithInvoiceNumbers = async (lines) => {
+  const invoiceByFlowId = await resolveInvoiceNumbersByFlowId(lines || []);
+  return (lines || []).map((line) => {
+    const stored = String(line.invoiceNumber ?? '').trim();
+    const fromFlow = invoiceByFlowId.get(String(line.vendorProductionFlowId ?? '')) || '';
+    return {
+      ...line,
+      invoiceNumber: stored || fromFlow,
+    };
+  });
 };
 
 /**
@@ -359,7 +408,17 @@ export const queryVendorDispatchTransferNotes = async (filter = {}, options = {}
     populate: 'createdBy',
   };
 
-  return VendorDispatchStockTransferNote.paginate(mongoFilter, queryOptions);
+  const result = await VendorDispatchStockTransferNote.paginate(mongoFilter, queryOptions);
+  if (result.results?.length) {
+    result.results = await Promise.all(
+      result.results.map(async (doc) => {
+        const json = doc.toJSON ? doc.toJSON() : doc;
+        json.lines = await enrichStnLinesWithInvoiceNumbers(json.lines);
+        return json;
+      })
+    );
+  }
+  return result;
 };
 
 /**
@@ -377,6 +436,7 @@ export const getVendorDispatchTransferNoteById = async (transferNoteId) => {
   }
   const json = doc.toJSON ? doc.toJSON() : doc;
   json.lines = await enrichStnLinesWithCatalogBrands(json.lines);
+  json.lines = await enrichStnLinesWithInvoiceNumbers(json.lines);
   return json;
 };
 
@@ -415,9 +475,14 @@ export const getVendorDispatchTransferNoteReportRows = async (filter = {}) => {
     .populate('createdBy', 'name email')
     .lean();
 
+  const allLines = docs.flatMap((doc) => doc.lines || []);
+  const invoiceByFlowId = await resolveInvoiceNumbersByFlowId(allLines);
+
   const rows = [];
   for (const doc of docs) {
     for (const line of doc.lines || []) {
+      const storedInvoice = String(line.invoiceNumber ?? '').trim();
+      const flowInvoice = invoiceByFlowId.get(String(line.vendorProductionFlowId ?? '')) || '';
       rows.push({
         stnSerial: doc.stnSerial,
         stnDate: doc.stnDate,
@@ -426,6 +491,7 @@ export const getVendorDispatchTransferNoteReportRows = async (filter = {}) => {
         totalBoxes: doc.totalBoxes,
         vpoNumber: line.vpoNumber,
         vendorName: line.vendorName,
+        invoiceNumber: storedInvoice || flowInvoice,
         articleNumber: line.articleNumber,
         sapArticleNo: line.sapArticleNo,
         articleName: line.articleName,

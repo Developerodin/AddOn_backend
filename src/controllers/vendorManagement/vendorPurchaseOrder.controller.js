@@ -11,7 +11,7 @@ export const createVendorPurchaseOrder = catchAsync(async (req, res) => {
 });
 
 export const bulkCreateVendorPurchaseOrders = catchAsync(async (req, res) => {
-  const result = await vendorPurchaseOrderService.bulkCreateVendorPurchaseOrders(req.body);
+  const result = await vendorPurchaseOrderService.bulkCreateVendorPurchaseOrders(req.body, req.user);
   res.status(httpStatus.CREATED).send(result);
 });
 

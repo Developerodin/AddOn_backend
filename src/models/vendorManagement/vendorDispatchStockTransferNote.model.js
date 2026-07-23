@@ -34,6 +34,8 @@ const lineSchema = new mongoose.Schema(
     },
     vpoNumber: { type: String, default: '', trim: true },
     vendorName: { type: String, default: '', trim: true },
+    /** Vendor invoice / lot number from goods received (flow.referenceCode). */
+    invoiceNumber: { type: String, default: '', trim: true },
     /** Displayed identifier — vendor code (falls back to factory code when vendor code is absent). */
     articleNumber: { type: String, default: '', trim: true },
     /** Catalog key retained for name/brand resolution (Product.factoryCode). */

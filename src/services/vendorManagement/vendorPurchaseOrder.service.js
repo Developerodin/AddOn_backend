@@ -38,6 +38,52 @@ function normalizePurchaseOrderUpdateBody(updateBody = {}) {
 }
 
 /**
+ * Resolve audit user id from authenticated request user.
+ * @param {import('express').Request['user']} user
+ * @returns {mongoose.Types.ObjectId|null}
+ */
+function resolveAuditUserId(user) {
+  const rawId = user?.id ?? user?._id ?? user?.user_id ?? user?.userId;
+  if (!rawId) return null;
+  const idStr = typeof rawId === 'string' ? rawId : rawId.toString?.();
+  if (!idStr || !mongoose.Types.ObjectId.isValid(idStr)) return null;
+  return new mongoose.Types.ObjectId(idStr);
+}
+
+/**
+ * Build a vendor PO status log entry for audit history.
+ * @param {string} statusCode
+ * @param {import('express').Request['user']} user
+ * @param {string|null|undefined} [notes]
+ * @returns {{ statusCode: string, updatedBy: { username: string, user: mongoose.Types.ObjectId }, updatedAt: Date, notes?: string }}
+ */
+function buildVendorPoStatusLogEntry(statusCode, user, notes = null) {
+  if (!vendorPurchaseOrderStatuses.includes(statusCode)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid vendor purchase order status code');
+  }
+
+  const userId = resolveAuditUserId(user);
+  if (!userId) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Authenticated user is required to record status history');
+  }
+
+  const entry = {
+    statusCode,
+    updatedBy: {
+      username: String(user?.name || user?.username || user?.email || 'system').trim(),
+      user: userId,
+    },
+    updatedAt: new Date(),
+  };
+
+  if (notes && String(notes).trim()) {
+    entry.notes = String(notes).trim();
+  }
+
+  return entry;
+}
+
+/**
  * @param {number} [year]
  */
 export const createVendorPurchaseOrder = async (purchaseOrderBody, year = new Date().getFullYear(), user) => {
@@ -50,14 +96,14 @@ export const createVendorPurchaseOrder = async (purchaseOrderBody, year = new Da
     throw new ApiError(httpStatus.BAD_REQUEST, 'VPO number already exists');
   }
 
-  const statusLogs = scopedBody.statusLogs || [];
   const currentStatus = scopedBody.currentStatus || vendorPurchaseOrderStatuses[0];
+  const { statusLogs: _ignoredStatusLogs, ...bodyWithoutClientLogs } = scopedBody;
 
   const payload = {
-    ...scopedBody,
+    ...bodyWithoutClientLogs,
     vpoNumber,
     currentStatus,
-    statusLogs,
+    statusLogs: [buildVendorPoStatusLogEntry(currentStatus, user, 'Purchase order created')],
   };
 
   const doc = await VendorPurchaseOrder.create(payload);
@@ -67,8 +113,9 @@ export const createVendorPurchaseOrder = async (purchaseOrderBody, year = new Da
 /**
  * Creates multiple POs in order; each receives the next VPO number for the given year.
  * @param {{ orders: object[], year?: number }} bulk
+ * @param {import('express').Request['user']} user
  */
-export const bulkCreateVendorPurchaseOrders = async (bulk) => {
+export const bulkCreateVendorPurchaseOrders = async (bulk, user) => {
   const { orders, year: bulkYear } = bulk;
   if (!Array.isArray(orders) || orders.length === 0) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'orders array is required');
@@ -78,7 +125,7 @@ export const bulkCreateVendorPurchaseOrders = async (bulk) => {
   for (const raw of orders) {
     const { year: rowYear, ...body } = raw;
     const y = bulkYear ?? rowYear ?? new Date().getFullYear();
-    const doc = await createVendorPurchaseOrder(body, y);
+    const doc = await createVendorPurchaseOrder(body, y, user);
     created.push(doc);
   }
   /* eslint-enable no-await-in-loop, no-restricted-syntax */
@@ -137,10 +184,17 @@ export const updateVendorPurchaseOrderById = async (purchaseOrderId, updateBody,
     }
   }
 
-  const safeUpdate = Object.fromEntries(Object.entries(scopedBody).filter(([, value]) => value !== undefined));
+  const safeUpdate = Object.fromEntries(
+    Object.entries(scopedBody).filter(([key, value]) => value !== undefined && key !== 'statusLogs')
+  );
 
   if (scopedBody.vendor) {
     await assertVendorExists(scopedBody.vendor);
+  }
+
+  const nextStatus = scopedBody.currentStatus;
+  if (nextStatus && nextStatus !== purchaseOrder.currentStatus) {
+    purchaseOrder.statusLogs.push(buildVendorPoStatusLogEntry(nextStatus, user, scopedBody.statusChangeNotes));
   }
 
   Object.assign(purchaseOrder, safeUpdate);
