@@ -30,6 +30,7 @@ const barcodePrintLabelSchema = mongoose.Schema(
   {
     styleCode: { type: String, trim: true, default: '' },
     skuCode: { type: String, trim: true, default: '' },
+    eanCode: { type: String, trim: true, default: '' },
     size: { type: String, trim: true, default: '' },
     shade: { type: String, trim: true, default: '' },
     quantity: { type: Number, required: true, min: 0 },
@@ -56,6 +57,7 @@ const batchItemSchema = mongoose.Schema(
     styleCode: { type: String, required: true, trim: true },
     skuCode: { type: String, required: true, trim: true },
     styleCodeId: { type: mongoose.SchemaTypes.ObjectId, ref: 'StyleCode', default: null },
+    eanCode: { type: String, trim: true, default: '' },
     size: { type: String, trim: true, default: '' },
     shade: { type: String, trim: true, default: '' },
     requiredQty: { type: Number, required: true, min: 0 },

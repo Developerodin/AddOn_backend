@@ -127,10 +127,10 @@ const enrichWarehouseOrderLineItems = async (payload) => {
 
   const [singleDocs, multiDocs] = await Promise.all([
     singleIds.length
-      ? StyleCode.find({ _id: { $in: singleIds } }).select('styleCode brand pack').lean()
+      ? StyleCode.find({ _id: { $in: singleIds } }).select('styleCode brand pack eanCode').lean()
       : [],
     multiIds.length
-      ? StyleCodePairs.find({ _id: { $in: multiIds } }).select('pairStyleCode pack styleCodes').lean()
+      ? StyleCodePairs.find({ _id: { $in: multiIds } }).select('pairStyleCode pack styleCodes eanCode').lean()
       : [],
   ]);
 
@@ -145,7 +145,7 @@ const enrichWarehouseOrderLineItems = async (payload) => {
   const missingLinkedIds = [...linkedStyleCodeIds].filter((id) => !singleById.has(id));
   const linkedStyleDocs =
     missingLinkedIds.length > 0
-      ? await StyleCode.find({ _id: { $in: missingLinkedIds } }).select('styleCode brand pack').lean()
+      ? await StyleCode.find({ _id: { $in: missingLinkedIds } }).select('styleCode brand pack eanCode').lean()
       : [];
   const styleCodeById = new Map([
     ...singleDocs.map((d) => [String(d._id), d]),
@@ -168,6 +168,7 @@ const enrichWarehouseOrderLineItems = async (payload) => {
         type: coalesceLineField(item.type, doc?.brand),
         colour: coalesceLineField(item.colour || item.color, catalogAttrs.colour),
         pattern: coalesceLineField(item.pattern, catalogAttrs.pattern),
+        eanCode: coalesceLineField(item.eanCode, doc?.eanCode),
       };
     });
   }
@@ -182,6 +183,7 @@ const enrichWarehouseOrderLineItems = async (payload) => {
         colour: '',
         type: '',
         pattern: '',
+        eanCode: coalesceLineField(item.eanCode, doc?.eanCode),
       };
     });
   }

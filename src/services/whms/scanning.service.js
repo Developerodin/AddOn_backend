@@ -65,6 +65,7 @@ export const createSession = async (orderId, user) => {
       pickListId: row._id,
       skuCode: row.skuCode,
       styleCode: row.styleCode,
+      eanCode: String(row.eanCode || '').trim(),
       size: row.size || '',
       shade: row.shade || '',
       expectedQty: Number(row.pickupQuantity || 0),
@@ -92,9 +93,8 @@ const getOpenSession = async (sessionId) => {
 };
 
 /**
- * Register a barcode scan. The barcode is matched against styleCode (label
- * content) and falls back to skuCode. Returns the updated item + live summary
- * so the UI can highlight short/excess rows immediately.
+ * Register a barcode scan. The barcode is matched against eanCode, styleCode,
+ * and falls back to skuCode.
  */
 export const scanBarcode = async (sessionId, { barcode, qty = 1 }) => {
   const session = await getOpenSession(sessionId);
@@ -103,7 +103,9 @@ export const scanBarcode = async (sessionId, { barcode, qty = 1 }) => {
   if (!code) throw new ApiError(httpStatus.BAD_REQUEST, 'barcode is required');
 
   const item =
-    session.items.find((i) => i.styleCode === code) || session.items.find((i) => i.skuCode === code);
+    session.items.find((i) => i.eanCode === code) ||
+    session.items.find((i) => i.styleCode === code) ||
+    session.items.find((i) => i.skuCode === code);
   if (!item) {
     throw new ApiError(httpStatus.BAD_REQUEST, `Barcode "${code}" does not belong to this order`);
   }

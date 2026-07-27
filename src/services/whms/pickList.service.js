@@ -192,6 +192,7 @@ async function buildExpectedPickRowsFromOrder(order) {
       skuCode: item.styleCode,
       styleCode: item.styleCode,
       styleCodeId: item.styleCodeId || null,
+      eanCode: String(item.eanCode || '').trim(),
       quantity: item.quantity,
     });
   }
@@ -200,7 +201,8 @@ async function buildExpectedPickRowsFromOrder(order) {
   if (multiItems.length) {
     const pairIds = multiItems.map((item) => item.styleCodeMultiPairId).filter(Boolean);
     const pairs = await StyleCodePairs.find({ _id: { $in: pairIds } })
-      .populate('styleCodes', 'styleCode')
+      .select('pairStyleCode pack styleCodes eanCode')
+      .populate('styleCodes', 'styleCode eanCode')
       .lean();
     const pairMap = new Map(pairs.map((pair) => [String(pair._id), pair]));
 
@@ -228,6 +230,7 @@ async function buildExpectedPickRowsFromOrder(order) {
           skuCode,
           styleCode: skuCode,
           styleCodeId: null,
+          eanCode: String(pair.eanCode || item.eanCode || '').trim(),
           quantity: item.quantity,
         });
       } else {
@@ -240,6 +243,7 @@ async function buildExpectedPickRowsFromOrder(order) {
             skuCode,
             styleCode: child.styleCode,
             styleCodeId: child._id || null,
+            eanCode: String(child.eanCode || '').trim(),
             quantity: item.quantity,
           });
         }
@@ -636,7 +640,7 @@ export const buildBarcodeLabelsPayload = async (orderId) => {
     .filter((row) => Number(row.pickupQuantity || 0) > 0)
     .map((row) => ({
       pickListId: String(row._id),
-      barcode: row.styleCode,
+      barcode: String(row.eanCode || '').trim() || row.styleCode,
       skuCode: row.skuCode,
       styleCode: row.styleCode,
       size: row.size || '',

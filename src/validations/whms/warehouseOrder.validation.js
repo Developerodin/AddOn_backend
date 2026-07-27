@@ -15,6 +15,7 @@ const singlePairItem = Joi.object({
   colour: Joi.string().allow('').trim(),
   type: Joi.string().allow('').trim(),
   pattern: Joi.string().allow('').trim(),
+  eanCode: Joi.string().allow('').trim(),
   quantity: Joi.number().integer().min(1).required(),
 });
 
@@ -25,6 +26,7 @@ const multiPairItem = Joi.object({
   colour: Joi.string().allow('').trim(),
   type: Joi.string().allow('').trim(),
   pattern: Joi.string().allow('').trim(),
+  eanCode: Joi.string().allow('').trim(),
   quantity: Joi.number().integer().min(1).required(),
 });
 

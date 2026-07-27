@@ -128,6 +128,8 @@ const lineItemFields = {
   colour: { type: String, trim: true },
   type: { type: String, trim: true },
   pattern: { type: String, trim: true },
+  /** EAN from style-code master — used for barcode label generation. */
+  eanCode: { type: String, trim: true, default: '' },
   quantity: { type: Number, required: true, min: 1 },
 };
 

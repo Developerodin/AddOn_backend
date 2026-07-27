@@ -19,6 +19,7 @@ const scanItemSchema = mongoose.Schema(
     pickListId: { type: mongoose.SchemaTypes.ObjectId, ref: 'PickList', default: null },
     skuCode: { type: String, trim: true },
     styleCode: { type: String, required: true, trim: true },
+    eanCode: { type: String, trim: true, default: '' },
     size: { type: String, trim: true, default: '' },
     shade: { type: String, trim: true, default: '' },
     /** Quantity expected = picked quantity confirmed by the Barcode Team. */

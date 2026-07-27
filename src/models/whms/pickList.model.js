@@ -39,6 +39,8 @@ const pickListSchema = mongoose.Schema(
       required: false,
       default: null,
     },
+    /** EAN from style-code master — encoded on barcode labels. */
+    eanCode: { type: String, trim: true, default: '' },
 
     asst: { type: String, trim: true },
     sapStock: { type: Number },

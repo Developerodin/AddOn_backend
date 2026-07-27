@@ -7,6 +7,7 @@ import PickListBatch, {
 } from '../../models/whms/pickListBatch.model.js';
 import WarehouseOrder, { WarehouseOrderFlowStatus } from '../../models/whms/warehouseOrder.model.js';
 import WarehouseInventory from '../../models/whms/warehouseInventory.model.js';
+import StyleCode from '../../models/styleCode.model.js';
 import {
   applyPickDeltaToInventory,
   buildPickRowKey,
@@ -16,6 +17,65 @@ import { transitionOrder } from './orderFlow.service.js';
 import { runWithOptionalMongoTransaction } from '../../utils/mongoDeployment.js';
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Convert a batch item subdocument to a plain object with all schema fields.
+ * @param {object} item - Batch item (Mongoose subdoc or plain object)
+ * @returns {object}
+ */
+function toPlainBatchItem(item) {
+  if (!item) return item;
+  if (typeof item.toObject === 'function') {
+    return item.toObject();
+  }
+  return { ...item };
+}
+
+/**
+ * Resolve EAN codes for batch items missing a stored value (legacy batches / old pick rows).
+ * @param {object[]} items - Batch line items
+ * @returns {Promise<object[]>}
+ */
+async function resolveEanCodesForBatchItems(items) {
+  const plainItems = (items || []).map((item) => toPlainBatchItem(item));
+  const needsLookup = plainItems.filter((item) => !String(item.eanCode || '').trim());
+  if (!needsLookup.length) return plainItems;
+
+  const styleCodeIds = [...new Set(needsLookup.map((item) => item.styleCodeId).filter(Boolean))];
+  const styleCodes = [
+    ...new Set(
+      needsLookup
+        .filter((item) => !item.styleCodeId && item.styleCode)
+        .map((item) => String(item.styleCode).trim())
+    ),
+  ];
+
+  const [byIdDocs, byCodeDocs] = await Promise.all([
+    styleCodeIds.length
+      ? StyleCode.find({ _id: { $in: styleCodeIds } })
+          .select('eanCode styleCode')
+          .lean()
+      : [],
+    styleCodes.length
+      ? StyleCode.find({ styleCode: { $in: styleCodes } })
+          .select('eanCode styleCode')
+          .lean()
+      : [],
+  ]);
+
+  const eanById = new Map(byIdDocs.map((doc) => [String(doc._id), String(doc.eanCode || '').trim()]));
+  const eanByCode = new Map(byCodeDocs.map((doc) => [doc.styleCode, String(doc.eanCode || '').trim()]));
+
+  return plainItems.map((item) => {
+    const stored = String(item.eanCode || '').trim();
+    if (stored) return item;
+    const resolved =
+      eanById.get(String(item.styleCodeId)) ||
+      eanByCode.get(item.styleCode) ||
+      '';
+    return { ...item, eanCode: resolved };
+  });
+}
 
 /**
  * Generate the next batch number for today (PLB-YYYYMMDD-####).
@@ -66,6 +126,7 @@ function aggregatePickRowsIntoBatchItems(pickRows) {
         styleCode: row.styleCode,
         skuCode: row.skuCode,
         styleCodeId: row.styleCodeId ?? null,
+        eanCode: String(row.eanCode || '').trim(),
         size: row.size || '',
         shade: row.shade || '',
         requiredQty: qty,
@@ -469,11 +530,13 @@ export const buildBarcodePayload = async (batchId, { styleCode, extraQty = 0 } =
   const batch = await PickListBatch.findById(batchId);
   if (!batch) throw new ApiError(httpStatus.NOT_FOUND, 'Pick-list batch not found');
 
-  let items = batch.items || [];
+  let items = (batch.items || []).map((item) => toPlainBatchItem(item));
   if (styleCode && String(styleCode).trim()) {
     const code = String(styleCode).trim();
-    items = items.filter((i) => i.styleCode === code);
+    items = items.filter((i) => String(i.styleCode || '').trim() === code);
   }
+
+  items = await resolveEanCodesForBatchItems(items);
 
   const extra = Math.max(0, Number(extraQty || 0));
   const labels = [];
@@ -481,18 +544,23 @@ export const buildBarcodePayload = async (batchId, { styleCode, extraQty = 0 } =
     const baseQty = Number(item.pickedQty || 0);
     const qty = baseQty + (styleCode ? extra : 0);
     if (qty <= 0) continue;
+    const barcodeValue = String(item.eanCode || '').trim() || item.styleCode;
     labels.push({
       styleCode: item.styleCode,
       skuCode: item.skuCode,
+      eanCode: String(item.eanCode || '').trim(),
       size: item.size || '',
       shade: item.shade || '',
-      barcode: item.styleCode,
+      barcode: barcodeValue,
       quantity: qty,
     });
   }
 
   if (!labels.length) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'No picked quantities to print barcodes for');
+    const hint = styleCode
+      ? `No picked quantities to print for style "${String(styleCode).trim()}"`
+      : 'No picked quantities to print barcodes for';
+    throw new ApiError(httpStatus.BAD_REQUEST, hint);
   }
 
   return {
@@ -521,6 +589,7 @@ export const logBarcodePrint = async (batchId, payload, user) => {
   const labels = (payload.labels || []).map((label) => ({
     styleCode: label.styleCode || '',
     skuCode: label.skuCode || '',
+    eanCode: label.eanCode || '',
     size: label.size || '',
     shade: label.shade || '',
     quantity: Math.max(0, Number(label.quantity || 0)),

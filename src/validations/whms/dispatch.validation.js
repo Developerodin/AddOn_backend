@@ -15,8 +15,7 @@ export const setDispatchDetails = {
       dispatchDate: Joi.date(),
       boxCount: Joi.number().integer().min(0),
       shippingRemarks: Joi.string().allow('').trim().max(1000),
-    })
-    .min(1),
+    }),
 };
 
 export const dispatchOrder = {

@@ -25,6 +25,9 @@ export const setDispatchDetails = async (orderId, user, details) => {
   const editableStages = [
     WarehouseOrderFlowStatus.BILLED,
     WarehouseOrderFlowStatus.READY_TO_DISPATCH,
+    WarehouseOrderFlowStatus.DISPATCHED,
+    WarehouseOrderFlowStatus.PARTIAL_DISPATCHED,
+    WarehouseOrderFlowStatus.READY_FOR_PICKUP,
   ];
   if (!editableStages.includes(order.flowStatus)) {
     throw new ApiError(
@@ -63,11 +66,26 @@ export const dispatchOrder = async (orderId, user, { mode, remarks = '' }) => {
     throw new ApiError(httpStatus.BAD_REQUEST, `mode must be one of: ${DISPATCH_MODES.join(', ')}`);
   }
 
-  const order = await WarehouseOrder.findById(orderId);
+  let order = await WarehouseOrder.findById(orderId);
   if (!order) throw new ApiError(httpStatus.NOT_FOUND, 'Warehouse order not found');
 
-  if (!order.dispatch || !(order.dispatch.courierName || order.dispatch.trackingNumber)) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'Enter dispatch details (courier / tracking number) first');
+  if (order.flowStatus === WarehouseOrderFlowStatus.BILLED) {
+    order.dispatch = {
+      ...(order.dispatch ? (order.dispatch.toObject ? order.dispatch.toObject() : order.dispatch) : {}),
+    };
+    await order.save();
+    await transitionOrder(
+      orderId,
+      WarehouseOrderFlowStatus.READY_TO_DISPATCH,
+      user,
+      { remarks: 'Marked ready to dispatch' },
+      { system: true }
+    );
+    order = await WarehouseOrder.findById(orderId);
+  }
+
+  if (!order.dispatch) {
+    order.dispatch = {};
   }
 
   order.dispatch.dispatchType = mode;

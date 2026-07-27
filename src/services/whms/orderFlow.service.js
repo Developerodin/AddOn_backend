@@ -94,14 +94,6 @@ const guards = {
       throw new ApiError(httpStatus.BAD_REQUEST, 'Order is marked billed by generating an invoice, not manually');
     }
   },
-  async [F.DISPATCHED](order, { viaDispatch }) {
-    if (!viaDispatch && !(order.dispatch && (order.dispatch.courierName || order.dispatch.trackingNumber))) {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'Enter dispatch details (courier / tracking number) before dispatching');
-    }
-  },
-  async [F.PARTIAL_DISPATCHED](order, opts) {
-    return guards[F.DISPATCHED](order, opts);
-  },
 };
 
 /**
