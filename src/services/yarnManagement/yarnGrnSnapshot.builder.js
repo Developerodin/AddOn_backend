@@ -7,9 +7,15 @@ const SUPPLIER_HOME_STATES = new Set(['maharashtra', 'mh']);
 
 const CONSIGNEE_DEFAULT = Object.freeze({
   name: 'ADDON HOLDINGS PRIVATE LIMITED',
-  address: '',
+  address:
+    'Bldg.No.B-7/GF, Asmeeta Textile Park, Addl.Kalyan Bhiwandi MIDC Indl. Area, Village Kone, Taluka Bhiwandi, Dist. Thane - 421311.',
+  headOffice:
+    '501- 502, Simba Commercial Premises, Off Western Express Highway, Near Virwani Indl Estate, Goregaon (E), Mumbai - 400 063.',
   stateCode: '27',
+  state: 'Maharashtra',
   gstNo: '27AAACA8827A1ZZ',
+  contactNumber: '+91-2522-297432',
+  email: 'designer1@addbr.com',
 });
 
 /**

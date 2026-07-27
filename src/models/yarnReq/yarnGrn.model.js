@@ -74,8 +74,12 @@ const grnConsigneeSchema = mongoose.Schema(
   {
     name: { type: String, trim: true },
     address: { type: String, trim: true },
+    headOffice: { type: String, trim: true },
     stateCode: { type: String, trim: true },
+    state: { type: String, trim: true },
     gstNo: { type: String, trim: true },
+    contactNumber: { type: String, trim: true },
+    email: { type: String, trim: true },
   },
   { _id: false }
 );
