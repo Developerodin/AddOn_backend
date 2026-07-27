@@ -26,4 +26,9 @@ const getPackingList = catchAsync(async (req, res) => {
   res.send(payload);
 });
 
-export { setDispatchDetails, dispatchOrder, setDeliveryStatus, getShippingLabel, getPackingList };
+const bulkImportDispatchDetails = catchAsync(async (req, res) => {
+  const result = await dispatchService.bulkSetDispatchDetails(req.user, req.body.rows);
+  res.send(result);
+});
+
+export { setDispatchDetails, dispatchOrder, setDeliveryStatus, getShippingLabel, getPackingList, bulkImportDispatchDetails };

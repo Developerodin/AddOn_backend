@@ -37,3 +37,23 @@ export const setDeliveryStatus = {
 export const printPayload = {
   params: orderIdParams,
 };
+
+export const bulkImportDispatchDetails = {
+  body: Joi.object().keys({
+    rows: Joi.array()
+      .items(
+        Joi.object().keys({
+          rowNumber: Joi.number().integer().min(1),
+          orderNumber: Joi.string().allow('').trim(),
+          orderId: Joi.string().allow('').trim(),
+          courierName: Joi.string().allow('').trim(),
+          trackingNumber: Joi.string().allow('').trim(),
+          vehicleDetails: Joi.string().allow('').trim(),
+          boxCount: Joi.alternatives().try(Joi.number().integer().min(0), Joi.string().allow('')),
+          shippingRemarks: Joi.string().allow('').trim().max(1000),
+        })
+      )
+      .min(1)
+      .required(),
+  }),
+};

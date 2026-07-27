@@ -56,8 +56,140 @@ export const setDispatchDetails = async (orderId, user, details) => {
   return order;
 };
 
+const DISPATCH_DETAIL_EDITABLE_STAGES = Object.freeze([
+  WarehouseOrderFlowStatus.BILLED,
+  WarehouseOrderFlowStatus.READY_TO_DISPATCH,
+  WarehouseOrderFlowStatus.DISPATCHED,
+  WarehouseOrderFlowStatus.PARTIAL_DISPATCHED,
+  WarehouseOrderFlowStatus.READY_FOR_PICKUP,
+]);
+
 /**
- * Mark the shipment as gone: dispatched | partial-dispatched | ready-for-pickup.
+ * Build a partial dispatch-details patch from a bulk-import row (skip blank fields).
+ * @param {object} row - Import row
+ * @returns {object|null} Details patch or null when nothing to update
+ */
+const dispatchDetailsPatchFromImportRow = (row) => {
+  const patch = {};
+  if (row.courierName !== undefined && row.courierName !== null) {
+    patch.courierName = String(row.courierName).trim();
+  }
+  if (row.trackingNumber !== undefined && row.trackingNumber !== null) {
+    patch.trackingNumber = String(row.trackingNumber).trim();
+  }
+  if (row.vehicleDetails !== undefined && row.vehicleDetails !== null) {
+    patch.vehicleDetails = String(row.vehicleDetails).trim();
+  }
+  if (row.shippingRemarks !== undefined && row.shippingRemarks !== null) {
+    patch.shippingRemarks = String(row.shippingRemarks).trim();
+  }
+  if (row.boxCount !== undefined && row.boxCount !== null && row.boxCount !== '') {
+    const n = Number(row.boxCount);
+    if (!Number.isFinite(n) || n < 0) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Boxes / Cartons must be a number >= 0');
+    }
+    patch.boxCount = Math.floor(n);
+  }
+  return Object.keys(patch).length ? patch : null;
+};
+
+/**
+ * Bulk-update dispatch preparation details from an Excel import.
+ * @param {object|null} user - Authenticated user
+ * @param {Array<object>} rows - Parsed import rows
+ * @returns {Promise<{ updated: object[], failed: object[], summary: object }>}
+ */
+export const bulkSetDispatchDetails = async (user, rows) => {
+  if (!Array.isArray(rows) || !rows.length) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'At least one import row is required');
+  }
+
+  const updated = [];
+  const failed = [];
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index] || {};
+    const rowNumber = Number(row.rowNumber) || index + 1;
+    const orderNumber = String(row.orderNumber || '').trim();
+    const orderId = String(row.orderId || '').trim();
+
+    if (!orderNumber && !orderId) {
+      failed.push({ rowNumber, orderNumber, message: 'Order Number or Order ID is required' });
+      continue;
+    }
+
+    let detailsPatch;
+    try {
+      detailsPatch = dispatchDetailsPatchFromImportRow(row);
+    } catch (err) {
+      failed.push({
+        rowNumber,
+        orderNumber: orderNumber || orderId,
+        message: err instanceof ApiError ? err.message : 'Invalid dispatch details',
+      });
+      continue;
+    }
+
+    if (!detailsPatch) {
+      failed.push({
+        rowNumber,
+        orderNumber: orderNumber || orderId,
+        message: 'No dispatch fields to update (fill at least one shipment column)',
+      });
+      continue;
+    }
+
+    let order = null;
+    if (orderId) {
+      order = await WarehouseOrder.findById(orderId);
+    }
+    if (!order && orderNumber) {
+      order = await WarehouseOrder.findOne({ orderNumber });
+    }
+
+    if (!order) {
+      failed.push({ rowNumber, orderNumber: orderNumber || orderId, message: 'Order not found' });
+      continue;
+    }
+
+    if (!DISPATCH_DETAIL_EDITABLE_STAGES.includes(order.flowStatus)) {
+      failed.push({
+        rowNumber,
+        orderNumber: order.orderNumber || String(order._id),
+        message: `Dispatch details cannot be updated at stage "${order.flowStatus}"`,
+      });
+      continue;
+    }
+
+    try {
+      const saved = await setDispatchDetails(String(order._id), user, detailsPatch);
+      updated.push({
+        rowNumber,
+        orderId: String(order._id),
+        orderNumber: saved.orderNumber || order.orderNumber,
+        flowStatus: saved.flowStatus,
+      });
+    } catch (err) {
+      failed.push({
+        rowNumber,
+        orderNumber: order.orderNumber || String(order._id),
+        message: err instanceof ApiError ? err.message : 'Failed to update dispatch details',
+      });
+    }
+  }
+
+  return {
+    updated,
+    failed,
+    summary: {
+      total: rows.length,
+      success: updated.length,
+      failed: failed.length,
+    },
+  };
+};
+
+/**
  * Stock was already deducted at pick time; per-style traceability rows are written
  * to the inventory log (delta 0) referencing the order.
  */

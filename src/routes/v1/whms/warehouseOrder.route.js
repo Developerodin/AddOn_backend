@@ -103,6 +103,14 @@ router
   );
 
 router
+  .route('/dispatch-details/bulk-import')
+  .post(
+    auth('whmsDispatch'),
+    validate(dispatchValidation.bulkImportDispatchDetails),
+    dispatchController.bulkImportDispatchDetails
+  );
+
+router
   .route('/catalogue-attrs')
   .get(
     auth('getOrders'),
