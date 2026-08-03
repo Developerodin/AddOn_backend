@@ -553,6 +553,14 @@ export const buildPickListPrintPayload = async (orderId) => {
   const rows = await PickList.find({ orderId }).sort({ styleCode: 1, size: 1 }).lean();
   if (!rows.length) throw new ApiError(httpStatus.NOT_FOUND, 'No pick list exists for this order');
 
+  const styleCodes = [...new Set(rows.map((r) => r.styleCode).filter(Boolean))];
+  const stockRows = styleCodes.length
+    ? await WarehouseInventory.find({ styleCode: { $in: styleCodes } })
+        .select('styleCode availableQuantity')
+        .lean()
+    : [];
+  const stockByCode = new Map(stockRows.map((r) => [r.styleCode, r]));
+
   return {
     order: {
       id: String(order._id),
@@ -572,6 +580,7 @@ export const buildPickListPrintPayload = async (orderId) => {
       shade: row.shade || '',
       quantity: row.quantity,
       pickupQuantity: row.pickupQuantity ?? 0,
+      availableStock: Number(stockByCode.get(row.styleCode)?.availableQuantity ?? 0),
       status: row.status,
     })),
     totals: {

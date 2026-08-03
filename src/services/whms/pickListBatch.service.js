@@ -271,6 +271,7 @@ export const createBatch = async ({ orderIds, user }) => {
     type,
     orderIds: orders.map((o) => o._id),
     orderNumbers: orders.map((o) => o.orderNumber || String(o._id)),
+    addonOrderIds: orders.map((o) => (o.addonOrderId ? String(o.addonOrderId).trim() : '')).filter(Boolean),
     status: PickListBatchStatus.PICKING,
     items,
     createdBy: user?._id ?? user?.id ?? null,
@@ -336,7 +337,7 @@ export const buildBatchFilter = (query) => {
   if (query.q && String(query.q).trim()) {
     const term = escapeRegex(String(query.q).trim());
     const regex = new RegExp(term, 'i');
-    and.push({ $or: [{ batchNumber: regex }, { orderNumbers: regex }] });
+    and.push({ $or: [{ batchNumber: regex }, { orderNumbers: regex }, { addonOrderIds: regex }] });
   }
 
   const pickComplete = query.pickComplete;
@@ -389,9 +390,23 @@ export const queryBatches = async (filter, options) => {
     ...options,
     sortBy: options.sortBy || 'createdAt:desc',
   });
+  const batches = (result.results || []).map((b) => serializeBatch(b));
+  const needsLookup = batches.filter((b) => !(b.addonOrderIds || []).length && (b.orderIds || []).length);
+  if (needsLookup.length) {
+    const orderIds = [...new Set(needsLookup.flatMap((b) => (b.orderIds || []).map(String)))];
+    const orders = await WarehouseOrder.find({ _id: { $in: orderIds } }).select('addonOrderId').lean();
+    const addonByOrderId = new Map(
+      orders.map((o) => [String(o._id), o.addonOrderId ? String(o.addonOrderId).trim() : ''])
+    );
+    for (const batch of needsLookup) {
+      batch.addonOrderIds = (batch.orderIds || [])
+        .map((id) => addonByOrderId.get(String(id)) || '')
+        .filter(Boolean);
+    }
+  }
   return {
     ...result,
-    results: (result.results || []).map((b) => serializeBatch(b)),
+    results: batches,
   };
 };
 
@@ -586,6 +601,7 @@ export const logBarcodePrint = async (batchId, payload, user) => {
   const styleCode = String(payload.styleCode || '').trim();
   const mode = payload.mode === 'custom' ? 'custom' : 'all';
   const quantity = Math.max(1, Number(payload.quantity || 0));
+  const remarks = String(payload.remarks || '').trim();
   const labels = (payload.labels || []).map((label) => ({
     styleCode: label.styleCode || '',
     skuCode: label.skuCode || '',
@@ -606,6 +622,7 @@ export const logBarcodePrint = async (batchId, payload, user) => {
     labels,
     printedBy: user?._id ?? user?.id ?? null,
     printedByName: user?.name || user?.email || '',
+    remarks,
     printedAt: new Date(),
   };
 

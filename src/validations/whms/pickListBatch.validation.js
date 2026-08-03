@@ -92,6 +92,7 @@ export const logBarcodePrint = {
       styleCode: Joi.string().trim().allow(''),
       mode: Joi.string().valid('all', 'custom').required(),
       quantity: Joi.number().integer().min(1).required(),
+      remarks: Joi.string().trim().max(500).allow(''),
       labels: Joi.array()
         .items(
           Joi.object().keys({

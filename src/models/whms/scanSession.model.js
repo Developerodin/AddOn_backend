@@ -14,6 +14,11 @@ export const ScanItemStatus = Object.freeze({
   EXCESS: 'excess',
 });
 
+export const ScanItemKind = Object.freeze({
+  SINGLE_PAIR: 'singlePair',
+  MULTI_PAIR: 'multiPair',
+});
+
 const scanItemSchema = mongoose.Schema(
   {
     pickListId: { type: mongoose.SchemaTypes.ObjectId, ref: 'PickList', default: null },
@@ -22,6 +27,13 @@ const scanItemSchema = mongoose.Schema(
     eanCode: { type: String, trim: true, default: '' },
     size: { type: String, trim: true, default: '' },
     shade: { type: String, trim: true, default: '' },
+    itemKind: {
+      type: String,
+      enum: Object.values(ScanItemKind),
+      default: null,
+    },
+    /** Pair style code for multi-pair child rows (skuCode on pick list). */
+    pairStyleCode: { type: String, trim: true, default: '' },
     /** Quantity expected = picked quantity confirmed by the Barcode Team. */
     expectedQty: { type: Number, required: true, min: 0 },
     scannedQty: { type: Number, default: 0, min: 0 },
@@ -38,6 +50,7 @@ const scanSessionSchema = mongoose.Schema(
   {
     orderId: { type: mongoose.SchemaTypes.ObjectId, ref: 'WarehouseOrder', required: true },
     orderNumber: { type: String, trim: true },
+    addonOrderId: { type: String, trim: true },
     batchId: { type: mongoose.SchemaTypes.ObjectId, ref: 'PickListBatch', default: null },
     status: {
       type: String,

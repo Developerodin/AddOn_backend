@@ -306,10 +306,18 @@ export const updateWarehouseOrderById = async (id, updateBody) => {
     await enrichWarehouseOrderLineItems(updateBody);
   }
 
-  // Legacy status edits (old UI) keep flowStatus roughly in sync. Granular stage moves
-  // must use the flow-status endpoint (orderFlow.service), which owns flowHistory.
+  // PATCH must not reset granular flowStatus when the coarse status bucket is unchanged
+  // (edit form re-sends the same legacy status on every save). Cancel is the only lifecycle
+  // change allowed here; granular stage moves use PATCH …/flow-status (orderFlow.service).
   if (updateBody.status !== undefined && updateBody.flowStatus === undefined) {
-    updateBody.flowStatus = flowStatusForCoarseStatus(updateBody.status);
+    const statusChanged = updateBody.status !== doc.status;
+    if (!statusChanged) {
+      delete updateBody.status;
+    } else if (updateBody.status === 'cancelled') {
+      updateBody.flowStatus = flowStatusForCoarseStatus('cancelled');
+    } else {
+      delete updateBody.status;
+    }
   }
 
   const prevStatus = doc.status;

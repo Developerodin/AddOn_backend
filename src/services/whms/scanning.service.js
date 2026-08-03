@@ -1,6 +1,6 @@
 import httpStatus from 'http-status';
 import ApiError from '../../utils/ApiError.js';
-import ScanSession, { ScanSessionStatus, ScanItemStatus } from '../../models/whms/scanSession.model.js';
+import ScanSession, { ScanSessionStatus, ScanItemStatus, ScanItemKind } from '../../models/whms/scanSession.model.js';
 import PickList from '../../models/whms/pickList.model.js';
 import WarehouseOrder, { WarehouseOrderFlowStatus } from '../../models/whms/warehouseOrder.model.js';
 import { transitionOrder } from './orderFlow.service.js';
@@ -60,18 +60,26 @@ export const createSession = async (orderId, user) => {
   const session = await ScanSession.create({
     orderId,
     orderNumber: order.orderNumber,
+    addonOrderId: order.addonOrderId,
     batchId,
-    items: pickRows.map((row) => ({
-      pickListId: row._id,
-      skuCode: row.skuCode,
-      styleCode: row.styleCode,
-      eanCode: String(row.eanCode || '').trim(),
-      size: row.size || '',
-      shade: row.shade || '',
-      expectedQty: Number(row.pickupQuantity || 0),
-      scannedQty: 0,
-      status: ScanItemStatus.PENDING,
-    })),
+    items: pickRows.map((row) => {
+      const skuCode = String(row.skuCode || '').trim();
+      const styleCode = String(row.styleCode || '').trim();
+      const isMultiPair = Boolean(skuCode && styleCode && skuCode !== styleCode);
+      return {
+        pickListId: row._id,
+        skuCode,
+        styleCode,
+        eanCode: String(row.eanCode || '').trim(),
+        size: row.size || '',
+        shade: row.shade || '',
+        itemKind: isMultiPair ? ScanItemKind.MULTI_PAIR : ScanItemKind.SINGLE_PAIR,
+        pairStyleCode: isMultiPair ? skuCode : '',
+        expectedQty: Number(row.pickupQuantity || 0),
+        scannedQty: 0,
+        status: ScanItemStatus.PENDING,
+      };
+    }),
     startedBy: user?._id ?? user?.id ?? null,
     startedByName: user?.name || user?.email || '',
   });
@@ -242,11 +250,27 @@ export const querySessions = async (query, options) => {
   if (query.orderId) filter.orderId = query.orderId;
   if (query.status) filter.status = query.status;
   if (query.q && String(query.q).trim()) {
-    filter.orderNumber = new RegExp(escapeRegex(String(query.q).trim()), 'i');
+    const regex = new RegExp(escapeRegex(String(query.q).trim()), 'i');
+    filter.$or = [{ orderNumber: regex }, { addonOrderId: regex }];
   }
   const result = await ScanSession.paginate(filter, { sortBy: 'createdAt:desc', ...options });
+  const orderIds = [...new Set((result.results || []).map((s) => String(s.orderId)).filter(Boolean))];
+  const orders = orderIds.length
+    ? await WarehouseOrder.find({ _id: { $in: orderIds } }).select('addonOrderId').lean()
+    : [];
+  const addonByOrderId = new Map(
+    orders.map((o) => [String(o._id), o.addonOrderId ? String(o.addonOrderId).trim() : ''])
+  );
   return {
     ...result,
-    results: result.results.map((s) => serializeSession(s)),
+    results: result.results.map((s) => {
+      const serialized = serializeSession(s);
+      const fromSession = serialized.addonOrderId ? String(serialized.addonOrderId).trim() : '';
+      const fromOrder = addonByOrderId.get(String(s.orderId)) || '';
+      return {
+        ...serialized,
+        addonOrderId: fromSession || fromOrder || undefined,
+      };
+    }),
   };
 };

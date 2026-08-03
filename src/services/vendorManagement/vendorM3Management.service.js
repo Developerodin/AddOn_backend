@@ -224,6 +224,7 @@ export const getM3Flows = async (filter = {}, options = {}) => {
       referenceCode: flow.referenceCode,
       productName: flow.product?.name || '',
       productVendorCode: flow.product?.vendorCode || '',
+      productFactoryCode: flow.product?.factoryCode || '',
       vpoNumber: po.vpoNumber || '',
       vendor: flow.vendor,
       vendorPurchaseOrder: flow.vendorPurchaseOrder,

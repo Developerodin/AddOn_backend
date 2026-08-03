@@ -46,6 +46,7 @@ const barcodePrintHistorySchema = mongoose.Schema(
     labels: { type: [barcodePrintLabelSchema], default: [] },
     printedBy: { type: mongoose.SchemaTypes.ObjectId, ref: 'User', default: null },
     printedByName: { type: String, trim: true, default: '' },
+    remarks: { type: String, trim: true, default: '' },
     printedAt: { type: Date, default: Date.now },
   },
   { _id: true }
@@ -74,6 +75,7 @@ const pickListBatchSchema = mongoose.Schema(
     type: { type: String, enum: PICK_LIST_BATCH_TYPES, required: true },
     orderIds: [{ type: mongoose.SchemaTypes.ObjectId, ref: 'WarehouseOrder', required: true }],
     orderNumbers: [{ type: String, trim: true }],
+    addonOrderIds: [{ type: String, trim: true }],
     status: {
       type: String,
       enum: PICK_LIST_BATCH_STATUSES,

@@ -361,6 +361,7 @@ export const getM2Entries = async (filter = {}, options = {}) => {
         ...plain,
         productName: flow?.product?.name || '',
         productVendorCode: flow?.product?.vendorCode || '',
+        productFactoryCode: flow?.product?.factoryCode || '',
         canMergeToM1: false,
         mergeBlockedReason: 'Flow or source floor not found',
       };
@@ -370,6 +371,7 @@ export const getM2Entries = async (filter = {}, options = {}) => {
       ...plain,
       productName: flow.product?.name || '',
       productVendorCode: flow.product?.vendorCode || '',
+      productFactoryCode: flow.product?.factoryCode || '',
       canMergeToM1: assessment.eligible,
       mergeBlockedReason: assessment.reason,
     };
