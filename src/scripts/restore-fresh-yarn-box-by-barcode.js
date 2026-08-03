@@ -19,8 +19,9 @@
  *   --barcode=ID[,ID...]   Required. YarnBox.barcode value(s).
  *   --box-id=ID[,ID...]    Alternative lookup by YarnBox.boxId.
  *   --cones=N              Cone count on the sealed box (default 18).
- *   --net-weight=KG        Net box weight → boxWeight + initialBoxWeight (default 20.29).
- *   --gross-weight=KG      Gross weight (default 22.7). tearweight = gross − net.
+ *   --net-weight=KG        Net yarn weight → initialBoxWeight (default 20.29).
+ *   --gross-weight=KG      Gross weight → boxWeight + grossWeight (default 22.7). tearweight = gross − net.
+ *                          Tracker UI computes net as boxWeight − tearweight, so boxWeight must be gross.
  *   --dry-run              Preview only (default unless --apply).
  *   --apply                Persist box restore + cone deletes + inventory sync.
  *   --force                Allow restore even when active ST/issued cones exist.
@@ -152,7 +153,8 @@ async function resolveBoxes({ barcodes, boxIds }) {
 function buildFreshBoxPayload({ netWeight, grossWeight, numberOfCones }) {
   const tearweight = Number((grossWeight - netWeight).toFixed(3));
   return {
-    boxWeight: netWeight,
+    // boxWeight is gross in LT/tracker flows; net = boxWeight − tearweight (see yarnTracker.service).
+    boxWeight: grossWeight,
     grossWeight,
     tearweight: tearweight >= 0 ? tearweight : 0,
     initialBoxWeight: netWeight,
