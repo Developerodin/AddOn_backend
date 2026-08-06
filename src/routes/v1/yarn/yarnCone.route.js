@@ -75,6 +75,13 @@ router
     yarnConeController.bulkSetConeStorageLocation
   );
 
+router
+  .route('/relocate')
+  .post(
+    validate(yarnConeValidation.relocateCone),
+    yarnConeController.relocateCone
+  );
+
 router.post(
   '/floor-issue-batch',
   validate(yarnConeValidation.createFloorIssueBatch),

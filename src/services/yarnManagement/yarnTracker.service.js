@@ -245,7 +245,10 @@ function mapTransactionEvent(tx) {
   const type = tx.transactionType;
   let title = type.replace(/_/g, ' ');
   if (type === 'yarn_stocked') title = 'Stocked in storage';
-  if (type === 'internal_transfer') title = 'Internal transfer';
+  if (type === 'internal_transfer') {
+    title =
+      tx.fromStorageLocation && tx.toStorageLocation ? 'Relocated' : 'Internal transfer';
+  }
   if (ISSUE_TX_TYPES.includes(type)) title = 'Yarn issued to floor';
   if (RETURN_TX_TYPES.includes(type)) title = 'Yarn returned from floor';
 

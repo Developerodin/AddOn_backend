@@ -113,4 +113,12 @@ export const bulkSetConeStorageLocation = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).send(result);
 });
 
+/**
+ * Relocate a stored cone to another ST rack (logs internal_transfer).
+ */
+export const relocateCone = catchAsync(async (req, res) => {
+  const result = await yarnConeService.relocateCone(req.body);
+  res.status(httpStatus.OK).send(result);
+});
+
 

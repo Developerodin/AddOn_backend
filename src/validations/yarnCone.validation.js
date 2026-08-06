@@ -119,6 +119,18 @@ export const bulkSetConeStorageLocation = {
     .required(),
 };
 
+export const relocateCone = {
+  body: Joi.object()
+    .keys({
+      coneId: Joi.string().trim(),
+      coneBarcode: Joi.string().trim(),
+      toStorageLocation: Joi.string().trim().required(),
+      transferDate: Joi.date().iso().optional(),
+    })
+    .or('coneId', 'coneBarcode')
+    .required(),
+};
+
 export const getYarnCones = {
   query: Joi.object().keys({
     po_number: Joi.string().trim().optional(),

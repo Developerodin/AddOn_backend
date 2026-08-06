@@ -10,6 +10,10 @@ import {
 } from '../../models/yarnReq/yarnCone.model.js';
 import { activeYarnConeMatch, activeYarnBoxMatch } from './yarnStockActiveFilters.js';
 import { resolveYarnCatalogIdForCone } from './yarnConeCatalogResolve.service.js';
+import {
+  isStLocation,
+  requireActiveStorageSlot,
+} from './storageLocation.helper.js';
 
 /** Types that assign a cone to a production order + article (same as article-return-slice). */
 const ISSUE_TX_TYPES_FOR_CONE_LINK = ['yarn_issued', 'yarn_issued_linking', 'yarn_issued_sampling'];
@@ -444,6 +448,104 @@ export const bulkSetConeStorageLocation = async (payload) => {
     message: `Updated storage location for ${result.modifiedCount} cone(s)`,
     modifiedCount: result.modifiedCount,
     cones: updatedCones,
+  };
+};
+
+/**
+ * Relocate a stored cone from one ST rack to another and log internal_transfer.
+ * @param {Object} payload
+ * @param {string} [payload.coneId] - Mongo ObjectId
+ * @param {string} [payload.coneBarcode] - Cone barcode
+ * @param {string} payload.toStorageLocation - Destination ST slot barcode
+ * @param {Date|string} [payload.transferDate]
+ * @returns {Promise<Object>}
+ */
+export const relocateCone = async (payload = {}) => {
+  const toStorageLocation = String(payload.toStorageLocation ?? '').trim();
+  const coneId = payload.coneId != null ? String(payload.coneId).trim() : '';
+  const coneBarcode = payload.coneBarcode != null ? String(payload.coneBarcode).trim() : '';
+
+  if (!coneId && !coneBarcode) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'coneId or coneBarcode is required');
+  }
+  if (!toStorageLocation) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'toStorageLocation is required');
+  }
+  if (!isStLocation(toStorageLocation)) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'toStorageLocation must be a short-term storage location (ST-* or B7-01-*)'
+    );
+  }
+
+  const destinationSlot = await requireActiveStorageSlot(toStorageLocation);
+  const destBarcode = String(destinationSlot.barcode || toStorageLocation).trim();
+  if (destinationSlot.zoneCode && destinationSlot.zoneCode !== 'ST') {
+    throw new ApiError(httpStatus.BAD_REQUEST, `Destination slot ${destBarcode} is not short-term storage`);
+  }
+
+  const isObjectId = /^[a-fA-F0-9]{24}$/.test(coneId);
+  let cone = null;
+  if (coneId && isObjectId) {
+    cone = await YarnCone.findOne({ _id: coneId, ...activeYarnConeMatch });
+  }
+  if (!cone && (coneBarcode || coneId)) {
+    cone = await YarnCone.findOne({
+      barcode: coneBarcode || coneId,
+      ...activeYarnConeMatch,
+    });
+  }
+  if (!cone) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Cone not found');
+  }
+
+  const fromLocation = String(cone.coneStorageId ?? '').trim();
+  if (!fromLocation) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Cone has no storage location; allocate it first before relocating'
+    );
+  }
+  if (fromLocation === destBarcode) {
+    throw new ApiError(httpStatus.BAD_REQUEST, `Cone is already at destination ${destBarcode}`);
+  }
+
+  const issueStatus = String(cone.issueStatus ?? '').toLowerCase();
+  if (issueStatus === 'issued') {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Cannot relocate a cone that is issued to production');
+  }
+
+  if (!cone.yarnCatalogId) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Cone is missing yarnCatalogId');
+  }
+
+  const totalWeight = Number(cone.coneWeight || 0);
+  const tearWeight = Number(cone.tearWeight || 0);
+  const netWeight = Math.max(0, totalWeight - tearWeight);
+
+  cone.coneStorageId = destBarcode;
+  await cone.save();
+
+  const transaction = await YarnTransaction.create({
+    yarnCatalogId: cone.yarnCatalogId,
+    yarnName: cone.yarnName || 'Unknown',
+    transactionType: 'internal_transfer',
+    transactionDate: payload.transferDate ? new Date(payload.transferDate) : new Date(),
+    transactionTotalWeight: totalWeight,
+    transactionNetWeight: netWeight,
+    transactionTearWeight: tearWeight,
+    transactionConeCount: 1,
+    conesIdsArray: [cone._id],
+    fromStorageLocation: fromLocation,
+    toStorageLocation: destBarcode,
+  });
+
+  return {
+    message: `Relocated cone ${cone.barcode} from ${fromLocation} to ${destBarcode}`,
+    cone,
+    fromStorageLocation: fromLocation,
+    toStorageLocation: destBarcode,
+    transactionId: transaction._id,
   };
 };
 

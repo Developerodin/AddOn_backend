@@ -5,6 +5,13 @@ import ApiError from '../../utils/ApiError.js';
 import { activeYarnBoxMatch, activeYarnConeMatch } from './yarnStockActiveFilters.js';
 import * as yarnTransactionService from './yarnTransaction.service.js';
 import { computeLtRemainingBoxWeight } from './yarnBoxLtRemaining.helper.js';
+import {
+  isLtLocation,
+  isStLocation,
+  isValidStorageLocationPattern,
+  requireActiveStorageSlot,
+  resolveZone,
+} from './storageLocation.helper.js';
 
 /**
  * Transfer boxes between storage locations
@@ -35,20 +42,28 @@ const findYarnCatalogByYarnName = async (yarnName) => {
  * Supports: LT→ST (updates inventory), LT→LT (location change only), ST→ST (location change only)
  * @param {Object} transferData - Transfer data
  * @param {Array<string>} transferData.boxIds - Array of box IDs to transfer
- * @param {string} transferData.toStorageLocation - Target storage location (e.g., "ST-S001-F1" or "LT-S002-F1")
+ * @param {string} transferData.toStorageLocation - Target storage location (legacy LT-/ST- or B7-* slot barcode)
  * @param {Date} transferData.transferDate - Transfer date (optional, defaults to now)
  * @returns {Promise<Object>} Transfer result with updated boxes and transaction
  */
 export const transferBoxes = async (transferData) => {
-  const { boxIds, toStorageLocation, transferDate } = transferData;
+  const { boxIds, transferDate } = transferData;
+  const toStorageLocation = String(transferData.toStorageLocation ?? '').trim();
 
   if (!boxIds || !Array.isArray(boxIds) || boxIds.length === 0) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'boxIds array is required with at least one box ID');
   }
 
-  if (!toStorageLocation || !/^(LT|ST)-/i.test(toStorageLocation)) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'toStorageLocation must be a valid storage location (starts with LT- or ST-)');
+  if (!toStorageLocation || !isValidStorageLocationPattern(toStorageLocation)) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'toStorageLocation must be a valid LT or ST storage location (LT-*/ST-* or B7-* slot barcode)'
+    );
   }
+
+  const destinationSlot = await requireActiveStorageSlot(toStorageLocation);
+  const destBarcode = String(destinationSlot.barcode || toStorageLocation).trim();
+  const toZone = resolveZone(destBarcode) || destinationSlot.zoneCode;
 
   // Find all boxes
   const boxes = await YarnBox.find({ boxId: { $in: boxIds }, ...activeYarnBoxMatch });
@@ -60,7 +75,9 @@ export const transferBoxes = async (transferData) => {
   }
 
   // Validate all boxes have storage locations
-  const invalidBoxes = boxes.filter(box => !box.storageLocation || !/^(LT|ST)-/i.test(box.storageLocation));
+  const invalidBoxes = boxes.filter(
+    (box) => !box.storageLocation || !isValidStorageLocationPattern(box.storageLocation)
+  );
   if (invalidBoxes.length > 0) {
     throw new ApiError(
       httpStatus.BAD_REQUEST,
@@ -68,14 +85,42 @@ export const transferBoxes = async (transferData) => {
     );
   }
 
-  // Determine transfer type
-  const isFromLongTerm = boxes.every(box => /^LT-/i.test(box.storageLocation));
-  const isToLongTerm = /^LT-/i.test(toStorageLocation);
-  const isToShortTerm = /^ST-/i.test(toStorageLocation);
-  
-  const transferType = isFromLongTerm && isToShortTerm ? 'LT_TO_ST' : 
-                       isFromLongTerm && isToLongTerm ? 'LT_TO_LT' :
-                       'ST_TO_ST';
+  const sameLocationBoxes = boxes.filter(
+    (box) => String(box.storageLocation).trim() === destBarcode
+  );
+  if (sameLocationBoxes.length > 0) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Box(es) already at destination ${destBarcode}: ${sameLocationBoxes.map((b) => b.boxId).join(', ')}`
+    );
+  }
+
+  // Determine transfer type from B7-aware zone resolution
+  const isFromLongTerm = boxes.every((box) => isLtLocation(box.storageLocation));
+  const isFromShortTerm = boxes.every((box) => isStLocation(box.storageLocation));
+  const isToLongTerm = toZone === 'LT' || isLtLocation(destBarcode);
+  const isToShortTerm = toZone === 'ST' || isStLocation(destBarcode);
+
+  if (!isFromLongTerm && !isFromShortTerm) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'All boxes in a transfer must be in the same storage zone (LT or ST)'
+    );
+  }
+
+  let transferType;
+  if (isFromLongTerm && isToShortTerm) {
+    transferType = 'LT_TO_ST';
+  } else if (isFromLongTerm && isToLongTerm) {
+    transferType = 'LT_TO_LT';
+  } else if (isFromShortTerm && isToShortTerm) {
+    transferType = 'ST_TO_ST';
+  } else {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Unsupported transfer direction. Use LT→ST, LT→LT, or ST→ST only.'
+    );
+  }
 
   // Validate all boxes are stored and QC approved
   const notReadyBoxes = boxes.filter(box => !box.storedStatus || box.qcData?.status !== 'qc_approved');
@@ -97,7 +142,6 @@ export const transferBoxes = async (transferData) => {
   }
 
   const transferResults = [];
-  const fromLocations = new Set();
 
   // Process each yarn group
   for (const [yarnName, yarnBoxes] of Object.entries(boxesByYarn)) {
@@ -112,6 +156,7 @@ export const transferBoxes = async (transferData) => {
     let totalNetWeight = 0;
     let totalTearWeight = 0;
     let totalCones = 0;
+    const fromLocations = new Set();
 
     for (const box of yarnBoxes) {
       const netWeight = (box.boxWeight || 0) - (box.tearweight || 0);
@@ -123,6 +168,7 @@ export const transferBoxes = async (transferData) => {
     }
 
     const boxIdsForYarn = yarnBoxes.map(b => b.boxId);
+    const fromStorageLocation = Array.from(fromLocations).join(',');
     let transaction;
 
     if (transferType === 'LT_TO_ST') {
@@ -158,8 +204,8 @@ export const transferBoxes = async (transferData) => {
         numberOfCones: actualConeCount, // Actual number of cones in ST for these boxes
         orderno: boxIdsForYarn.join(','),
         boxIds: boxIdsForYarn,
-        fromStorageLocation: Array.from(fromLocations).join(','),
-        toStorageLocation,
+        fromStorageLocation,
+        toStorageLocation: destBarcode,
       });
 
       // After transaction: update remaining weight in LT and reset only when fully transferred.
@@ -196,11 +242,10 @@ export const transferBoxes = async (transferData) => {
       }
     } else {
       // LT→LT or ST→ST: Location change only, no inventory update
-      // Create transaction record directly without updating inventory
       transaction = await YarnTransaction.create({
         yarnCatalogId: yarnCatalog._id,
         yarnName: yarnCatalog.yarnName,
-        transactionType: 'internal_transfer', // Use same type but won't affect inventory
+        transactionType: 'internal_transfer',
         transactionDate: transferDate || new Date(),
         transactionTotalWeight: totalWeight,
         transactionNetWeight: totalNetWeight,
@@ -208,9 +253,15 @@ export const transferBoxes = async (transferData) => {
         transactionConeCount: totalCones,
         orderno: boxIdsForYarn.join(','),
         boxIds: boxIdsForYarn,
-        fromStorageLocation: Array.from(fromLocations).join(','),
-        toStorageLocation,
+        fromStorageLocation,
+        toStorageLocation: destBarcode,
       });
+
+      for (const box of yarnBoxes) {
+        box.storageLocation = destBarcode;
+        box.storedStatus = true;
+        await box.save();
+      }
     }
 
     transferResults.push({
@@ -222,7 +273,7 @@ export const transferBoxes = async (transferData) => {
       totalNetWeight,
       totalCones,
       fromLocations: Array.from(fromLocations),
-      toStorageLocation,
+      toStorageLocation: destBarcode,
       transactionId: transaction._id,
     });
   }
@@ -234,7 +285,7 @@ export const transferBoxes = async (transferData) => {
   };
 
   return {
-    message: `Successfully transferred ${boxes.length} box(es) ${transferTypeMessages[transferType]} (${toStorageLocation})`,
+    message: `Successfully transferred ${boxes.length} box(es) ${transferTypeMessages[transferType]} (${destBarcode})`,
     transferType,
     boxesTransferred: boxes.length,
     results: transferResults,
@@ -246,9 +297,12 @@ export const transferBoxes = async (transferData) => {
  * @deprecated Use transferBoxes instead
  */
 export const transferBoxesToShortTerm = async (transferData) => {
-  // Validate it's actually LT→ST
-  if (!transferData.toStorageLocation || !/^ST-/i.test(transferData.toStorageLocation)) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'toStorageLocation must be a short-term storage location (starts with ST-)');
+  const to = String(transferData.toStorageLocation ?? '').trim();
+  if (!to || !isStLocation(to)) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'toStorageLocation must be a short-term storage location (ST-* or B7-01-*)'
+    );
   }
   return transferBoxes(transferData);
 };
