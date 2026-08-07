@@ -95,18 +95,23 @@ async function generateBatchNumber() {
 
 /**
  * FIFO-allocate a total picked quantity across order allocations.
+ * Over-pick remainder is applied to the last allocation.
  * @param {Array<{ requiredQty: number }>} allocations
  * @param {number} totalPicked
  * @returns {number[]}
  */
 export function allocateFifoQuantities(allocations, totalPicked) {
   let remaining = Math.max(0, Number(totalPicked || 0));
-  return allocations.map((alloc) => {
+  const result = allocations.map((alloc) => {
     const req = Number(alloc.requiredQty || 0);
     const assign = Math.min(req, remaining);
     remaining -= assign;
     return assign;
   });
+  if (remaining > 0 && result.length > 0) {
+    result[result.length - 1] += remaining;
+  }
+  return result;
 }
 
 /**
@@ -484,12 +489,6 @@ export const updateBatchItemPickedQty = async (batchId, itemKey, pickedQty, user
 
     const item = findBatchItem(batch, itemKey);
     const nextPicked = Math.max(0, Number(pickedQty || 0));
-    if (nextPicked > Number(item.requiredQty || 0)) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        `Picked quantity (${nextPicked}) cannot exceed required (${item.requiredQty}) for ${item.styleCode}`
-      );
-    }
 
     await applyBatchItemPickAllocation(item, nextPicked, session);
 
