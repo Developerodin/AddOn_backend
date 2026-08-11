@@ -178,13 +178,21 @@ async function buildExpectedPickRowsFromOrder(order) {
 
   const rows = [];
   const singleItems = Array.isArray(order.styleCodeSinglePair) ? order.styleCodeSinglePair : [];
-  const singleAttrsByCode = await buildArticleAttrsByStyleCodeString(
-    singleItems.map((item) => item.styleCode).filter(Boolean)
+  const singleStyleCodes = singleItems.map((item) => item.styleCode).filter(Boolean);
+  const singleAttrsByCode = await buildArticleAttrsByStyleCodeString(singleStyleCodes);
+  const singleStyleDocs = singleStyleCodes.length
+    ? await StyleCode.find({ styleCode: { $in: [...new Set(singleStyleCodes)] } })
+        .select('styleCode eanCode')
+        .lean()
+    : [];
+  const eanByStyleCode = new Map(
+    singleStyleDocs.map((d) => [String(d.styleCode).trim(), String(d.eanCode || '').trim()])
   );
 
   for (const item of singleItems) {
     const catalogAttrs = singleAttrsByCode.get(item.styleCode) || { colour: '', pattern: '' };
     const preferCatalogue = !String(item.colour || '').trim();
+    const styleKey = String(item.styleCode || '').trim();
     rows.push({
       ...base,
       size: item.pack || '',
@@ -192,7 +200,7 @@ async function buildExpectedPickRowsFromOrder(order) {
       skuCode: item.styleCode,
       styleCode: item.styleCode,
       styleCodeId: item.styleCodeId || null,
-      eanCode: String(item.eanCode || '').trim(),
+      eanCode: String(item.eanCode || eanByStyleCode.get(styleKey) || '').trim(),
       quantity: item.quantity,
     });
   }

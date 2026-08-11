@@ -2,8 +2,50 @@ import httpStatus from 'http-status';
 import ApiError from '../../utils/ApiError.js';
 import ScanSession, { ScanSessionStatus, ScanItemStatus, ScanItemKind } from '../../models/whms/scanSession.model.js';
 import PickList from '../../models/whms/pickList.model.js';
+import StyleCode from '../../models/styleCode.model.js';
 import WarehouseOrder, { WarehouseOrderFlowStatus } from '../../models/whms/warehouseOrder.model.js';
 import { transitionOrder } from './orderFlow.service.js';
+
+/**
+ * Fill missing scan-item EAN codes from the style-code catalogue (and persist when possible).
+ * Covers older pick rows / bulk imports that stored empty eanCode.
+ * @param {import('mongoose').Document|object} session
+ * @returns {Promise<object>} serialized session
+ */
+const enrichSessionEanCodes = async (session) => {
+  const items = session.items || [];
+  const missingCodes = [
+    ...new Set(
+      items
+        .filter((i) => !String(i.eanCode || '').trim() && String(i.styleCode || '').trim())
+        .map((i) => String(i.styleCode).trim())
+    ),
+  ];
+  if (!missingCodes.length) return serializeSession(session);
+
+  const styleDocs = await StyleCode.find({ styleCode: { $in: missingCodes } })
+    .select('styleCode eanCode')
+    .lean();
+  const eanByCode = new Map(
+    styleDocs.map((d) => [String(d.styleCode).trim(), String(d.eanCode || '').trim()])
+  );
+
+  let changed = false;
+  for (const item of items) {
+    if (String(item.eanCode || '').trim()) continue;
+    const code = String(item.styleCode || '').trim();
+    const ean = eanByCode.get(code) || '';
+    if (!ean) continue;
+    item.eanCode = ean;
+    changed = true;
+  }
+
+  if (changed && typeof session.save === 'function') {
+    await session.save();
+  }
+
+  return serializeSession(session);
+};
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -46,7 +88,7 @@ export const createSession = async (orderId, user) => {
   }
 
   const existing = await ScanSession.findOne({ orderId, status: ScanSessionStatus.OPEN });
-  if (existing) return serializeSession(existing);
+  if (existing) return enrichSessionEanCodes(existing);
 
   const pickRows = await PickList.find({ orderId, pickupQuantity: { $gt: 0 } })
     .sort({ styleCode: 1, size: 1 })
@@ -54,6 +96,22 @@ export const createSession = async (orderId, user) => {
   if (!pickRows.length) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'No picked quantities found for this order');
   }
+
+  const styleCodesNeedingEan = [
+    ...new Set(
+      pickRows
+        .filter((row) => !String(row.eanCode || '').trim() && String(row.styleCode || '').trim())
+        .map((row) => String(row.styleCode).trim())
+    ),
+  ];
+  const styleDocs = styleCodesNeedingEan.length
+    ? await StyleCode.find({ styleCode: { $in: styleCodesNeedingEan } })
+        .select('styleCode eanCode')
+        .lean()
+    : [];
+  const eanByStyleCode = new Map(
+    styleDocs.map((d) => [String(d.styleCode).trim(), String(d.eanCode || '').trim()])
+  );
 
   const batchId = order.activeBatchId || pickRows[0]?.batchId || null;
 
@@ -66,11 +124,12 @@ export const createSession = async (orderId, user) => {
       const skuCode = String(row.skuCode || '').trim();
       const styleCode = String(row.styleCode || '').trim();
       const isMultiPair = Boolean(skuCode && styleCode && skuCode !== styleCode);
+      const fromPick = String(row.eanCode || '').trim();
       return {
         pickListId: row._id,
         skuCode,
         styleCode,
-        eanCode: String(row.eanCode || '').trim(),
+        eanCode: fromPick || eanByStyleCode.get(styleCode) || '',
         size: row.size || '',
         shade: row.shade || '',
         itemKind: isMultiPair ? ScanItemKind.MULTI_PAIR : ScanItemKind.SINGLE_PAIR,
@@ -88,7 +147,7 @@ export const createSession = async (orderId, user) => {
     await transitionOrder(orderId, WarehouseOrderFlowStatus.SCANNING_IN_PROGRESS, user, {}, { system: true });
   }
 
-  return serializeSession(session);
+  return enrichSessionEanCodes(session);
 };
 
 const getOpenSession = async (sessionId) => {
@@ -242,7 +301,7 @@ export const cancelSession = async (sessionId, user, { remarks = '' } = {}) => {
 export const getSessionById = async (sessionId) => {
   const session = await ScanSession.findById(sessionId);
   if (!session) throw new ApiError(httpStatus.NOT_FOUND, 'Scan session not found');
-  return serializeSession(session);
+  return enrichSessionEanCodes(session);
 };
 
 export const querySessions = async (query, options) => {

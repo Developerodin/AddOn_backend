@@ -483,8 +483,8 @@ const resolveClientForBulkImport = async (row) => {
  *  - date (DD/MM/YYYY or DD-MM-YYYY)
  *  - status (string)
  *  - addonOrderId (optional — external / customer Addon order reference)
- *  - styleCodeSinglePair[].styleCode (code string — resolved to styleCodeId; pack, type, colour, pattern auto-filled from catalogue)
- *  - styleCodeMultiPair[].styleCode  (code string — resolved to styleCodeMultiPairId; pack, type, colour, pattern auto-filled when omitted)
+ *  - styleCodeSinglePair[].styleCode (code string — resolved to styleCodeId; pack, type, colour, pattern, eanCode auto-filled from catalogue)
+ *  - styleCodeMultiPair[].styleCode  (code string — resolved to styleCodeMultiPairId; pack, type, colour, pattern, eanCode auto-filled when omitted)
  */
 export const bulkImportWarehouseOrders = async (orders, batchSize = 50) => {
   const results = {
@@ -567,6 +567,7 @@ export const bulkImportWarehouseOrders = async (orders, batchSize = 50) => {
           type: coalesceLineField(item.type, doc.brand),
           colour: coalesceLineField(item.colour || item.color, catalogAttrs.colour),
           pattern: coalesceLineField(item.pattern, catalogAttrs.pattern),
+          eanCode: coalesceLineField(item.eanCode, doc.eanCode),
           quantity: Number(item.quantity),
         };
       });
@@ -587,6 +588,7 @@ export const bulkImportWarehouseOrders = async (orders, batchSize = 50) => {
           type: coalesceLineField(item.type, linkedStyle?.brand),
           colour: coalesceLineField(item.colour || item.color, catalogAttrs.colour),
           pattern: coalesceLineField(item.pattern, catalogAttrs.pattern),
+          eanCode: coalesceLineField(item.eanCode, doc.eanCode),
           quantity: Number(item.quantity),
         };
       });
