@@ -15,6 +15,7 @@ import {
 } from './pickList.service.js';
 import { transitionOrder } from './orderFlow.service.js';
 import { runWithOptionalMongoTransaction } from '../../utils/mongoDeployment.js';
+import { buildBarcodeCatalogByStyleCode } from './barcodeLabelCatalogEnrich.js';
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -32,48 +33,40 @@ function toPlainBatchItem(item) {
 }
 
 /**
- * Resolve EAN codes for batch items missing a stored value (legacy batches / old pick rows).
+ * Resolve EAN codes from the style-code master for every batch line.
+ * Master EAN always wins over a stale value stored on the pick row.
  * @param {object[]} items - Batch line items
  * @returns {Promise<object[]>}
  */
 async function resolveEanCodesForBatchItems(items) {
   const plainItems = (items || []).map((item) => toPlainBatchItem(item));
-  const needsLookup = plainItems.filter((item) => !String(item.eanCode || '').trim());
-  if (!needsLookup.length) return plainItems;
+  if (!plainItems.length) return plainItems;
 
-  const styleCodeIds = [...new Set(needsLookup.map((item) => item.styleCodeId).filter(Boolean))];
+  const styleCodeIds = [...new Set(plainItems.map((item) => item.styleCodeId).filter(Boolean).map(String))];
   const styleCodes = [
-    ...new Set(
-      needsLookup
-        .filter((item) => !item.styleCodeId && item.styleCode)
-        .map((item) => String(item.styleCode).trim())
-    ),
+    ...new Set(plainItems.map((item) => String(item.styleCode || '').trim()).filter(Boolean)),
   ];
 
   const [byIdDocs, byCodeDocs] = await Promise.all([
     styleCodeIds.length
-      ? StyleCode.find({ _id: { $in: styleCodeIds } })
-          .select('eanCode styleCode')
-          .lean()
+      ? StyleCode.find({ _id: { $in: styleCodeIds } }).select('eanCode styleCode').lean()
       : [],
     styleCodes.length
-      ? StyleCode.find({ styleCode: { $in: styleCodes } })
-          .select('eanCode styleCode')
-          .lean()
+      ? StyleCode.find({ styleCode: { $in: styleCodes } }).select('eanCode styleCode').lean()
       : [],
   ]);
 
   const eanById = new Map(byIdDocs.map((doc) => [String(doc._id), String(doc.eanCode || '').trim()]));
-  const eanByCode = new Map(byCodeDocs.map((doc) => [doc.styleCode, String(doc.eanCode || '').trim()]));
+  const eanByCode = new Map(
+    byCodeDocs.map((doc) => [String(doc.styleCode || '').trim().toLowerCase(), String(doc.eanCode || '').trim()]),
+  );
 
   return plainItems.map((item) => {
-    const stored = String(item.eanCode || '').trim();
-    if (stored) return item;
-    const resolved =
+    const fromMaster =
       eanById.get(String(item.styleCodeId)) ||
-      eanByCode.get(item.styleCode) ||
+      eanByCode.get(String(item.styleCode || '').trim().toLowerCase()) ||
       '';
-    return { ...item, eanCode: resolved };
+    return { ...item, eanCode: fromMaster || String(item.eanCode || '').trim() };
   });
 }
 
@@ -551,6 +544,7 @@ export const buildBarcodePayload = async (batchId, { styleCode, extraQty = 0 } =
   }
 
   items = await resolveEanCodesForBatchItems(items);
+  const catalogByStyle = await buildBarcodeCatalogByStyleCode(items);
 
   const extra = Math.max(0, Number(extraQty || 0));
   const labels = [];
@@ -558,15 +552,27 @@ export const buildBarcodePayload = async (batchId, { styleCode, extraQty = 0 } =
     const baseQty = Number(item.pickedQty || 0);
     const qty = baseQty + (styleCode ? extra : 0);
     if (qty <= 0) continue;
-    const barcodeValue = String(item.eanCode || '').trim() || item.styleCode;
+    const catalog = catalogByStyle.get(String(item.styleCode || '').trim()) || {};
+    const pairCount = Number(catalog.pairCount || 1);
+    const eanCode = String(catalog.eanCode || item.eanCode || '').trim();
+    const barcodeValue = eanCode || item.styleCode;
     labels.push({
       styleCode: item.styleCode,
       skuCode: item.skuCode,
-      eanCode: String(item.eanCode || '').trim(),
+      eanCode,
       size: item.size || '',
-      shade: item.shade || '',
+      shade: item.shade || catalog.colour || '',
+      colour: catalog.colour || item.shade || '',
       barcode: barcodeValue,
       quantity: qty,
+      mrp: Number(catalog.mrp || 0),
+      productName: catalog.productName || '',
+      productType: catalog.productType || '',
+      pairCount,
+      netQuantity: catalog.netQuantity || '',
+      footLength: catalog.footLength || '',
+      pack: catalog.pack || '',
+      brand: catalog.brand || '',
     });
   }
 
