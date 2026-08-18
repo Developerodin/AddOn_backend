@@ -11,6 +11,8 @@ export const yarnTransactionTypes = [
   'yarn_stocked',
   'internal_transfer',
   'yarn_returned',
+  'yarn_sent_to_vendor',
+  'yarn_received_from_vendor',
 ];
 
 const yarnTransactionSchema = mongoose.Schema(

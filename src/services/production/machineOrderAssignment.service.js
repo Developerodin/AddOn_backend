@@ -40,6 +40,17 @@ export const createMachineOrderAssignment = async (body, userId) => {
   return assignment;
 };
 
+/** List populate: keep fields knitting UI already uses; omit full order/article graphs. */
+const MACHINE_ORDER_ASSIGNMENT_LIST_POPULATE = [
+  { path: 'machine', select: 'machineCode name needleSize needleSizeConfig' },
+  { path: 'productionOrderItems.productionOrder', select: 'orderNumber orderNote createdAt' },
+  {
+    path: 'productionOrderItems.article',
+    select:
+      'articleNumber plannedQuantity floorQuantities.knitting.remaining floorQuantities.knitting.received floorQuantities.knitting.completed floorQuantities.knitting.transferred',
+  },
+];
+
 /**
  * Query machine order assignments with filter and pagination.
  * @param {Object} filter
@@ -49,7 +60,7 @@ export const createMachineOrderAssignment = async (body, userId) => {
 export const queryMachineOrderAssignments = async (filter, options) => {
   const assignments = await MachineOrderAssignment.paginate(filter, {
     ...options,
-    populate: ['machine', 'productionOrderItems.productionOrder', 'productionOrderItems.article'],
+    populate: MACHINE_ORDER_ASSIGNMENT_LIST_POPULATE,
     sortBy: options.sortBy || 'createdAt:desc',
   });
   return assignments;

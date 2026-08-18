@@ -33,6 +33,7 @@ import supplierRoute from './supplier.route.js';
 import yarnCatalogRoute from './yarnCatalog.route.js';
 import yarnPurchaseOrderRoute from './yarn/yarnPurchaseOrder.route.js';
 import yarnBoxRoute from './yarn/yarnBox.route.js';
+import yarnVendorJobRoute from './yarn/yarnVendorJob.route.js';
 import yarnConeRoute from './yarn/yarnCone.route.js';
 import yarnTransactionRoute from './yarn/yarnTransaction.route.js';
 import yarnInventoryRoute from './yarn/yarnInventory.route.js';
@@ -189,6 +190,10 @@ const defaultRoutes = [
   {
     path: '/yarn-management/yarn-boxes',
     route: yarnBoxRoute,
+  },
+  {
+    path: '/yarn-management/yarn-vendor-jobs',
+    route: yarnVendorJobRoute,
   },
   {
     path: '/yarn-management/yarn-cones',

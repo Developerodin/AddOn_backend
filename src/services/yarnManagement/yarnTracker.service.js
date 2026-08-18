@@ -249,6 +249,8 @@ function mapTransactionEvent(tx) {
     title =
       tx.fromStorageLocation && tx.toStorageLocation ? 'Relocated' : 'Internal transfer';
   }
+  if (type === 'yarn_sent_to_vendor') title = 'Sent to vendor';
+  if (type === 'yarn_received_from_vendor') title = 'Received from vendor';
   if (ISSUE_TX_TYPES.includes(type)) title = 'Yarn issued to floor';
   if (RETURN_TX_TYPES.includes(type)) title = 'Yarn returned from floor';
 
@@ -373,6 +375,19 @@ function buildBoxTimeline(box, cones, transactions) {
       at: box.returnedToVendorAt,
       title: 'Returned to vendor',
       details: { vendorReturnId: box.vendorReturnId },
+    });
+  }
+
+  if (box.atVendorAt) {
+    events.push({
+      id: `box-at-vendor-${box._id}`,
+      kind: 'at_vendor',
+      at: box.atVendorAt,
+      title: 'Currently at vendor',
+      details: {
+        vendorShipmentId: box.vendorShipmentId,
+        vendorSupplierId: box.vendorSupplierId,
+      },
     });
   }
 

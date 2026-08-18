@@ -63,7 +63,8 @@ export const DEFAULT_NAVIGATION = {
       'PO Return Challan': false,
       'GRN History': false,
       'Yarn QC': false,
-      'Yarn Storage': false
+      'Yarn Storage': false,
+      'Yarn to Vendor': false
     },
     'Yarn Issue': {
       'Issue for orders': false,
@@ -170,7 +171,8 @@ export const ROLE_NAVIGATION_TEMPLATES = {
         'PO Return Challan': true,
         'GRN History': true,
         'Yarn QC': true,
-        'Yarn Storage': true
+        'Yarn Storage': true,
+        'Yarn to Vendor': true
       },
       'Yarn Issue': {
         'Issue for orders': true,
@@ -272,7 +274,8 @@ export const ROLE_NAVIGATION_TEMPLATES = {
         'PO Return Challan': false,
         'GRN History': false,
         'Yarn QC': false,
-        'Yarn Storage': false
+        'Yarn Storage': false,
+        'Yarn to Vendor': false
       },
       'Yarn Issue': {
         'Issue for orders': false,
@@ -488,7 +491,7 @@ export const validateNavigationStructure = (navigation) => {
         console.error('Validation failed: Yarn Management.Purchase Management is missing or not an object');
         return false;
       }
-      const purchaseManagementKeys = ['Requisition list', 'Purchase Order', 'Purchase Order Recevied', 'Draft POs', 'PO Return', 'PO Return Challan', 'GRN History', 'Yarn QC', 'Yarn Storage'];
+      const purchaseManagementKeys = ['Requisition list', 'Purchase Order', 'Purchase Order Recevied', 'Draft POs', 'PO Return', 'PO Return Challan', 'GRN History', 'Yarn QC', 'Yarn Storage', 'Yarn to Vendor'];
       for (const purchaseKey of purchaseManagementKeys) {
         if (!(purchaseKey in navigation['Yarn Management']['Purchase Management']) || typeof navigation['Yarn Management']['Purchase Management'][purchaseKey] !== 'boolean') {
           console.error(`Validation failed: Yarn Management.Purchase Management.${purchaseKey} is missing or not a boolean`);

@@ -194,6 +194,18 @@ const yarnBoxSchema = mongoose.Schema(
       ref: 'YarnPoVendorReturn',
       default: null,
     },
+    /** Off-site processor round-trip (Yarn to Vendor). Not PO return. */
+    atVendorAt: { type: Date, default: null },
+    vendorShipmentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'YarnVendorShipment',
+      default: null,
+    },
+    vendorSupplierId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Supplier',
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -251,6 +263,9 @@ yarnBoxSchema.pre('save', async function (next) {
  */
 yarnBoxSchema.post('save', async function (doc) {
   if (doc.returnedToVendorAt != null) {
+    return;
+  }
+  if (doc.atVendorAt != null) {
     return;
   }
   // Only process if box is stored in long-term storage with QC approval
@@ -411,6 +426,9 @@ yarnBoxSchema.index({ storageLocation: 1, storedStatus: 1 });
 yarnBoxSchema.index({ yarnName: 1, storageLocation: 1 });
 yarnBoxSchema.index({ boxId: 1 });
 yarnBoxSchema.index({ poNumber: 1, returnedToVendorAt: 1 });
+yarnBoxSchema.index({ atVendorAt: 1 });
+yarnBoxSchema.index({ vendorShipmentId: 1 });
+yarnBoxSchema.index({ vendorSupplierId: 1, atVendorAt: 1 });
 
 yarnBoxSchema.plugin(toJSON);
 yarnBoxSchema.plugin(paginate);

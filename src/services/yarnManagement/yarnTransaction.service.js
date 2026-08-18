@@ -12,6 +12,7 @@ import Product from '../../models/product.model.js';
 import ApiError from '../../utils/ApiError.js';
 import { pickYarnCatalogId } from '../../utils/yarnCatalogRef.js';
 import { loadLatestIssueTransactionContextForCone } from './yarnCone.service.js';
+import { isLtLocation } from './storageLocation.helper.js';
 
 /**
  * Produces an inventory bucket with all numeric values initialised to zero.
@@ -265,6 +266,34 @@ const updateInventoryBuckets = (inventory, transaction) => {
     case 'yarn_returned': {
       // Returned yarn is restaged into short-term storage for inspection/use.
       applyDelta(inventory.shortTermInventory, delta, 'short-term inventory');
+      break;
+    }
+    case 'yarn_sent_to_vendor': {
+      if (isLtLocation(transaction.fromStorageLocation)) {
+        applyDelta(
+          inventory.longTermInventory,
+          {
+            totalWeight: -delta.totalWeight,
+            totalTearWeight: -delta.totalTearWeight,
+            totalNetWeight: -delta.totalNetWeight,
+            numberOfCones: 0,
+          },
+          'long-term inventory'
+        );
+      }
+      break;
+    }
+    case 'yarn_received_from_vendor': {
+      applyDelta(
+        inventory.longTermInventory,
+        {
+          totalWeight: delta.totalWeight,
+          totalTearWeight: delta.totalTearWeight,
+          totalNetWeight: delta.totalNetWeight,
+          numberOfCones: 0,
+        },
+        'long-term inventory'
+      );
       break;
     }
     default:

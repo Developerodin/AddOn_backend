@@ -7,6 +7,7 @@ import {
   activeYarnBoxListingMatch,
   activeYarnBoxMatch,
   activeYarnConeMatch,
+  notPoReturnedBoxMatch,
 } from './yarnStockActiveFilters.js';
 
 const LT_STORAGE_PATTERN = new RegExp(`^(LT-|${LT_SECTION_CODES.map((s) => `${s}-`).join('|')})`, 'i');
@@ -36,6 +37,7 @@ const isFullyUsedAfterInitialCapture = (box) => {
  */
 export const isYarnBoxActiveForProcessing = (box) => {
   if (box?.returnedToVendorAt) return false;
+  if (box?.atVendorAt) return false;
   if (isFullyUsedAfterInitialCapture(box)) return false;
   return true;
 };
@@ -47,7 +49,7 @@ export const createYarnBox = async (yarnBoxBody) => {
     const autoBoxId = `BOX-${Date.now()}`;
     body.boxId = autoBoxId;
   } else {
-    const existingBox = await YarnBox.findOne({ boxId: body.boxId, ...activeYarnBoxMatch });
+    const existingBox = await YarnBox.findOne({ boxId: body.boxId, ...notPoReturnedBoxMatch });
     if (existingBox) {
       throw new ApiError(httpStatus.BAD_REQUEST, 'Box ID already exists');
     }
@@ -55,7 +57,7 @@ export const createYarnBox = async (yarnBoxBody) => {
 
   // Only check for existing barcode if provided (otherwise it will be auto-generated)
   if (body.barcode) {
-    const existingBarcode = await YarnBox.findOne({ barcode: body.barcode, ...activeYarnBoxMatch });
+    const existingBarcode = await YarnBox.findOne({ barcode: body.barcode, ...notPoReturnedBoxMatch });
     if (existingBarcode) {
       throw new ApiError(httpStatus.BAD_REQUEST, 'Barcode already exists');
     }
@@ -164,7 +166,9 @@ export const updateYarnBoxById = async (yarnBoxId, updateBody) => {
   if (!isYarnBoxActiveForProcessing(yarnBox)) {
     const reason = yarnBox.returnedToVendorAt
       ? 'returned to vendor'
-      : 'fully used (initial weight recorded, current net weight is zero)';
+      : yarnBox.atVendorAt
+        ? 'currently at a processing vendor'
+        : 'fully used (initial weight recorded, current net weight is zero)';
     throw new ApiError(
       httpStatus.BAD_REQUEST,
       `This yarn box is read-only (${reason}) and cannot be updated.`
@@ -216,7 +220,7 @@ export const updateYarnBoxById = async (yarnBoxId, updateBody) => {
     const existingBox = await YarnBox.findOne({
       boxId: updateBody.boxId,
       _id: { $ne: yarnBoxId },
-      ...activeYarnBoxMatch,
+      ...notPoReturnedBoxMatch,
     });
     if (existingBox) {
       throw new ApiError(httpStatus.BAD_REQUEST, 'Box ID already exists');
@@ -227,7 +231,7 @@ export const updateYarnBoxById = async (yarnBoxId, updateBody) => {
     const existingBarcode = await YarnBox.findOne({
       barcode: updateBody.barcode,
       _id: { $ne: yarnBoxId },
-      ...activeYarnBoxMatch,
+      ...notPoReturnedBoxMatch,
     });
     if (existingBarcode) {
       throw new ApiError(httpStatus.BAD_REQUEST, 'Barcode already exists');
@@ -532,7 +536,7 @@ export const bulkMatchUpdateYarnBoxes = async (payload) => {
       const existingBarcode = await YarnBox.findOne({
         barcode: newBarcode,
         _id: { $ne: box._id },
-        ...activeYarnBoxMatch,
+        ...notPoReturnedBoxMatch,
       });
       if (existingBarcode) {
         failed.push({ index: i, match: matchFilter, reason: 'barcode_already_exists', barcode: newBarcode });
@@ -543,7 +547,7 @@ export const bulkMatchUpdateYarnBoxes = async (payload) => {
       const existingBoxId = await YarnBox.findOne({
         boxId: newBoxId,
         _id: { $ne: box._id },
-        ...activeYarnBoxMatch,
+        ...notPoReturnedBoxMatch,
       });
       if (existingBoxId) {
         failed.push({ index: i, match: matchFilter, reason: 'box_id_already_exists', boxId: newBoxId });

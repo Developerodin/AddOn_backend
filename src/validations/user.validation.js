@@ -79,7 +79,8 @@ const createUser = {
           'PO Return Challan': Joi.boolean(),
           'GRN History': Joi.boolean(),
           'Yarn QC': Joi.boolean(),
-          'Yarn Storage': Joi.boolean()
+          'Yarn Storage': Joi.boolean(),
+          'Yarn to Vendor': Joi.boolean()
         }),
         'Yarn Issue': yarnIssueNavigationSchema,
         'Yarn Return': Joi.boolean(),
@@ -212,7 +213,8 @@ const updateUser = {
             'PO Return Challan': Joi.boolean(),
             'GRN History': Joi.boolean(),
             'Yarn QC': Joi.boolean(),
-            'Yarn Storage': Joi.boolean()
+            'Yarn Storage': Joi.boolean(),
+            'Yarn to Vendor': Joi.boolean()
           }),
           'Yarn Issue': yarnIssueNavigationSchema,
           'Yarn Return': Joi.boolean(),
@@ -314,7 +316,8 @@ const updateUserNavigation = {
             'PO Return Challan': Joi.boolean(),
             'GRN History': Joi.boolean(),
             'Yarn QC': Joi.boolean(),
-            'Yarn Storage': Joi.boolean()
+            'Yarn Storage': Joi.boolean(),
+            'Yarn to Vendor': Joi.boolean()
           }).unknown(true),
           'Yarn Issue': yarnIssueNavigationSchema,
           'Yarn Return': Joi.boolean(),

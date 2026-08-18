@@ -132,6 +132,7 @@ const userSchema = mongoose.Schema(
             'GRN History': false,
             'Yarn QC': false,
             'Yarn Storage': false,
+            'Yarn to Vendor': false,
           },
           'Yarn Issue': {
             'Issue for orders': false,
