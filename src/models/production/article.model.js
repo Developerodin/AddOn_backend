@@ -502,6 +502,7 @@ articleSchema.index({ status: 1 });
 articleSchema.index({ priority: 1 });
 articleSchema.index({ machineId: 1 });
 articleSchema.index({ createdAt: -1 });
+articleSchema.index({ 'floorQuantities.knitting.received': 1, orderId: 1 });
 
 // Virtual for progress calculation based on floor quantities
 articleSchema.virtual('calculatedProgress').get(function() {

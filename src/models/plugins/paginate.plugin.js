@@ -17,6 +17,9 @@ const paginate = (schema) => {
    * @param {string} [options.populate] - Populate data fields. Hierarchy of fields should be separated by (.). Multiple populating criteria should be separated by commas (,)
    * @param {number} [options.limit] - Maximum number of results per page (default = 10)
    * @param {number} [options.page] - Current page (default = 1)
+   * @param {string} [options.select] - Mongoose field projection
+   * @param {boolean} [options.lean] - Return plain objects instead of documents
+   * @param {boolean} [options.skipCount] - Skip countDocuments (faster list; totals are page-sized)
    * @returns {Promise<QueryResult>}
    */
   schema.statics.paginate = async function (filter, options) {
@@ -36,8 +39,13 @@ const paginate = (schema) => {
     const page = options.page && parseInt(options.page, 10) > 0 ? parseInt(options.page, 10) : 1;
     const skip = (page - 1) * limit;
 
-    const countPromise = this.countDocuments(filter).exec();
+    const countPromise = options.skipCount
+      ? Promise.resolve(null)
+      : this.countDocuments(filter).exec();
     let docsPromise = this.find(filter).sort(sort).skip(skip).limit(limit);
+    if (options.select) {
+      docsPromise = docsPromise.select(options.select);
+    }
 
     if (options.populate) {
       if (typeof options.populate === 'string') {
@@ -56,11 +64,16 @@ const paginate = (schema) => {
       }
     }
 
+    if (options.lean) {
+      docsPromise = docsPromise.lean();
+    }
+
     docsPromise = docsPromise.exec();
 
     return Promise.all([countPromise, docsPromise]).then((values) => {
-      const [totalResults, results] = values;
-      const totalPages = Math.ceil(totalResults / limit);
+      const [counted, results] = values;
+      const totalResults = options.skipCount ? results.length : counted;
+      const totalPages = options.skipCount ? 1 : Math.ceil(totalResults / limit);
       return Promise.resolve({
         results,
         page,

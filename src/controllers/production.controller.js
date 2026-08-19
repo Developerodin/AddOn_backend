@@ -59,7 +59,7 @@ export const getFloorOrders = catchAsync(async (req, res) => {
   const allowedFilterFields = ['status', 'priority', 'search', 'machineId'];
   const filter = pick(req.query, allowedFilterFields);
   
-  const allowedOptions = ['sortBy', 'limit', 'page', 'populate'];
+  const allowedOptions = ['sortBy', 'limit', 'page', 'populate', 'articleView'];
   const options = pick(req.query, allowedOptions);
   
   if (options.limit) options.limit = parseInt(options.limit, 10);

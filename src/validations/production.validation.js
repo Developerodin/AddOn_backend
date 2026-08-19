@@ -105,7 +105,8 @@ const getFloorOrders = {
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
-    populate: Joi.string()
+    populate: Joi.string(),
+    articleView: Joi.alternatives().try(Joi.boolean(), Joi.string().valid('true', 'false', '1', '0')),
   }),
 };
 

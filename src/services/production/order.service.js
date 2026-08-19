@@ -6,6 +6,12 @@ import ApiError from '../../utils/ApiError.js';
 import { generateArticleNumber } from '../../utils/generateId.js';
 import { getAllFloorsOrder, getFloorKey, validateProductProcesses } from '../../utils/productionHelper.js';
 import {
+  ARTICLE_VIEW_ORDER_SELECT,
+  getArticleViewPopulate,
+  getFullFloorOrderPopulate,
+  isArticleViewPayload,
+} from './floorOrdersQuery.helper.js';
+import {
   getPrintEligibleDispatchTransferredData,
   sumPrintEligibleDispatchTransferred,
   loadActiveStnAllocationMap,
@@ -524,11 +530,10 @@ export const getOrdersByFloor = async (floor, filter, options) => {
     delete filter.machineId; // Remove from main filter to avoid conflicts
   }
 
-  // Orders with articles that have received > 0 on this floor (articles are refs, so we must query Article first)
-  const orderIdsWithWorkOnFloor = await Article.find({
-    [`floorQuantities.${floorKey}.received`]: { $gt: 0 }
-  })
-    .distinct('orderId');
+  // Orders with articles that have received > 0 on this floor (articles are refs)
+  const orderIdsWithWorkOnFloor = await Article.distinct('orderId', {
+    [`floorQuantities.${floorKey}.received`]: { $gt: 0 },
+  });
 
   const floorFilter = {
     ...filter,
@@ -546,17 +551,19 @@ export const getOrdersByFloor = async (floor, filter, options) => {
     ]
   };
 
-  // Get orders with basic populate first
-  const orders = await ProductionOrder.paginate(floorFilter, {
+  const articleView = isArticleViewPayload(options);
+  const paginateOptions = {
     ...options,
-    populate: {
-      path: 'articles',
-      populate: {
-        path: 'machineId',
-        select: 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor'
-      }
-    }
-  });
+    populate: articleView ? getArticleViewPopulate() : getFullFloorOrderPopulate(),
+  };
+  if (articleView) {
+    paginateOptions.lean = true;
+    paginateOptions.skipCount = true;
+    paginateOptions.select = ARTICLE_VIEW_ORDER_SELECT;
+    delete paginateOptions.articleView;
+  }
+
+  const orders = await ProductionOrder.paginate(floorFilter, paginateOptions);
 
   // Post-process to filter out orders and articles that shouldn't be visible on this floor
   const filteredResults = orders.results.filter(order => {
@@ -698,7 +705,7 @@ const shouldOrderBeVisibleOnFloor = (order, floor, floorOrder) => {
     const floorKey = getFloorKey(floor);
     
     for (const article of order.articles) {
-      const floorData = article.floorQuantities[floorKey];
+      const floorData = article.floorQuantities?.[floorKey];
       if (floorData && floorData.received > 0) {
         return true;
       }
@@ -731,7 +738,7 @@ const shouldArticleBeVisibleOnFloor = (article, floor, floorOrder) => {
 
   // 3. Show if article has work on this floor
   const floorKey = getFloorKey(floor);
-  const floorData = article.floorQuantities[floorKey];
+  const floorData = article.floorQuantities?.[floorKey];
   if (floorData && floorData.received > 0) {
     return true;
   }

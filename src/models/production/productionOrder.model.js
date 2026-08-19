@@ -78,6 +78,7 @@ productionOrderSchema.index({ orderNumber: 1 });
 productionOrderSchema.index({ status: 1 });
 productionOrderSchema.index({ priority: 1 });
 productionOrderSchema.index({ currentFloor: 1 });
+productionOrderSchema.index({ currentFloor: 1, status: 1, createdAt: -1 });
 productionOrderSchema.index({ createdAt: -1 });
 productionOrderSchema.index({ createdBy: 1 });
 productionOrderSchema.index({ lastModifiedBy: 1 });
