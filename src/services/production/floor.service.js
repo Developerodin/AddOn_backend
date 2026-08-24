@@ -2,10 +2,18 @@ import httpStatus from 'http-status';
 import { FloorStatistics, Article, ProductionOrder, ArticleLog } from '../../models/production/index.js';
 import ApiError from '../../utils/ApiError.js';
 import { getAllFloorsOrder } from '../../utils/productionHelper.js';
+import {
+  ALL_FLOOR_NAMES,
+  ALL_FLOOR_KEYS,
+  getFloorKeyFromName,
+  getFloorData,
+  aggregateFloorStats,
+  isQcFloorKey
+} from '../../utils/floorLabelMap.js';
 
 /**
  * Get floor statistics
- * @param {string} floor
+ * @param {string} floor - ProductionFloor enum value
  * @param {Object} dateRange
  * @returns {Promise<Object>}
  */
@@ -46,57 +54,67 @@ export const getFloorStatistics = async (floor, dateRange = {}) => {
 
 /**
  * Calculate real-time floor statistics
- * @param {string} floor
+ * @param {string} floor - ProductionFloor enum value
  * @param {string} startDate
  * @param {string} endDate
  * @returns {Promise<Object>}
  */
 const calculateRealTimeStatistics = async (floor, startDate, endDate) => {
-  // Get orders currently on this floor
-  const activeOrders = await ProductionOrder.countDocuments({
-    currentFloor: floor,
-    status: { $in: ['In Progress', 'Pending'] }
-  });
+  const floorKey = getFloorKeyFromName(floor);
+  if (!floorKey) {
+    return {
+      floor,
+      activeOrders: 0,
+      completedToday: 0,
+      pendingOrders: 0,
+      onHoldOrders: 0,
+      totalQuantity: 0,
+      completedQuantity: 0,
+      wipQuantity: 0,
+      efficiency: 0,
+      averageProcessingTime: 0,
+      lastUpdated: new Date().toISOString()
+    };
+  }
 
-  // Get orders completed today on this floor
+  // Get articles with WIP on this floor
+  const articlesWithWip = await Article.find({
+    [`floorQuantities.${floorKey}.remaining`]: { $gt: 0 }
+  }).select('orderId status floorQuantities startedAt completedAt');
+
+  // Count unique orders with articles on this floor
+  const orderIds = [...new Set(articlesWithWip.map(a => a.orderId?.toString()).filter(Boolean))];
+  
+  // Get order status counts
+  const orders = await ProductionOrder.find({
+    _id: { $in: orderIds }
+  }).select('status');
+
+  const activeOrders = orders.filter(o => o.status === 'In Progress').length;
+  const pendingOrders = orders.filter(o => o.status === 'Pending').length;
+  const onHoldOrders = orders.filter(o => o.status === 'On Hold').length;
+
+  // Get articles completed today on this floor (transferred out today)
   const today = new Date().toISOString().split('T')[0];
-  const completedToday = await ProductionOrder.countDocuments({
-    currentFloor: floor,
-    status: 'Completed',
+  const articlesToday = await Article.find({
+    [`floorQuantities.${floorKey}.transferred`]: { $gt: 0 },
     updatedAt: { $gte: new Date(today) }
-  });
+  }).select('floorQuantities');
 
-  // Get pending orders (waiting to start on this floor)
-  const pendingOrders = await ProductionOrder.countDocuments({
-    currentFloor: floor,
-    status: 'Pending'
-  });
+  const completedToday = articlesToday.reduce((sum, a) => {
+    return sum + (a.floorQuantities?.[floorKey]?.transferred || 0);
+  }, 0);
 
-  // Get orders on hold on this floor
-  const onHoldOrders = await ProductionOrder.countDocuments({
-    currentFloor: floor,
-    status: 'On Hold'
-  });
+  // Aggregate floor-specific quantities
+  const stats = aggregateFloorStats(articlesWithWip, floorKey);
 
-  // Get total quantity on this floor
-  const articlesOnFloor = await Article.find({
-    currentFloor: floor,
-    status: { $in: ['In Progress', 'Pending'] }
-  });
-
-  const totalQuantity = articlesOnFloor.reduce((sum, article) => sum + article.plannedQuantity, 0);
-  const completedQuantity = articlesOnFloor.reduce((sum, article) => sum + article.completedQuantity, 0);
-
-  // Calculate efficiency
-  const efficiency = totalQuantity > 0 ? Math.round((completedQuantity / totalQuantity) * 100) : 0;
-
-  // Calculate average processing time
+  // Calculate average processing time for completed articles
   const completedArticles = await Article.find({
-    currentFloor: floor,
+    [`floorQuantities.${floorKey}.completed`]: { $gt: 0 },
     status: 'Completed',
-    startedAt: { $exists: true },
-    completedAt: { $exists: true }
-  });
+    startedAt: { $exists: true, $ne: null },
+    completedAt: { $exists: true, $ne: null }
+  }).select('startedAt completedAt').limit(100);
 
   let averageProcessingTime = 0;
   if (completedArticles.length > 0) {
@@ -106,19 +124,37 @@ const calculateRealTimeStatistics = async (floor, startDate, endDate) => {
       return sum + (endTime - startTime);
     }, 0);
     
-    averageProcessingTime = Math.round(totalTime / completedArticles.length / (1000 * 60 * 60)); // Convert to hours
+    averageProcessingTime = Math.round(totalTime / completedArticles.length / (1000 * 60 * 60));
+  }
+
+  // Add quality metrics for QC floors
+  let qualityMetrics = null;
+  if (isQcFloorKey(floorKey)) {
+    qualityMetrics = {
+      m1: stats.m1Total,
+      m2: stats.m2Total,
+      m3: stats.m3Total,
+      m4: stats.m4Total,
+      firstPassYield: stats.totalReceived > 0 ? Math.round((stats.m1Total / stats.totalReceived) * 100) : 0
+    };
   }
 
   return {
     floor,
+    floorKey,
     activeOrders,
     completedToday,
     pendingOrders,
     onHoldOrders,
-    totalQuantity,
-    completedQuantity,
-    efficiency,
+    totalQuantity: stats.totalReceived,
+    completedQuantity: stats.totalCompleted,
+    wipQuantity: stats.totalRemaining,
+    transferredQuantity: stats.totalTransferred,
+    articleCount: stats.articleCount,
+    articlesWithWip: stats.articlesWithWip,
+    efficiency: stats.totalReceived > 0 ? Math.round((stats.totalCompleted / stats.totalReceived) * 100) : 0,
     averageProcessingTime,
+    qualityMetrics,
     lastUpdated: new Date().toISOString()
   };
 };
@@ -157,13 +193,8 @@ export const getAllFloorStatistics = async (dateRange = {}) => {
   const startDate = dateFrom || today;
   const endDate = dateTo || today;
 
-  const floors = [
-    'Knitting', 'Linking', 'Checking', 'Washing',
-    'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Dispatch', 'Warehouse'
-  ];
-
   const statistics = await Promise.all(
-    floors.map(floor => getFloorStatistics(floor, { dateFrom: startDate, dateTo: endDate }))
+    ALL_FLOOR_NAMES.map(floor => getFloorStatistics(floor, { dateFrom: startDate, dateTo: endDate }))
   );
 
   return statistics;
@@ -171,7 +202,7 @@ export const getAllFloorStatistics = async (dateRange = {}) => {
 
 /**
  * Get floor performance metrics
- * @param {string} floor
+ * @param {string} floor - ProductionFloor enum value
  * @param {Object} dateRange
  * @returns {Promise<Object>}
  */
@@ -181,11 +212,16 @@ export const getFloorPerformanceMetrics = async (floor, dateRange = {}) => {
   const startDate = dateFrom || today;
   const endDate = dateTo || today;
 
-  // Get articles processed on this floor in the date range
+  const floorKey = getFloorKeyFromName(floor);
+  if (!floorKey) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid floor name');
+  }
+
+  // Get articles with activity on this floor in the date range
   const articles = await Article.find({
-    currentFloor: floor,
+    [`floorQuantities.${floorKey}.received`]: { $gt: 0 },
     updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-  });
+  }).select('status floorQuantities startedAt completedAt');
 
   // Calculate metrics
   const totalArticles = articles.length;
@@ -207,33 +243,28 @@ export const getFloorPerformanceMetrics = async (floor, dateRange = {}) => {
       return sum + (endTime - startTime);
     }, 0);
     
-    averageProcessingTime = Math.round(totalTime / completedWithTimes.length / (1000 * 60 * 60)); // Convert to hours
+    averageProcessingTime = Math.round(totalTime / completedWithTimes.length / (1000 * 60 * 60));
   }
 
-  // Calculate quantity metrics
-  const totalPlannedQuantity = articles.reduce((sum, article) => sum + article.plannedQuantity, 0);
-  const totalCompletedQuantity = articles.reduce((sum, article) => sum + article.completedQuantity, 0);
-  const quantityEfficiency = totalPlannedQuantity > 0 ? 
-    Math.round((totalCompletedQuantity / totalPlannedQuantity) * 100) : 0;
+  // Aggregate floor-specific quantities
+  const stats = aggregateFloorStats(articles, floorKey);
+  const quantityEfficiency = stats.totalReceived > 0 ? 
+    Math.round((stats.totalCompleted / stats.totalReceived) * 100) : 0;
 
-  // Get quality metrics for Final Checking floor
+  // Get quality metrics for QC floors
   let qualityMetrics = null;
-  if (floor === 'Final Checking') {
-    const m1Quantity = articles.reduce((sum, article) => sum + (article.m1Quantity || 0), 0);
-    const m2Quantity = articles.reduce((sum, article) => sum + (article.m2Quantity || 0), 0);
-    const m3Quantity = articles.reduce((sum, article) => sum + (article.m3Quantity || 0), 0);
-    const m4Quantity = articles.reduce((sum, article) => sum + (article.m4Quantity || 0), 0);
-    
-    const totalQualityQuantity = m1Quantity + m2Quantity + m3Quantity + m4Quantity;
+  if (isQcFloorKey(floorKey)) {
+    const totalQualityQuantity = stats.m1Total + stats.m2Total + stats.m3Total + stats.m4Total;
     
     qualityMetrics = {
-      m1Quantity,
-      m2Quantity,
-      m3Quantity,
-      m4Quantity,
+      m1Quantity: stats.m1Total,
+      m2Quantity: stats.m2Total,
+      m3Quantity: stats.m3Total,
+      m4Quantity: stats.m4Total,
       totalQualityQuantity,
-      qualityRate: totalQualityQuantity > 0 ? Math.round((m1Quantity / totalQualityQuantity) * 100) : 0,
-      repairRate: totalQualityQuantity > 0 ? Math.round(((m2Quantity + m3Quantity + m4Quantity) / totalQualityQuantity) * 100) : 0
+      qualityRate: totalQualityQuantity > 0 ? Math.round((stats.m1Total / totalQualityQuantity) * 100) : 0,
+      repairRate: totalQualityQuantity > 0 ? Math.round(((stats.m2Total + stats.m3Total + stats.m4Total) / totalQualityQuantity) * 100) : 0,
+      firstPassYield: stats.totalReceived > 0 ? Math.round((stats.m1Total / stats.totalReceived) * 100) : 0
     };
   }
 
@@ -252,14 +283,16 @@ export const getFloorPerformanceMetrics = async (floor, dateRange = {}) => {
 
   return {
     floor,
+    floorKey,
     dateRange: { startDate, endDate },
     metrics: {
       totalArticles,
       completedArticles,
       completionRate,
       averageProcessingTime,
-      totalPlannedQuantity,
-      totalCompletedQuantity,
+      totalPlannedQuantity: stats.totalReceived,
+      totalCompletedQuantity: stats.totalCompleted,
+      wipQuantity: stats.totalRemaining,
       quantityEfficiency,
       qualityMetrics
     },
@@ -294,29 +327,31 @@ export const getFloorWorkloadDistribution = async (dateRange = {}) => {
   const startDate = dateFrom || today;
   const endDate = dateTo || today;
 
-  const floors = [
-    'Knitting', 'Linking', 'Checking', 'Washing',
-    'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Dispatch', 'Warehouse'
-  ];
-
   const workload = await Promise.all(
-    floors.map(async (floor) => {
+    ALL_FLOOR_NAMES.map(async (floor) => {
+      const floorKey = getFloorKeyFromName(floor);
+      
+      // Get articles with activity on this floor
       const articles = await Article.find({
-        currentFloor: floor,
+        $or: [
+          { [`floorQuantities.${floorKey}.received`]: { $gt: 0 } },
+          { [`floorQuantities.${floorKey}.remaining`]: { $gt: 0 } }
+        ],
         updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-      });
+      }).select('floorQuantities');
 
-      const totalQuantity = articles.reduce((sum, article) => sum + article.plannedQuantity, 0);
-      const completedQuantity = articles.reduce((sum, article) => sum + article.completedQuantity, 0);
-      const pendingQuantity = totalQuantity - completedQuantity;
+      const stats = aggregateFloorStats(articles, floorKey);
 
       return {
         floor,
-        totalQuantity,
-        completedQuantity,
-        pendingQuantity,
-        articleCount: articles.length,
-        efficiency: totalQuantity > 0 ? Math.round((completedQuantity / totalQuantity) * 100) : 0
+        floorKey,
+        totalQuantity: stats.totalReceived,
+        completedQuantity: stats.totalCompleted,
+        wipQuantity: stats.totalRemaining,
+        transferredQuantity: stats.totalTransferred,
+        articleCount: stats.articleCount,
+        articlesWithWip: stats.articlesWithWip,
+        efficiency: stats.totalReceived > 0 ? Math.round((stats.totalCompleted / stats.totalReceived) * 100) : 0
       };
     })
   );
@@ -335,38 +370,40 @@ export const getFloorBottleneckAnalysis = async (dateRange = {}) => {
   const startDate = dateFrom || today;
   const endDate = dateTo || today;
 
-  const floors = [
-    'Knitting', 'Linking', 'Checking', 'Washing',
-    'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Final Checking', 'Dispatch', 'Warehouse'
-  ];
-
   const analysis = await Promise.all(
-    floors.map(async (floor, index) => {
-      // Get articles on current floor
-      const currentFloorArticles = await Article.find({
-        currentFloor: floor,
-        updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-      });
-
-      // Get articles waiting for this floor (from previous floor)
-      const previousFloor = index > 0 ? floors[index - 1] : null;
-      let waitingArticles = [];
+    ALL_FLOOR_NAMES.map(async (floor, index) => {
+      const floorKey = getFloorKeyFromName(floor);
       
-      if (previousFloor) {
-        waitingArticles = await Article.find({
-          currentFloor: previousFloor,
-          status: 'Completed',
+      // Get articles with WIP on this floor
+      const articlesOnFloor = await Article.find({
+        [`floorQuantities.${floorKey}.remaining`]: { $gt: 0 },
+        updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
+      }).select('floorQuantities startedAt completedAt status');
+
+      // Get articles waiting from previous floor (transferred but not received on this floor)
+      const previousFloorKey = index > 0 ? ALL_FLOOR_KEYS[index - 1] : null;
+      let waitingQuantity = 0;
+      let waitingCount = 0;
+      
+      if (previousFloorKey) {
+        // Articles transferred from previous floor but not yet received on this floor
+        const waitingArticles = await Article.find({
+          [`floorQuantities.${previousFloorKey}.transferred`]: { $gt: 0 },
+          [`floorQuantities.${floorKey}.received`]: 0,
           updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-        });
+        }).select('floorQuantities');
+
+        waitingCount = waitingArticles.length;
+        waitingQuantity = waitingArticles.reduce((sum, a) => {
+          return sum + (a.floorQuantities?.[previousFloorKey]?.transferred || 0);
+        }, 0);
       }
 
-      // Calculate metrics
-      const currentWorkload = currentFloorArticles.reduce((sum, article) => sum + article.plannedQuantity, 0);
-      const pendingWorkload = waitingArticles.reduce((sum, article) => sum + article.plannedQuantity, 0);
-      const totalWorkload = currentWorkload + pendingWorkload;
+      // Aggregate floor statistics
+      const stats = aggregateFloorStats(articlesOnFloor, floorKey);
 
       // Calculate average processing time
-      const completedArticles = currentFloorArticles.filter(article => 
+      const completedArticles = articlesOnFloor.filter(article => 
         article.status === 'Completed' && article.startedAt && article.completedAt
       );
 
@@ -378,34 +415,65 @@ export const getFloorBottleneckAnalysis = async (dateRange = {}) => {
           return sum + (endTime - startTime);
         }, 0);
         
-        averageProcessingTime = Math.round(totalTime / completedArticles.length / (1000 * 60 * 60)); // Convert to hours
+        averageProcessingTime = Math.round(totalTime / completedArticles.length / (1000 * 60 * 60));
       }
+
+      // Calculate backlog days (WIP / average daily throughput)
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      
+      const recentCompleted = await Article.aggregate([
+        {
+          $match: {
+            [`floorQuantities.${floorKey}.completed`]: { $gt: 0 },
+            updatedAt: { $gte: sevenDaysAgo }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            totalCompleted: { $sum: `$floorQuantities.${floorKey}.completed` }
+          }
+        }
+      ]);
+
+      const avgDailyThroughput = (recentCompleted[0]?.totalCompleted || 0) / 7;
+      const backlogDays = avgDailyThroughput > 0 ? Math.round((stats.totalRemaining / avgDailyThroughput) * 10) / 10 : 0;
+
+      const totalWorkload = stats.totalRemaining + waitingQuantity;
+      const bottleneckScore = totalWorkload > 0 && avgDailyThroughput > 0 
+        ? Math.min(100, Math.round((totalWorkload / (avgDailyThroughput * 3)) * 100))
+        : 0;
 
       return {
         floor,
-        currentWorkload,
-        pendingWorkload,
+        floorKey,
+        currentWorkload: stats.totalRemaining,
+        waitingWorkload: waitingQuantity,
         totalWorkload,
-        articleCount: currentFloorArticles.length,
-        waitingCount: waitingArticles.length,
+        articleCount: stats.articlesWithWip,
+        waitingCount,
         averageProcessingTime,
-        bottleneckScore: totalWorkload > 0 ? Math.round((currentWorkload / totalWorkload) * 100) : 0
+        avgDailyThroughput: Math.round(avgDailyThroughput),
+        backlogDays,
+        bottleneckScore
       };
     })
   );
 
-  // Identify bottlenecks (floors with high workload and low efficiency)
+  // Identify bottlenecks (floors with high backlog days)
   const bottlenecks = analysis
-    .filter(floor => floor.bottleneckScore > 70)
-    .sort((a, b) => b.bottleneckScore - a.bottleneckScore);
+    .filter(floor => floor.backlogDays > 1)
+    .sort((a, b) => b.backlogDays - a.backlogDays);
 
   return {
     analysis,
     bottlenecks,
     summary: {
-      totalFloors: floors.length,
+      totalFloors: ALL_FLOOR_NAMES.length,
       bottleneckCount: bottlenecks.length,
-      criticalBottlenecks: bottlenecks.filter(b => b.bottleneckScore > 90).length
+      criticalBottlenecks: bottlenecks.filter(b => b.backlogDays > 3).length,
+      worstBottleneck: bottlenecks[0] || null
     }
   };
 };

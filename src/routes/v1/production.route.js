@@ -3,8 +3,10 @@ import validate from '../../middlewares/validate.js';
 import { bulkImportMiddleware, validateBulkImportSize } from '../../middlewares/bulkImport.js';
 import * as productionValidation from '../../validations/production.validation.js';
 import * as machineOrderAssignmentValidation from '../../validations/machineOrderAssignment.validation.js';
+import * as productionDashboardValidation from '../../validations/productionDashboard.validation.js';
 import * as productionController from '../../controllers/production.controller.js';
 import * as dispatchTransferNoteController from '../../controllers/production/dispatchTransferNote.controller.js';
+import * as productionDashboardController from '../../controllers/production/productionDashboard.controller.js';
 
 const router = express.Router();
 
@@ -387,5 +389,59 @@ router
     validate(productionValidation.bulkUpdateArticles),
     productionController.bulkUpdateArticles
   );
+
+// ==================== DASHBOARD V2 ROUTES ====================
+
+router
+  .route('/dashboard-v2/summary')
+  .get(validate(productionDashboardValidation.getSummary), productionDashboardController.getSummary);
+
+router
+  .route('/dashboard-v2/floors')
+  .get(validate(productionDashboardValidation.getFloors), productionDashboardController.getFloors);
+
+router
+  .route('/dashboard-v2/trends')
+  .get(validate(productionDashboardValidation.getTrends), productionDashboardController.getTrends);
+
+router
+  .route('/dashboard-v2/quality')
+  .get(validate(productionDashboardValidation.getQuality), productionDashboardController.getQuality);
+
+router
+  .route('/dashboard-v2/machines')
+  .get(validate(productionDashboardValidation.getMachines), productionDashboardController.getMachines);
+
+router
+  .route('/dashboard-v2/people')
+  .get(validate(productionDashboardValidation.getPeople), productionDashboardController.getPeople);
+
+router
+  .route('/dashboard-v2/ageing')
+  .get(validate(productionDashboardValidation.getAgeing), productionDashboardController.getAgeing);
+
+router
+  .route('/dashboard-v2/yarn-readiness')
+  .get(validate(productionDashboardValidation.getYarnReadiness), productionDashboardController.getYarnReadiness);
+
+router
+  .route('/dashboard-v2/articles')
+  .get(validate(productionDashboardValidation.getArticles), productionDashboardController.getArticles);
+
+router
+  .route('/dashboard-v2/alerts')
+  .get(validate(productionDashboardValidation.getAlerts), productionDashboardController.getAlerts);
+
+router
+  .route('/dashboard-v2/exceptions')
+  .get(validate(productionDashboardValidation.getExceptions), productionDashboardController.getExceptions);
+
+router
+  .route('/dashboard-v2/reconciliation')
+  .get(validate(productionDashboardValidation.getReconciliation), productionDashboardController.getReconciliation);
+
+router
+  .route('/dashboard-v2/export')
+  .get(validate(productionDashboardValidation.getExport), productionDashboardController.getExport);
 
 export default router;

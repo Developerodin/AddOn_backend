@@ -1,6 +1,16 @@
 import httpStatus from 'http-status';
 import { ProductionOrder, Article, ArticleLog, FloorStatistics } from '../../models/production/index.js';
 import ApiError from '../../utils/ApiError.js';
+import { 
+  ALL_FLOOR_NAMES,
+  ALL_FLOOR_KEYS,
+  getFloorKeyFromName,
+  getFloorNameFromKey,
+  getFloorData, 
+  aggregateFloorStats,
+  getTotalCompletedQuantity,
+  getTotalWipQuantity
+} from '../../utils/floorLabelMap.js';
 
 /**
  * Get production dashboard data
@@ -36,22 +46,25 @@ export const getProductionDashboard = async (filter) => {
   // Get floor-specific data if floor filter is applied
   let floorData = null;
   if (floor) {
-    const floorOrders = await ProductionOrder.find({
-      currentFloor: floor,
-      updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-    }).populate('articles');
+    const floorKey = getFloorKeyFromName(floor);
+    if (floorKey) {
+      // Find articles with WIP on this floor
+      const floorArticles = await Article.find({
+        [`floorQuantities.${floorKey}.remaining`]: { $gt: 0 },
+        updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
+      }).select('plannedQuantity floorQuantities');
 
-    const floorArticles = floorOrders.flatMap(order => order.articles);
-    const totalQuantity = floorArticles.reduce((sum, article) => sum + article.plannedQuantity, 0);
-    const completedQuantity = floorArticles.reduce((sum, article) => sum + article.completedQuantity, 0);
+      const stats = aggregateFloorStats(floorArticles, floorKey);
 
-    floorData = {
-      floor,
-      totalOrders: floorOrders.length,
-      totalQuantity,
-      completedQuantity,
-      efficiency: totalQuantity > 0 ? Math.round((completedQuantity / totalQuantity) * 100) : 0
-    };
+      floorData = {
+        floor,
+        totalOrders: floorArticles.length,
+        totalQuantity: stats.totalReceived,
+        completedQuantity: stats.totalCompleted,
+        wipQuantity: stats.totalRemaining,
+        efficiency: stats.totalReceived > 0 ? Math.round((stats.totalCompleted / stats.totalReceived) * 100) : 0
+      };
+    }
   }
 
   // Get recent activity
@@ -64,34 +77,36 @@ export const getProductionDashboard = async (filter) => {
   .populate('orderId', 'orderNumber')
   .populate('userId', 'name email');
 
-  // Get floor statistics
-  const floors = [
-    'Knitting', 'Linking', 'Checking', 'Washing',
-    'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Re-Boarding', 'Final Checking', 'Dispatch', 'Warehouse'
-  ];
-
+  // Get floor statistics using correct field paths
   const floorStatistics = await Promise.all(
-    floors.map(async (floorName) => {
-      const floorOrders = await ProductionOrder.countDocuments({
-        currentFloor: floorName,
-        updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-      });
-
+    ALL_FLOOR_NAMES.map(async (floorName) => {
+      const floorKey = getFloorKeyFromName(floorName);
+      
+      // Find articles with activity on this floor (received > 0 or remaining > 0)
       const floorArticles = await Article.find({
-        currentFloor: floorName,
+        $or: [
+          { [`floorQuantities.${floorKey}.received`]: { $gt: 0 } },
+          { [`floorQuantities.${floorKey}.remaining`]: { $gt: 0 } }
+        ],
         updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-      });
+      }).select('plannedQuantity floorQuantities');
 
-      const totalQuantity = floorArticles.reduce((sum, article) => sum + article.plannedQuantity, 0);
-      const completedQuantity = floorArticles.reduce((sum, article) => sum + article.completedQuantity, 0);
+      const stats = aggregateFloorStats(floorArticles, floorKey);
 
       return {
         floor: floorName,
-        orderCount: floorOrders,
-        articleCount: floorArticles.length,
-        totalQuantity,
-        completedQuantity,
-        efficiency: totalQuantity > 0 ? Math.round((completedQuantity / totalQuantity) * 100) : 0
+        floorKey,
+        orderCount: stats.articleCount,
+        articleCount: stats.articlesWithWip,
+        totalQuantity: stats.totalReceived,
+        completedQuantity: stats.totalCompleted,
+        wipQuantity: stats.totalRemaining,
+        transferredQuantity: stats.totalTransferred,
+        m1Quantity: stats.m1Total,
+        m2Quantity: stats.m2Total,
+        m3Quantity: stats.m3Total,
+        m4Quantity: stats.m4Total,
+        efficiency: stats.totalReceived > 0 ? Math.round((stats.totalCompleted / stats.totalReceived) * 100) : 0
       };
     })
   );
@@ -143,28 +158,26 @@ export const getEfficiencyReport = async (filter) => {
   const startDate = dateFrom || today;
   const endDate = dateTo || today;
 
-  const floors = floor ? [floor] : [
-    'Knitting', 'Linking', 'Checking', 'Washing',
-    'Boarding', 'Silicon', 'Secondary Checking', 'Branding', 'Re-Boarding', 'Final Checking', 'Dispatch', 'Warehouse'
-  ];
+  const floors = floor ? [floor] : ALL_FLOOR_NAMES;
 
   const efficiencyData = await Promise.all(
     floors.map(async (floorName) => {
-      // Get articles processed on this floor
+      const floorKey = getFloorKeyFromName(floorName);
+      
+      // Get articles with activity on this floor (received > 0)
       const articles = await Article.find({
-        currentFloor: floorName,
+        [`floorQuantities.${floorKey}.received`]: { $gt: 0 },
         updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-      });
+      }).select('plannedQuantity status floorQuantities startedAt completedAt');
 
       const totalArticles = articles.length;
       const completedArticles = articles.filter(article => article.status === 'Completed').length;
       const completionRate = totalArticles > 0 ? Math.round((completedArticles / totalArticles) * 100) : 0;
 
-      // Calculate quantity efficiency
-      const totalPlannedQuantity = articles.reduce((sum, article) => sum + article.plannedQuantity, 0);
-      const totalCompletedQuantity = articles.reduce((sum, article) => sum + article.completedQuantity, 0);
-      const quantityEfficiency = totalPlannedQuantity > 0 ? 
-        Math.round((totalCompletedQuantity / totalPlannedQuantity) * 100) : 0;
+      // Calculate quantity efficiency using floor-specific data
+      const stats = aggregateFloorStats(articles, floorKey);
+      const quantityEfficiency = stats.totalReceived > 0 ? 
+        Math.round((stats.totalCompleted / stats.totalReceived) * 100) : 0;
 
       // Calculate average processing time
       const completedWithTimes = articles.filter(article => 
@@ -187,12 +200,14 @@ export const getEfficiencyReport = async (filter) => {
 
       return {
         floor: floorName,
+        floorKey,
         metrics: {
           totalArticles,
           completedArticles,
           completionRate,
-          totalPlannedQuantity,
-          totalCompletedQuantity,
+          totalPlannedQuantity: stats.totalReceived,
+          totalCompletedQuantity: stats.totalCompleted,
+          wipQuantity: stats.totalRemaining,
           quantityEfficiency,
           averageProcessingTime
         },
@@ -227,25 +242,29 @@ export const getQualityReport = async (filter) => {
   const startDate = dateFrom || today;
   const endDate = dateTo || today;
 
-  // Focus on Final Checking floor for quality metrics
-  const qualityFloor = floor === 'Final Checking' ? 'Final Checking' : 'Final Checking';
+  // Focus on Final Checking floor for quality metrics (or specified QC floor)
+  const qualityFloor = floor || 'Final Checking';
+  const floorKey = getFloorKeyFromName(qualityFloor) || 'finalChecking';
   
+  // Find articles that have received items on the QC floor
   const articles = await Article.find({
-    currentFloor: qualityFloor,
+    [`floorQuantities.${floorKey}.received`]: { $gt: 0 },
     updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-  });
+  }).select('articleNumber orderId floorQuantities finalQualityConfirmed');
 
-  // Calculate quality metrics
+  // Calculate quality metrics from floorQuantities
   const totalArticles = articles.length;
-  const qualityCheckedArticles = articles.filter(article => 
-    (article.m1Quantity || 0) + (article.m2Quantity || 0) + 
-    (article.m3Quantity || 0) + (article.m4Quantity || 0) > 0
-  ).length;
+  const qualityCheckedArticles = articles.filter(article => {
+    const fd = getFloorData(article.floorQuantities, floorKey);
+    return fd.m1Quantity + fd.m2Quantity + fd.m3Quantity + fd.m4Quantity > 0;
+  }).length;
 
-  const m1Quantity = articles.reduce((sum, article) => sum + (article.m1Quantity || 0), 0);
-  const m2Quantity = articles.reduce((sum, article) => sum + (article.m2Quantity || 0), 0);
-  const m3Quantity = articles.reduce((sum, article) => sum + (article.m3Quantity || 0), 0);
-  const m4Quantity = articles.reduce((sum, article) => sum + (article.m4Quantity || 0), 0);
+  // Aggregate quality quantities from the floor data
+  const stats = aggregateFloorStats(articles, floorKey);
+  const m1Quantity = stats.m1Total;
+  const m2Quantity = stats.m2Total;
+  const m3Quantity = stats.m3Total;
+  const m4Quantity = stats.m4Total;
 
   const totalQualityQuantity = m1Quantity + m2Quantity + m3Quantity + m4Quantity;
   const qualityRate = totalQualityQuantity > 0 ? Math.round((m1Quantity / totalQualityQuantity) * 100) : 0;
@@ -256,20 +275,25 @@ export const getQualityReport = async (filter) => {
   const qualityTrend = await getQualityTrend(qualityFloor, startDate, endDate);
 
   // Get articles with quality issues
-  const qualityIssues = articles.filter(article => 
-    (article.m2Quantity || 0) > 0 || (article.m3Quantity || 0) > 0 || (article.m4Quantity || 0) > 0
-  ).map(article => ({
-    id: article._id,
-    articleNumber: article.articleNumber,
-    orderId: article.orderId.toString(),
-    m1Quantity: article.m1Quantity || 0,
-    m2Quantity: article.m2Quantity || 0,
-    m3Quantity: article.m3Quantity || 0,
-    m4Quantity: article.m4Quantity || 0,
-    repairStatus: article.repairStatus,
-    repairRemarks: article.repairRemarks,
-    finalQualityConfirmed: article.finalQualityConfirmed
-  }));
+  const qualityIssues = articles.filter(article => {
+    const fd = getFloorData(article.floorQuantities, floorKey);
+    return fd.m2Quantity > 0 || fd.m3Quantity > 0 || fd.m4Quantity > 0;
+  }).map(article => {
+    const fd = getFloorData(article.floorQuantities, floorKey);
+    const floorData = article.floorQuantities?.[floorKey] || {};
+    return {
+      id: article._id,
+      articleNumber: article.articleNumber,
+      orderId: article.orderId?.toString(),
+      m1Quantity: fd.m1Quantity,
+      m2Quantity: fd.m2Quantity,
+      m3Quantity: fd.m3Quantity,
+      m4Quantity: fd.m4Quantity,
+      repairStatus: floorData.repairStatus,
+      repairRemarks: floorData.repairRemarks,
+      finalQualityConfirmed: article.finalQualityConfirmed
+    };
+  });
 
   return {
     summary: {
@@ -282,7 +306,8 @@ export const getQualityReport = async (filter) => {
       m3Quantity,
       m4Quantity,
       qualityRate,
-      repairRate
+      repairRate,
+      firstPassYield: stats.totalReceived > 0 ? Math.round((m1Quantity / stats.totalReceived) * 100) : 0
     },
     qualityTrend,
     qualityIssues,
@@ -313,33 +338,48 @@ export const getOrderTrackingReport = async (orderId) => {
   const inProgressArticles = order.articles.filter(article => article.status === 'In Progress').length;
   const pendingArticles = order.articles.filter(article => article.status === 'Pending').length;
 
-  // Calculate overall progress
+  // Calculate overall progress using floorQuantities
   const totalPlannedQuantity = order.articles.reduce((sum, article) => sum + article.plannedQuantity, 0);
-  const totalCompletedQuantity = order.articles.reduce((sum, article) => sum + article.completedQuantity, 0);
+  const totalCompletedQuantity = order.articles.reduce((sum, article) => {
+    // Sum up dispatched quantity as the true "completed"
+    return sum + (article.floorQuantities?.dispatch?.transferred || 0);
+  }, 0);
   const overallProgress = totalPlannedQuantity > 0 ? 
     Math.round((totalCompletedQuantity / totalPlannedQuantity) * 100) : 0;
 
-  // Get floor-wise progress
-  const floorProgress = order.articles.reduce((acc, article) => {
-    const floor = article.currentFloor;
-    if (!acc[floor]) {
-      acc[floor] = {
-        floor,
-        articles: 0,
-        totalQuantity: 0,
-        completedQuantity: 0,
-        progress: 0
-      };
+  // Get floor-wise progress from floorQuantities
+  const floorProgress = {};
+  for (const floorKey of ALL_FLOOR_KEYS) {
+    const floorName = getFloorNameFromKey(floorKey);
+    if (!floorName) continue;
+    
+    let totalReceived = 0;
+    let totalCompleted = 0;
+    let totalRemaining = 0;
+    let articlesOnFloor = 0;
+    
+    for (const article of order.articles) {
+      const fd = getFloorData(article.floorQuantities, floorKey);
+      if (fd.received > 0 || fd.remaining > 0) {
+        totalReceived += fd.received;
+        totalCompleted += fd.completed;
+        totalRemaining += fd.remaining;
+        if (fd.remaining > 0) articlesOnFloor++;
+      }
     }
     
-    acc[floor].articles += 1;
-    acc[floor].totalQuantity += article.plannedQuantity;
-    acc[floor].completedQuantity += article.completedQuantity;
-    acc[floor].progress = acc[floor].totalQuantity > 0 ? 
-      Math.round((acc[floor].completedQuantity / acc[floor].totalQuantity) * 100) : 0;
-    
-    return acc;
-  }, {});
+    if (totalReceived > 0 || totalRemaining > 0) {
+      floorProgress[floorKey] = {
+        floor: floorName,
+        floorKey,
+        articles: articlesOnFloor,
+        totalQuantity: totalReceived,
+        completedQuantity: totalCompleted,
+        wipQuantity: totalRemaining,
+        progress: totalReceived > 0 ? Math.round((totalCompleted / totalReceived) * 100) : 0
+      };
+    }
+  }
 
   // Get timeline
   const timeline = logs.map(log => ({
@@ -383,33 +423,43 @@ export const getOrderTrackingReport = async (orderId) => {
       overallProgress
     },
     floorProgress: Object.values(floorProgress),
-    articles: order.articles.map(article => ({
-      id: article._id,
-      articleNumber: article.articleNumber,
-      status: article.status,
-      currentFloor: article.currentFloor,
-      progress: article.progress,
-      plannedQuantity: article.plannedQuantity,
-      completedQuantity: article.completedQuantity,
-      m1Quantity: article.m1Quantity || 0,
-      m2Quantity: article.m2Quantity || 0,
-      m3Quantity: article.m3Quantity || 0,
-      m4Quantity: article.m4Quantity || 0,
-      repairStatus: article.repairStatus,
-      finalQualityConfirmed: article.finalQualityConfirmed
-    })),
+    articles: order.articles.map(article => {
+      // Get quality data from finalChecking floor
+      const fcData = getFloorData(article.floorQuantities, 'finalChecking');
+      const dispatchData = getFloorData(article.floorQuantities, 'dispatch');
+      const totalWip = getTotalWipQuantity(article.floorQuantities);
+      
+      return {
+        id: article._id,
+        articleNumber: article.articleNumber,
+        status: article.status,
+        progress: article.progress,
+        plannedQuantity: article.plannedQuantity,
+        completedQuantity: dispatchData.transferred, // Dispatched = completed
+        wipQuantity: totalWip,
+        m1Quantity: fcData.m1Quantity,
+        m2Quantity: fcData.m2Quantity,
+        m3Quantity: fcData.m3Quantity,
+        m4Quantity: fcData.m4Quantity,
+        repairStatus: article.floorQuantities?.finalChecking?.repairStatus,
+        finalQualityConfirmed: article.finalQualityConfirmed
+      };
+    }),
     timeline
   };
 };
 
 /**
  * Get daily efficiency trend
- * @param {string} floor
+ * @param {string} floor - Floor name (ProductionFloor enum value)
  * @param {string} startDate
  * @param {string} endDate
  * @returns {Promise<Array>}
  */
 const getDailyEfficiencyTrend = async (floor, startDate, endDate) => {
+  const floorKey = getFloorKeyFromName(floor);
+  if (!floorKey) return [];
+  
   const start = new Date(startDate);
   const end = new Date(endDate);
   const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
@@ -420,19 +470,21 @@ const getDailyEfficiencyTrend = async (floor, startDate, endDate) => {
     currentDate.setDate(start.getDate() + i);
     const dateStr = currentDate.toISOString().split('T')[0];
 
+    // Find articles with activity on this floor during this date
     const articles = await Article.find({
-      currentFloor: floor,
+      [`floorQuantities.${floorKey}.received`]: { $gt: 0 },
       updatedAt: { $gte: new Date(dateStr), $lt: new Date(dateStr + 'T23:59:59.999Z') }
-    });
+    }).select('floorQuantities');
 
-    const totalQuantity = articles.reduce((sum, article) => sum + article.plannedQuantity, 0);
-    const completedQuantity = articles.reduce((sum, article) => sum + article.completedQuantity, 0);
-    const efficiency = totalQuantity > 0 ? Math.round((completedQuantity / totalQuantity) * 100) : 0;
+    // Aggregate floor-specific quantities
+    const stats = aggregateFloorStats(articles, floorKey);
+    const efficiency = stats.totalReceived > 0 ? Math.round((stats.totalCompleted / stats.totalReceived) * 100) : 0;
 
     trend.push({
       date: dateStr,
-      totalQuantity,
-      completedQuantity,
+      totalQuantity: stats.totalReceived,
+      completedQuantity: stats.totalCompleted,
+      wipQuantity: stats.totalRemaining,
       efficiency
     });
   }
@@ -442,12 +494,14 @@ const getDailyEfficiencyTrend = async (floor, startDate, endDate) => {
 
 /**
  * Get quality trend over time
- * @param {string} floor
+ * @param {string} floor - Floor name (ProductionFloor enum value)
  * @param {string} startDate
  * @param {string} endDate
  * @returns {Promise<Array>}
  */
 const getQualityTrend = async (floor, startDate, endDate) => {
+  const floorKey = getFloorKeyFromName(floor) || 'finalChecking';
+  
   const start = new Date(startDate);
   const end = new Date(endDate);
   const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
@@ -458,18 +512,22 @@ const getQualityTrend = async (floor, startDate, endDate) => {
     currentDate.setDate(start.getDate() + i);
     const dateStr = currentDate.toISOString().split('T')[0];
 
+    // Find articles with activity on this QC floor during this date
     const articles = await Article.find({
-      currentFloor: floor,
+      [`floorQuantities.${floorKey}.received`]: { $gt: 0 },
       updatedAt: { $gte: new Date(dateStr), $lt: new Date(dateStr + 'T23:59:59.999Z') }
-    });
+    }).select('floorQuantities');
 
-    const m1Quantity = articles.reduce((sum, article) => sum + (article.m1Quantity || 0), 0);
-    const m2Quantity = articles.reduce((sum, article) => sum + (article.m2Quantity || 0), 0);
-    const m3Quantity = articles.reduce((sum, article) => sum + (article.m3Quantity || 0), 0);
-    const m4Quantity = articles.reduce((sum, article) => sum + (article.m4Quantity || 0), 0);
+    // Aggregate quality metrics from floorQuantities
+    const stats = aggregateFloorStats(articles, floorKey);
+    const m1Quantity = stats.m1Total;
+    const m2Quantity = stats.m2Total;
+    const m3Quantity = stats.m3Total;
+    const m4Quantity = stats.m4Total;
 
     const totalQualityQuantity = m1Quantity + m2Quantity + m3Quantity + m4Quantity;
     const qualityRate = totalQualityQuantity > 0 ? Math.round((m1Quantity / totalQualityQuantity) * 100) : 0;
+    const firstPassYield = stats.totalReceived > 0 ? Math.round((m1Quantity / stats.totalReceived) * 100) : 0;
 
     trend.push({
       date: dateStr,
@@ -478,7 +536,9 @@ const getQualityTrend = async (floor, startDate, endDate) => {
       m3Quantity,
       m4Quantity,
       totalQualityQuantity,
-      qualityRate
+      qualityRate,
+      firstPassYield,
+      received: stats.totalReceived
     });
   }
 
