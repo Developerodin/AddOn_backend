@@ -8,7 +8,12 @@
  */
 export const DEFAULT_NAVIGATION = {
   // Main Sidebar
-  Dashboard: false,
+  Dashboard: {
+    'Catalog Dashboard': false,
+    'Production Dashboard': false,
+    'Vendor Dashboard': false,
+    'Yarn Dashboard': false,
+  },
   Catalog: {
     Items: false,
     Categories: false,
@@ -116,7 +121,12 @@ export const DEFAULT_NAVIGATION = {
  */
 export const ROLE_NAVIGATION_TEMPLATES = {
   admin: {
-    Dashboard: true,
+    Dashboard: {
+      'Catalog Dashboard': true,
+      'Production Dashboard': true,
+      'Vendor Dashboard': true,
+      'Yarn Dashboard': true,
+    },
     Catalog: {
       Items: true,
       Categories: true,
@@ -219,7 +229,12 @@ export const ROLE_NAVIGATION_TEMPLATES = {
     }
   },
   user: {
-    Dashboard: true,
+    Dashboard: {
+      'Catalog Dashboard': true,
+      'Production Dashboard': true,
+      'Vendor Dashboard': true,
+      'Yarn Dashboard': true,
+    },
     Catalog: {
       Items: true,
       Categories: false,
@@ -405,6 +420,21 @@ export const validateNavigationStructure = (navigation) => {
       console.error(`Validation failed: Missing top-level key: ${key}`);
       return false;
     }
+  }
+
+  const dashboardKeys = ['Catalog Dashboard', 'Production Dashboard', 'Vendor Dashboard', 'Yarn Dashboard'];
+  if (typeof navigation.Dashboard === 'boolean') {
+    // Legacy boolean flag is still valid
+  } else if (navigation.Dashboard && typeof navigation.Dashboard === 'object') {
+    for (const key of dashboardKeys) {
+      if (typeof navigation.Dashboard[key] !== 'boolean') {
+        console.error(`Validation failed: Dashboard.${key} is missing or not a boolean`);
+        return false;
+      }
+    }
+  } else {
+    console.error('Validation failed: Dashboard is missing or invalid');
+    return false;
   }
 
   // Check Catalog structure

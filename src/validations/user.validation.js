@@ -13,6 +13,18 @@ const yarnIssueNavigationSchema = Joi.alternatives().try(
     .unknown(true)
 );
 
+const dashboardNavigationSchema = Joi.alternatives().try(
+  Joi.boolean(),
+  Joi.object()
+    .keys({
+      'Catalog Dashboard': Joi.boolean(),
+      'Production Dashboard': Joi.boolean(),
+      'Vendor Dashboard': Joi.boolean(),
+      'Yarn Dashboard': Joi.boolean(),
+    })
+    .unknown(true)
+);
+
 
 const createUser = {
   body: Joi.object().keys({
@@ -27,7 +39,7 @@ const createUser = {
     country: Joi.string().allow(''),
     timezone: Joi.string().default('UTC'),
     navigation: Joi.object().keys({
-      Dashboard: Joi.boolean(),
+      Dashboard: dashboardNavigationSchema,
       Catalog: Joi.object().keys({
         Items: Joi.boolean(),
         Categories: Joi.boolean(),
@@ -161,7 +173,7 @@ const updateUser = {
       timezone: Joi.string(),
       role: Joi.string().valid('user', 'accounts', 'admin', 'super_admin'),
       navigation: Joi.object().keys({
-        Dashboard: Joi.boolean(),
+        Dashboard: dashboardNavigationSchema,
         Catalog: Joi.object().keys({
           Items: Joi.boolean(),
           Categories: Joi.boolean(),
@@ -262,7 +274,7 @@ const updateUserNavigation = {
   body: Joi.object()
     .keys({
       navigation: Joi.object().keys({
-        Dashboard: Joi.boolean(),
+        Dashboard: dashboardNavigationSchema,
         Catalog: Joi.object().keys({
           Items: Joi.boolean(),
           Categories: Joi.boolean(),

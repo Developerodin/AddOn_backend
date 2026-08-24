@@ -74,7 +74,12 @@ const userSchema = mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: {
         // Main Sidebar
-        Dashboard: false,
+        Dashboard: {
+          'Catalog Dashboard': false,
+          'Production Dashboard': false,
+          'Vendor Dashboard': false,
+          'Yarn Dashboard': false,
+        },
         Catalog: {
           Items: false,
           Categories: false,

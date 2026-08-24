@@ -20,6 +20,64 @@ import { removeProductionOrderFromAssignments, removeArticleFromAssignments } fr
 // import { generateOrderNumber } from '../../utils/generateId.js'; // Using model's auto-generation instead
 
 /**
+ * Check if an article has started production and cannot be modified.
+ * An article is considered "in production" ONLY when:
+ * - Some quantity has been transferred from knitting floor (floorQuantities.knitting.transferred > 0)
+ * 
+ * Note: Yarn issue status is checked on frontend via machine assignments.
+ * Backend checks transferred quantity as the primary indicator that production has started.
+ * @param {Object} article - Article document (populated or plain)
+ * @returns {boolean} True if article is in production
+ */
+const isArticleInProduction = (article) => {
+  if (!article) return false;
+  
+  // Check if any quantity has been transferred from knitting floor
+  // This is the primary indicator that production has truly started
+  const knittingTransferred = article.floorQuantities?.knitting?.transferred || 0;
+  if (knittingTransferred > 0) {
+    return true;
+  }
+  
+  return false;
+};
+
+/**
+ * Check if an order is in production and cannot be modified.
+ * An order is considered "in production" when any article has:
+ * - Quantity transferred from knitting floor (floorQuantities.knitting.transferred > 0)
+ * @param {Object} order - Order document with populated articles
+ * @returns {{ isLocked: boolean, reason: string }} Lock status and reason
+ */
+const isOrderInProduction = (order) => {
+  if (!order) return { isLocked: false, reason: '' };
+  
+  // Check if any article is in production (has quantity transferred from knitting)
+  const articlesInProduction = getArticlesInProduction(order.articles);
+  if (articlesInProduction.length > 0) {
+    return { 
+      isLocked: true, 
+      reason: `${articlesInProduction.length === 1 ? 'Article' : 'Articles'} ${articlesInProduction.join(', ')} ${articlesInProduction.length === 1 ? 'has' : 'have'} quantity transferred from knitting floor.`
+    };
+  }
+  
+  return { isLocked: false, reason: '' };
+};
+
+/**
+ * Get list of articles that are in production (for error messages)
+ * @param {Array} articles - Array of article documents
+ * @returns {Array} Array of article numbers that are in production
+ */
+const getArticlesInProduction = (articles) => {
+  if (!articles || !Array.isArray(articles)) return [];
+  
+  return articles
+    .filter(article => isArticleInProduction(article))
+    .map(article => article.articleNumber || article._id?.toString() || 'Unknown');
+};
+
+/**
  * Create a production order
  * @param {Object} orderBody
  * @param {Object} user - Current user from request
@@ -233,6 +291,15 @@ export const updateProductionOrderById = async (orderId, updateBody, user = null
   const order = await getProductionOrderById(orderId);
   if (!order) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Production order not found');
+  }
+
+  // Check if order is in production - block updates if so
+  const productionCheck = isOrderInProduction(order);
+  if (productionCheck.isLocked) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Cannot modify order: ${productionCheck.reason} Orders that have started production cannot be updated from this page.`
+    );
   }
 
   // Check if order number is being changed and if it's unique
@@ -463,7 +530,14 @@ export const deleteProductionOrderById = async (orderId, userId) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Production order not found');
   }
 
-  // Allow deletion of orders regardless of status
+  // Check if order is in production - block deletion if so
+  const productionCheck = isOrderInProduction(order);
+  if (productionCheck.isLocked) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Cannot delete order: ${productionCheck.reason} Orders that have started production cannot be deleted.`
+    );
+  }
 
   // Delete all articles and their logs
   for (const article of order.articles) {
