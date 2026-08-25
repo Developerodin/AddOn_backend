@@ -273,6 +273,21 @@ router
   .route('/reports/article-wise')
   .get(validate(productionValidation.getArticleWiseData), productionController.getArticleWiseData);
 
+router
+  .route('/reports/order-summary')
+  .get(validate(productionValidation.getOrderSummaryReport), productionController.getOrderSummaryReport);
+
+router
+  .route('/reports/backlog')
+  .get(validate(productionValidation.getBacklogReport), productionController.getBacklogReport);
+
+router
+  .route('/reports/daily-production-summary')
+  .get(
+    validate(productionValidation.getDailyProductionSummary),
+    productionController.getDailyProductionSummary
+  );
+
 // ==================== LOGGING AND AUDIT ROUTES ====================
 
 router

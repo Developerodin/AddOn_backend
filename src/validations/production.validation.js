@@ -454,6 +454,33 @@ const getArticleWiseData = {
   }),
 };
 
+const getOrderSummaryReport = {
+  query: Joi.object().keys({
+    search: Joi.string().min(1).max(50),
+    status: Joi.string().valid('Pending', 'In Progress', 'Completed', 'On Hold', 'Short Close', 'Cancelled'),
+    priority: Joi.string().valid('Urgent', 'High', 'Medium', 'Low'),
+    limit: Joi.number().integer().min(1).max(100),
+    page: Joi.number().integer().min(1),
+    sortBy: Joi.string(),
+  }),
+};
+
+const getBacklogReport = {
+  query: Joi.object().keys({
+    year: Joi.number().integer().min(2020).max(2100),
+    month: Joi.number().integer().min(1).max(12),
+  }),
+};
+
+/** Daily production summary: per-floor qty transferred out, by IST calendar date. */
+const getDailyProductionSummary = {
+  query: Joi.object().keys({
+    year: Joi.number().integer().min(2020).max(2100),
+    month: Joi.number().integer().min(1).max(12),
+    includeExtraRows: Joi.boolean(),
+  }),
+};
+
 /** Instant branding type update on an article (Branding floor). */
 const updateArticleBrandingType = {
   params: Joi.object().keys({
@@ -841,6 +868,9 @@ export default {
   getQualityReport,
   getOrderTrackingReport,
   getArticleWiseData,
+  getOrderSummaryReport,
+  getBacklogReport,
+  getDailyProductionSummary,
 
   // Logging validations
   getArticleLogs,

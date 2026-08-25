@@ -15,6 +15,9 @@ export * from './log.service.js';
 
 // Production Report Services
 export * from './report.service.js';
+export * from './orderSummaryReport.service.js';
+export * from './backlogReport.service.js';
+export * from './dailyProductionSummary.service.js';
 
 // Machine Order Assignment Services
 export * from './machineOrderAssignment.service.js';

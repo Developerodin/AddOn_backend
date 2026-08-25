@@ -316,6 +316,16 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
     article.progress = article.calculatedProgress;
   }
 
+  // M1 running total before this update, so the delta can be logged below. M1 has no
+  // dedicated ledger (unlike M2/M3/M4), so this log is its only per-day audit trail.
+  const isQcFloorUpdate =
+    normalizedFloor === 'Checking' ||
+    normalizedFloor === 'Secondary Checking' ||
+    normalizedFloor === 'Final Checking';
+  const previousQcM1 = isQcFloorUpdate
+    ? article.floorQuantities[floorKey]?.m1Quantity || 0
+    : 0;
+
   // Update floor-specific fields for quality inspection floors
   if (normalizedFloor === 'Checking' || normalizedFloor === 'Secondary Checking' || normalizedFloor === 'Final Checking') {
     // Update floor-level quality fields (additive)
@@ -565,6 +575,30 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
     }
   } catch (m3LogErr) {
     console.error('M3 ledger hook failed (updateArticleProgress):', m3LogErr);
+  }
+
+  // M1 log hook (checking floors only — non-blocking). M2/M3/M4 have ledger collections;
+  // M1 only has this article log, which the daily production summary reads to attribute
+  // good-quality output to the QC floor and day it was booked on.
+  try {
+    if (isQcFloorUpdate && updateData.m1Quantity !== undefined) {
+      const newQcM1 = article.floorQuantities[floorKey]?.m1Quantity || 0;
+      if (newQcM1 !== previousQcM1) {
+        await createQualityCategoryLog({
+          articleId: article._id.toString(),
+          orderId: article.orderId.toString(),
+          floor: normalizedFloor,
+          category: 'M1',
+          previousQuantity: previousQcM1,
+          newQuantity: newQcM1,
+          userId: user?.id || updateData.userId || 'system',
+          floorSupervisorId: user?.id || updateData.floorSupervisorId || 'system',
+          remarks: `${normalizedFloor} M1 updated: ${previousQcM1} → ${newQcM1}`,
+        });
+      }
+    }
+  } catch (m1LogErr) {
+    console.error('M1 log hook failed (updateArticleProgress):', m1LogErr);
   }
 
   // FIXED: Handle transfers based on which floor was updated

@@ -117,7 +117,9 @@ export const createTransferLog = async (params) => {
     userId,
     floorSupervisorId,
     remarks,
-    batchNumber
+    batchNumber,
+    machineId,
+    shiftId
   } = params;
 
   const transferAction = getTransferAction(toFloor);
@@ -135,7 +137,9 @@ export const createTransferLog = async (params) => {
     changeReason: 'Floor transfer',
     userId,
     floorSupervisorId,
-    batchNumber
+    batchNumber,
+    machineId,
+    shiftId
   });
 };
 
@@ -204,6 +208,9 @@ export const createQualityCategoryLog = async (params) => {
     articleId,
     orderId,
     quantity: deltaQuantity,
+    // fromFloor is the QC floor the category was booked on. Reports group by it, so it must
+    // be a real field — the floor name inside `remarks` is not queryable.
+    fromFloor: floor,
     remarks: remarks || `${category} quantity updated from ${previousQuantity} to ${newQuantity} on ${floor} floor`,
     previousValue: previousQuantity,
     newValue: newQuantity,

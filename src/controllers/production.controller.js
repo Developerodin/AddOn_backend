@@ -208,6 +208,30 @@ export const getArticleWiseData = catchAsync(async (req, res) => {
   res.send(result);
 });
 
+export const getOrderSummaryReport = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['search', 'status', 'priority']);
+  const options = pick(req.query, ['limit', 'page', 'sortBy']);
+  if (options.limit) options.limit = parseInt(options.limit, 10);
+  if (options.page) options.page = parseInt(options.page, 10);
+  const result = await productionService.getOrderSummaryReport(filter, options);
+  res.send(result);
+});
+
+export const getBacklogReport = catchAsync(async (req, res) => {
+  const year = req.query.year != null ? parseInt(String(req.query.year), 10) : undefined;
+  const month = req.query.month != null ? parseInt(String(req.query.month), 10) : undefined;
+  const result = await productionService.getBacklogReport({ year, month });
+  res.send(result);
+});
+
+export const getDailyProductionSummary = catchAsync(async (req, res) => {
+  const year = req.query.year != null ? parseInt(String(req.query.year), 10) : undefined;
+  const month = req.query.month != null ? parseInt(String(req.query.month), 10) : undefined;
+  const includeExtraRows = String(req.query.includeExtraRows) === 'true';
+  const result = await productionService.getDailyProductionSummary({ year, month, includeExtraRows });
+  res.send(result);
+});
+
 // ==================== LOGGING AND AUDIT ====================
 
 export const getArticleLogs = catchAsync(async (req, res) => {
