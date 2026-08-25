@@ -217,6 +217,16 @@ export const getOrderSummaryReport = catchAsync(async (req, res) => {
   res.send(result);
 });
 
+/**
+ * Factory-wide knitting pending split into buckets (on machine, unplanned,
+ * short closed, closed on machine, on hold) plus a per-needle breakdown.
+ * Lets the Needle Wise report reconcile against the Order Summary.
+ */
+export const getKnittingPendingBuckets = catchAsync(async (req, res) => {
+  const result = await productionService.getKnittingPendingBuckets();
+  res.send(result);
+});
+
 export const getBacklogReport = catchAsync(async (req, res) => {
   const year = req.query.year != null ? parseInt(String(req.query.year), 10) : undefined;
   const month = req.query.month != null ? parseInt(String(req.query.month), 10) : undefined;

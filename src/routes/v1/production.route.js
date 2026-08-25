@@ -278,6 +278,10 @@ router
   .get(validate(productionValidation.getOrderSummaryReport), productionController.getOrderSummaryReport);
 
 router
+  .route('/reports/knitting-pending-buckets')
+  .get(productionController.getKnittingPendingBuckets);
+
+router
   .route('/reports/backlog')
   .get(validate(productionValidation.getBacklogReport), productionController.getBacklogReport);
 

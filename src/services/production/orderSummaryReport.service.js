@@ -1,5 +1,12 @@
-import { Article, MachineOrderAssignment, ProductionOrder, OrderStatus } from '../../models/production/index.js';
+import { Article, ProductionOrder } from '../../models/production/index.js';
 import { resolveArticleKnittingPendingQuantity } from './machinePendingQuantity.service.js';
+import {
+  indexQueueByArticle,
+  loadQueueAssignments,
+  KNIT_PENDING_ARTICLE_SELECT,
+  collectListedArticleIds,
+} from './knittingPendingBuckets.service.js';
+import { KnitPendingBucket, resolveKnitPendingBucket } from './knittingQueueStatus.js';
 
 const ALLOWED_SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'orderNumber', 'priority', 'status']);
 
@@ -35,7 +42,11 @@ const escapeRegexLiteral = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&
 
 /**
  * Empty metric bucket used for order / page / filter totals.
- * @returns {{ articleCount: number, totalQty: number, holdQty: number, knitPendingWithHold: number, knitPendingWithoutHold: number, transferQty: number, wipQty: number }}
+ *
+ * `knitPendingWithoutHold` is the legacy pre-bucket number, kept alongside
+ * `knitPendingQty` so the UI can show both during rollout instead of a headline
+ * figure dropping without explanation.
+ * @returns {Record<string, number>}
  */
 export const createEmptyOrderSummaryMetrics = () => ({
   articleCount: 0,
@@ -43,40 +54,71 @@ export const createEmptyOrderSummaryMetrics = () => ({
   holdQty: 0,
   knitPendingWithHold: 0,
   knitPendingWithoutHold: 0,
+  /** onMachine + unplanned. The reportable pending figure. */
+  knitPendingQty: 0,
+  /** Pending on a live machine queue. Matches the Needle Wise table. */
+  knitPendingOnMachine: 0,
+  /** Pending with no machine assigned. Needs planning. */
+  knitPendingUnplanned: 0,
+  /** Balance left when the machine closed the row as Completed / Cancelled. */
+  closedOnMachineQty: 0,
+  /** Balance on rows paused as On Hold. */
+  onHoldQty: 0,
   transferQty: 0,
   wipQty: 0,
 });
 
+/** Maps a bucket to the metrics field that accumulates it. */
+const BUCKET_METRIC_FIELD = {
+  [KnitPendingBucket.ON_MACHINE]: 'knitPendingOnMachine',
+  [KnitPendingBucket.UNPLANNED]: 'knitPendingUnplanned',
+  [KnitPendingBucket.SHORT_CLOSED]: 'holdQty',
+  [KnitPendingBucket.CLOSED_ON_MACHINE]: 'closedOnMachineQty',
+  [KnitPendingBucket.ON_HOLD]: 'onHoldQty',
+};
+
 /**
- * Adds one article into a metrics bucket using locked summary formulas.
+ * Adds one article into a metrics bucket.
  * @param {ReturnType<typeof createEmptyOrderSummaryMetrics>} metrics
  * @param {Record<string, unknown>} article
- * @param {Set<string>} shortClosedArticleIds
+ * @param {Map<string, Set<string>>} statusesByArticle Queue statuses per article id
  */
-export const addArticleToOrderSummaryMetrics = (metrics, article, shortClosedArticleIds) => {
+export const addArticleToOrderSummaryMetrics = (metrics, article, statusesByArticle) => {
   const articleId = refId(article._id || article.id);
   const remaining = resolveArticleKnittingPendingQuantity(article);
-  const isHold = shortClosedArticleIds.has(articleId);
+  const bucket = resolveKnitPendingBucket(statusesByArticle.get(articleId));
 
   metrics.articleCount += 1;
   metrics.totalQty += toNumber(article.plannedQuantity);
   metrics.knitPendingWithHold += remaining;
-  if (isHold) {
-    metrics.holdQty += remaining;
-  } else {
+  metrics[BUCKET_METRIC_FIELD[bucket]] += remaining;
+
+  // Legacy column: everything except short close, i.e. the number this report
+  // showed before closed-on-machine and on-hold balances were split out.
+  if (bucket !== KnitPendingBucket.SHORT_CLOSED) {
     metrics.knitPendingWithoutHold += remaining;
   }
+
   metrics.transferQty += toNumber(article.floorQuantities?.dispatch?.transferred);
 };
 
 /**
- * Sets WIP from Total − knit pending without hold − transfer − hold.
+ * Derives pending and WIP once every article has been added.
+ *
+ * WIP is the residual: planned minus everything we can account for. It can go
+ * negative when floors report more than was planned, and the UI flags that.
  * @param {ReturnType<typeof createEmptyOrderSummaryMetrics>} metrics
  * @returns {ReturnType<typeof createEmptyOrderSummaryMetrics>}
  */
 export const finalizeOrderSummaryMetrics = (metrics) => {
+  metrics.knitPendingQty = metrics.knitPendingOnMachine + metrics.knitPendingUnplanned;
   metrics.wipQty =
-    metrics.totalQty - metrics.knitPendingWithoutHold - metrics.transferQty - metrics.holdQty;
+    metrics.totalQty -
+    metrics.knitPendingQty -
+    metrics.holdQty -
+    metrics.closedOnMachineQty -
+    metrics.onHoldQty -
+    metrics.transferQty;
   return metrics;
 };
 
@@ -98,58 +140,36 @@ const buildOrderFilter = (filter = {}) => {
 };
 
 /**
- * Loads article docs needed for summary qty columns.
- * @param {import('mongoose').Types.ObjectId[]} orderIds
+ * Loads article docs listed on the given orders' articles arrays.
+ * Uses order.articles (what the order screen shows), not article.orderId,
+ * so rows dropped from an order cannot inflate pending.
+ * @param {Array<Record<string, unknown>>} orders Lean ProductionOrder docs with articles ids
  * @returns {Promise<Array<Record<string, unknown>>>}
  */
-const loadArticlesForOrders = async (orderIds) => {
-  if (!orderIds.length) return [];
-  return Article.find({ orderId: { $in: orderIds } })
-    .select('orderId plannedQuantity floorQuantities.knitting floorQuantities.dispatch.transferred')
-    .lean();
+const loadArticlesListedOnOrders = async (orders) => {
+  const ids = [...collectListedArticleIds(orders)];
+  if (!ids.length) return [];
+  return Article.find({ _id: { $in: ids } }).select(KNIT_PENDING_ARTICLE_SELECT).lean();
 };
 
 /**
- * Collects article ids whose current machine-queue item is Short Close.
- * @param {import('mongoose').Types.ObjectId[]} orderIds
- * @returns {Promise<Set<string>>}
- */
-const loadShortClosedArticleIds = async (orderIds) => {
-  const ids = new Set();
-  if (!orderIds.length) return ids;
-
-  const orderIdSet = new Set(orderIds.map((id) => String(id)));
-  const assignments = await MachineOrderAssignment.find({
-    'productionOrderItems.productionOrder': { $in: orderIds },
-    'productionOrderItems.status': OrderStatus.SHORT_CLOSE,
-  })
-    .select('productionOrderItems.productionOrder productionOrderItems.article productionOrderItems.status')
-    .lean();
-
-  for (const assignment of assignments) {
-    for (const item of assignment.productionOrderItems || []) {
-      if (String(item.status) !== OrderStatus.SHORT_CLOSE) continue;
-      if (!orderIdSet.has(refId(item.productionOrder))) continue;
-      const articleId = refId(item.article);
-      if (articleId) ids.add(articleId);
-    }
-  }
-  return ids;
-};
-
-/**
- * Groups articles by production order id string.
+ * Groups listed articles under the order that references them.
+ * @param {Array<Record<string, unknown>>} orders
  * @param {Array<Record<string, unknown>>} articles
  * @returns {Map<string, Array<Record<string, unknown>>>}
  */
-const groupArticlesByOrderId = (articles) => {
+const groupArticlesByOrderMembers = (orders, articles) => {
+  const articleById = new Map(
+    (articles ?? []).map((article) => [refId(article._id || article.id), article])
+  );
   const byOrder = new Map();
-  for (const article of articles) {
-    const orderId = refId(article.orderId);
-    if (!orderId) continue;
-    const list = byOrder.get(orderId);
-    if (list) list.push(article);
-    else byOrder.set(orderId, [article]);
+  for (const order of orders ?? []) {
+    const list = [];
+    for (const ref of order.articles ?? []) {
+      const article = articleById.get(refId(ref));
+      if (article) list.push(article);
+    }
+    byOrder.set(refId(order._id), list);
   }
   return byOrder;
 };
@@ -157,13 +177,13 @@ const groupArticlesByOrderId = (articles) => {
 /**
  * Rolls article rows into one metrics object.
  * @param {Array<Record<string, unknown>>} articles
- * @param {Set<string>} shortClosedArticleIds
+ * @param {Map<string, Set<string>>} statusesByArticle
  * @returns {ReturnType<typeof createEmptyOrderSummaryMetrics>}
  */
-const metricsFromArticles = (articles, shortClosedArticleIds) => {
+const metricsFromArticles = (articles, statusesByArticle) => {
   const metrics = createEmptyOrderSummaryMetrics();
   for (const article of articles) {
-    addArticleToOrderSummaryMetrics(metrics, article, shortClosedArticleIds);
+    addArticleToOrderSummaryMetrics(metrics, article, statusesByArticle);
   }
   return finalizeOrderSummaryMetrics(metrics);
 };
@@ -191,34 +211,31 @@ export const getOrderSummaryReport = async (filter = {}, options = {}) => {
     page,
     limit,
     sortBy: safeSortBy,
-    select: 'orderNumber orderNote priority status createdAt',
+    select: 'orderNumber orderNote priority status createdAt articles',
     lean: true,
   });
 
   const pageOrders = paged.results || [];
-  const pageOrderIds = pageOrders.map((order) => order._id).filter(Boolean);
 
-  const allOrderIdDocs = await ProductionOrder.find(orderFilter).select('_id').lean();
-  const allOrderIds = allOrderIdDocs.map((order) => order._id);
+  const allOrders = await ProductionOrder.find(orderFilter).select('_id articles').lean();
 
-  const [pageArticles, allArticles, pageShortClosed, allShortClosed] = await Promise.all([
-    loadArticlesForOrders(pageOrderIds),
-    allOrderIds.length === pageOrderIds.length
+  // One queue index for the whole request: an article's bucket depends on every
+  // machine row referencing it, not just rows under the orders on this page.
+  const [pageArticles, allArticles, assignments] = await Promise.all([
+    loadArticlesListedOnOrders(pageOrders),
+    allOrders.length === pageOrders.length
       ? Promise.resolve(null)
-      : loadArticlesForOrders(allOrderIds),
-    loadShortClosedArticleIds(pageOrderIds),
-    allOrderIds.length === pageOrderIds.length
-      ? Promise.resolve(null)
-      : loadShortClosedArticleIds(allOrderIds),
+      : loadArticlesListedOnOrders(allOrders),
+    loadQueueAssignments(),
   ]);
 
+  const { statusesByArticle } = indexQueueByArticle(assignments);
   const articlesForTotals = allArticles ?? pageArticles;
-  const shortClosedForTotals = allShortClosed ?? pageShortClosed;
-  const articlesByOrder = groupArticlesByOrderId(pageArticles);
+  const articlesByOrder = groupArticlesByOrderMembers(pageOrders, pageArticles);
 
   const results = pageOrders.map((order) => {
     const orderId = refId(order._id);
-    const metrics = metricsFromArticles(articlesByOrder.get(orderId) || [], pageShortClosed);
+    const metrics = metricsFromArticles(articlesByOrder.get(orderId) || [], statusesByArticle);
     return {
       orderId,
       orderNumber: order.orderNumber || '',
@@ -230,18 +247,15 @@ export const getOrderSummaryReport = async (filter = {}, options = {}) => {
     };
   });
 
+  // Summing every metric key keeps page totals correct when a new bucket is added.
   const pageTotals = results.reduce((acc, row) => {
-    acc.articleCount += row.articleCount;
-    acc.totalQty += row.totalQty;
-    acc.holdQty += row.holdQty;
-    acc.knitPendingWithHold += row.knitPendingWithHold;
-    acc.knitPendingWithoutHold += row.knitPendingWithoutHold;
-    acc.transferQty += row.transferQty;
-    acc.wipQty += row.wipQty;
+    for (const key of Object.keys(acc)) {
+      acc[key] += toNumber(row[key]);
+    }
     return acc;
   }, createEmptyOrderSummaryMetrics());
 
-  const totals = metricsFromArticles(articlesForTotals, shortClosedForTotals);
+  const totals = metricsFromArticles(articlesForTotals, statusesByArticle);
 
   return {
     results,

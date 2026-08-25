@@ -10,6 +10,7 @@ import {
   writeAssignmentAuditLog,
   pushItemFieldChanges,
 } from './machineOrderAssignmentAudit.helper.js';
+import { HIDDEN_FROM_QUEUE_STATUSES, isTerminalQueueStatus } from './knittingQueueStatus.js';
 
 /**
  * Create a machine order assignment. Logs ASSIGNMENT_CREATED with userId.
@@ -81,8 +82,16 @@ export const getMachineOrderAssignmentById = async (assignmentId) => {
 /** Number of top-priority items to return per assignment */
 const TOP_ITEMS_LIMIT = 2;
 
-/** Item statuses that exclude an order from top-items (once all items are in these, order is hidden). */
-const EXCLUDED_ITEM_STATUSES = [OrderStatus.COMPLETED, OrderStatus.ON_HOLD, OrderStatus.SHORT_CLOSE];
+/**
+ * Item statuses that exclude an order from top-items (once all items are in
+ * these, the order is hidden).
+ *
+ * This is a display rule, deliberately narrower than the pending-quantity rule:
+ * a Cancelled row stays visible so supervisors can see why a machine freed up.
+ * Sourced from the shared status module so the intent is explicit rather than a
+ * copy that drifted.
+ */
+const EXCLUDED_ITEM_STATUSES = HIDDEN_FROM_QUEUE_STATUSES;
 
 /**
  * Get all machine order assignments that have at least one productionOrderItem with
@@ -693,11 +702,7 @@ export const updateProductionOrderItemStatusById = async (assignmentId, itemId, 
   }
 
   item.status = newStatus;
-  if (
-    [OrderStatus.CANCELLED, OrderStatus.ON_HOLD, OrderStatus.SHORT_CLOSE, OrderStatus.COMPLETED].includes(
-      String(newStatus)
-    )
-  ) {
+  if (isTerminalQueueStatus(newStatus)) {
     item.set('priority', undefined);
   }
 

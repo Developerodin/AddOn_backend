@@ -3,12 +3,7 @@ import mongoose from 'mongoose';
 import ApiError from '../../utils/ApiError.js';
 import Machine from '../../models/machine.model.js';
 import MachineOrderAssignment from '../../models/production/machineOrderAssignment.model.js';
-import { OrderStatus } from '../../models/production/enums.js';
-
-/** Queue item statuses excluded from pending workload (same as top-items). */
-const EXCLUDED_ITEM_STATUSES = [OrderStatus.COMPLETED, OrderStatus.ON_HOLD, OrderStatus.CANCELLED];
-
-const toNumber = (v) => Number(v ?? 0);
+import { isLiveQueueStatus } from './knittingQueueStatus.js';
 
 /**
  * Resolve Mongo id from populated or raw ref.
@@ -25,32 +20,31 @@ const refId = (ref) => {
 
 /**
  * Knitting units still pending for one article document.
+ *
+ * Same field Article View Rem uses: `floorQuantities.knitting.remaining`.
+ * Do not invent remaining from planned − completed — that disagrees with the
+ * floor ledger (received − completed − m4) and with the Article View screen.
  * @param {Record<string, unknown>|null|undefined} article
  * @returns {number}
  */
 export const resolveArticleKnittingPendingQuantity = (article) => {
   if (!article || typeof article !== 'object') return 0;
-  const planned = toNumber(article.plannedQuantity);
-  const knitting = article.floorQuantities?.knitting;
-  if (knitting && knitting.remaining != null && !Number.isNaN(Number(knitting.remaining))) {
-    return Math.max(0, toNumber(knitting.remaining));
-  }
-  const completed = toNumber(knitting?.completed);
-  if (planned > 0) {
-    return Math.max(0, planned - completed);
-  }
-  return 0;
+  const remaining = article.floorQuantities?.knitting?.remaining;
+  if (remaining == null || remaining === '') return 0;
+  const n = Number(remaining);
+  return Number.isFinite(n) ? n : 0;
 };
 
 /**
  * Whether a machine-queue row still contributes to pending workload.
+ *
+ * Delegates to the shared status sets so this agrees with the Order Summary and
+ * the Needle Wise report. Previously this list omitted Short Close, which made
+ * per-machine pending read higher than both reports.
  * @param {{ status?: string }} item
  * @returns {boolean}
  */
-const isActiveQueueItem = (item) => {
-  const st = String(item?.status ?? OrderStatus.PENDING);
-  return !EXCLUDED_ITEM_STATUSES.includes(st);
-};
+const isActiveQueueItem = (item) => isLiveQueueStatus(item?.status);
 
 /**
  * Sum pending knitting quantity for one assignment document.
