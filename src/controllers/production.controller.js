@@ -218,6 +218,18 @@ export const getOrderSummaryReport = catchAsync(async (req, res) => {
 });
 
 /**
+ * Core Report: warehouse stock, vendor inward/PO, and production qty per factory code.
+ */
+export const getCoreReport = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['search']);
+  const options = pick(req.query, ['limit', 'page', 'sortBy']);
+  if (options.limit) options.limit = parseInt(options.limit, 10);
+  if (options.page) options.page = parseInt(options.page, 10);
+  const result = await productionService.getCoreReport(filter, options);
+  res.send(result);
+});
+
+/**
  * Factory-wide knitting pending split into buckets (on machine, unplanned,
  * short closed, closed on machine, on hold) plus a per-needle breakdown.
  * Lets the Needle Wise report reconcile against the Order Summary.

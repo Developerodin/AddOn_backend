@@ -14,6 +14,15 @@ export const DEFAULT_NAVIGATION = {
     'Vendor Dashboard': false,
     'Yarn Dashboard': false,
   },
+  Reports: {
+    'Invoice Report': false,
+    'Production order summary': false,
+    'Core Report': false,
+    'Backlog report': false,
+    'Daily production summary': false,
+    'Advanced Planning': false,
+    'Needle Wise Planning': false,
+  },
   Catalog: {
     Items: false,
     Categories: false,
@@ -127,6 +136,15 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Vendor Dashboard': true,
       'Yarn Dashboard': true,
     },
+    Reports: {
+      'Invoice Report': true,
+      'Production order summary': true,
+      'Core Report': true,
+      'Backlog report': true,
+      'Daily production summary': true,
+      'Advanced Planning': true,
+      'Needle Wise Planning': true,
+    },
     Catalog: {
       Items: true,
       Categories: true,
@@ -234,6 +252,15 @@ export const ROLE_NAVIGATION_TEMPLATES = {
       'Production Dashboard': true,
       'Vendor Dashboard': true,
       'Yarn Dashboard': true,
+    },
+    Reports: {
+      'Invoice Report': false,
+      'Production order summary': false,
+      'Core Report': false,
+      'Backlog report': false,
+      'Daily production summary': false,
+      'Advanced Planning': false,
+      'Needle Wise Planning': false,
     },
     Catalog: {
       Items: true,
@@ -358,16 +385,69 @@ export const getDefaultNavigationByRole = (role) => {
 };
 
 /**
+ * Infer Reports flags from parent pages when a stored nav object has no Reports key.
+ * Skips partial patches that do not look like a full navigation document.
+ * @param {Object} navigation
+ * @returns {Object}
+ */
+export const backfillMissingReports = (navigation) => {
+  if (!navigation || typeof navigation !== 'object' || Array.isArray(navigation)) {
+    return navigation;
+  }
+  const looksLikeFullNav =
+    'Dashboard' in navigation ||
+    'Production Planning' in navigation ||
+    'Vendor PO' in navigation;
+  if (!looksLikeFullNav) {
+    return navigation;
+  }
+  if (navigation.Reports === true) {
+    return {
+      ...navigation,
+      Reports: {
+        'Invoice Report': true,
+        'Production order summary': true,
+        'Core Report': true,
+        'Backlog report': true,
+        'Daily production summary': true,
+        'Advanced Planning': true,
+        'Needle Wise Planning': true,
+      },
+    };
+  }
+  if (navigation.Reports && typeof navigation.Reports === 'object') {
+    return navigation;
+  }
+  const vendorList = Boolean(navigation['Vendor PO']?.['Vendor List']);
+  const productionOrders = Boolean(navigation['Production Planning']?.['Production Orders']);
+  const knittingFloor = Boolean(navigation['Production Planning']?.['Knitting Floor']);
+  return {
+    ...navigation,
+    Reports: {
+      'Invoice Report': vendorList,
+      'Production order summary': productionOrders,
+      'Core Report': productionOrders,
+      'Backlog report': productionOrders,
+      'Daily production summary': productionOrders,
+      'Advanced Planning': knittingFloor,
+      'Needle Wise Planning': knittingFloor,
+    },
+  };
+};
+
+/**
  * Merge navigation objects deeply
  * @param {Object} target - Target navigation object
  * @param {Object} source - Source navigation object
+ * @param {boolean} [isRoot=true] - When true, backfill missing Reports on source
  * @returns {Object} Merged navigation object
  */
-export const mergeNavigation = (target, source) => {
+export const mergeNavigation = (target, source, isRoot = true) => {
+  const sourceFilled = isRoot ? backfillMissingReports(source) : source;
   const result = { ...target };
 
-  for (const key in source) {
-    const sourceValue = source[key];
+  for (const key in sourceFilled) {
+    const sourceValue = sourceFilled[key];
     const targetValue = result[key];
 
     if (
@@ -379,7 +459,7 @@ export const mergeNavigation = (target, source) => {
         targetValue !== null &&
         typeof targetValue === 'object' &&
         !Array.isArray(targetValue);
-      result[key] = mergeNavigation(targetIsObject ? targetValue : {}, sourceValue);
+      result[key] = mergeNavigation(targetIsObject ? targetValue : {}, sourceValue, false);
       continue;
     }
 
@@ -414,7 +494,7 @@ export const validateNavigationStructure = (navigation) => {
   }
 
   // Check required top-level keys
-  const requiredKeys = ['Dashboard', 'Catalog', 'Sales', 'Stores', 'Analytics', 'Replenishment Agent', 'File Manager', 'Help & Support', 'Users', 'Production Planning', 'Yarn Management', 'Warehouse Management', 'Vendor PO'];
+  const requiredKeys = ['Dashboard', 'Reports', 'Catalog', 'Sales', 'Stores', 'Analytics', 'Replenishment Agent', 'File Manager', 'Help & Support', 'Users', 'Production Planning', 'Yarn Management', 'Warehouse Management', 'Vendor PO'];
   for (const key of requiredKeys) {
     if (!(key in navigation)) {
       console.error(`Validation failed: Missing top-level key: ${key}`);
@@ -434,6 +514,29 @@ export const validateNavigationStructure = (navigation) => {
     }
   } else {
     console.error('Validation failed: Dashboard is missing or invalid');
+    return false;
+  }
+
+  const reportKeys = [
+    'Invoice Report',
+    'Production order summary',
+    'Core Report',
+    'Backlog report',
+    'Daily production summary',
+    'Advanced Planning',
+    'Needle Wise Planning',
+  ];
+  if (typeof navigation.Reports === 'boolean') {
+    // Legacy boolean flag is still valid
+  } else if (navigation.Reports && typeof navigation.Reports === 'object') {
+    for (const key of reportKeys) {
+      if (typeof navigation.Reports[key] !== 'boolean') {
+        console.error(`Validation failed: Reports.${key} is missing or not a boolean`);
+        return false;
+      }
+    }
+  } else {
+    console.error('Validation failed: Reports is missing or invalid');
     return false;
   }
 

@@ -369,6 +369,17 @@ export const getVendorDispatchTransferNote = {
   }),
 };
 
+export const getVendorInvoiceReport = {
+  query: Joi.object().keys({
+    search: Joi.string().optional().allow(''),
+    from: Joi.date().optional(),
+    to: Joi.date().optional(),
+    sortBy: Joi.string().optional(),
+    limit: Joi.number().integer().min(1).max(10000).optional(),
+    page: Joi.number().integer().min(1).optional(),
+  }),
+};
+
 // ==================== VENDOR M2 / M3 / M4 MANAGEMENT ====================
 
 const vendorM2SourceFloor = Joi.string().valid('secondaryChecking', 'finalChecking');

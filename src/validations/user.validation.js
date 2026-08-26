@@ -26,6 +26,21 @@ const dashboardNavigationSchema = Joi.alternatives().try(
 );
 
 
+const reportsNavigationSchema = Joi.alternatives().try(
+  Joi.boolean(),
+  Joi.object()
+    .keys({
+      'Invoice Report': Joi.boolean(),
+      'Production order summary': Joi.boolean(),
+      'Core Report': Joi.boolean(),
+      'Backlog report': Joi.boolean(),
+      'Daily production summary': Joi.boolean(),
+      'Advanced Planning': Joi.boolean(),
+      'Needle Wise Planning': Joi.boolean(),
+    })
+    .unknown(true)
+);
+
 const createUser = {
   body: Joi.object().keys({
     email: Joi.string().required().email(),
@@ -40,6 +55,7 @@ const createUser = {
     timezone: Joi.string().default('UTC'),
     navigation: Joi.object().keys({
       Dashboard: dashboardNavigationSchema,
+      Reports: reportsNavigationSchema,
       Catalog: Joi.object().keys({
         Items: Joi.boolean(),
         Categories: Joi.boolean(),
@@ -174,6 +190,7 @@ const updateUser = {
       role: Joi.string().valid('user', 'accounts', 'admin', 'super_admin'),
       navigation: Joi.object().keys({
         Dashboard: dashboardNavigationSchema,
+        Reports: reportsNavigationSchema,
         Catalog: Joi.object().keys({
           Items: Joi.boolean(),
           Categories: Joi.boolean(),
@@ -275,6 +292,7 @@ const updateUserNavigation = {
     .keys({
       navigation: Joi.object().keys({
         Dashboard: dashboardNavigationSchema,
+        Reports: reportsNavigationSchema,
         Catalog: Joi.object().keys({
           Items: Joi.boolean(),
           Categories: Joi.boolean(),

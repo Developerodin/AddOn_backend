@@ -80,6 +80,15 @@ const userSchema = mongoose.Schema(
           'Vendor Dashboard': false,
           'Yarn Dashboard': false,
         },
+        Reports: {
+          'Invoice Report': false,
+          'Production order summary': false,
+          'Core Report': false,
+          'Backlog report': false,
+          'Daily production summary': false,
+          'Advanced Planning': false,
+          'Needle Wise Planning': false,
+        },
         Catalog: {
           Items: false,
           Categories: false,

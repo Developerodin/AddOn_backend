@@ -465,6 +465,18 @@ const getOrderSummaryReport = {
   }),
 };
 
+/** Core Report: one row per factory code across warehouse, vendor PO, and production. */
+const getCoreReport = {
+  query: Joi.object().keys({
+    search: Joi.string().min(1).max(80),
+    limit: Joi.number().integer().min(1).max(100),
+    page: Joi.number().integer().min(1),
+    sortBy: Joi.string(),
+  }),
+};
+
+export { getCoreReport };
+
 const getBacklogReport = {
   query: Joi.object().keys({
     year: Joi.number().integer().min(2020).max(2100),
@@ -869,6 +881,7 @@ export default {
   getOrderTrackingReport,
   getArticleWiseData,
   getOrderSummaryReport,
+  getCoreReport,
   getBacklogReport,
   getDailyProductionSummary,
 

@@ -5,6 +5,7 @@ import * as vendorManagementValidation from '../../validations/vendorManagement.
 import * as vendorManagementController from '../../controllers/vendorManagement/vendorManagement.controller.js';
 import * as vendorM2M3M4Controller from '../../controllers/vendorManagement/vendorM2M3M4Management.controller.js';
 import * as vendorDispatchTransferNoteController from '../../controllers/vendorManagement/vendorDispatchTransferNote.controller.js';
+import * as vendorInvoiceReportController from '../../controllers/vendorManagement/vendorInvoiceReport.controller.js';
 import vendorManagementPoRoute from './vendorManagementPo.route.js';
 import vendorManagementBoxRoute from './vendorManagementBox.route.js';
 import vendorGrnRoute from './vendorGrn.route.js';
@@ -125,6 +126,14 @@ router.route('/m4/statistics').get(auth(), vendorM2M3M4Controller.getM4Statistic
 router
   .route('/m4/flows/:flowId/outward')
   .post(auth(), validate(vendorManagementValidation.markVendorM4Outward), vendorM2M3M4Controller.markM4Outward);
+
+router
+  .route('/vendor-invoice-report')
+  .get(
+    auth(),
+    validate(vendorManagementValidation.getVendorInvoiceReport),
+    vendorInvoiceReportController.getVendorInvoiceReport
+  );
 
 router
   .route('/dispatch/transfer-notes/report')
