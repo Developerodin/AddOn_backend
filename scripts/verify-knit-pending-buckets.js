@@ -18,7 +18,7 @@ const main = async () => {
   const { KnitPendingBucket } = await import('../src/services/production/knittingQueueStatus.js');
 
   const buckets = await getKnittingPendingBuckets();
-  const report = await getOrderSummaryReport({}, { page: 1, limit: 10 });
+  const report = await getOrderSummaryReport({ includeZeroPending: true }, { page: 1, limit: 10 });
   const t = report.totals;
 
   const fmt = (n) => Number(n ?? 0).toLocaleString();

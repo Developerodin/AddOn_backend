@@ -209,7 +209,7 @@ export const getArticleWiseData = catchAsync(async (req, res) => {
 });
 
 export const getOrderSummaryReport = catchAsync(async (req, res) => {
-  const filter = pick(req.query, ['search', 'status', 'priority']);
+  const filter = pick(req.query, ['search', 'status', 'priority', 'includeZeroPending']);
   const options = pick(req.query, ['limit', 'page', 'sortBy']);
   if (options.limit) options.limit = parseInt(options.limit, 10);
   if (options.page) options.page = parseInt(options.page, 10);

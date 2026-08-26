@@ -189,8 +189,53 @@ const metricsFromArticles = (articles, statusesByArticle) => {
 };
 
 /**
+ * True when the report should include orders whose knit pending is 0.
+ * @param {unknown} value Query flag
+ * @returns {boolean}
+ */
+const isIncludeZeroPending = (value) => value === true || value === 'true' || value === '1';
+
+/**
+ * Sums metric fields across order-summary rows.
+ * @param {Array<Record<string, unknown>>} rows
+ * @returns {ReturnType<typeof createEmptyOrderSummaryMetrics>}
+ */
+const sumOrderSummaryMetrics = (rows) =>
+  (rows ?? []).reduce((acc, row) => {
+    for (const key of Object.keys(acc)) {
+      acc[key] += toNumber(row[key]);
+    }
+    return acc;
+  }, createEmptyOrderSummaryMetrics());
+
+/**
+ * Builds one report row from a production order and its listed articles.
+ * @param {Record<string, unknown>} order
+ * @param {Map<string, Array<Record<string, unknown>>>} articlesByOrder
+ * @param {Map<string, Set<string>>} statusesByArticle
+ * @returns {Record<string, unknown>}
+ */
+const toOrderSummaryRow = (order, articlesByOrder, statusesByArticle) => {
+  const orderId = refId(order._id);
+  const metrics = metricsFromArticles(articlesByOrder.get(orderId) || [], statusesByArticle);
+  return {
+    orderId,
+    orderNumber: order.orderNumber || '',
+    orderNote: order.orderNote || '',
+    priority: order.priority || '',
+    status: order.status || '',
+    createdAt: order.createdAt,
+    ...metrics,
+  };
+};
+
+/**
  * Paginated production-order summary report.
- * @param {{ search?: string, status?: string, priority?: string }} filter
+ *
+ * Knit pending is derived (on-machine + unplanned), so zero-pending orders are
+ * dropped after metrics unless `includeZeroPending` is set. Pagination runs on
+ * the filtered set so a page is never padded with completed-knit rows.
+ * @param {{ search?: string, status?: string, priority?: string, includeZeroPending?: boolean|string }} filter
  * @param {{ page?: number, limit?: number, sortBy?: string }} options
  * @returns {Promise<{ results: object[], page: number, limit: number, totalPages: number, total: number, totals: object, pageTotals: object }>}
  */
@@ -202,68 +247,41 @@ export const getOrderSummaryReport = async (filter = {}, options = {}) => {
       ? options.sortBy.trim().split(',')[0]
       : 'createdAt:desc';
   const [sortField, sortDir] = rawSort.split(':');
-  const safeSortBy = `${ALLOWED_SORT_FIELDS.has(sortField) ? sortField : 'createdAt'}:${
-    sortDir === 'asc' ? 'asc' : 'desc'
-  }`;
+  const field = ALLOWED_SORT_FIELDS.has(sortField) ? sortField : 'createdAt';
+  const dir = sortDir === 'asc' ? 1 : -1;
+  const includeZeroPending = isIncludeZeroPending(filter.includeZeroPending);
 
   const orderFilter = buildOrderFilter(filter);
-  const paged = await ProductionOrder.paginate(orderFilter, {
-    page,
-    limit,
-    sortBy: safeSortBy,
-    select: 'orderNumber orderNote priority status createdAt articles',
-    lean: true,
-  });
+  const allOrders = await ProductionOrder.find(orderFilter)
+    .select('orderNumber orderNote priority status createdAt articles')
+    .sort({ [field]: dir })
+    .lean();
 
-  const pageOrders = paged.results || [];
-
-  const allOrders = await ProductionOrder.find(orderFilter).select('_id articles').lean();
-
-  // One queue index for the whole request: an article's bucket depends on every
-  // machine row referencing it, not just rows under the orders on this page.
-  const [pageArticles, allArticles, assignments] = await Promise.all([
-    loadArticlesListedOnOrders(pageOrders),
-    allOrders.length === pageOrders.length
-      ? Promise.resolve(null)
-      : loadArticlesListedOnOrders(allOrders),
+  const [allArticles, assignments] = await Promise.all([
+    loadArticlesListedOnOrders(allOrders),
     loadQueueAssignments(),
   ]);
 
   const { statusesByArticle } = indexQueueByArticle(assignments);
-  const articlesForTotals = allArticles ?? pageArticles;
-  const articlesByOrder = groupArticlesByOrderMembers(pageOrders, pageArticles);
+  const articlesByOrder = groupArticlesByOrderMembers(allOrders, allArticles);
 
-  const results = pageOrders.map((order) => {
-    const orderId = refId(order._id);
-    const metrics = metricsFromArticles(articlesByOrder.get(orderId) || [], statusesByArticle);
-    return {
-      orderId,
-      orderNumber: order.orderNumber || '',
-      orderNote: order.orderNote || '',
-      priority: order.priority || '',
-      status: order.status || '',
-      createdAt: order.createdAt,
-      ...metrics,
-    };
-  });
+  const allRows = allOrders.map((order) => toOrderSummaryRow(order, articlesByOrder, statusesByArticle));
+  const matched = includeZeroPending
+    ? allRows
+    : allRows.filter((row) => toNumber(row.knitPendingQty) !== 0);
 
-  // Summing every metric key keeps page totals correct when a new bucket is added.
-  const pageTotals = results.reduce((acc, row) => {
-    for (const key of Object.keys(acc)) {
-      acc[key] += toNumber(row[key]);
-    }
-    return acc;
-  }, createEmptyOrderSummaryMetrics());
-
-  const totals = metricsFromArticles(articlesForTotals, statusesByArticle);
+  const total = matched.length;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const safePage = Math.min(Math.max(page, 1), totalPages);
+  const results = matched.slice((safePage - 1) * limit, safePage * limit);
 
   return {
     results,
-    page: paged.page,
-    limit: paged.limit,
-    totalPages: paged.totalPages,
-    total: paged.totalResults,
-    totals,
-    pageTotals,
+    page: safePage,
+    limit,
+    totalPages,
+    total,
+    totals: sumOrderSummaryMetrics(matched),
+    pageTotals: sumOrderSummaryMetrics(results),
   };
 };
