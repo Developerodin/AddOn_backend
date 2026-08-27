@@ -19,16 +19,15 @@ const toNumber = (value) => {
 const trimSafe = (value) => (value == null ? '' : String(value).trim());
 
 /**
- * Resolve PO line item _id for a product on the VPO.
+ * Resolve the VPO poItem matching a product.
  * @param {Object} vpo
  * @param {Object|string} product
- * @returns {string|null}
+ * @returns {Object|null}
  */
-const resolvePoItemId = (vpo, product) => {
+const resolvePoItem = (vpo, product) => {
   const productId = product?._id?.toString?.() || (typeof product === 'string' ? product : null);
   if (!productId || !Array.isArray(vpo?.poItems)) return null;
-  const match = vpo.poItems.find((it) => String(it.productId) === String(productId));
-  return match?._id?.toString?.() || null;
+  return vpo.poItems.find((it) => String(it.productId) === String(productId)) || null;
 };
 
 /**
@@ -98,7 +97,10 @@ export const buildSnapshotFromFlow = ({ flow, vpo, boxes = [], lotNumberFilter =
   const verifiedQty = m1 + m2 + m3 + vm4;
   const scanAcceptedQty = toNumber(sc.received);
   const product = flow?.product && typeof flow.product === 'object' ? flow.product : {};
-  const poItemId = resolvePoItemId(vpo, product);
+  const poItem = resolvePoItem(vpo, product);
+  const poItemId = poItem?._id?.toString?.() || null;
+  const rate = toNumber(poItem?.rate);
+  const gstRate = toNumber(poItem?.gstRate);
   let lotNumbers = collectLotNumbers(flow, boxes);
   const filterLot = trimSafe(lotNumberFilter);
   if (filterLot) {
@@ -160,6 +162,11 @@ export const buildSnapshotFromFlow = ({ flow, vpo, boxes = [], lotNumberFilter =
           m3: lotM3,
           m4: lotM4,
           varianceQty: lotVerified - expectedQty,
+          hsnCode: '',
+          rate,
+          gstRate,
+          unit: 'Pairs',
+          amount: lotVerified * rate,
           vendorProductionFlowId: flow?._id || flow?.id,
           boxIds: lotBoxes.map((b) => trimSafe(b.boxId)).filter(Boolean),
         },

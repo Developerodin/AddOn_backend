@@ -18,6 +18,11 @@ const grnItemSchema = mongoose.Schema(
     m3: { type: Number, default: 0, min: 0 },
     m4: { type: Number, default: 0, min: 0 },
     varianceQty: { type: Number, default: 0 },
+    hsnCode: { type: String, trim: true, default: '' },
+    rate: { type: Number, min: 0 },
+    gstRate: { type: Number, min: 0 },
+    unit: { type: String, trim: true, default: 'Pairs' },
+    amount: { type: Number, default: 0, min: 0 },
     vendorProductionFlowId: { type: mongoose.Schema.Types.ObjectId, ref: 'VendorProductionFlow' },
     boxIds: { type: [String], default: [] },
   },
@@ -48,6 +53,17 @@ const vendorSnapshotSchema = mongoose.Schema(
   { _id: false }
 );
 
+const grnAdjustmentsSchema = mongoose.Schema(
+  {
+    /** Rupee discount deducted from basic value (not a percentage). */
+    discountAmount: { type: Number, default: 0, min: 0 },
+    freightAmount: { type: Number, default: 0, min: 0 },
+    freightGstPercent: { type: Number, default: 0, min: 0, max: 100 },
+    roundOff: { type: Number, default: 0 },
+  },
+  { _id: false }
+);
+
 const grnTotalsSchema = mongoose.Schema(
   {
     expected: { type: Number, default: 0, min: 0 },
@@ -57,6 +73,23 @@ const grnTotalsSchema = mongoose.Schema(
     m2: { type: Number, default: 0, min: 0 },
     m3: { type: Number, default: 0, min: 0 },
     m4: { type: Number, default: 0, min: 0 },
+    subTotal: { type: Number, default: 0, min: 0 },
+    discountAmount: { type: Number, default: 0, min: 0 },
+    taxableValue: { type: Number, default: 0, min: 0 },
+    freightAmount: { type: Number, default: 0, min: 0 },
+    freightGst: { type: Number, default: 0, min: 0 },
+    itemGst: { type: Number, default: 0, min: 0 },
+    preRoundTotal: { type: Number, default: 0, min: 0 },
+    roundOff: { type: Number, default: 0 },
+    roundOffSuggested: { type: Number, default: 0 },
+    sgst: { type: Number, default: 0, min: 0 },
+    cgst: { type: Number, default: 0, min: 0 },
+    igst: { type: Number, default: 0, min: 0 },
+    gst: { type: Number, default: 0, min: 0 },
+    grandTotal: { type: Number, default: 0, min: 0 },
+    totalQty: { type: Number, default: 0, min: 0 },
+    taxLabel: { type: String, trim: true, default: '' },
+    amountInWords: { type: String, trim: true, default: '' },
   },
   { _id: false }
 );
@@ -101,6 +134,7 @@ const vendorGrnSchema = mongoose.Schema(
     vpoDate: { type: Date },
     vendor: vendorSnapshotSchema,
     lots: { type: [grnLotSchema], default: [] },
+    adjustments: { type: grnAdjustmentsSchema, default: () => ({}) },
     totals: { type: grnTotalsSchema, default: () => ({}) },
     secondaryCheckingCompletedAt: { type: Date },
     incompleteClassification: { type: Boolean, default: false },

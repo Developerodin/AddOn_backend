@@ -131,6 +131,12 @@ export const getProductsByFactoryCodes = catchAsync(async (req, res) => {
   res.send(products);
 });
 
+export const getProductsByIds = catchAsync(async (req, res) => {
+  const { ids } = req.body;
+  const products = await productService.getProductsByIds(ids);
+  res.send(products);
+});
+
 export const getStyleCodesByVendorCode = catchAsync(async (req, res) => {
   const { vendorCode } = req.query;
   const result = await productService.getStyleCodesByVendorCode(vendorCode);

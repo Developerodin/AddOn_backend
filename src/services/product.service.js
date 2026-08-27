@@ -274,8 +274,28 @@ export const getProductById = async (id) => {
 };
 
 /**
+ * Batch-load products by Mongo ids. Lean + narrow select for vendor PO import hydrate.
+ * @param {string[]} ids
+ * @returns {Promise<object[]>}
+ */
+export const getProductsByIds = async (ids) => {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+  const unique = [
+    ...new Set(
+      ids
+        .map((id) => String(id || '').trim())
+        .filter((id) => id && mongoose.Types.ObjectId.isValid(id))
+    ),
+  ];
+  if (!unique.length) return [];
+  return Product.find({ _id: { $in: unique } })
+    .select('name softwareCode internalCode vendorCode factoryCode status category attributes')
+    .lean();
+};
+
+/**
  * Get products by array of factoryCodes. Returns full product docs with all attributes.
- * @param {string[]} factoryCodes - Array of factory codes
+ * @param {string[]} factoryCodes
  * @returns {Promise<Product[]>}
  */
 export const getProductsByFactoryCodes = async (factoryCodes) => {

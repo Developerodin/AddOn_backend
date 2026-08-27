@@ -211,6 +211,12 @@ const getProductsByFactoryCodes = {
   }),
 };
 
+export const getProductsByIds = {
+  body: Joi.object().keys({
+    ids: Joi.array().items(Joi.string().custom(objectId)).min(1).max(1000).required(),
+  }),
+};
+
 const getStyleCodesByVendorCode = {
   query: Joi.object().keys({
     vendorCode: Joi.string().trim().required(),
@@ -228,5 +234,6 @@ export default {
   bulkExportProducts,
   getProductByCode,
   getProductsByFactoryCodes,
+  getProductsByIds,
   getStyleCodesByVendorCode,
 }; 

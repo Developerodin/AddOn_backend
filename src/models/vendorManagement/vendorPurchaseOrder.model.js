@@ -229,26 +229,25 @@ vendorPurchaseOrderSchema.pre('save', async function syncVendorPurchaseOrder(nex
   }
 
   if (this.isModified('poItems')) {
-    const productCache = new Map();
-    const loadProduct = async (productId) => {
-      const key = String(productId);
-      if (productCache.has(key)) return productCache.get(key);
-      const p = await Product.findById(productId).select('name').lean();
-      productCache.set(key, p);
-      return p;
-    };
-
-    await Promise.all(
-      this.poItems.map(async (item) => {
+    const ids = [
+      ...new Set(
+        (this.poItems || [])
+          .map((item) => (item.productId ? String(item.productId) : ''))
+          .filter((id) => id && mongoose.Types.ObjectId.isValid(id))
+      ),
+    ];
+    if (ids.length) {
+      const products = await Product.find({ _id: { $in: ids } }).select('name').lean();
+      const nameById = new Map(products.map((p) => [String(p._id), p.name]));
+      this.poItems.forEach((item) => {
         if (!item.productId) return;
-        const product = await loadProduct(item.productId);
-        if (product?.name) {
-          // Mongoose subdocument: sync denormalized name from Product
+        const name = nameById.get(String(item.productId));
+        if (name) {
           // eslint-disable-next-line no-param-reassign -- intentional subdoc field update
-          item.productName = product.name;
+          item.productName = name;
         }
-      })
-    );
+      });
+    }
   }
 
   next();

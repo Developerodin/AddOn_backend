@@ -60,26 +60,11 @@ export const firstPackDispatchDate = (po) => {
 };
 
 /**
- * M1 + M2 remaining on a checking floor (qty sitting, not yet transferred).
- * @param {Object} [floor]
+ * Secondary checking VM4 qty (legacy SC `m4Quantity` fallback).
+ * @param {Object} [sc]
  * @returns {number}
  */
-export const m1m2Remaining = (floor) => {
-  if (!floor) return 0;
-  const m1 = Math.max(0, toNum(floor.m1Quantity) - toNum(floor.m1Transferred));
-  const m2 = Math.max(0, toNum(floor.m2Quantity) - toNum(floor.m2Transferred));
-  return m1 + m2;
-};
-
-/**
- * PR column: M1 + M2 remaining on secondary checking + final checking.
- * @param {Object} flow
- * @returns {number}
- */
-export const prRemainingFromFlow = (flow) => {
-  const fq = flow?.floorQuantities || {};
-  return m1m2Remaining(fq.secondaryChecking) + m1m2Remaining(fq.finalChecking);
-};
+export const scVm4Qty = (sc) => toNum(sc?.vm4Quantity ?? sc?.m4Quantity);
 
 /**
  * Map key for flows belonging to a PO lot (invoice).

@@ -23,10 +23,33 @@ import {
 } from '../../utils/vendorPurchaseOrderRoleAccess.js';
 
 async function assertVendorExists(vendorId) {
-  const v = await VendorManagement.findById(vendorId).select('_id').lean();
+  const v = await VendorManagement.findById(vendorId).select('_id products').lean();
   if (!v) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Vendor management record not found');
   }
+  return v;
+}
+
+/**
+ * Ensure every poItem.productId belongs to the vendor catalog (one vendor read).
+ * @param {{ products?: unknown[] }} vendor
+ * @param {Array<{ productId?: unknown, productName?: string }>} poItems
+ */
+function assertPoItemsBelongToVendor(vendor, poItems) {
+  const allowed = new Set((vendor.products || []).map((id) => String(id)));
+  if (!allowed.size) {
+    throw new ApiError(httpStatus.BAD_REQUEST, "This vendor has no products in its catalog");
+  }
+  (poItems || []).forEach((item, idx) => {
+    const pid = item?.productId ? String(item.productId) : '';
+    if (!pid || !allowed.has(pid)) {
+      const label = item?.productName ? ` (${item.productName})` : '';
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Line ${idx + 1}${label}: product is not in this vendor's catalog`
+      );
+    }
+  });
 }
 
 function normalizePurchaseOrderUpdateBody(updateBody = {}) {
@@ -89,7 +112,8 @@ function buildVendorPoStatusLogEntry(statusCode, user, notes = null) {
 export const createVendorPurchaseOrder = async (purchaseOrderBody, year = new Date().getFullYear(), user) => {
   const role = resolveUserRole(user);
   const scopedBody = applyVendorPoCreateRoleRules(purchaseOrderBody, role);
-  await assertVendorExists(scopedBody.vendor);
+  const vendorDoc = await assertVendorExists(scopedBody.vendor);
+  assertPoItemsBelongToVendor(vendorDoc, scopedBody.poItems);
   const vpoNumber = await getNextVendorPoNumberForYear(year);
   const existing = await VendorPurchaseOrder.findOne({ vpoNumber });
   if (existing) {
@@ -188,8 +212,12 @@ export const updateVendorPurchaseOrderById = async (purchaseOrderId, updateBody,
     Object.entries(scopedBody).filter(([key, value]) => value !== undefined && key !== 'statusLogs')
   );
 
-  if (scopedBody.vendor) {
-    await assertVendorExists(scopedBody.vendor);
+  if (scopedBody.vendor || scopedBody.poItems) {
+    const vendorId = scopedBody.vendor || purchaseOrder.vendor;
+    const vendorDoc = await assertVendorExists(vendorId);
+    if (scopedBody.poItems) {
+      assertPoItemsBelongToVendor(vendorDoc, scopedBody.poItems);
+    }
   }
 
   const nextStatus = scopedBody.currentStatus;

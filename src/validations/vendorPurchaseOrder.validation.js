@@ -69,7 +69,7 @@ const createBody = Joi.object().keys({
   vendor: Joi.string().custom(objectId).required(),
   /** Denormalized display name; optional — server fills from VendorManagement if omitted */
   vendorName: Joi.string().trim(),
-  poItems: Joi.array().items(poItemSchema).min(1).required(),
+  poItems: Joi.array().items(poItemSchema).min(1).max(3000).required(),
   notes: Joi.string().trim().allow('', null),
   subTotal: Joi.number().min(0).required(),
   gst: Joi.number().min(0).required(),
@@ -129,7 +129,7 @@ export const updateVendorPurchaseOrder = {
     .keys({
       vendor: Joi.string().custom(objectId),
       vendorName: Joi.string().trim(),
-      poItems: Joi.array().items(poItemSchema).min(1),
+      poItems: Joi.array().items(poItemSchema).min(1).max(3000),
       notes: Joi.string().trim().allow('', null),
       subTotal: Joi.number().min(0),
       gst: Joi.number().min(0),

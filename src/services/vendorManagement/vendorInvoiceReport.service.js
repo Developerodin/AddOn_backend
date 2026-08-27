@@ -3,11 +3,6 @@ import VendorProductionFlow from '../../models/vendorManagement/vendorProduction
 import VendorDispatchStockTransferNote, {
   VendorDispatchStnStatus,
 } from '../../models/vendorManagement/vendorDispatchStockTransferNote.model.js';
-import InwardReceive, {
-  InwardReceiveStatus,
-  InwardReceiveSource,
-} from '../../models/whms/inwardReceive.model.js';
-import { computeM3Snapshot } from './vendorM3Management.service.js';
 import { computeM4Snapshot } from './vendorM4Management.service.js';
 import {
   buildPoMongoFilter,
@@ -17,7 +12,7 @@ import {
   lotInvoiceQty,
   lotMatchesSearch,
   poMatchesSearchWithoutLot,
-  prRemainingFromFlow,
+  scVm4Qty,
   stnLineKey,
   toNum,
 } from './vendorInvoiceReport.helpers.js';
@@ -58,41 +53,37 @@ const indexStnQty = (stns) => {
 };
 
 /**
- * Sum accepted WHMS inward receivedQuantity by production flow id.
- * @param {Array<Object>} inwards
- * @returns {Map<string, number>}
+ * Sum secondary-checking M1/M2/M3/VM4 and final-checking M4 on-hand for one lot.
+ * @param {Array<Object>} lotFlows
+ * @returns {{ m1: number, m2: number, m3: number, vm4: number, m4: number }}
  */
-const indexAcceptedInwardByFlow = (inwards) => {
-  const map = new Map();
-  for (const rec of inwards || []) {
-    const flowId = idStr(rec.vendorProductionFlowId);
-    if (!flowId) continue;
-    map.set(flowId, (map.get(flowId) || 0) + toNum(rec.receivedQuantity));
+const sumQcQtyFromFlows = (lotFlows) => {
+  let m1 = 0;
+  let m2 = 0;
+  let m3 = 0;
+  let vm4 = 0;
+  let m4 = 0;
+  for (const flow of lotFlows) {
+    const sc = flow.floorQuantities?.secondaryChecking || {};
+    m1 += toNum(sc.m1Quantity);
+    m2 += toNum(sc.m2Quantity);
+    m3 += toNum(sc.m3Quantity);
+    vm4 += scVm4Qty(sc);
+    m4 += toNum(computeM4Snapshot(flow).onHand);
   }
-  return map;
+  return { m1, m2, m3, vm4, m4 };
 };
 
 /**
- * Build one report row for a PO lot, joining STN / M3 / M4 / PR / inward.
+ * Build one report row for a PO lot, joining STN / SC qty / FC M4.
  * @param {Object} po
  * @param {Object} lot
  * @param {Array<Object>} lotFlows
  * @param {Map<string, number>} stnQtyMap
- * @param {Map<string, number>} inwardByFlow
  * @returns {Object}
  */
-const buildReportRow = (po, lot, lotFlows, stnQtyMap, inwardByFlow) => {
-  let m3 = 0;
-  let m4 = 0;
-  let pr = 0;
-  let acceptedInward = 0;
-  for (const flow of lotFlows) {
-    m3 += toNum(computeM3Snapshot(flow).onHand);
-    m4 += toNum(computeM4Snapshot(flow).onHand);
-    pr += prRemainingFromFlow(flow);
-    acceptedInward += toNum(inwardByFlow.get(idStr(flow._id)));
-  }
-
+const buildReportRow = (po, lot, lotFlows, stnQtyMap) => {
+  const { m1, m2, m3, vm4, m4 } = sumQcQtyFromFlows(lotFlows);
   const invoiceQty = lotInvoiceQty(lot);
   const stnQty = toNum(stnQtyMap.get(stnLineKey(po.vpoNumber, lot.lotNumber)));
   const shortExc = invoiceQty - stnQty;
@@ -109,11 +100,13 @@ const buildReportRow = (po, lot, lotFlows, stnQtyMap, inwardByFlow) => {
     noOfBox: lot.numberOfBoxes == null ? null : toNum(lot.numberOfBoxes),
     invoiceQty,
     stnQty,
+    m1,
+    m2,
     m3,
+    vm4,
     m4,
-    pr,
     shortExc: shortExc === 0 ? null : shortExc,
-    pendingInward: stnQty - acceptedInward,
+    pendingInward: invoiceQty - (stnQty + m4 + vm4),
   };
 };
 
@@ -139,9 +132,9 @@ export const queryVendorInvoiceReport = async (filter = {}, options = {}) => {
   const poIds = pos.map((po) => po._id);
   const vpoNumbers = pos.map((po) => po.vpoNumber).filter(Boolean);
 
-  const [flows, stns, inwards] = await Promise.all([
+  const [flows, stns] = await Promise.all([
     VendorProductionFlow.find({ vendorPurchaseOrder: { $in: poIds } })
-      .select('vendorPurchaseOrder referenceCode floorQuantities m3Tracking m4Tracking')
+      .select('vendorPurchaseOrder referenceCode floorQuantities')
       .lean(),
     vpoNumbers.length
       ? VendorDispatchStockTransferNote.find({
@@ -151,18 +144,10 @@ export const queryVendorInvoiceReport = async (filter = {}, options = {}) => {
           .select('lines')
           .lean()
       : Promise.resolve([]),
-    InwardReceive.find({
-      inwardSource: InwardReceiveSource.VENDOR,
-      status: InwardReceiveStatus.ACCEPTED,
-      vendorPurchaseOrderId: { $in: poIds },
-    })
-      .select('vendorProductionFlowId receivedQuantity')
-      .lean(),
   ]);
 
   const flowsByLot = indexFlowsByLot(flows);
   const stnQtyMap = indexStnQty(stns);
-  const inwardByFlow = indexAcceptedInwardByFlow(inwards);
   const searchLower = String(filter.search || '').trim().toLowerCase();
 
   const rows = [];
@@ -172,7 +157,7 @@ export const queryVendorInvoiceReport = async (filter = {}, options = {}) => {
     for (const lot of po.receivedLotDetails || []) {
       if (searchLower && !poMatches && !lotMatchesSearch(lot, searchLower)) continue;
       const lotFlows = flowsByLot.get(flowLotKey(poId, lot.lotNumber)) || [];
-      rows.push(buildReportRow(po, lot, lotFlows, stnQtyMap, inwardByFlow));
+      rows.push(buildReportRow(po, lot, lotFlows, stnQtyMap));
     }
   }
 

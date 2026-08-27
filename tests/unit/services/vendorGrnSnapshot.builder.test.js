@@ -7,7 +7,7 @@ describe('vendorGrnSnapshot.builder invoice grouping', () => {
   const vpo = {
     _id: 'vpo1',
     vpoNumber: 'VPO-1',
-    poItems: [{ _id: 'poItem1', productId: 'prodA' }],
+    poItems: [{ _id: 'poItem1', productId: 'prodA', rate: 25, gstRate: 5 }],
     receivedLotDetails: [
       {
         lotNumber: 'INV-001',
@@ -63,5 +63,20 @@ describe('vendorGrnSnapshot.builder invoice grouping', () => {
     expect(snap.lots[0].items[0].expectedQty).toBe(100);
     expect(snap.totals.verified).toBeGreaterThan(0);
     expect(snap.totals.verified).toBeLessThan(150);
+  });
+
+  test('copies rate and gstRate from VPO poItem and computes amount', () => {
+    const snap = buildSnapshotFromFlow({
+      flow: baseFlow,
+      vpo,
+      boxes: [{ lotNumber: 'INV-001', numberOfUnits: 100, boxId: 'B1' }],
+      lotNumberFilter: 'INV-001',
+    });
+    const item = snap.lots[0].items[0];
+    expect(item.rate).toBe(25);
+    expect(item.gstRate).toBe(5);
+    expect(item.unit).toBe('Pairs');
+    expect(item.amount).toBe(item.verifiedQty * 25);
+    expect(item.hsnCode).toBe('');
   });
 });

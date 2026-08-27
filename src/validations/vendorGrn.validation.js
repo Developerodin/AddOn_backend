@@ -80,6 +80,20 @@ export const updateVendorGrnHeader = {
     .keys({
       notes: Joi.string().allow('', null),
       discrepancyDetails: Joi.string().allow('', null),
+      discountAmount: Joi.number().min(0),
+      freightAmount: Joi.number().min(0),
+      freightGstPercent: Joi.number().min(0).max(100),
+      roundOff: Joi.number(),
+      lineCommercial: Joi.array().items(
+        Joi.object().keys({
+          lotNumber: Joi.string().allow('', null),
+      poItem: Joi.string().custom(objectId),
+      productId: Joi.string().custom(objectId),
+          hsnCode: Joi.string().allow('', null),
+          rate: Joi.number().min(0),
+          unit: Joi.string().allow('', null),
+        })
+      ),
     })
     .min(1),
 };
