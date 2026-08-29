@@ -388,6 +388,8 @@ export const applyHeaderPatch = (grn, fields = {}) => {
   if (fields.discrepancyDetails !== undefined) {
     next.discrepancyDetails = fields.discrepancyDetails || '';
   }
+  if (fields.invoiceDate !== undefined) next.invoiceDate = fields.invoiceDate || null;
+  if (fields.receivedDate !== undefined) next.receivedDate = fields.receivedDate || null;
 
   const hasFinancial =
     typeof fields.discountAmount === 'number' ||

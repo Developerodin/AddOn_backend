@@ -460,7 +460,7 @@ const getOrderSummaryReport = {
     status: Joi.string().valid('Pending', 'In Progress', 'Completed', 'On Hold', 'Short Close', 'Cancelled'),
     priority: Joi.string().valid('Urgent', 'High', 'Medium', 'Low'),
     includeZeroPending: Joi.boolean().truthy('true', '1').falsy('false', '0'),
-    limit: Joi.number().integer().min(1).max(100),
+    limit: Joi.number().integer().min(1).max(10000),
     page: Joi.number().integer().min(1),
     sortBy: Joi.string(),
   }),
@@ -470,7 +470,7 @@ const getOrderSummaryReport = {
 const getCoreReport = {
   query: Joi.object().keys({
     search: Joi.string().min(1).max(80),
-    limit: Joi.number().integer().min(1).max(100),
+    limit: Joi.number().integer().min(1).max(10000),
     page: Joi.number().integer().min(1),
     sortBy: Joi.string(),
   }),

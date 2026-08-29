@@ -240,7 +240,7 @@ const toOrderSummaryRow = (order, articlesByOrder, statusesByArticle) => {
  * @returns {Promise<{ results: object[], page: number, limit: number, totalPages: number, total: number, totals: object, pageTotals: object }>}
  */
 export const getOrderSummaryReport = async (filter = {}, options = {}) => {
-  const limit = Math.min(parseInt(String(options.limit), 10) || 10, 100);
+  const limit = Math.min(parseInt(String(options.limit), 10) || 10, 10000);
   const page = parseInt(String(options.page), 10) || 1;
   const rawSort =
     typeof options.sortBy === 'string' && options.sortBy.trim()

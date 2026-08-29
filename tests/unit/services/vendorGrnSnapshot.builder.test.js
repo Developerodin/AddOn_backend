@@ -1,6 +1,8 @@
 import {
+  buildGrnHeaderFromFlow,
   buildSnapshotFromFlow,
   collectLotNumbers,
+  resolveGrnPrintDates,
 } from '../../../src/services/vendorManagement/vendorGrnSnapshot.builder.js';
 
 describe('vendorGrnSnapshot.builder invoice grouping', () => {
@@ -78,5 +80,50 @@ describe('vendorGrnSnapshot.builder invoice grouping', () => {
     expect(item.unit).toBe('Pairs');
     expect(item.amount).toBe(item.verifiedQty * 25);
     expect(item.hsnCode).toBe('');
+  });
+});
+
+describe('resolveGrnPrintDates', () => {
+  test('uses pack dispatch as invoice date and goodsReceivedDate as received date', () => {
+    const dates = resolveGrnPrintDates({
+      goodsReceivedDate: '2026-08-20',
+      packListDetails: [{ dispatchDate: '2026-08-15' }],
+    });
+    expect(dates.invoiceDate).toBe('2026-08-15');
+    expect(dates.receivedDate).toBe('2026-08-20');
+  });
+
+  test('keeps stored GRN dates over live VPO values', () => {
+    const dates = resolveGrnPrintDates(
+      {
+        goodsReceivedDate: '2026-08-20',
+        packListDetails: [{ dispatchDate: '2026-08-15' }],
+      },
+      { invoiceDate: '2026-08-10', receivedDate: '2026-08-12' }
+    );
+    expect(dates.invoiceDate).toBe('2026-08-10');
+    expect(dates.receivedDate).toBe('2026-08-12');
+  });
+
+  test('falls back received date to GRN date when VPO has none', () => {
+    const dates = resolveGrnPrintDates({}, { grnDate: '2026-08-29' });
+    expect(dates.invoiceDate).toBeNull();
+    expect(dates.receivedDate).toBe('2026-08-29');
+  });
+
+  test('buildGrnHeaderFromFlow snapshots invoice and received dates', () => {
+    const header = buildGrnHeaderFromFlow(
+      { vendor: { header: { vendorName: 'Acme' } } },
+      {
+        _id: 'vpo1',
+        vpoNumber: 'VPO-1',
+        createDate: '2026-08-01',
+        goodsReceivedDate: '2026-08-20',
+        packListDetails: [{ dispatchDate: '2026-08-15' }],
+      }
+    );
+    expect(header.invoiceDate).toBe('2026-08-15');
+    expect(header.receivedDate).toBe('2026-08-20');
+    expect(header.vpoNumber).toBe('VPO-1');
   });
 });

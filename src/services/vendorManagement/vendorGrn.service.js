@@ -11,6 +11,7 @@ import {
   buildGrnHeaderFromFlow,
   collectLotNumbers,
   computeSnapshotDiff,
+  resolveGrnPrintDates,
 } from './vendorGrnSnapshot.builder.js';
 import { isScReadyForGrn } from './vendorGrnScComplete.util.js';
 import {
@@ -80,23 +81,25 @@ export const generateVendorGrnNumber = async () => {
 };
 
 /**
- * Display-hydrate commercial fields (VPO rate backfill + financial totals).
+ * Display-hydrate commercial fields (VPO rate backfill + financial totals + print dates).
  * @param {Object|null} grn
  * @returns {Promise<Object|null>}
  */
 const hydrateCommercial = async (grn) => {
   if (!grn) return null;
   const client = leanToClient(grn);
-  if (!needsVpoBackfill(client) && client.totals?.grandTotal != null) {
+  const needsDates = !client.invoiceDate || !client.receivedDate;
+  if (!needsVpoBackfill(client) && client.totals?.grandTotal != null && !needsDates) {
     return hydrateGrnCommercial(client, null);
   }
   let vpo = null;
-  if (needsVpoBackfill(client) && client.vendorPurchaseOrder) {
+  if (client.vendorPurchaseOrder && (needsVpoBackfill(client) || needsDates)) {
     vpo = await VendorPurchaseOrder.findById(client.vendorPurchaseOrder)
-      .select('poItems')
+      .select('poItems goodsReceivedDate packListDetails.dispatchDate')
       .lean();
   }
-  return hydrateGrnCommercial(client, vpo);
+  const hydrated = hydrateGrnCommercial(client, vpo);
+  return { ...hydrated, ...resolveGrnPrintDates(vpo, hydrated) };
 };
 
 /**
@@ -457,6 +460,12 @@ export const updateGrnHeader = async (grnId, fields) => {
   const patched = applyHeaderPatch(grn.toObject(), fields);
   grn.notes = patched.notes;
   grn.discrepancyDetails = patched.discrepancyDetails;
+  if (fields.invoiceDate !== undefined) {
+    grn.invoiceDate = fields.invoiceDate ? new Date(fields.invoiceDate) : null;
+  }
+  if (fields.receivedDate !== undefined) {
+    grn.receivedDate = fields.receivedDate ? new Date(fields.receivedDate) : null;
+  }
   grn.adjustments = patched.adjustments;
   grn.lots = patched.lots;
   grn.totals = patched.totals;

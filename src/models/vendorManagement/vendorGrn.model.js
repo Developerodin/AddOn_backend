@@ -132,6 +132,10 @@ const vendorGrnSchema = mongoose.Schema(
     },
     vpoNumber: { type: String, trim: true },
     vpoDate: { type: Date },
+    /** Vendor invoice / pack-list dispatch date (snapshotted at GRN issue). */
+    invoiceDate: { type: Date, default: null },
+    /** Warehouse goods-received date (snapshotted at GRN issue). */
+    receivedDate: { type: Date, default: null },
     vendor: vendorSnapshotSchema,
     lots: { type: [grnLotSchema], default: [] },
     adjustments: { type: grnAdjustmentsSchema, default: () => ({}) },

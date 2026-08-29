@@ -213,6 +213,35 @@ export const computeSnapshotDiff = (before, after) => {
 };
 
 /**
+ * First pack-list dispatch date on a VPO, if any.
+ * @param {Object} [vpo]
+ * @returns {Date|string|null}
+ */
+export const firstPackDispatchDate = (vpo) => {
+  for (const pack of vpo?.packListDetails || []) {
+    if (pack?.dispatchDate) return pack.dispatchDate;
+  }
+  return null;
+};
+
+/**
+ * Resolve invoice + received dates for GRN print (snapshot or display hydrate).
+ * Invoice = pack dispatch. Received = VPO goodsReceivedDate, then SC complete / GRN date.
+ * @param {Object|null} [vpo]
+ * @param {Object} [grn={}]
+ * @returns {{ invoiceDate: Date|string|null, receivedDate: Date|string|null }}
+ */
+export const resolveGrnPrintDates = (vpo, grn = {}) => ({
+  invoiceDate: grn.invoiceDate || firstPackDispatchDate(vpo) || null,
+  receivedDate:
+    grn.receivedDate ||
+    vpo?.goodsReceivedDate ||
+    grn.secondaryCheckingCompletedAt ||
+    grn.grnDate ||
+    null,
+});
+
+/**
  * Build header fields shared by create/revise.
  * @param {Object} flow
  * @param {Object} vpo
@@ -221,5 +250,6 @@ export const buildGrnHeaderFromFlow = (flow, vpo) => ({
   vendorPurchaseOrder: vpo?._id || flow?.vendorPurchaseOrder,
   vpoNumber: trimSafe(vpo?.vpoNumber),
   vpoDate: vpo?.createDate || vpo?.createdAt || null,
+  ...resolveGrnPrintDates(vpo),
   vendor: buildVendorSnapshot(flow),
 });

@@ -80,6 +80,8 @@ export const updateVendorGrnHeader = {
     .keys({
       notes: Joi.string().allow('', null),
       discrepancyDetails: Joi.string().allow('', null),
+      invoiceDate: Joi.date().iso().allow(null, ''),
+      receivedDate: Joi.date().iso().allow(null, ''),
       discountAmount: Joi.number().min(0),
       freightAmount: Joi.number().min(0),
       freightGstPercent: Joi.number().min(0).max(100),

@@ -131,6 +131,16 @@ describe('vendorGrnTotals header patch', () => {
     expect(next.totals.verified).toBe(10);
   });
 
+  test('patches invoiceDate and receivedDate without financial changes', () => {
+    const next = applyHeaderPatch(grn, {
+      invoiceDate: '2026-08-15',
+      receivedDate: '2026-08-20',
+    });
+    expect(next.invoiceDate).toBe('2026-08-15');
+    expect(next.receivedDate).toBe('2026-08-20');
+    expect(next.lots[0].items[0].rate).toBe(100);
+  });
+
   test('applyLineCommercial matches by productId when poItem omitted', () => {
     const lots = applyLineCommercial(grn.lots, [
       { productId: 'bbbbbbbbbbbbbbbbbbbbbbbb', rate: 50, hsnCode: '111' },

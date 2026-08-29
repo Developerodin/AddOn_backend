@@ -149,7 +149,7 @@ const toCoreReportRow = (product, maps) => {
  * }>}
  */
 export const getCoreReport = async (filter = {}, options = {}) => {
-  const limit = Math.min(parseInt(String(options.limit), 10) || 10, 100);
+  const limit = Math.min(parseInt(String(options.limit), 10) || 10, 10000);
   const page = parseInt(String(options.page), 10) || 1;
   const rawSort =
     typeof options.sortBy === 'string' && options.sortBy.trim()

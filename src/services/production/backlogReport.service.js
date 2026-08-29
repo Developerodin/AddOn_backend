@@ -2,6 +2,7 @@ import httpStatus from 'http-status';
 import { Article, ArticleLog } from '../../models/production/index.js';
 import ApiError from '../../utils/ApiError.js';
 import { ALL_FLOOR_KEYS, getFloorKeyFromName } from '../../utils/floorLabelMap.js';
+import { loadUpcomingByFloor } from './backlogUpcoming.util.js';
 
 const TIMEZONE = 'Asia/Kolkata';
 const CACHE_TTL_MS = 60 * 1000;
@@ -298,21 +299,24 @@ const loadTransferLogs = (monthEndExclusive) =>
 /**
  * Builds the date × floor backlog matrix for a year/month (IST).
  * Each cell is EOD pending (received − transferred); today uses live pending.
+ * Today's row also carries live Upcoming (ACTIVE production containers not yet accepted).
  * @param {{ year?: number|string, month?: number|string }} query
  * @returns {Promise<object>}
  */
 export const getBacklogReport = async (query = {}) => {
   const period = resolvePeriod(query);
-  const cacheKey = `backlog-v3:${period.year}:${period.month}`;
+  const cacheKey = `backlog-v4:${period.year}:${period.month}`;
   const cached = cache.get(cacheKey);
   const nowMs = Date.now();
   if (cached && nowMs - cached.timestamp < CACHE_TTL_MS) {
     return { ...cached.data, cached: true, cacheAgeMs: nowMs - cached.timestamp };
   }
 
-  const [articles, logs] = await Promise.all([
+  const includeToday = period.dateKeys.includes(period.todayKey);
+  const [articles, logs, upcomingLive] = await Promise.all([
     loadArticles(period.monthEndExclusive),
     loadTransferLogs(period.monthEndExclusive),
+    includeToday ? loadUpcomingByFloor() : Promise.resolve({ floors: {}, upcomingTotal: 0 }),
   ]);
 
   const deltas = new Map();
@@ -354,7 +358,12 @@ export const getBacklogReport = async (query = {}) => {
     } else {
       for (const col of BACKLOG_FLOOR_COLUMNS) floors[col.key] = null;
     }
-    return { date: dateKey, isToday, isFuture, floors, total };
+    const row = { date: dateKey, isToday, isFuture, floors, total };
+    if (isToday) {
+      row.upcoming = upcomingLive.floors;
+      row.upcomingTotal = upcomingLive.upcomingTotal;
+    }
+    return row;
   });
 
   const lastPopulated =
@@ -362,6 +371,7 @@ export const getBacklogReport = async (query = {}) => {
   const asOfRow = rows.find((row) => row.date === lastPopulated);
   const asOfFloors = asOfRow?.floors || {};
   const asOfTotal = asOfRow?.total != null ? Math.round(asOfRow.total) : 0;
+  const asOfUpcomingTotal = asOfRow?.isToday ? upcomingLive.upcomingTotal : 0;
 
   const result = {
     year: period.year,
@@ -371,7 +381,12 @@ export const getBacklogReport = async (query = {}) => {
     todayKey: period.todayKey,
     floors: BACKLOG_FLOOR_COLUMNS,
     rows,
-    asOf: { date: lastPopulated, floors: asOfFloors, total: asOfTotal },
+    asOf: {
+      date: lastPopulated,
+      floors: asOfFloors,
+      total: asOfTotal,
+      upcomingTotal: asOfUpcomingTotal,
+    },
   };
 
   cache.set(cacheKey, { data: result, timestamp: nowMs });
