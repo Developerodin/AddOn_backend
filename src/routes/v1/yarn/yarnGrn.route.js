@@ -26,6 +26,10 @@ router
   .get(validate(yarnGrnValidation.getGrnsByLot), yarnGrnController.getGrnsByLot);
 
 router
+  .route('/monthly-summary')
+  .get(validate(yarnGrnValidation.monthlySummary), yarnGrnController.monthlySummary);
+
+router
   .route('/:grnId/revisions')
   .get(validate(yarnGrnValidation.getGrnRevisions), yarnGrnController.getGrnRevisions);
 

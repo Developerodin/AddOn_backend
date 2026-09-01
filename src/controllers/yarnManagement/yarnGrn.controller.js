@@ -3,6 +3,7 @@ import catchAsync from '../../utils/catchAsync.js';
 import pick from '../../utils/pick.js';
 import ApiError from '../../utils/ApiError.js';
 import * as yarnGrnService from '../../services/yarnManagement/yarnGrn.service.js';
+import * as yarnGrnMonthlySummaryService from '../../services/yarnManagement/yarnGrnMonthlySummary.service.js';
 
 /**
  * Translate query string filters into the Mongo filter shape expected by
@@ -42,6 +43,15 @@ export const listGrns = catchAsync(async (req, res) => {
   const filter = buildListFilter(req.query);
   const options = pick(req.query, ['sortBy', 'limit', 'page']);
   const result = await yarnGrnService.queryGrns(filter, options);
+  res.status(httpStatus.OK).send(result);
+});
+
+/**
+ * GET /yarn-grns/monthly-summary
+ * Yarn-line register for an IST calendar month. Totals are month-true.
+ */
+export const monthlySummary = catchAsync(async (req, res) => {
+  const result = await yarnGrnMonthlySummaryService.queryMonthlySummary(req.query);
   res.status(httpStatus.OK).send(result);
 });
 

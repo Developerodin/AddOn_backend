@@ -21,6 +21,16 @@ export const listGrns = {
   }),
 };
 
+export const monthlySummary = {
+  query: Joi.object().keys({
+    year: Joi.number().integer().min(2020),
+    month: Joi.number().integer().min(1).max(12),
+    supplierName: Joi.string().trim().allow(''),
+    page: Joi.number().integer().min(1),
+    limit: Joi.number().integer().min(1).max(200),
+  }),
+};
+
 export const getGrn = {
   params: Joi.object().keys({
     grnId: Joi.string().custom(objectId).required(),

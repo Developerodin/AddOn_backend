@@ -356,8 +356,9 @@ export const createVendorDispatchTransferNote = async (body = {}, filter = {}, u
     stnSerial,
     stnDate: new Date(),
     categoryLabel: String(body.categoryLabel ?? '').trim() || 'CORE & COLLECTION MIX',
-    fromUnit: 'Unit B7-GF',
-    toUnit: 'Unit B8-2F',
+    // Static From/To — not used on print; schema still defaults these if omitted
+    // fromUnit: 'Unit B7-GF',
+    // toUnit: 'Unit B8-2F',
     totalQty,
     totalBoxes,
     createdBy: user?.id || user?._id,
