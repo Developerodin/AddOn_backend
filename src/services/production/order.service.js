@@ -43,7 +43,7 @@ const isArticleInProduction = (article) => {
 };
 
 /**
- * Check if an order is in production and cannot be modified.
+ * Check if an order has any article in production (used to block whole-order deletion).
  * An order is considered "in production" when any article has:
  * - Quantity transferred from knitting floor (floorQuantities.knitting.transferred > 0)
  * @param {Object} order - Order document with populated articles
@@ -293,15 +293,6 @@ export const updateProductionOrderById = async (orderId, updateBody, user = null
     throw new ApiError(httpStatus.NOT_FOUND, 'Production order not found');
   }
 
-  // Check if order is in production - block updates if so
-  const productionCheck = isOrderInProduction(order);
-  if (productionCheck.isLocked) {
-    throw new ApiError(
-      httpStatus.BAD_REQUEST,
-      `Cannot modify order: ${productionCheck.reason} Orders that have started production cannot be updated from this page.`
-    );
-  }
-
   // Check if order number is being changed and if it's unique
   if (updateBody.orderNumber && updateBody.orderNumber !== order.orderNumber) {
     if (await ProductionOrder.findOne({ orderNumber: updateBody.orderNumber, _id: { $ne: orderId } })) {
@@ -319,6 +310,29 @@ export const updateProductionOrderById = async (orderId, updateBody, user = null
 
   // Handle articles update separately
   if (updateBody.articles && Array.isArray(updateBody.articles)) {
+    const incomingIds = updateBody.articles
+      .map((articleData) => {
+        if (typeof articleData === 'string') return articleData;
+        return articleData?._id || articleData?.id || null;
+      })
+      .filter(Boolean)
+      .map((id) => String(id));
+
+    for (const existing of order.articles || []) {
+      if (!isArticleInProduction(existing)) continue;
+      const existingId = String(existing._id || existing);
+      const existingCustomId = existing.id ? String(existing.id) : null;
+      const stillPresent = incomingIds.some(
+        (id) => id === existingId || (existingCustomId && id === existingCustomId)
+      );
+      if (!stillPresent) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Cannot remove article ${existing.articleNumber || existingId}: quantity already transferred from knitting.`
+        );
+      }
+    }
+
     // If articles are provided as objects with IDs, we need to find the actual Article documents
     const articleIds = [];
     
@@ -397,9 +411,11 @@ export const updateProductionOrderById = async (orderId, updateBody, user = null
         
         if (articleDoc) {
           console.log(`Found article: ${articleDoc._id} (${articleDoc.articleNumber})`);
-          
-          // Update article data if provided
-          if (typeof articleData === 'object' && articleData !== null) {
+
+          // In-production articles stay on the order but cannot be mutated
+          if (isArticleInProduction(articleDoc)) {
+            articleIds.push(articleDoc._id);
+          } else if (typeof articleData === 'object' && articleData !== null) {
             const updateFields = {};
             
             // Update allowed fields
@@ -414,9 +430,10 @@ export const updateProductionOrderById = async (orderId, updateBody, user = null
             // Apply updates (article pre-save will sync knitting.received when plannedQuantity changes)
             Object.assign(articleDoc, updateFields);
             await articleDoc.save();
+            articleIds.push(articleDoc._id);
+          } else {
+            articleIds.push(articleDoc._id);
           }
-          
-          articleIds.push(articleDoc._id);
         } else {
           console.warn(`Article with ID ${articleId} not found`);
           
@@ -475,11 +492,24 @@ export const updateProductionOrderById = async (orderId, updateBody, user = null
     }
     
     // Remove from machine assignments any articles that were dropped from this order
-    const previousArticleIds = (order.articles || []).map((a) => (a?._id || a)?.toString?.() || a);
+    const previousArticles = order.articles || [];
+    const previousArticleIds = previousArticles.map((a) => (a?._id || a)?.toString?.() || a);
     const newArticleIdsStr = articleIds.map((id) => id?.toString?.() || id);
     const removedArticleIds = previousArticleIds.filter((id) => id && !newArticleIdsStr.includes(id));
     const auditUserId = user?._id || user?.id || null;
     for (const removedArtId of removedArticleIds) {
+      let previousArticle = previousArticles.find(
+        (a) => String((a?._id || a)?.toString?.() || a) === String(removedArtId)
+      );
+      if (!previousArticle?.floorQuantities && mongoose.Types.ObjectId.isValid(removedArtId)) {
+        previousArticle = await Article.findById(removedArtId);
+      }
+      if (previousArticle && isArticleInProduction(previousArticle)) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Cannot remove article ${previousArticle.articleNumber || removedArtId}: quantity already transferred from knitting.`
+        );
+      }
       await removeArticleFromAssignments(order._id, removedArtId, auditUserId);
     }
 
