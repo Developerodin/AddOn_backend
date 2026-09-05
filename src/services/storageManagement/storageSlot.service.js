@@ -9,6 +9,12 @@ import {
 } from '../../models/storageManagement/storageSlot.model.js';
 import { yarnConeUnavailableIssueStatuses } from '../../models/yarnReq/yarnCone.model.js';
 import { activeYarnBoxMatch, activeYarnConeMatch } from '../yarnManagement/yarnStockActiveFilters.js';
+import {
+  computeLtRemainingBoxWeight,
+  conesFromTotalWeight,
+  isCartonEmptyByMovedCount,
+} from '../yarnManagement/yarnBoxLtRemaining.helper.js';
+import { syncBoxLtRemainingFromCones, countMovedConesForBoxId } from '../yarnManagement/yarnBoxLtRemaining.sync.js';
 
 const FLOORS_PER_SECTION = 4;
 const MAX_RACKS_PER_ADD = 50;
@@ -173,10 +179,8 @@ export const getStorageSlotsWithContents = async (zone, query = {}) => {
   }).lean();
 
   // Filter out boxes whose cones are FULLY transferred to ST (box effectively empty).
-  // With partial transfers, `box.boxWeight` represents remaining LT weight, so we rely on:
-  // - explicit marker coneData.conesIssued OR
-  // - remaining weight == 0 OR
-  // - initialBoxWeight fully consumed by cone weight in ST (fallback).
+  // Partial transfers keep the box on LT with remaining weight. Humidity buffer (15%)
+  // detaches only when expected cone count is in ST and leftover is within that band.
   const boxIds = boxes.map((b) => b.boxId);
   const conesInSTByBox = await YarnCone.aggregate([
     {
@@ -186,18 +190,33 @@ export const getStorageSlotsWithContents = async (zone, query = {}) => {
         ...activeYarnConeMatch,
       },
     },
-    { $group: { _id: '$boxId', totalConeWeight: { $sum: '$coneWeight' } } },
+    { $group: { _id: '$boxId', totalConeWeight: { $sum: '$coneWeight' }, coneCount: { $sum: 1 } } },
   ]);
-  const coneWeightByBox = new Map(conesInSTByBox.map((x) => [x._id, x.totalConeWeight || 0]));
+  const coneWeightByBox = new Map(
+    conesInSTByBox.map((x) => [x._id, { totalConeWeight: x.totalConeWeight || 0, coneCount: x.coneCount || 0 }])
+  );
+  const movedAgg = await YarnCone.aggregate([
+    {
+      $match: {
+        boxId: { $in: boxIds },
+        ...activeYarnConeMatch,
+      },
+    },
+    { $group: { _id: '$boxId', movedCount: { $sum: 1 } } },
+  ]);
+  const movedCountByBox = new Map(movedAgg.map((x) => [String(x._id), Number(x.movedCount || 0)]));
 
   for (const box of boxes) {
     const boxWeight = box.boxWeight || 0;
-    const coneWeightInST = coneWeightByBox.get(box.boxId) || 0;
-    const initial = box.initialBoxWeight != null ? Number(box.initialBoxWeight) : null;
+    const st = coneWeightByBox.get(box.boxId) || { totalConeWeight: 0, coneCount: 0 };
+    const { fullyTransferred: remainingSaysDone } = computeLtRemainingBoxWeight(
+      box,
+      conesFromTotalWeight(st.totalConeWeight, st.coneCount),
+      [],
+      { movedConeCount: movedCountByBox.get(String(box.boxId)) || 0 }
+    );
     const fullyTransferred =
-      box?.coneData?.conesIssued === true ||
-      boxWeight <= 0.001 ||
-      (initial != null && initial > 0 && coneWeightInST >= initial - 0.001);
+      box?.coneData?.conesIssued === true || boxWeight <= 0.001 || remainingSaysDone;
     if (fullyTransferred) continue; // Box fully transferred to cones, skip
     const loc = box.storageLocation;
     if (!boxesByLocation[loc]) boxesByLocation[loc] = [];
@@ -318,34 +337,21 @@ export const getStorageContentsByBarcode = async (barcode) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    // Filter out boxes that have cones in ST storage (these boxes should not be in LT)
-    const { YarnCone } = await import('../../models/index.js');
-    const yarnBoxes = [];
-    
     for (const box of allBoxes) {
-      const conesInST = await YarnCone.countDocuments({
-        boxId: box.boxId,
-        coneStorageId: { $exists: true, $nin: [null, ''] },
-        ...activeYarnConeMatch,
-      });
-      
-      // Only include box if it has no cones in ST (box still has yarn in it)
-      if (conesInST === 0) {
-        yarnBoxes.push(box);
-      } else {
-        // Box has cones in ST - it should be removed from LT
-        // Auto-remove it now
-        await YarnBox.findByIdAndUpdate(box._id, {
-          storageLocation: null,
-          storedStatus: false,
-          $set: {
-            'coneData.conesIssued': true,
-            'coneData.numberOfCones': conesInST,
-            'coneData.coneIssueDate': new Date(),
-          },
-        });
+      try {
+        await syncBoxLtRemainingFromCones(box.boxId);
+      } catch (err) {
+        console.error(`[storageSlot] empty-carton sync failed for ${box.boxId}:`, err.message);
       }
     }
+
+    const yarnBoxes = await YarnBox.find({
+      storageLocation: barcode,
+      storedStatus: true,
+      ...activeYarnBoxMatch,
+    })
+      .sort({ createdAt: -1 })
+      .lean();
 
     // Calculate remaining weight on this rack
     let totalWeight = 0;
@@ -556,6 +562,16 @@ export const bulkAssignBoxesToSlots = async (payload) => {
     const missingBarcodes = barcodes.filter((b) => !foundBarcodes.has(b));
 
     for (const box of boxes) {
+      const moved = await countMovedConesForBoxId(box.boxId);
+      if (isCartonEmptyByMovedCount(box, moved)) {
+        failed.push({
+          index: i,
+          rackBarcode: slotBarcode,
+          reason: 'carton_empty_all_cones_extracted',
+          boxBarcodes: [box.barcode],
+        });
+        continue;
+      }
       box.storageLocation = slot.barcode;
       box.storedStatus = true;
       await box.save();

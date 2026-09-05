@@ -114,14 +114,15 @@ function resolveMongoConnectionString() {
  * @returns {{ after: Record<string, unknown>, fullyTransferred: boolean, remaining: number, baseWeight: number }}
  */
 export function buildLtDetachPayload(candidate) {
-  const { box, stCones, allConesInSlots, returnedVendorCones } = candidate;
-  const { remaining, fullyTransferred, baseWeight } = computeLtRemainingBoxWeight(
+  const { box, stCones, allConesInSlots, returnedVendorCones, movedConeCount } = candidate;
+  const { remaining, persistBoxWeight, fullyTransferred, baseWeight } = computeLtRemainingBoxWeight(
     box,
     allConesInSlots,
-    returnedVendorCones
+    returnedVendorCones,
+    movedConeCount != null ? { movedConeCount } : {}
   );
 
-  const boxWeightAfter = fullyTransferred ? 0 : remaining;
+  const boxWeightAfter = persistBoxWeight;
   const existingConeData =
     box.coneData && typeof box.coneData === 'object' ? /** @type {Record<string, unknown>} */ (box.coneData) : {};
 

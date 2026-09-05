@@ -4,7 +4,7 @@ import { YarnBox, YarnCatalog, YarnTransaction, YarnInventory, YarnCone } from '
 import ApiError from '../../utils/ApiError.js';
 import { activeYarnBoxMatch, activeYarnConeMatch } from './yarnStockActiveFilters.js';
 import * as yarnTransactionService from './yarnTransaction.service.js';
-import { computeLtRemainingBoxWeight } from './yarnBoxLtRemaining.helper.js';
+import { syncBoxLtRemainingFromCones } from './yarnBoxLtRemaining.sync.js';
 import {
   isLtLocation,
   isStLocation,
@@ -210,35 +210,7 @@ export const transferBoxes = async (transferData) => {
 
       // After transaction: update remaining weight in LT and reset only when fully transferred.
       for (const box of yarnBoxes) {
-        const conesForThisBox = await YarnCone.find({
-          boxId: box.boxId,
-          coneStorageId: { $exists: true, $nin: [null, ''] },
-          ...activeYarnConeMatch,
-        }).lean();
-        const conesReturnedVendor = await YarnCone.find({
-          boxId: box.boxId,
-          returnedToVendorAt: { $exists: true, $ne: null },
-        }).lean();
-        const coneCount = conesForThisBox.length;
-        const { remaining, fullyTransferred } = computeLtRemainingBoxWeight(
-          box,
-          conesForThisBox,
-          conesReturnedVendor
-        );
-
-        box.boxWeight = remaining;
-
-        if (fullyTransferred) {
-          box.storageLocation = undefined; // unset so field is removed
-          box.storedStatus = false;
-          box.coneData = {
-            ...box.coneData,
-            conesIssued: true,
-            numberOfCones: coneCount,
-            coneIssueDate: transferDate || new Date(),
-          };
-        }
-        await box.save();
+        await syncBoxLtRemainingFromCones(box.boxId, { coneIssueDate: transferDate || new Date() });
       }
     } else {
       // LT→LT or ST→ST: Location change only, no inventory update

@@ -232,7 +232,7 @@ async function main() {
 
     const dcr = isDoubleCountRisk(box, m.activeStCount);
     const wi = isLtWeightInconsistentWithModel(box, m.anySlotGrossKg);
-    const ftDirty = isFullyTransferredButLtFieldsDirty(box, m.anySlotGrossKg);
+    const ftDirty = isFullyTransferredButLtFieldsDirty(box, m.anySlotGrossKg, m.activeStCount);
 
     if (dcr) anomalyCounts.doubleCountRisk += 1;
     if (wi) anomalyCounts.weightInconsistent += 1;
@@ -332,7 +332,7 @@ async function main() {
       storageLocation: { $in: [...ltBarcodeSet] },
       storedStatus: true,
     })
-      .select('boxId storageLocation boxWeight initialBoxWeight coneData')
+      .select('boxId storageLocation boxWeight initialBoxWeight numberOfCones coneData')
       .lean();
 
     const boxIdsForCone = boxesOnKnownLtSlots.map((b) => b.boxId).filter(Boolean);
@@ -345,13 +345,13 @@ async function main() {
                 coneStorageId: { $exists: true, $nin: [null, ''] },
               },
             },
-            { $group: { _id: '$boxId', totalConeWeight: { $sum: '$coneWeight' } } },
+            { $group: { _id: '$boxId', totalConeWeight: { $sum: '$coneWeight' }, coneCount: { $sum: 1 } } },
           ])
         : [];
     const coneWeightByBox = new Map(
       coneWRows.map((row) => {
         const { _id: boxIdRef } = row;
-        return [boxIdRef, num(row.totalConeWeight)];
+        return [boxIdRef, { weight: num(row.totalConeWeight), count: num(row.coneCount) }];
       })
     );
 
@@ -359,8 +359,8 @@ async function main() {
     const unknownLtPatternLocations = new Set();
 
     boxesOnKnownLtSlots.forEach((b) => {
-      const cw = coneWeightByBox.get(b.boxId) || 0;
-      if (isFullyTransferredBox(b, cw)) return;
+      const st = coneWeightByBox.get(b.boxId) || { weight: 0, count: 0 };
+      if (isFullyTransferredBox(b, st.weight, st.count)) return;
       const loc = String(b.storageLocation || '').trim();
       if (!loc) return;
       slotBoxCount[loc] = (slotBoxCount[loc] || 0) + 1;

@@ -30,6 +30,7 @@ export function isActiveStRackCone(cone) {
  * @property {Record<string, unknown>[]} stCones
  * @property {Record<string, unknown>[]} allConesInSlots
  * @property {Record<string, unknown>[]} returnedVendorCones
+ * @property {number} [movedConeCount] Non-vendor YarnCone docs for boxId
  */
 
 /**
@@ -108,6 +109,12 @@ export async function findLtBoxesWithStCones(opts = {}) {
     returnedByBoxId.get(key).push(cone);
   }
 
+  const movedAgg = await YarnCone.aggregate([
+    { $match: { boxId: { $in: boxIds }, ...activeYarnConeMatch } },
+    { $group: { _id: '$boxId', movedCount: { $sum: 1 } } },
+  ]);
+  const movedByBoxId = new Map(movedAgg.map((row) => [String(row._id ?? ''), Number(row.movedCount || 0)]));
+
   /** @type {LtBoxWithStConesCandidate[]} */
   const candidates = [];
   for (const box of ltBoxes) {
@@ -120,6 +127,7 @@ export async function findLtBoxesWithStCones(opts = {}) {
       stCones,
       allConesInSlots: allSlottedByBoxId.get(boxId) ?? [],
       returnedVendorCones: returnedByBoxId.get(boxId) ?? [],
+      movedConeCount: movedByBoxId.get(boxId) || 0,
     });
   }
 

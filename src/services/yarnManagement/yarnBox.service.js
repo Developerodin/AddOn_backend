@@ -9,6 +9,13 @@ import {
   activeYarnConeMatch,
   notPoReturnedBoxMatch,
 } from './yarnStockActiveFilters.js';
+import {
+  computeLtRemainingBoxWeight,
+  conesFromTotalWeight,
+  expectedYarnBoxConeCount,
+  isCartonEmptyByMovedCount,
+} from './yarnBoxLtRemaining.helper.js';
+import { countMovedConesForBoxId } from './yarnBoxLtRemaining.sync.js';
 
 const LT_STORAGE_PATTERN = new RegExp(`^(LT-|${LT_SECTION_CODES.map((s) => `${s}-`).join('|')})`, 'i');
 // Hide only boxes that are explicitly consumed (fully converted to cones and emptied).
@@ -183,18 +190,28 @@ export const updateYarnBoxById = async (yarnBoxId, updateBody) => {
     coneStorageId: { $exists: true, $nin: [null, ''] },
     ...activeYarnConeMatch,
   });
-  if (hasShortTermCones) {
-    const willSetStorageLocation =
-      Object.prototype.hasOwnProperty.call(updateBody, 'storageLocation') &&
-      updateBody.storageLocation != null &&
-      String(updateBody.storageLocation).trim() !== '';
-    const willUnsetStorageLocation =
-      Object.prototype.hasOwnProperty.call(updateBody, 'storageLocation') &&
-      (updateBody.storageLocation == null || String(updateBody.storageLocation).trim() === '');
-    const nextBoxWeight = Object.prototype.hasOwnProperty.call(updateBody, 'boxWeight')
-      ? Number(updateBody.boxWeight)
-      : Number(yarnBox.boxWeight ?? 0);
+  const willSetStorageLocation =
+    Object.prototype.hasOwnProperty.call(updateBody, 'storageLocation') &&
+    updateBody.storageLocation != null &&
+    String(updateBody.storageLocation).trim() !== '';
+  const willUnsetStorageLocation =
+    Object.prototype.hasOwnProperty.call(updateBody, 'storageLocation') &&
+    (updateBody.storageLocation == null || String(updateBody.storageLocation).trim() === '');
+  const nextBoxWeight = Object.prototype.hasOwnProperty.call(updateBody, 'boxWeight')
+    ? Number(updateBody.boxWeight)
+    : Number(yarnBox.boxWeight ?? 0);
 
+  if (willSetStorageLocation) {
+    const movedConeCount = await countMovedConesForBoxId(yarnBox.boxId);
+    if (isCartonEmptyByMovedCount(yarnBox, movedConeCount)) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Cannot set storageLocation: all cones have already left this carton. Set boxWeight=0; leftover kg is not live stock.'
+      );
+    }
+  }
+
+  if (hasShortTermCones) {
     if (Number.isNaN(nextBoxWeight) || nextBoxWeight < 0) {
       throw new ApiError(httpStatus.BAD_REQUEST, 'boxWeight must be a valid non-negative number');
     }
@@ -206,8 +223,6 @@ export const updateYarnBoxById = async (yarnBoxId, updateBody) => {
       );
     }
 
-    // If user tries to set a storage location while keeping boxWeight=0, it's probably wrong too:
-    // a fully transferred box should stay empty; force user to set a non-zero weight if they want to "bring back" the box.
     if (willSetStorageLocation && nextBoxWeight === 0) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
@@ -776,8 +791,9 @@ export const updateQcStatusByPoNumber = async (poNumber, qcStatus, qcData = {}) 
 };
 
 /**
- * Reset boxes for a PO when cones are already present in short-term storage.
- * Safe rule: reset ONLY when ST cone count >= expected cone count for the box.
+ * Reset boxes for a PO when all expected cones already exist (ST / issued / used).
+ * Safe rule: reset ONLY when non-vendor cone count >= expected cone count for the box.
+ * leftover boxWeight grams are treated as empty-carton dust.
  * expected = numberOfCones || coneData.numberOfCones
  *
  * @param {Object} payload
@@ -810,19 +826,18 @@ export const resetBoxesWeightToZeroIfStConesPresent = async ({ poNumber, dryRun 
       continue;
     }
 
-    const expectedCones = Number(box.numberOfCones ?? box?.coneData?.numberOfCones ?? 0);
+    const expectedCones = expectedYarnBoxConeCount(box);
     if (!Number.isFinite(expectedCones) || expectedCones <= 0) {
       skipped += 1;
       continue;
     }
 
-    const stConeCount = await YarnCone.countDocuments({
+    const movedConeCount = await YarnCone.countDocuments({
       boxId,
-      coneStorageId: { $exists: true, $nin: [null, ''] },
       ...activeYarnConeMatch,
     });
 
-    if (stConeCount > 0 && stConeCount >= expectedCones) {
+    if (movedConeCount > 0 && movedConeCount >= expectedCones) {
       fixed += 1;
       updatedBoxIds.push(boxId);
 
@@ -918,13 +933,21 @@ export const backfillLtBoxWeightFromStCones = async ({ dryRun = false, limit, on
     };
   }
 
+  const movedAgg = await YarnCone.aggregate([
+    { $match: { boxId: { $in: boxIds }, ...activeYarnConeMatch } },
+    { $group: { _id: '$boxId', movedCount: { $sum: 1 } } },
+  ]).allowDiskUse(true);
+  const movedByBoxId = new Map(
+    movedAgg.map((row) => [String(row._id || '').trim(), Number(row.movedCount || 0)])
+  );
+
   // 2) Load candidate LT boxes (weight > 0, storageLocation set).
   let q = YarnBox.find({
     boxId: { $in: boxIds },
     boxWeight: { $gt: 0 },
     storageLocation: { $exists: true, $ne: '' },
     ...activeYarnBoxMatch,
-  }).select('_id boxId boxWeight initialBoxWeight storageLocation storedStatus coneData');
+  }).select('_id boxId boxWeight initialBoxWeight numberOfCones storageLocation storedStatus coneData');
 
   if (max > 0) q = q.limit(max);
   const boxes = await q.lean();
@@ -974,10 +997,14 @@ export const backfillLtBoxWeightFromStCones = async ({ dryRun = false, limit, on
       continue;
     }
 
-    const remaining = Math.max(0, baseWeight - st.totalConeWeight);
-    const fullyTransferred = st.coneCount > 0 && remaining <= 0.001;
+    const { persistBoxWeight, fullyTransferred } = computeLtRemainingBoxWeight(
+      box,
+      conesFromTotalWeight(st.totalConeWeight, st.coneCount),
+      [],
+      { movedConeCount: movedByBoxId.get(boxId) || st.coneCount }
+    );
 
-    if (Math.abs(remaining - boxWeightNow) <= 0.0005) {
+    if (Math.abs(persistBoxWeight - boxWeightNow) <= 0.0005 && !fullyTransferred) {
       skipped += 1;
       continue;
     }
@@ -990,7 +1017,7 @@ export const backfillLtBoxWeightFromStCones = async ({ dryRun = false, limit, on
     const update = fullyTransferred
       ? {
           $set: {
-            boxWeight: 0,
+            boxWeight: persistBoxWeight,
             storedStatus: false,
             coneData: {
               ...(box.coneData && typeof box.coneData === 'object' ? box.coneData : {}),
@@ -1003,7 +1030,7 @@ export const backfillLtBoxWeightFromStCones = async ({ dryRun = false, limit, on
         }
       : {
           $set: {
-            boxWeight: remaining,
+            boxWeight: persistBoxWeight,
           },
         };
 

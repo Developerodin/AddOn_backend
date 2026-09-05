@@ -1,4 +1,8 @@
 import { LT_SECTION_CODES, ST_SECTION_CODE } from '../../models/storageManagement/storageSlot.model.js';
+import {
+  computeLtRemainingBoxWeight,
+  conesFromTotalWeight,
+} from '../../services/yarnManagement/yarnBoxLtRemaining.helper.js';
 
 /** Weight / comparison tolerance (kg), aligned with storage slot UI logic. */
 export const WEIGHT_EPS_KG = 0.001;
@@ -77,16 +81,25 @@ export function isActiveShortTermCone(c) {
  *
  * @param {Record<string, unknown>} box - lean YarnBox
  * @param {number} coneWeightGrossInSlots - Σ coneWeight for YarnCone with same boxId and non-empty coneStorageId
+ * @param {number} [coneCountInSlots=0] - cone document count in slots
+ * @param {number} [movedConeCount] - non-vendor YarnCone docs for the box (ST + issued + used)
  * @returns {boolean}
  */
-export function isFullyTransferredBox(box, coneWeightGrossInSlots) {
-  const boxWeight = num(box.boxWeight);
-  const coneW = num(coneWeightGrossInSlots);
-  const initial = box.initialBoxWeight != null ? num(box.initialBoxWeight) : null;
+export function isFullyTransferredBox(box, coneWeightGrossInSlots, coneCountInSlots = 0, movedConeCount) {
   if (box?.coneData?.conesIssued === true) return true;
-  if (boxWeight <= WEIGHT_EPS_KG) return true;
-  if (initial != null && initial > 0 && coneW >= initial - WEIGHT_EPS_KG) return true;
-  return false;
+  if (num(box.boxWeight) <= WEIGHT_EPS_KG) return true;
+  const count = Number(coneCountInSlots);
+  const cones =
+    Number.isFinite(count) && count > 0
+      ? conesFromTotalWeight(coneWeightGrossInSlots, count)
+      : conesFromTotalWeight(coneWeightGrossInSlots, num(coneWeightGrossInSlots) > WEIGHT_EPS_KG ? 1 : 0);
+  let moved;
+  if (movedConeCount != null && Number.isFinite(Number(movedConeCount))) {
+    moved = Number(movedConeCount);
+  } else if (Number.isFinite(count) && count > 0) {
+    moved = count;
+  }
+  return computeLtRemainingBoxWeight(box, cones, [], moved != null ? { movedConeCount: moved } : {}).fullyTransferred;
 }
 
 /**
@@ -146,10 +159,11 @@ export function isLtWeightInconsistentWithModel(box, totalConeWeightGrossAnyStor
  *
  * @param {Record<string, unknown>} box - lean YarnBox
  * @param {number} coneWeightGrossInSlots
+ * @param {number} [coneCountInSlots=0]
  * @returns {boolean}
  */
-export function isFullyTransferredButLtFieldsDirty(box, coneWeightGrossInSlots) {
-  if (!isFullyTransferredBox(box, coneWeightGrossInSlots)) return false;
+export function isFullyTransferredButLtFieldsDirty(box, coneWeightGrossInSlots, coneCountInSlots = 0) {
+  if (!isFullyTransferredBox(box, coneWeightGrossInSlots, coneCountInSlots)) return false;
   const loc = box.storageLocation != null ? String(box.storageLocation).trim() : '';
   const onLtBarcode = loc && isLongTermStorageLocation(loc);
   const stored = box.storedStatus === true;
