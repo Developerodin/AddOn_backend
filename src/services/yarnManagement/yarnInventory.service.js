@@ -7,6 +7,7 @@ import { pickYarnCatalogId } from '../../utils/yarnCatalogRef.js';
 import { STORAGE_ZONES, ST_SECTION_CODE, LT_SECTION_CODES } from '../../models/storageManagement/storageSlot.model.js';
 import { yarnConeUnavailableIssueStatuses } from '../../models/yarnReq/yarnCone.model.js';
 import { activeYarnBoxMatch, activeYarnBoxListingMatch, activeYarnConeMatch } from './yarnStockActiveFilters.js';
+import { mongoBoxNetWeightExpr, resolveBoxNetWeightKg } from './yarnBoxWeight.helper.js';
 
 /** LT: legacy LT-* OR slot barcodes B7-02-, B7-03-, B7-04-, B7-05- (from StorageSlot) */
 const LT_STORAGE_REGEX = { $regex: new RegExp(`^(LT-|${LT_SECTION_CODES.map((s) => `${s}-`).join('|')})`, 'i') };
@@ -118,9 +119,9 @@ const recalculateInventoryFromStorage = async (inventory) => {
   let ltTotalTearWeight = 0;
   let ltTotalNetWeight = 0;
   for (const box of ltBoxes) {
-    const netWeight = (box.boxWeight || 0) - (box.tearweight || 0);
-    ltTotalWeight += box.boxWeight || 0;
-    ltTotalTearWeight += box.tearweight || 0;
+    const netWeight = resolveBoxNetWeightKg(box);
+    ltTotalWeight += netWeight;
+    ltTotalTearWeight += Math.max(0, Number(box.tearweight || 0));
     ltTotalNetWeight += netWeight;
   }
 
@@ -163,9 +164,9 @@ const recalculateInventoryFromStorage = async (inventory) => {
   };
   const stBoxes = await YarnBox.find(stBoxQuery).lean();
   for (const box of stBoxes) {
-    const netWeight = (box.boxWeight || 0) - (box.tearweight || 0);
-    stTotalWeight += box.boxWeight || 0;
-    stTotalTearWeight += box.tearweight || 0;
+    const netWeight = resolveBoxNetWeightKg(box);
+    stTotalWeight += netWeight;
+    stTotalTearWeight += Math.max(0, Number(box.tearweight || 0));
     stTotalNetWeight += netWeight;
   }
 
@@ -275,7 +276,7 @@ export const computeInventoryFromStorage = async (yarnId) => {
           ...activeYarnBoxMatch,
         },
       },
-      { $group: { _id: null, netWeight: { $sum: { $subtract: [{ $ifNull: ['$boxWeight', 0] }, { $ifNull: ['$tearweight', 0] }] } } } },
+      { $group: { _id: null, netWeight: { $sum: mongoBoxNetWeightExpr() } } },
     ]),
     YarnCone.aggregate([
       {
@@ -314,7 +315,7 @@ export const computeInventoryFromStorage = async (yarnId) => {
           ...activeYarnBoxMatch,
         },
       },
-      { $group: { _id: null, netWeight: { $sum: { $subtract: [{ $ifNull: ['$boxWeight', 0] }, { $ifNull: ['$tearweight', 0] }] } } } },
+      { $group: { _id: null, netWeight: { $sum: mongoBoxNetWeightExpr() } } },
     ]);
     stNet += Math.max(0, stBoxAgg[0]?.netWeight || 0);
   }
@@ -417,14 +418,8 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
   // Unallocated boxes: no slot after trim (same semantics as GET /yarn-boxes/without-storage-location).
   // Using $trim prevents overlap with LT when storageLocation is padding/whitespace while still listed in ltBarcodes.
   // IMPORTANT: typically `storedStatus=false` until allocated — do NOT require storedStatus=true here.
-  /** Unallocated kg uses net box weight only (no grossWeight fallback). */
-  const effectiveUnallocatedKg = {
-    $cond: [
-      { $gt: [{ $ifNull: ['$boxWeight', 0] }, 0] },
-      { $ifNull: ['$boxWeight', 0] },
-      0,
-    ],
-  };
+  /** Unallocated kg uses resolved yarn net (handles legacy gross stored in boxWeight). */
+  const effectiveUnallocatedKg = mongoBoxNetWeightExpr();
 
   const unallocatedBoxPipeline = [
     {
@@ -443,7 +438,7 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
       $group: {
         _id: { $trim: { input: { $ifNull: ['$yarnName', 'Unknown'] } } },
         totalWeight: { $sum: effectiveUnallocatedKg },
-        totalNetWeight: { $sum: effectiveUnallocatedKg },
+        totalNetWeight: { $sum: mongoBoxNetWeightExpr() },
       },
     },
   ];
@@ -462,7 +457,7 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
 
   const [coneWeightAgg, ltBoxes, stConeAgg, blockedConeAgg, unallocatedBoxAgg] = await Promise.all([
     YarnCone.aggregate(coneWeightByBoxPipeline).allowDiskUse(true),
-    YarnBox.find(ltBoxQuery).select('boxId yarnName boxWeight tearweight').lean(),
+    YarnBox.find(ltBoxQuery).select('boxId yarnName boxWeight tearweight grossWeight').lean(),
     YarnCone.aggregate(stConePipeline).allowDiskUse(true),
     YarnCone.aggregate(blockedConePipeline).allowDiskUse(true),
     YarnBox.aggregate(unallocatedBoxPipeline).allowDiskUse(true),
@@ -473,11 +468,12 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
   // Map blocked weight by yarnName
   const blockedByYarn = new Map(blockedConeAgg.map((x) => [x._id, { blockedWeight: x.blockedWeight || 0, blockedCones: x.blockedCones || 0 }]));
 
-  // Map unallocated weight by yarnName (boxWeight is already net)
+  // Map unallocated weight by yarnName (resolved yarn net, not carton gross)
   const unallocatedByYarn = new Map(unallocatedBoxAgg.map((x) => [x._id, { totalWeight: x.totalWeight || 0, totalNetWeight: x.totalNetWeight || 0 }]));
 
-  // LT: group in JS after filtering out fully-transferred boxes (avoids expensive per-row $lookup)
-  // Note: boxWeight is already NET weight (tare subtracted at entry), so no subtraction needed
+  // LT: group in JS after filtering out fully-transferred boxes (avoids expensive per-row $lookup).
+  // Transferred check still uses raw boxWeight vs coneWeight (same units as stored).
+  // Display kg is yarn net — boxWeight is often carton gross (boxWeight ≈ grossWeight).
   const ltByYarn = new Map();
   for (const box of ltBoxes) {
     const bw = box.boxWeight || 0;
@@ -486,8 +482,9 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
     const yarnName = (box.yarnName || 'Unknown').trim();
     if (!ltByYarn.has(yarnName)) ltByYarn.set(yarnName, { totalWeight: 0, totalNetWeight: 0 });
     const r = ltByYarn.get(yarnName);
-    r.totalWeight += Math.max(0, bw);
-    r.totalNetWeight += Math.max(0, bw);  // boxWeight IS net weight
+    const netKg = resolveBoxNetWeightKg(box);
+    r.totalWeight += netKg;
+    r.totalNetWeight += netKg;
   }
 
   // ST: Only cones (no boxes merged)
@@ -513,7 +510,7 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
 
   const inventoryMap = new Map();
   for (const yarnName of allYarnNames) {
-    // Boxes (LT, Unallocated): boxWeight IS net weight (no tare subtraction)
+    // Boxes (LT, Unallocated): yarn net via resolveBoxNetWeightKg (legacy gross-in-boxWeight handled)
     // Cones (ST): coneWeight is gross, tearWeight subtracted to get net
     const lt = ltByYarn.get(yarnName) || { totalWeight: 0, totalNetWeight: 0 };
     const st = stByYarn.get(yarnName) || { totalWeight: 0, totalTearWeight: 0, totalNetWeight: 0, numberOfCones: 0 };
@@ -534,11 +531,10 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
     inventoryMap.set(yarnName, {
       yarnId: catalog?._id,
       yarnName,
-      // LT: boxWeight is already net, so totalWeight = totalNetWeight
+      // LT / unallocated: totalWeight = totalNetWeight = yarn net kg
       longTermInventory: { totalWeight: toNum(lt.totalWeight), totalNetWeight: toNum(lt.totalNetWeight), numberOfCones: 0 },
       // ST: coneWeight is gross, netWeight = coneWeight - tearWeight
       shortTermInventory: { totalWeight: toNum(st.totalNetWeight), totalNetWeight: toNum(st.totalNetWeight), numberOfCones: st.numberOfCones || 0 },
-      // Unallocated: boxWeight is already net
       unallocatedInventory: { totalWeight: toNum(unallocated.totalWeight), totalNetWeight: toNum(unallocated.totalNetWeight) },
       blockedNetWeight: toNum(blocked.blockedWeight),
       blockedCones: toNum(blocked.blockedCones),
