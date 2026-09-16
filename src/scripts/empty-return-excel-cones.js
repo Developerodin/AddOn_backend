@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 
 /**
- * Empty-return currently **issued** cones from the Excel list (0 kg yarn_returned for THIS issue cycle).
- *
- * Does NOT use mark-used. Closes the cone via returnYarnCone(returnWeight: 0) and creates yarn_returned
- * copied from latest yarn_issued. Old leftover returns on another order/article do not skip the new txn.
+ * Empty-return **issued** cones (0 kg yarn_returned for THIS issue) and mark leftover
+ * **not_issued** cones used (the 23 — they already have yarn_returned).
  *
  * Default: DRY RUN (no writes).
+ *
+ * Issued cones → empty return + 0 kg yarn_returned for the latest issue order/article.
+ * not_issued leftover cones (the 23) → mark used only (they already have yarn_returned).
+ * Already used/empty → skip.
  *
  * Local:
  *   NODE_ENV=development node src/scripts/empty-return-excel-cones.js \
@@ -27,12 +29,13 @@ import config from '../config/config.js';
 import logger from '../config/logger.js';
 import {
   applyEmptyReturns,
-  classifyExcelRows,
   countByAction,
   loadConesByBarcode,
   loadIssueAndReturnTxns,
   readExcelConeRows,
 } from './lib/emptyReturnExcelCones.lib.js';
+import { classifyExcelRows } from './lib/emptyReturnExcelClassify.lib.js';
+import { applyMarkUsedLeftovers } from './lib/emptyReturnExcelMarkUsed.lib.js';
 
 const MONGO_CONNECT_OPTIONS = {
   useNewUrlParser: true,
@@ -144,6 +147,7 @@ async function main() {
     returnByUsername: getArg('--return-by=') || 'system',
     limit,
   });
+  const markUsed = await applyMarkUsedLeftovers(result.rows, { apply: APPLY });
 
   const summary = {
     mode: APPLY ? 'apply' : 'dry-run',
@@ -155,9 +159,11 @@ async function main() {
     closed: result.closed,
     returnTxnsCreated: result.txnsCreated,
     moaYarnReturnCompleted: result.moaCompleted,
-    errors: result.errors,
+    markedUsedLeftover: markUsed.marked,
+    errors: result.errors + markUsed.errors,
     wouldClose: result.rows.filter((r) => r.needsConeClose).length,
     wouldCreateReturnTxn: result.rows.filter((r) => r.needsReturnTxn).length,
+    wouldMarkUsed: result.rows.filter((r) => r.needsMarkUsed).length,
   };
   // eslint-disable-next-line no-console
   console.log('\n=== Empty-return Excel cones ===\n');

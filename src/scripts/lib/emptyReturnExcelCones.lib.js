@@ -98,7 +98,9 @@ export async function loadConesByBarcode(barcodes) {
   const BATCH = 500;
   for (let i = 0; i < barcodes.length; i += BATCH) {
     const docs = await YarnCone.find({ barcode: { $in: barcodes.slice(i, i + BATCH) } })
-      .select('_id barcode issueStatus coneWeight tearWeight orderId articleId yarnCatalogId yarnName coneStorageId')
+      .select(
+        '_id barcode issueStatus coneWeight tearWeight issueWeight issueDate orderId articleId yarnCatalogId yarnName coneStorageId returnedToVendorAt'
+      )
       .lean();
     for (const c of docs) map.set(String(c.barcode), c);
   }
@@ -141,135 +143,7 @@ export async function loadIssueAndReturnTxns(coneIds) {
 }
 
 /**
- * @typedef {object} ClassifiedRow
- * @property {number} rowIndex
- * @property {string} barcode
- * @property {string} excelOrder
- * @property {string} action
- * @property {string} reason
- * @property {string} [coneId]
- * @property {string} [issueStatus]
- * @property {string} [latestIssueOrder]
- * @property {string} [latestIssueArticleId]
- * @property {string} [issueTxnId]
- * @property {boolean} [needsConeClose]
- * @property {boolean} [needsReturnTxn]
- * @property {object} [latestIssue]
- */
-
-/**
- * @param {{ barcode: string, excelOrder: string, rowIndex: number }[]} excelRows
- * @param {Map<string, object>} coneByBarcode
- * @param {{ latestIssue: Map<string, object>, returns: Map<string, object[]> }} txns
- * @returns {ClassifiedRow[]}
- */
-export function classifyExcelRows(excelRows, coneByBarcode, txns) {
-  const seen = new Set();
-  /** @type {ClassifiedRow[]} */
-  const out = [];
-  for (const row of excelRows) {
-    const barcode = String(row.barcode || '').trim();
-    if (!barcode) {
-      out.push({ ...row, barcode: '', action: 'skip_empty_barcode', reason: 'Empty barcode' });
-      continue;
-    }
-    if (seen.has(barcode)) {
-      out.push({ ...row, barcode, action: 'skip_duplicate_barcode', reason: 'Duplicate barcode in Excel' });
-      continue;
-    }
-    seen.add(barcode);
-    const cone = coneByBarcode.get(barcode);
-    if (!cone) {
-      out.push({ ...row, barcode, action: 'not_found', reason: 'YarnCone not found' });
-      continue;
-    }
-    const coneId = String(cone._id);
-    const issueStatus = String(cone.issueStatus || '');
-    if (issueStatus !== 'issued') {
-      out.push({
-        ...row,
-        barcode,
-        coneId,
-        issueStatus,
-        action: 'skip_not_issued',
-        reason: `issueStatus is '${issueStatus}' (only currently issued cones are empty-returned)`,
-        needsConeClose: false,
-        needsReturnTxn: false,
-      });
-      continue;
-    }
-    const latestIssue = txns.latestIssue.get(coneId);
-    if (!latestIssue) {
-      out.push({
-        ...row,
-        barcode,
-        coneId,
-        issueStatus,
-        action: 'skip_missing_yarn_issued',
-        reason: 'No yarn_issued transaction references this cone',
-        needsConeClose: false,
-        needsReturnTxn: false,
-      });
-      continue;
-    }
-    const latestIssueOrder = String(latestIssue.orderno || '');
-    const latestIssueArticleId = oid(latestIssue.articleId);
-    const issueTxnId = oid(latestIssue._id);
-    const covered = (txns.returns.get(coneId) || []).some((rt) => returnCoversCurrentIssue(latestIssue, rt));
-    if (covered) {
-      out.push({
-        ...row,
-        barcode,
-        coneId,
-        issueStatus,
-        latestIssueOrder,
-        latestIssueArticleId,
-        issueTxnId,
-        latestIssue,
-        action: 'would_close_cone_only',
-        reason: 'yarn_returned already exists for this issue order+article; close cone only',
-        needsConeClose: true,
-        needsReturnTxn: false,
-      });
-      continue;
-    }
-    if (!latestIssue.yarnCatalogId || !latestIssue.orderId || !latestIssue.articleId) {
-      out.push({
-        ...row,
-        barcode,
-        coneId,
-        issueStatus,
-        latestIssueOrder,
-        latestIssueArticleId,
-        issueTxnId,
-        latestIssue,
-        action: 'skip_missing_issue_refs',
-        reason: 'Latest yarn_issued is missing yarnCatalogId, orderId, or articleId',
-        needsConeClose: false,
-        needsReturnTxn: false,
-      });
-      continue;
-    }
-    out.push({
-      ...row,
-      barcode,
-      coneId,
-      issueStatus,
-      latestIssueOrder,
-      latestIssueArticleId,
-      issueTxnId,
-      latestIssue,
-      action: 'would_close_cone_and_create_return_txn',
-      reason: 'Empty-return cone and create 0 kg yarn_returned for latest issue order+article',
-      needsConeClose: true,
-      needsReturnTxn: true,
-    });
-  }
-  return out;
-}
-
-/**
- * @param {ClassifiedRow[]} rows
+ * @param {object[]} rows
  * @returns {Promise<Set<string>>} coneIds whose issue yarnCatalogId is missing
  */
 export async function findMissingCatalogConeIds(rows) {
