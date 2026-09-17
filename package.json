@@ -71,6 +71,8 @@
     "fix:lt-boxes-transferred-to-st:apply": "cross-env NODE_ENV=development node src/scripts/fix-lt-boxes-transferred-to-st.js --apply",
     "boxes:zero-empty-carton": "cross-env NODE_ENV=development node src/scripts/zero-empty-carton-leftover-weight.js",
     "boxes:zero-empty-carton:apply": "cross-env NODE_ENV=development node src/scripts/zero-empty-carton-leftover-weight.js --apply",
+    "boxes:fix-ghost-lt-69941f89": "cross-env NODE_ENV=development node src/scripts/fix-ghost-lt-box-69941f89.js",
+    "boxes:fix-ghost-lt-69941f89:apply": "cross-env NODE_ENV=development node src/scripts/fix-ghost-lt-box-69941f89.js --apply",
     "boxes:mark-used-from-excel": "cross-env NODE_ENV=development node src/scripts/mark-empty-yarn-boxes-used-by-barcode.js",
     "boxes:mark-used-from-excel:apply": "cross-env NODE_ENV=development node src/scripts/mark-empty-yarn-boxes-used-by-barcode.js --apply",
     "fix:remove-mistaken-lt-box-cones": "cross-env NODE_ENV=development node src/scripts/remove-mistaken-lt-box-cones.js",
