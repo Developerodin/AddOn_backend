@@ -161,9 +161,40 @@ export const lookupVendorBoxForSecondaryChecking = async (barcode) => {
 };
 
 /**
+ * Atomically claims secondary-checking accept on a box.
+ * Parallel Accepts: only one update matches; a miss means the box was already accepted (repair).
+ * @param {import('mongoose').Types.ObjectId|string} boxId
+ * @returns {Promise<{ acceptedBox: object, isRepair: boolean }>}
+ */
+async function claimSecondaryCheckingAccept(boxId) {
+  const claimed = await VendorBox.findOneAndUpdate(
+    { _id: boxId, secondaryCheckingAccepted: { $ne: true } },
+    {
+      $set: {
+        secondaryCheckingAccepted: true,
+        secondaryCheckingAcceptedAt: new Date(),
+      },
+    },
+    { new: true }
+  );
+  if (claimed) {
+    return { acceptedBox: claimed, isRepair: false };
+  }
+
+  const acceptedBox = await VendorBox.findById(boxId);
+  if (!acceptedBox) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'No box found with this barcode');
+  }
+  if (!acceptedBox.secondaryCheckingAccepted) {
+    throw new ApiError(httpStatus.CONFLICT, 'Could not accept this box on secondary checking; please retry');
+  }
+  return { acceptedBox, isRepair: true };
+}
+
+/**
  * Accept a vendor box on the secondary checking floor by scanning its barcode.
- * Moves the box's quantity from `pendingFromBoxes` into `received` / `remaining` on the production flow.
- * Auto-creates the production flow when missing.
+ * Claims the accepted flag first, then ensure+reconcile once so `sc.received` includes this box.
+ * Idempotent: a second Accept on an already-accepted box re-reconciles (repair) and does not throw.
  * @param {string} barcode - The box barcode (or Mongo _id that doubles as barcode)
  * @param {Object} [reqUser] - optional user for GRN auto-issue after last box scan
  * @returns {Promise<{ box: Object, flow: Object | null, acceptedUnits: number, vpoNumber: string, productName: string, isNewOrder: boolean, isNewArticle: boolean }>}
@@ -179,9 +210,6 @@ export const scanAcceptVendorBoxForSecondaryChecking = async (barcode, reqUser =
   });
   if (!box) {
     throw new ApiError(httpStatus.NOT_FOUND, 'No box found with this barcode');
-  }
-  if (box.secondaryCheckingAccepted) {
-    throw new ApiError(httpStatus.BAD_REQUEST, 'This box has already been accepted on secondary checking');
   }
 
   const units = Number(box.numberOfUnits) || 0;
@@ -201,17 +229,17 @@ export const scanAcceptVendorBoxForSecondaryChecking = async (barcode, reqUser =
     ? await VendorProductionFlow.countDocuments({ vendorPurchaseOrder: box.vendorPurchaseOrderId })
     : 0;
   const existingArticleFlow = await VendorProductionFlow.findOne(filter).lean();
-  const isNewArticle = !existingArticleFlow;
-  const isNewOrder = existingOrderFlowCount === 0;
+  let isNewArticle = !existingArticleFlow;
+  let isNewOrder = existingOrderFlowCount === 0;
 
-  await vendorProductionFlowService.syncBoxToProductionFlow(box, units);
+  const { acceptedBox, isRepair } = await claimSecondaryCheckingAccept(box._id);
+  if (isRepair) {
+    isNewArticle = false;
+    isNewOrder = false;
+  }
 
-  box.secondaryCheckingAccepted = true;
-  box.secondaryCheckingAcceptedAt = new Date();
-  await box.save();
-
+  await vendorProductionFlowService.ensureSecondaryCheckingFlowForBox(acceptedBox);
   const updatedFlow = await vendorProductionFlowService.reconcileSecondaryCheckingFromBoxes(filter);
-  const acceptQty = units;
 
   const populatedFlow = updatedFlow
     ? await VendorProductionFlow.findById(updatedFlow._id)
@@ -229,11 +257,11 @@ export const scanAcceptVendorBoxForSecondaryChecking = async (barcode, reqUser =
   }
 
   return {
-    box,
+    box: acceptedBox,
     flow: populatedFlow,
-    acceptedUnits: acceptQty,
-    vpoNumber: box.vpoNumber || populatedFlow?.vendorPurchaseOrder?.vpoNumber || '',
-    productName: box.productName || populatedFlow?.product?.name || '',
+    acceptedUnits: units,
+    vpoNumber: acceptedBox.vpoNumber || populatedFlow?.vendorPurchaseOrder?.vpoNumber || '',
+    productName: acceptedBox.productName || populatedFlow?.product?.name || '',
     isNewOrder,
     isNewArticle,
   };
