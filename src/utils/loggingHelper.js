@@ -1,5 +1,21 @@
 import { ArticleLog } from '../models/production/index.js';
-import { LogAction } from '../models/production/enums.js';
+import { LogAction, ProductionFloor } from '../models/production/enums.js';
+
+/** One LogAction per ProductionFloor — createTransferLog must never emit a non-enum string. */
+const FLOOR_TRANSFER_ACTIONS = {
+  [ProductionFloor.KNITTING]: LogAction.TRANSFERRED_TO_KNITTING,
+  [ProductionFloor.LINKING]: LogAction.TRANSFERRED_TO_LINKING,
+  [ProductionFloor.CHECKING]: LogAction.TRANSFERRED_TO_CHECKING,
+  [ProductionFloor.WASHING]: LogAction.TRANSFERRED_TO_WASHING,
+  [ProductionFloor.BOARDING]: LogAction.TRANSFERRED_TO_BOARDING,
+  [ProductionFloor.SILICON]: LogAction.TRANSFERRED_TO_SILICON,
+  [ProductionFloor.SECONDARY_CHECKING]: LogAction.TRANSFERRED_TO_SECONDARY_CHECKING,
+  [ProductionFloor.BRANDING]: LogAction.TRANSFERRED_TO_BRANDING,
+  [ProductionFloor.RE_BOARDING]: LogAction.TRANSFERRED_TO_RE_BOARDING,
+  [ProductionFloor.FINAL_CHECKING]: LogAction.TRANSFERRED_TO_FINAL_CHECKING,
+  [ProductionFloor.WAREHOUSE]: LogAction.TRANSFERRED_TO_WAREHOUSE,
+  [ProductionFloor.DISPATCH]: LogAction.TRANSFERRED_TO_DISPATCH,
+};
 
 /**
  * Comprehensive logging helper for production system
@@ -313,25 +329,20 @@ export const createFinalQualityLog = async (params) => {
 };
 
 /**
- * Get the proper transfer action for a floor
- * @param {string} floor - Floor name
- * @returns {string} Transfer action
+ * Map a destination floor to a LogAction transfer enum.
+ * Unknown floors throw — the old fallback 'Transferred to Next Floor' is not in LogAction
+ * and Mongoose rejects the insert after article.floorQuantities is already saved.
+ * @param {string} floor
+ * @returns {string}
  */
-const getTransferAction = (floor) => {
-  const transferActions = {
-    'Knitting': LogAction.TRANSFERRED_TO_KNITTING,
-    'Linking': LogAction.TRANSFERRED_TO_LINKING,
-    'Checking': LogAction.TRANSFERRED_TO_CHECKING,
-    'Washing': LogAction.TRANSFERRED_TO_WASHING,
-    'Boarding': LogAction.TRANSFERRED_TO_BOARDING,
-    'Branding': LogAction.TRANSFERRED_TO_BRANDING,
-    'Re-Boarding': LogAction.TRANSFERRED_TO_RE_BOARDING,
-    'Final Checking': LogAction.TRANSFERRED_TO_FINAL_CHECKING,
-    'Warehouse': LogAction.TRANSFERRED_TO_WAREHOUSE,
-    'Dispatch': LogAction.TRANSFERRED_TO_DISPATCH
-  };
-  
-  return transferActions[floor] || 'Transferred to Next Floor';
+export const getTransferAction = (floor) => {
+  const action = FLOOR_TRANSFER_ACTIONS[floor];
+  if (!action) {
+    throw new Error(
+      `Unknown transfer destination floor "${floor}". Refusing to write a non-LogAction article_log.`
+    );
+  }
+  return action;
 };
 
 /**

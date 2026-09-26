@@ -1473,29 +1473,6 @@ export const bulkUpdateArticles = async (updates, batchSize = 50) => {
 };
 
 /**
- * Get the proper transfer action enum value for a floor
- * @param {string} floor
- * @returns {string}
- */
-const getTransferAction = (floor) => {
-  const transferActions = {
-    'Knitting': 'Transferred to Knitting',
-    'Linking': 'Transferred to Linking',
-    'Checking': 'Transferred to Checking',
-    'Secondary Checking': 'Transferred to Secondary Checking',
-    'Washing': 'Transferred to Washing',
-    'Boarding': 'Transferred to Boarding',
-    'Branding': 'Transferred to Branding',
-    'Re-Boarding': 'Transferred to Re-Boarding',
-    'Final Checking': 'Transferred to Final Checking',
-    'Warehouse': 'Transferred to Warehouse',
-    'Dispatch': 'Transferred to Dispatch'
-  };
-  
-  return transferActions[floor] || 'Transferred to Next Floor';
-};
-
-/**
  * Perform quality inspection on an article
  * @param {ObjectId} articleId
  * @param {Object} inspectionData
