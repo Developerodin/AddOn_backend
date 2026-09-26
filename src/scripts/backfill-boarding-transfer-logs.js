@@ -7,19 +7,12 @@
  *
  * Dry-run by default. Pass --apply to write.
  *
- * Local:
- *   NODE_ENV=development node src/scripts/backfill-boarding-transfer-logs.js \
- *     --mongo-url="mongodb://127.0.0.1:27017/addon"
- *   NODE_ENV=development node src/scripts/backfill-boarding-transfer-logs.js \
- *     --mongo-url="mongodb://127.0.0.1:27017/addon" --apply
+ * Reads MONGODB_URL from AddOn_backend/.env (via config). Run from that directory.
+ * Whatever database that env points at is the one it uses — local here, production on the server.
+ * --mongo-url= is optional and only needed to hit a different database than .env.
  *
- * Production (pass URL yourself — do not commit passwords):
- *   NODE_ENV=production node src/scripts/backfill-boarding-transfer-logs.js \
- *     --mongo-url="mongodb+srv://USER:PASS@HOST/DB"
- *   NODE_ENV=production node src/scripts/backfill-boarding-transfer-logs.js \
- *     --mongo-url="mongodb+srv://USER:PASS@HOST/DB" --apply
- *
- * Or set MONGODB_URL (never print the raw URL; this script redacts credentials).
+ *   node src/scripts/backfill-boarding-transfer-logs.js
+ *   node src/scripts/backfill-boarding-transfer-logs.js --apply
  */
 
 import './lib/mongoUrlParsePatch.js';
