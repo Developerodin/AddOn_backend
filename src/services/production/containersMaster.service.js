@@ -499,12 +499,47 @@ export const acceptContainerByBarcode = async (barcode, body = {}) => {
   const updatedVendorFlows = [];
   let vendorOverrideMatched = false;
 
+  // Plan every factory line before any receive write.
+  // Credit only what the previous floor still has left. Extra bag qty is not received
+  // and does not block the rest of the container. Lines already on this floor are skipped.
+  const applyQtyByArticle = new Map();
+  const alreadyAcceptedArticleIds = new Set();
+  /** @type {Array<{ articleNumber: string, onBag: number, credited: number, prevFloorKey: string|null }>} */
+  const acceptAdjustments = [];
+  for (const item of items) {
+    const articleId = resolveActiveItemArticleId(item);
+    if (!articleId || !(Number(item.quantity) > 0)) continue;
+    const plan = await articleService.planContainerAcceptLine(articleId, floor, item.quantity, doc._id);
+    const onBag = plan.quantityToApply;
+    if (onBag <= 0) {
+      alreadyAcceptedArticleIds.add(articleId);
+      continue;
+    }
+    const credited = Math.min(onBag, Math.max(0, plan.maxReceivable));
+    if (credited + 0.001 < onBag) {
+      acceptAdjustments.push({
+        articleNumber: plan.articleNumber,
+        onBag,
+        credited,
+        prevFloorKey: plan.prevFloorKey,
+      });
+    }
+    if (credited <= 0.001) {
+      alreadyAcceptedArticleIds.add(articleId);
+      continue;
+    }
+    applyQtyByArticle.set(articleId, credited);
+  }
+
   for (const item of items) {
     let quantity = item.quantity || 0;
     if (quantity <= 0) continue;
     const articleId = resolveActiveItemArticleId(item);
     const vpf = item.vendorProductionFlow;
     if (articleId) {
+      if (alreadyAcceptedArticleIds.has(articleId)) continue;
+      quantity = applyQtyByArticle.get(articleId) ?? quantity;
+      if (quantity <= 0) continue;
       const updated = await articleService.updateArticleFloorReceivedData(articleId, {
         floor,
         quantity,
@@ -583,19 +618,23 @@ export const acceptContainerByBarcode = async (barcode, body = {}) => {
     );
   }
 
-  if (updatedArticles.length === 0 && updatedVendorFlows.length === 0) {
+  const factoryLines = items.some((row) => resolveActiveItemArticleId(row));
+  if (updatedArticles.length === 0 && updatedVendorFlows.length === 0 && !factoryLines) {
     throw new ApiError(
       httpStatus.BAD_REQUEST,
       'Container accept did not update any articles or vendor flows. Check activeItems refs and quantities.'
     );
   }
 
-  if (updatedArticles.length > 0 || updatedVendorFlows.length > 0) {
-    doc.activeItems = [];
-    doc.activeFloor = '';
-    await doc.save();
-  }
-  return { container: doc, articles: updatedArticles, vendorProductionFlows: updatedVendorFlows };
+  doc.activeItems = [];
+  doc.activeFloor = '';
+  await doc.save();
+  return {
+    container: doc,
+    articles: updatedArticles,
+    vendorProductionFlows: updatedVendorFlows,
+    acceptAdjustments,
+  };
 };
 
 /**

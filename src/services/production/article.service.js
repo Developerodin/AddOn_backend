@@ -1699,6 +1699,66 @@ export const revertFloorTransfer = async (articleId, payload, user = null) => {
     .populate('machineId', 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor');
 };
 
+const RECEIVE_FLOOR_ALIASES = {
+  FinalChecking: 'Final Checking',
+  finalchecking: 'Final Checking',
+  SecondaryChecking: 'Secondary Checking',
+  secondarychecking: 'Secondary Checking',
+  Silicon: 'Silicon',
+  silicon: 'Silicon',
+  Knitting: 'Knitting',
+  Linking: 'Linking',
+  Checking: 'Checking',
+  Washing: 'Washing',
+  Boarding: 'Boarding',
+  'Re-Boarding': 'Re-Boarding',
+  ReBoarding: 'Re-Boarding',
+  're-boarding': 'Re-Boarding',
+  Branding: 'Branding',
+  Warehouse: 'Warehouse',
+  Dispatch: 'Dispatch',
+};
+
+/**
+ * How much of a container line is still receivable.
+ * Qty already stored on this floor with the same container id is treated as already accepted
+ * (a previous accept saved the article, then failed before clearing the container).
+ * @param {string} articleId
+ * @param {string} floor
+ * @param {number} quantity
+ * @param {import('mongoose').Types.ObjectId|string|null} containerId
+ * @returns {Promise<{ articleNumber: string, quantityToApply: number, maxReceivable: number, prevFloorKey: string|null }>}
+ */
+export const planContainerAcceptLine = async (articleId, floor, quantity, containerId) => {
+  const article = await Article.findById(articleId);
+  if (!article) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Article not found');
+  }
+  const normalizedFloor = RECEIVE_FLOOR_ALIASES[floor] || floor;
+  const floorKey = article.getFloorKey(normalizedFloor);
+  if (!floorKey || !article.floorQuantities[floorKey]) {
+    throw new ApiError(httpStatus.BAD_REQUEST, `Invalid floor: "${floor}"`);
+  }
+  const floorData = article.floorQuantities[floorKey];
+  const cid = containerId != null ? String(containerId) : '';
+  const alreadyBooked = (floorData.receivedData || []).reduce((sum, row) => {
+    if (!cid || String(row?.receivedInContainerId || '') !== cid) return sum;
+    return sum + (Number(row.transferred) || 0);
+  }, 0);
+  const quantityToApply = Math.max(0, Number(quantity) - alreadyBooked);
+  const prevFloorKey = await resolveStyleSourceFloorKeyForReceive(article, normalizedFloor);
+  const prevFloorData = prevFloorKey && article.floorQuantities?.[prevFloorKey];
+  const maxReceivable = prevFloorData
+    ? Math.max(0, (Number(prevFloorData.transferred) || 0) - (Number(floorData.received) || 0))
+    : quantityToApply;
+  return {
+    articleNumber: article.articleNumber || String(articleId),
+    quantityToApply,
+    maxReceivable,
+    prevFloorKey,
+  };
+};
+
 /**
  * Update receivedData for a specific floor on an article.
  * When quantity is provided (container accept flow), also increments floor received by that amount.
@@ -1712,26 +1772,7 @@ export const updateArticleFloorReceivedData = async (articleId, payload) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Article not found');
   }
 
-  const floorMapping = {
-    'FinalChecking': 'Final Checking',
-    'finalchecking': 'Final Checking',
-    'SecondaryChecking': 'Secondary Checking',
-    'secondarychecking': 'Secondary Checking',
-    'Silicon': 'Silicon',
-    'silicon': 'Silicon',
-    'Knitting': 'Knitting',
-    'Linking': 'Linking',
-    'Checking': 'Checking',
-    'Washing': 'Washing',
-    'Boarding': 'Boarding',
-    'Re-Boarding': 'Re-Boarding',
-    'ReBoarding': 'Re-Boarding',
-    're-boarding': 'Re-Boarding',
-    'Branding': 'Branding',
-    'Warehouse': 'Warehouse',
-    'Dispatch': 'Dispatch',
-  };
-  const normalizedFloor = floorMapping[payload.floor] || payload.floor;
+  const normalizedFloor = RECEIVE_FLOOR_ALIASES[payload.floor] || payload.floor;
   const floorKey = article.getFloorKey(normalizedFloor);
 
   if (!floorKey || !article.floorQuantities[floorKey]) {
@@ -1752,6 +1793,19 @@ export const updateArticleFloorReceivedData = async (articleId, payload) => {
       : undefined;
   if (quantity !== undefined && Number.isNaN(quantity)) {
     quantity = undefined;
+  }
+
+  const containerId = payload.receivedData?.receivedInContainerId || null;
+  if (typeof quantity === 'number' && quantity > 0 && containerId) {
+    const alreadyBooked = (floorData.receivedData || []).reduce((sum, row) => {
+      if (String(row?.receivedInContainerId || '') !== String(containerId)) return sum;
+      return sum + (Number(row.transferred) || 0);
+    }, 0);
+    const remainingToCredit = Math.max(0, quantity - alreadyBooked);
+    if (remainingToCredit <= 1e-9) {
+      return article;
+    }
+    quantity = remainingToCredit;
   }
 
   // Auto-populate receivedTransferItems from previous floor's transferredData (e.g. FC→Dispatch, Dispatch→Warehouse)
@@ -1804,8 +1858,26 @@ export const updateArticleFloorReceivedData = async (articleId, payload) => {
   }
 
   if (Array.isArray(receivedTransferItems) && receivedTransferItems.length > 0) {
-    // Branding/Final Checking: push each item with styleCode, brand, transferred
     quantity = receivedTransferItems.reduce((sum, item) => sum + (item.transferred || 0), 0);
+  }
+
+  // Cap must run before receivedData is mutated so a throw cannot leave a dirty in-memory doc
+  // that a later save path (or caller) could persist.
+  if (typeof quantity === 'number' && quantity > 0) {
+    const prevFloorKey = await resolveStyleSourceFloorKeyForReceive(article, normalizedFloor);
+    const prevFloorData = prevFloorKey && article.floorQuantities?.[prevFloorKey];
+    if (prevFloorData) {
+      const maxReceivable = Math.max(0, (prevFloorData.transferred || 0) - (floorData.received || 0));
+      if (quantity > maxReceivable) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Accept quantity (${quantity}) exceeds receivable from ${prevFloorKey} (${maxReceivable}). Transfer from the previous floor first.`
+        );
+      }
+    }
+  }
+
+  if (Array.isArray(receivedTransferItems) && receivedTransferItems.length > 0) {
     const rd = payload.receivedData || {};
     receivedTransferItems.forEach((item) => {
       floorData.receivedData.push({
@@ -1831,17 +1903,6 @@ export const updateArticleFloorReceivedData = async (articleId, payload) => {
 
   // Container accept flow: increment received by container quantity so quantity becomes visible on this floor
   if (typeof quantity === 'number' && quantity > 0) {
-    const prevFloorKey = await resolveStyleSourceFloorKeyForReceive(article, normalizedFloor);
-    const prevFloorData = prevFloorKey && article.floorQuantities?.[prevFloorKey];
-    if (prevFloorData) {
-      const maxReceivable = Math.max(0, (prevFloorData.transferred || 0) - (floorData.received || 0));
-      if (quantity > maxReceivable) {
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          `Accept quantity (${quantity}) exceeds receivable from ${prevFloorKey} (${maxReceivable}). Transfer from the previous floor first.`
-        );
-      }
-    }
     floorData.received = (floorData.received || 0) + quantity;
     floorData.remaining = floorData.received - (floorData.completed || 0);
     if (floorData.completed > floorData.received) {
