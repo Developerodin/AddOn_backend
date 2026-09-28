@@ -11,6 +11,7 @@ import { recordVendorM3Entry } from './vendorM3Management.service.js';
 import { recordVendorM4Entry } from './vendorM4Management.service.js';
 import {
   assertAllowedFloorKey,
+  assertDispatchTransferUsesContainer,
   assertForwardFloorMove,
   buildIncrementOps,
   buildReplaceOps,
@@ -408,6 +409,7 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
     beforeFloorSnapshot = before;
 
     const bodyForPatch = { ...normalizedBody };
+    assertDispatchTransferUsesContainer(floorKey, bodyForPatch);
 
     /**
      * Branding / final checking: when `transferredData` is present, counters are **server-owned**.

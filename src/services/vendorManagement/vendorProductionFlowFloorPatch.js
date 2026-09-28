@@ -29,6 +29,25 @@ export function assertAllowedFloorKey(floorKey) {
 }
 
 /**
+ * Dispatch → warehouse qty is booked only by the container transfer.
+ * A floor patch may still save completed / remarks, but cannot mark qty transferred.
+ * @param {string} floorKey
+ * @param {Object} body
+ */
+export function assertDispatchTransferUsesContainer(floorKey, body) {
+  if (floorKey !== 'dispatch' || !body) return;
+  const booksTransfer =
+    body.transferredData !== undefined ||
+    body.transferred !== undefined ||
+    body.transferredDelta !== undefined;
+  if (!booksTransfer) return;
+  throw new ApiError(
+    httpStatus.BAD_REQUEST,
+    'Dispatch quantity cannot be marked transferred without a container. Scan a container and transfer to warehouse.'
+  );
+}
+
+/**
  * Server-owned patch mode: client `mode` is ignored. Increment when any *Delta field is present; otherwise replace.
  */
 export function resolveMode(body) {

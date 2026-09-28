@@ -274,6 +274,26 @@ const attachContainersToLines = async (lines) => {
 };
 
 /**
+ * A note line is a physical box. Qty with no warehouse container must not print.
+ * @param {Array<{ vpoNumber?: string, articleNumber?: string, qtyInPairs?: number, containerBarcodes?: unknown[] }>} lines
+ */
+const assertLinesStagedOnWarehouseContainers = (lines) => {
+  const missing = (lines || []).filter(
+    (line) => Number(line.qtyInPairs) > 0 && !(line.containerBarcodes || []).length
+  );
+  if (!missing.length) return;
+  const shown = missing.slice(0, 8);
+  const detail = shown
+    .map((line) => `${line.vpoNumber || 'VPO'} ${line.articleNumber || ''} ${line.qtyInPairs}`.replace(/\s+/g, ' ').trim())
+    .join('; ');
+  const extra = missing.length > shown.length ? ` (+${missing.length - shown.length} more)` : '';
+  throw new ApiError(
+    httpStatus.BAD_REQUEST,
+    `Cannot print. These quantities are not in a warehouse container: ${detail}${extra}. Stage each on a container from Dispatch first.`
+  );
+};
+
+/**
  * Resolve invoice numbers for STN lines via vendor production flow referenceCode.
  * @param {Array<{ vendorProductionFlowId?: unknown, invoiceNumber?: string }>} lines
  * @returns {Promise<Map<string, string>>}
@@ -340,6 +360,7 @@ export const createVendorDispatchTransferNote = async (body = {}, filter = {}, u
   const nameMap = await resolveArticleNamesByFactoryCode(factoryCodes);
   const brandMap = await resolveBrandLabelsByFactoryCode(factoryCodes);
   const { lines: linesWithContainers, totalBoxes } = await attachContainersToLines(flatLines);
+  assertLinesStagedOnWarehouseContainers(linesWithContainers);
 
   const stnLines = linesWithContainers.map((line) => mapLineToStnFields(line, nameMap, brandMap));
 
@@ -519,7 +540,10 @@ export const previewVendorDispatchTransferNoteLines = async (filter = {}) => {
   const nameMap = await resolveArticleNamesByFactoryCode(factoryCodes);
   const brandMap = await resolveBrandLabelsByFactoryCode(factoryCodes);
 
-  const lines = flatLines.map((line) => {
+  const { lines: linesWithContainers } = await attachContainersToLines(flatLines);
+  assertLinesStagedOnWarehouseContainers(linesWithContainers);
+
+  const lines = linesWithContainers.map((line) => {
     const mapped = mapLineToStnFields(line, nameMap, brandMap);
     return {
       articleNumber: mapped.articleNumber,
@@ -529,6 +553,7 @@ export const previewVendorDispatchTransferNoteLines = async (filter = {}) => {
       qtyInPairs: mapped.qtyInPairs,
       vpoNumber: mapped.vpoNumber,
       vendorName: mapped.vendorName,
+      containerBarcodes: line.containerBarcodes || [],
     };
   });
 
