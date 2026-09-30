@@ -403,9 +403,23 @@ export const bulkCreateYarnBoxes = async (bulkData) => {
   const boxesToCreate = [];
   const baseTimestamp = Date.now();
   let boxCounter = 1;
+  const closedLotStatuses = new Set(['lot_rejected', 'lot_returned_to_vendor']);
+  const lotStatusByNumber = new Map(
+    (purchaseOrder?.receivedLotDetails || []).map((lot) => [String(lot.lotNumber || '').trim(), lot.status])
+  );
 
   for (const lotDetail of lotDetails) {
     const { lotNumber, numberOfBoxes } = lotDetail;
+    const lotStatus = lotStatusByNumber.get(String(lotNumber || '').trim());
+    if (closedLotStatuses.has(lotStatus)) {
+      skippedLots.push({
+        lotNumber,
+        existingCount: 0,
+        requestedCount: numberOfBoxes,
+        reason: `Lot status is ${lotStatus}; rejected or returned lots are not given new boxes`,
+      });
+      continue;
+    }
 
     if (numberOfBoxes < 1) {
       throw new ApiError(
