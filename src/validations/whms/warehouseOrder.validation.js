@@ -158,16 +158,25 @@ export const bulkImportWarehouseOrders = {
           clientType: Joi.string().valid(...clientTypes).required(),
           clientId: Joi.string().custom(objectId).optional(),
           clientName: Joi.string().allow('').trim(),
+          storeBillCode: Joi.string().allow('').trim(),
+          storeSapCode: Joi.string().allow('').trim(),
+          storeRetekCode: Joi.string().allow('').trim(),
           addonOrderId: Joi.string().allow('').trim(),
           date: Joi.alternatives().try(Joi.date(), Joi.string().trim()).allow('', null),
           status: Joi.string().valid(...orderStatuses).default('pending'),
+          meta: Joi.object().unknown(true),
           styleCodeSinglePair: Joi.array().items(bulkSinglePairItem).default([]),
           styleCodeMultiPair: Joi.array().items(bulkMultiPairItem).default([]),
         }).custom((value, helpers) => {
           const hasClientId = value.clientId != null && String(value.clientId).trim() !== '';
           const hasClientName = value.clientName != null && String(value.clientName).trim() !== '';
-          if (!hasClientId && !hasClientName) {
-            return helpers.error('any.custom', { message: 'Either clientId or clientName is required per order' });
+          const hasStoreCode = ['storeBillCode', 'storeSapCode', 'storeRetekCode'].some(
+            (key) => value[key] != null && String(value[key]).trim() !== ''
+          );
+          if (!hasClientId && !hasClientName && !hasStoreCode) {
+            return helpers.error('any.custom', {
+              message: 'Either clientId, clientName, or a store bill/SAP/retek code is required per order',
+            });
           }
           const singleCount = Array.isArray(value.styleCodeSinglePair) ? value.styleCodeSinglePair.length : 0;
           const multiCount = Array.isArray(value.styleCodeMultiPair) ? value.styleCodeMultiPair.length : 0;
