@@ -11,7 +11,7 @@ router
   .route('/')
   .post(
     auth('manageOrders'),
-    validate(warehouseClientValidation.createWarehouseClient),
+    validate(warehouseClientValidation.createWarehouseClient, warehouseClientValidation.formatWarehouseClientValidationError),
     warehouseClientController.createWarehouseClient
   )
   .get(
@@ -32,7 +32,10 @@ router.post(
   '/bulk-import',
   auth('manageOrders'),
   bulkImportMiddleware,
-  validate(warehouseClientValidation.bulkImportWarehouseClients),
+  validate(
+    warehouseClientValidation.bulkImportWarehouseClients,
+    warehouseClientValidation.formatWarehouseClientValidationError
+  ),
   warehouseClientController.bulkImportWarehouseClients
 );
 
@@ -45,7 +48,7 @@ router
   )
   .patch(
     auth('manageOrders'),
-    validate(warehouseClientValidation.updateWarehouseClient),
+    validate(warehouseClientValidation.updateWarehouseClient, warehouseClientValidation.formatWarehouseClientValidationError),
     warehouseClientController.updateWarehouseClient
   )
   .delete(
