@@ -135,6 +135,7 @@ export const getCatalogueAttrs = {
 
 const bulkSinglePairItem = Joi.object({
   styleCode: Joi.string().required().trim(),
+  type: Joi.string().allow('').trim(),
   colour: Joi.string().allow('').trim(),
   color: Joi.string().allow('').trim(),
   pattern: Joi.string().allow('').trim(),
