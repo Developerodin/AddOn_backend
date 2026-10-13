@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import logger from '../../config/logger.js';
 import { toJSON, paginate } from '../plugins/index.js';
 import WarehouseClient, { WarehouseClientType } from './warehouseClient.model.js';
 import StyleCode from '../styleCode.model.js';
@@ -162,7 +163,7 @@ const warehouseOrderMultiPairItemSchema = mongoose.Schema(
 const warehouseOrderSchema = mongoose.Schema(
   {
     orderNumber: { type: String, trim: true, unique: true, sparse: true },
-    /** Optional external / customer reference (e.g. Addon order number). */
+    /** Optional external reference. The same id may be used on more than one order. */
     addonOrderId: { type: String, trim: true },
     date: { type: Date, default: Date.now },
 
@@ -228,10 +229,49 @@ warehouseOrderSchema.index({ date: -1 });
 warehouseOrderSchema.index({ status: 1, createdAt: -1 });
 warehouseOrderSchema.index({ flowStatus: 1, createdAt: -1 });
 warehouseOrderSchema.index({ clientType: 1, clientId: 1, createdAt: -1 });
-warehouseOrderSchema.index({ addonOrderId: 1 }, { unique: true, sparse: true });
+warehouseOrderSchema.index({ addonOrderId: 1 });
+
+/**
+ * Copy the store client's bill code onto order JSON when clientId is populated.
+ * @param {import('mongoose').Document} doc
+ * @param {Record<string, unknown>} ret
+ * @returns {Record<string, unknown>}
+ */
+function attachStoreBillCode(doc, ret) {
+  const client = doc && doc.populated && doc.populated('clientId') ? doc.clientId : null;
+  const bill =
+    ret.clientType === 'Store' && client && client.storeProfile
+      ? String(client.storeProfile.billCode || '').trim()
+      : '';
+  ret.billCode = bill;
+  return ret;
+}
+
+warehouseOrderSchema.set('toJSON', {
+  transform: attachStoreBillCode,
+});
 
 warehouseOrderSchema.plugin(toJSON);
 warehouseOrderSchema.plugin(paginate);
 
 const WarehouseOrder = mongoose.model('WarehouseOrder', warehouseOrderSchema);
+
+/**
+ * Replace the old unique addonOrderId index so one id can be saved on many orders.
+ * @returns {Promise<void>}
+ */
+const relaxAddonOrderIdIndex = async () => {
+  const indexes = await WarehouseOrder.listIndexes();
+  const existing = indexes.find((index) => index.name === 'addonOrderId_1');
+  if (existing?.unique) {
+    await WarehouseOrder.collection.dropIndex('addonOrderId_1');
+    await WarehouseOrder.collection.createIndex({ addonOrderId: 1 });
+    logger.info('WarehouseOrder addonOrderId index is no longer unique');
+  }
+};
+
+relaxAddonOrderIdIndex().catch((error) => {
+  logger.error(`WarehouseOrder addonOrderId index update failed: ${error.message}`);
+});
+
 export default WarehouseOrder;

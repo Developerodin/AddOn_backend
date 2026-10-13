@@ -189,7 +189,10 @@ export const ingestWebsiteOrder = async (payload) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'addonOrderId is required');
   }
 
-  const existing = await WarehouseOrder.findOne({ addonOrderId }).select('_id status clientId');
+  const existing = await WarehouseOrder.findOne({
+    addonOrderId,
+    'meta.source': 'addonweb',
+  }).select('_id status clientId');
   if (existing) {
     await writeSyncLog({
       addonOrderId,
