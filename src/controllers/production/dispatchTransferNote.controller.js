@@ -2,6 +2,7 @@ import httpStatus from 'http-status';
 import pick from '../../utils/pick.js';
 import catchAsync from '../../utils/catchAsync.js';
 import * as dispatchTransferNoteService from '../../services/production/dispatchTransferNote.service.js';
+import { queryAlreadyPrintedNotes } from '../../services/production/dispatchTransferNoteReprint.service.js';
 
 /**
  * POST /production/floors/Dispatch/transfer-notes
@@ -21,6 +22,18 @@ export const previewDispatchTransferNote = catchAsync(async (req, res) => {
   const filter = pick(req.query, allowedFilterFields);
   const preview = await dispatchTransferNoteService.previewDispatchTransferNoteLines(filter);
   res.send(preview);
+});
+
+/**
+ * GET /production/floors/Dispatch/transfer-notes/already-printed
+ */
+export const getAlreadyPrintedTransferNotes = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['startDate', 'endDate', 'search']);
+  const options = pick(req.query, ['limit', 'page']);
+  if (options.limit) options.limit = parseInt(options.limit, 10);
+  if (options.page) options.page = parseInt(options.page, 10);
+  const result = await queryAlreadyPrintedNotes(filter, options);
+  res.send(result);
 });
 
 /**

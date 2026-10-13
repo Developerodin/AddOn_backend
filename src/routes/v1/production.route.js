@@ -146,6 +146,13 @@ router
   );
 
 router
+  .route('/floors/Dispatch/transfer-notes/already-printed')
+  .get(
+    validate(productionValidation.getAlreadyPrintedTransferNotes),
+    dispatchTransferNoteController.getAlreadyPrintedTransferNotes
+  );
+
+router
   .route('/floors/Dispatch/transfer-notes/:transferNoteId')
   .get(
     validate(productionValidation.getDispatchTransferNote),

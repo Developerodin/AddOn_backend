@@ -90,6 +90,7 @@ dispatchStockTransferNoteSchema.plugin(toJSON);
 dispatchStockTransferNoteSchema.plugin(paginate);
 
 dispatchStockTransferNoteSchema.index({ stnDate: -1 });
+dispatchStockTransferNoteSchema.index({ status: 1, stnDate: -1 });
 dispatchStockTransferNoteSchema.index({ categoryLabel: 1 });
 dispatchStockTransferNoteSchema.index({ 'allocations.articleId': 1 });
 

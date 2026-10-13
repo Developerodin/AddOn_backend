@@ -403,6 +403,7 @@ export const getDispatchTransferNoteReportRows = async (filter = {}) => {
 
 /**
  * Preview pending print lines without creating an STN (for modal preview).
+ * `lines` / `totalQty` stay the free quantity. Already-printed notes are a separate paged query.
  * @param {Object} filter
  * @returns {Promise<{ lines: Array<Object>, totalQty: number }>}
  */

@@ -148,6 +148,16 @@ const previewDispatchTransferNote = {
   }),
 };
 
+const getAlreadyPrintedTransferNotes = {
+  query: Joi.object().keys({
+    startDate: Joi.date().optional(),
+    endDate: Joi.date().optional(),
+    search: Joi.string().allow('').optional(),
+    limit: Joi.number().integer().min(1).max(20).optional(),
+    page: Joi.number().integer().min(1).optional(),
+  }),
+};
+
 const getDispatchTransferNotes = {
   query: Joi.object().keys({
     startDate: Joi.date().optional(),
@@ -858,6 +868,7 @@ export default {
   getDispatchPendingWarehousePrintOrders,
   createDispatchTransferNote,
   previewDispatchTransferNote,
+  getAlreadyPrintedTransferNotes,
   getDispatchTransferNotes,
   getDispatchTransferNoteReport,
   getDispatchTransferNote,
