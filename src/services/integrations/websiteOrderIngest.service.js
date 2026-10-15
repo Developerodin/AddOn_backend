@@ -4,9 +4,10 @@ import logger from '../../config/logger.js';
 import WarehouseClient, { WarehouseClientType } from '../../models/whms/warehouseClient.model.js';
 import WarehouseOrder, { WarehouseOrderFlowStatus } from '../../models/whms/warehouseOrder.model.js';
 import StyleCode from '../../models/styleCode.model.js';
+import StyleCodePairs from '../../models/styleCodePairs.model.js';
 import WebsiteOrderSyncLog from '../../models/integrations/websiteOrderSyncLog.model.js';
 import { createWarehouseClient } from '../whms/warehouseClient.service.js';
-import { createWarehouseOrder } from '../whms/warehouseOrder.service.js';
+import { createWarehouseOrder, updateWarehouseOrderById } from '../whms/warehouseOrder.service.js';
 import { transitionOrder } from '../whms/orderFlow.service.js';
 import { notifyWebsiteFromOrder } from './websiteOrderOutbound.service.js';
 import {
@@ -15,54 +16,41 @@ import {
   getTradeClientIncompleteFields,
   mergeWebsiteFieldsIntoClient,
 } from './websiteOrderClientSync.util.js';
+import { mapWebsiteProductsToLines } from './websiteOrderLineMap.util.js';
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
- * Extract option value by name (case-insensitive partial match).
- * @param {Array<{ name?: string, value?: string }>} options
- * @param {string} nameHint
- * @returns {string}
+ * Resolve website product models against single style codes and multi-pair codes.
+ * @param {Array<object>} products
+ * @returns {Promise<{ singlePair: object[], multiPair: object[], syncErrors: object[] }>}
  */
-const optionValue = (options, nameHint) => {
-  if (!Array.isArray(options)) return '';
-  const hint = nameHint.toLowerCase();
-  const match = options.find((o) => String(o?.name || '').toLowerCase().includes(hint));
-  return String(match?.value || '').trim();
+const mapLines = async (products) => {
+  const models = [
+    ...new Set((products || []).map((product) => String(product?.model || '').trim()).filter(Boolean)),
+  ];
+  const [singleDocs, pairDocs] = await Promise.all([
+    models.length
+      ? StyleCode.find({ styleCode: { $in: models } }).select('_id styleCode pack brand').lean()
+      : [],
+    models.length
+      ? StyleCodePairs.find({ pairStyleCode: { $in: models } }).select('_id pairStyleCode pack eanCode').lean()
+      : [],
+  ]);
+  const singleByCode = new Map(singleDocs.map((doc) => [doc.styleCode, doc]));
+  const pairByCode = new Map(pairDocs.map((doc) => [doc.pairStyleCode, doc]));
+  return mapWebsiteProductsToLines(products, singleByCode, pairByCode);
 };
 
 /**
- * Map website product lines to warehouse single-pair line items.
- * @param {Array<object>} products
- * @returns {Promise<{ singlePair: object[], syncErrors: object[] }>}
+ * Plain line item for a warehouse-order update.
+ * @param {object} row
+ * @returns {object}
  */
-const mapLines = async (products) => {
-  const singlePair = [];
-  const syncErrors = [];
-
-  for (const product of products || []) {
-    const model = String(product?.model || '').trim();
-    if (!model) {
-      syncErrors.push({ model: '', reason: 'missing_model' });
-      continue;
-    }
-
-    const styleDoc = await StyleCode.findOne({ styleCode: model }).select('_id styleCode pack brand').lean();
-    if (!styleDoc) {
-      syncErrors.push({ model, reason: 'style_code_not_found' });
-      continue;
-    }
-
-    singlePair.push({
-      styleCodeId: styleDoc._id,
-      styleCode: styleDoc.styleCode,
-      pack: optionValue(product.options, 'pack') || styleDoc.pack || '',
-      colour: optionValue(product.options, 'color') || optionValue(product.options, 'colour'),
-      quantity: Math.max(1, Number(product.quantity) || 1),
-    });
-  }
-
-  return { singlePair, syncErrors };
+const plainLine = (row) => {
+  const obj = row?.toObject ? row.toObject() : { ...row };
+  delete obj._id;
+  return obj;
 };
 
 /**
@@ -179,6 +167,81 @@ const writeSyncLog = async (entry) => {
 };
 
 /**
+ * Fill multi-pair (and any newly matched single) lines on a draft website order.
+ * A repeat ingest is the only place the original quantities still exist.
+ * @param {import('mongoose').Document} existing
+ * @param {object} payload
+ * @returns {Promise<object>}
+ */
+const repairDraftWebsiteOrder = async (existing, payload) => {
+  const order = await WarehouseOrder.findById(existing._id);
+  if (!order) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Warehouse order not found');
+  }
+
+  const { singlePair, multiPair, syncErrors } = await mapLines(payload.products);
+  const keptSingles = (order.styleCodeSinglePair || []).map(plainLine);
+  const knownSingle = new Set(keptSingles.map((row) => String(row.styleCodeId)));
+  const addedSingles = singlePair.filter((row) => !knownSingle.has(String(row.styleCodeId)));
+  const nextMulti = multiPair.length ? multiPair : (order.styleCodeMultiPair || []).map(plainLine);
+
+  if (!multiPair.length && !addedSingles.length) {
+    await writeSyncLog({
+      addonOrderId: order.addonOrderId,
+      opencartOrderId: payload.opencartOrderId,
+      direction: 'inbound',
+      status: 'already_synced',
+      warehouseOrderId: order._id,
+      warehouseClientId: order.clientId,
+    });
+    return {
+      status: 'already_synced',
+      warehouseOrderId: String(order._id),
+      warehouseClientId: String(order.clientId),
+      clientCreated: false,
+      syncErrors,
+    };
+  }
+
+  const meta = order.meta && typeof order.meta.toObject === 'function' ? order.meta.toObject() : { ...(order.meta || {}) };
+  const nextStatus = order.status === 'draft' && !syncErrors.length ? 'pending' : order.status;
+  const update = {
+    styleCodeSinglePair: [...keptSingles, ...addedSingles],
+    styleCodeMultiPair: nextMulti,
+    meta: { ...meta, syncErrors, remappedAt: new Date() },
+  };
+  if (nextStatus !== order.status) {
+    update.status = nextStatus;
+    update.flowStatus = order.flowStatus;
+  }
+
+  const updated = await updateWarehouseOrderById(String(order._id), update, { allowDuringPicking: true });
+  if (order.status === 'draft' && nextStatus === 'pending') {
+    notifyWebsiteFromOrder(updated, 'status_update');
+  }
+
+  await writeSyncLog({
+    addonOrderId: order.addonOrderId,
+    opencartOrderId: payload.opencartOrderId,
+    direction: 'inbound',
+    status: syncErrors.length ? 'draft' : 'created',
+    warehouseOrderId: order._id,
+    warehouseClientId: order.clientId,
+  });
+
+  return {
+    status: 'repaired',
+    warehouseOrderId: String(order._id),
+    warehouseClientId: String(order.clientId),
+    warehouseOrderNumber: order.orderNumber,
+    clientCreated: false,
+    syncErrors,
+    multiPairCount: nextMulti.length,
+    singlePairCount: keptSingles.length + addedSingles.length,
+  };
+};
+
+/**
  * Ingest an approved website order into WHMS.
  * @param {object} payload
  * @returns {Promise<object>}
@@ -194,6 +257,15 @@ export const ingestWebsiteOrder = async (payload) => {
     'meta.source': 'addonweb',
   }).select('_id status clientId');
   if (existing) {
+    if (Array.isArray(payload.products) && payload.products.length) {
+      const current = await WarehouseOrder.findById(existing._id).select('status meta.syncErrors');
+      const pendingErrors = current?.meta?.syncErrors;
+      const needsRepair =
+        current?.status === 'draft' || (Array.isArray(pendingErrors) && pendingErrors.length > 0);
+      if (needsRepair) {
+        return repairDraftWebsiteOrder(existing, payload);
+      }
+    }
     await writeSyncLog({
       addonOrderId,
       opencartOrderId: payload.opencartOrderId,
@@ -215,9 +287,9 @@ export const ingestWebsiteOrder = async (payload) => {
       payload.customer,
       addonOrderId
     );
-    const { singlePair, syncErrors } = await mapLines(payload.products);
+    const { singlePair, multiPair, syncErrors } = await mapLines(payload.products);
 
-    if (!singlePair.length) {
+    if (!singlePair.length && !multiPair.length) {
       await writeSyncLog({
         addonOrderId,
         opencartOrderId: payload.opencartOrderId,
@@ -242,7 +314,7 @@ export const ingestWebsiteOrder = async (payload) => {
       date: payload.orderDate ? new Date(payload.orderDate) : new Date(),
       status: orderStatus,
       styleCodeSinglePair: singlePair,
-      styleCodeMultiPair: [],
+      styleCodeMultiPair: multiPair,
       meta: {
         source: 'addonweb',
         opencartOrderId: payload.opencartOrderId,

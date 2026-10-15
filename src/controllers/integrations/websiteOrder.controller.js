@@ -7,7 +7,8 @@ import * as outboundService from '../../services/integrations/websiteOrderOutbou
 
 const ingest = catchAsync(async (req, res) => {
   const result = await ingestService.ingestWebsiteOrder(req.body);
-  const code = result.status === 'already_synced' ? httpStatus.OK : httpStatus.CREATED;
+  const created = result.status === 'created' || result.status === 'draft';
+  const code = created ? httpStatus.CREATED : httpStatus.OK;
   res.status(code).send(result);
 });
 

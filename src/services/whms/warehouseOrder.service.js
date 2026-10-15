@@ -275,7 +275,13 @@ export const getWarehouseOrderById = async (id) => {
   return WarehouseOrder.findById(id).populate('clientId');
 };
 
-export const updateWarehouseOrderById = async (id, updateBody) => {
+/**
+ * @param {string} id
+ * @param {object} updateBody
+ * @param {{ allowDuringPicking?: boolean }} [options]
+ * allowDuringPicking is only for appending website lines that were dropped on ingest.
+ */
+export const updateWarehouseOrderById = async (id, updateBody, options = {}) => {
   const doc = await WarehouseOrder.findById(id);
   if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Warehouse order not found');
 
@@ -287,7 +293,7 @@ export const updateWarehouseOrderById = async (id, updateBody) => {
     Object.prototype.hasOwnProperty.call(updateBody, 'styleCodeSinglePair') ||
     Object.prototype.hasOwnProperty.call(updateBody, 'styleCodeMultiPair');
 
-  if (lineItemsTouched && doc.activeBatchId) {
+  if (lineItemsTouched && doc.activeBatchId && !options.allowDuringPicking) {
     const batch = await PickListBatch.findById(doc.activeBatchId).select('status batchNumber');
     if (batch && batch.status === PickListBatchStatus.PICKING) {
       throw new ApiError(
