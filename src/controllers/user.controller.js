@@ -34,12 +34,12 @@ const getCurrentUser = catchAsync(async (req, res) => {
 });
 
 const updateUser = catchAsync(async (req, res) => {
-  const user = await userService.updateUserById(req.params.userId, req.body);
+  const user = await userService.updateUserById(req.params.userId, req.body, req.user);
   res.send(user);
 });
 
 const updateUserNavigation = catchAsync(async (req, res) => {
-  const user = await userService.updateUserNavigationById(req.params.userId, req.body);
+  const user = await userService.updateUserNavigationById(req.params.userId, req.body, req.user);
   res.send(user);
 });
 

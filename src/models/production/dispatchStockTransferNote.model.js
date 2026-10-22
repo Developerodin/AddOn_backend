@@ -15,7 +15,8 @@ const allocationSchema = new mongoose.Schema(
       required: true,
     },
     brand: { type: String, default: '', trim: true },
-    quantity: { type: Number, required: true, min: 1 },
+    /** May drop below 1 when a warehouse accept releases only part of the lock. */
+    quantity: { type: Number, required: true, min: 0 },
   },
   { _id: false }
 );

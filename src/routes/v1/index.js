@@ -50,6 +50,7 @@ import containersMasterRoute from './containersMaster.route.js';
 import whmsRoute from './whms/index.js';
 import helpSupportRoute from './helpSupport/index.js';
 import websiteOrderRoute from './integrations/websiteOrder.route.js';
+import aiRoute from './ai.route.js';
 import config from '../../config/config.js';
 import userActivityLog from '../../middlewares/userActivityLog.js';
 
@@ -258,6 +259,10 @@ const defaultRoutes = [
   {
     path: '/integrations/website-orders',
     route: websiteOrderRoute,
+  },
+  {
+    path: '/ai',
+    route: aiRoute,
   },
 ];
 

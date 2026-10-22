@@ -7,6 +7,7 @@ import ApiError from '../../utils/ApiError.js';
 import { computeDerivedForFloor, pickFloorSnapshot } from './vendorProductionFlowFloorPatch.js';
 import { aggregateTransferredByStyleKey, aggregateFinalCheckingReceivedForSourceCap, filterBrandingOutboundForDestination, normalizeVendorBrandingType } from '../../utils/vendorStyleQuantity.util.js';
 import { promoteVendorDispatchToInwardReceive } from '../whms/inwardReceiveFromVendorDispatch.helper.js';
+import { consumeActiveVendorStnAllocations } from '../../utils/vendorDispatchWarehousePending.util.js';
 
 /** WHMS: container accept after dispatch→warehouse transfer stages this floor. */
 export const VENDOR_WAREHOUSE_INWARD_ACTIVE_FLOOR = 'Warehouse Inward';
@@ -758,6 +759,18 @@ export async function applyVendorWarehouseInwardAcceptFromContainer(doc) {
     flow.markModified('floorQuantities.dispatch');
     await flow.save();
     flows.push(flow);
+
+    for (const row of rows) {
+      try {
+        await consumeActiveVendorStnAllocations({
+          vendorProductionFlowId: flowId,
+          brand: row.brand,
+          quantity: row.transferred,
+        });
+      } catch (err) {
+        console.error('consumeActiveVendorStnAllocations failed:', err?.message || err);
+      }
+    }
 
     await promoteVendorDispatchToInwardReceive(flowId, { containerBarcode: barcode });
   }

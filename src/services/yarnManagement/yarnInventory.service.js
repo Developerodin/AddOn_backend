@@ -19,6 +19,14 @@ let _slotBarcodeCache = { lt: null, st: null, expiresAt: 0 };
 const SLOT_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
+ * Drops the cached LT/ST barcodes. Tests insert slots after another suite may have cached an empty list.
+ * @returns {void}
+ */
+export const resetSlotBarcodeCache = () => {
+  _slotBarcodeCache = { lt: null, st: null, expiresAt: 0 };
+};
+
+/**
  * Trim + de-dupe slot barcodes. Drops whitespace-only values so they cannot act as both
  * “LT slot” and “empty / unallocated” in the same rollup.
  * @param {Array<string|undefined|null>} codes
@@ -546,7 +554,12 @@ const aggregateInventoryFromStorage = async (filters = {}) => {
   return inventoryMap;
 };
 
-const roundKg3 = (n) => Math.round(Number(n || 0) * 1000) / 1000;
+/**
+ * Screen rounding for kg. Three decimals, same as Live Inventory `toLocaleString`.
+ * @param {number} n
+ * @returns {number}
+ */
+export const roundKg3 = (n) => Math.round(Number(n || 0) * 1000) / 1000;
 
 /** Empty live-stock breakdown for a catalog id with no physical stock. */
 const EMPTY_LIVE_STOCK = Object.freeze({
@@ -556,6 +569,7 @@ const EMPTY_LIVE_STOCK = Object.freeze({
   blockedKg: 0,
   availableKg: 0,
   totalStockKg: 0,
+  cones: 0,
 });
 
 /**
@@ -563,7 +577,7 @@ const EMPTY_LIVE_STOCK = Object.freeze({
  * Available = LT + ST − blocked (unallocated is separate, not counted in available).
  *
  * @param {Array<string|import('mongoose').Types.ObjectId>} yarnCatalogIds
- * @returns {Promise<Map<string, { longTermKg: number, shortTermKg: number, unallocatedKg: number, blockedKg: number, availableKg: number, totalStockKg: number }>>}
+ * @returns {Promise<Map<string, { longTermKg: number, shortTermKg: number, unallocatedKg: number, blockedKg: number, availableKg: number, totalStockKg: number, cones: number }>>}
  */
 export const getInventoryBreakdownForCatalogIds = async (yarnCatalogIds) => {
   const uniqueIds = [
@@ -616,6 +630,7 @@ export const getInventoryBreakdownForCatalogIds = async (yarnCatalogIds) => {
     const blocked = roundKg3(inv.blockedNetWeight ?? 0);
     const totalStock = roundKg3(lt + st);
     const available = roundKg3(Math.max(0, lt + st - blocked));
+    const cones = Math.max(0, Number(inv.shortTermInventory?.numberOfCones ?? 0));
 
     result.set(catKey, {
       longTermKg: lt,
@@ -624,6 +639,7 @@ export const getInventoryBreakdownForCatalogIds = async (yarnCatalogIds) => {
       blockedKg: blocked,
       availableKg: available,
       totalStockKg: totalStock,
+      cones,
     });
   }
 

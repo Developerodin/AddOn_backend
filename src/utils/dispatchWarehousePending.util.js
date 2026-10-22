@@ -94,18 +94,29 @@ export const buildStnAllocationMap = (allocationRows) => {
 };
 
 /**
- * Subtract STN allocations from warehouse-pending dispatch rows (per brand).
+ * Subtract open STN locks from warehouse-pending rows.
+ * One pool per article + brand, shared across every transferredData row.
+ * Locks are not reduced by historical warehouse receipts here. Receipts release
+ * locks in {@link consumeActiveDispatchStnAllocations} at accept time. Subtracting
+ * every past receipt from the pool reprints the backlog and then reprints the new note.
  * @param {Array<{ transferred?: number, styleCode?: string, brand?: string }>} pendingRows
  * @param {string|import('mongoose').Types.ObjectId} articleId
  * @param {Map<string, number>} stnAllocMap
  * @returns {Array<{ transferred: number, styleCode: string, brand: string }>}
  */
 export const subtractStnAllocationsFromPending = (pendingRows, articleId, stnAllocMap) => {
+  const allocLeft = new Map();
   const out = [];
   for (const row of pendingRows || []) {
     const key = stnAllocationKey(articleId, row.brand);
-    const allocated = stnAllocMap.get(key) || 0;
-    const pending = Math.max(0, (row.transferred || 0) - allocated);
+    if (!allocLeft.has(key)) {
+      allocLeft.set(key, Math.max(0, Number(stnAllocMap.get(key) || 0)));
+    }
+    const rowQty = Math.max(0, Number(row.transferred || 0));
+    const left = allocLeft.get(key) || 0;
+    const take = Math.min(rowQty, left);
+    allocLeft.set(key, left - take);
+    const pending = rowQty - take;
     if (pending > 0) {
       out.push({
         transferred: pending,
@@ -164,4 +175,88 @@ export const loadActiveStnAllocationMap = async () => {
     .lean();
   const rows = docs.flatMap((doc) => doc.allocations || []);
   return buildStnAllocationMap(rows);
+};
+
+/**
+ * Copy one allocation subdocument to a plain object that can be written back.
+ * @param {Object} alloc
+ * @returns {{ articleId: unknown, brand: string, quantity: number }}
+ */
+const plainAllocation = (alloc) => {
+  const plain = typeof alloc?.toObject === 'function' ? alloc.toObject() : { ...alloc };
+  return {
+    articleId: plain.articleId,
+    brand: plain.brand || '',
+    quantity: Number(plain.quantity) || 0,
+  };
+};
+
+/**
+ * Release active dispatch-note locks for qty the warehouse just accepted.
+ * Oldest note first. Stops at 0. Extra accept qty does not create a credit, so a
+ * past receipt cannot unlock a note printed later.
+ * A blank brand consumes the lock only when that article has a single locked brand.
+ * @param {{ articleId: unknown, brand?: string, quantity: number }} params
+ * @returns {Promise<{ consumed: number }>}
+ */
+export const consumeActiveDispatchStnAllocations = async ({ articleId, brand, quantity } = {}) => {
+  let remaining = Number(quantity);
+  if (!articleId || !Number.isFinite(remaining) || remaining <= 0) {
+    return { consumed: 0 };
+  }
+
+  const notes = await DispatchStockTransferNote.find({
+    status: DispatchStnStatus.ACTIVE,
+    'allocations.articleId': articleId,
+  }).sort({ stnDate: 1, createdAt: 1 });
+
+  let key = brandKey(brand);
+  if (!key) {
+    const brands = new Set();
+    for (const note of notes) {
+      for (const alloc of note.allocations || []) {
+        if (String(alloc.articleId) !== String(articleId)) continue;
+        const allocBrand = brandKey(alloc.brand);
+        if (allocBrand) brands.add(allocBrand);
+      }
+    }
+    if (brands.size !== 1) return { consumed: 0 };
+    key = [...brands][0];
+  }
+
+  let consumed = 0;
+  for (const note of notes) {
+    if (remaining <= 1e-9) break;
+    let changed = false;
+    const next = [];
+    for (const alloc of note.allocations || []) {
+      const sameArticle = String(alloc.articleId) === String(articleId);
+      const sameBrand = brandKey(alloc.brand) === key;
+      if (!sameArticle || !sameBrand || remaining <= 1e-9) {
+        next.push(plainAllocation(alloc));
+        continue;
+      }
+      const qty = Number(alloc.quantity) || 0;
+      const take = Math.min(qty, remaining);
+      remaining -= take;
+      consumed += take;
+      changed = true;
+      const left = qty - take;
+      if (left > 1e-9) {
+        next.push({ ...plainAllocation(alloc), quantity: left });
+      }
+    }
+    if (!changed) continue;
+    note.allocations = next;
+    note.markModified('allocations');
+    try {
+      await note.save();
+    } catch (err) {
+      throw new Error(
+        `Failed to release dispatch transfer-note lock on ${note.stnSerial || note._id}: ${err?.message || err}`
+      );
+    }
+  }
+
+  return { consumed };
 };

@@ -1,7 +1,7 @@
 import moment from 'moment';
 import config from '../../src/config/config.js';
 import { tokenTypes } from '../../src/config/tokens.js';
-import tokenService from '../../src/services/token.service.js';
+import * as tokenService from '../../src/services/token.service.js';
 import { userOne, admin } from './user.fixture.js';
 
 

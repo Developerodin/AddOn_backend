@@ -11,11 +11,12 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "cross-env NODE_ENV=development nodemon src/index.js",
-    "test": "jest -i --colors --verbose --detectOpenHandles",
+    "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest -i --colors --verbose --detectOpenHandles",
+    "eval": "cross-env NODE_ENV=test node scripts/runEvals.js",
     "test:esm": "cross-env NODE_OPTIONS=--experimental-vm-modules jest -i --colors --verbose --detectOpenHandles",
-    "test:watch": "jest -i --watchAll",
-    "coverage": "jest -i --coverage",
-    "coverage:coveralls": "jest -i --coverage --coverageReporters=text-lcov | coveralls",
+    "test:watch": "cross-env NODE_OPTIONS=--experimental-vm-modules jest -i --watchAll",
+    "coverage": "cross-env NODE_OPTIONS=--experimental-vm-modules jest -i --coverage",
+    "coverage:coveralls": "cross-env NODE_OPTIONS=--experimental-vm-modules jest -i --coverage --coverageReporters=text-lcov | coveralls",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "prettier": "prettier --check **/*.js",
@@ -105,6 +106,8 @@
     "prettier"
   ],
   "dependencies": {
+    "@ai-sdk/openai": "4.0.96",
+    "ai": "7.0.143",
     "aws-sdk": "^2.1692.0",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.4",
@@ -137,7 +140,8 @@
     "validator": "^13.0.0",
     "winston": "^3.2.1",
     "xlsx": "^0.18.5",
-    "xss-clean": "^0.1.4"
+    "xss-clean": "^0.1.4",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/dotenv": "^6.1.1",
@@ -152,7 +156,7 @@
     "eslint-plugin-prettier": "^3.1.1",
     "eslint-plugin-security": "^1.4.0",
     "faker": "^5.1.0",
-    "jest": "^26.0.1",
+    "jest": "^30.5.2",
     "lint-staged": "^11.0.0",
     "node-mocks-http": "^1.8.0",
     "nodemon": "^2.0.0",

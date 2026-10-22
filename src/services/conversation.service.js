@@ -44,7 +44,7 @@ const cleanupOldContexts = () => {
 };
 
 // Run cleanup every 30 minutes
-setInterval(cleanupOldContexts, 30 * 60 * 1000);
+setInterval(cleanupOldContexts, 30 * 60 * 1000).unref();
 
 /**
  * Build system prompt for natural conversation

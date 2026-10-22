@@ -774,12 +774,12 @@ export const getDispatchOrdersPendingWarehousePrint = async (floor, filter, opti
     })
     .filter((order) => (order.articles || []).length > 0);
 
-  const limit = options?.limit || 10;
+  // Keep the unfiltered paginate totals. Replacing totalPages with the filtered
+  // page length made transfer-note aggregation stop after page 1, so later
+  // dispatch orders stayed on Warehouse upcoming and never reached a TN.
   return {
     ...raw,
     results: mappedResults,
-    totalResults: mappedResults.length,
-    totalPages: mappedResults.length ? Math.ceil(mappedResults.length / limit) : 0,
   };
 };
 

@@ -44,8 +44,15 @@ app.use(express.urlencoded({
 app.use(xss());
 app.use(mongoSanitize());
 
-// gzip compression
-app.use(compression());
+// gzip compression. /v1/ai streams SSE; compressing it buffers the tokens.
+app.use(
+  compression({
+    filter: (req, res) => {
+      if (req.originalUrl && req.originalUrl.startsWith('/v1/ai')) return false;
+      return compression.filter(req, res);
+    },
+  })
+);
 
 // enable cors
 app.use(cors());

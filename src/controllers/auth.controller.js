@@ -10,7 +10,7 @@ import { logAuthEvent } from '../services/userActivityLog.service.js';
 
 
 const register = catchAsync(async (req, res) => {
-  const user = await createUser(req.body);
+  const user = await createUser({ ...req.body, role: 'user' });
   const tokens = await generateAuthTokens(user);
   logAuthEvent({ userId: user._id, action: 'register', req });
   res.status(httpStatus.CREATED).send({ user, tokens });

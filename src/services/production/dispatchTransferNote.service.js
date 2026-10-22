@@ -30,9 +30,9 @@ const collectAllPendingPrintOrders = async (filter = {}) => {
     // eslint-disable-next-line no-await-in-loop
     const batch = await getDispatchOrdersPendingWarehousePrint('Dispatch', filter, { page, limit });
     aggregated.push(...(batch.results || []));
-    totalPages = batch.totalPages || 1;
+    const reportedPages = Number(batch.totalPages);
+    totalPages = Number.isFinite(reportedPages) && reportedPages > 0 ? reportedPages : 1;
     page += 1;
-    if (!(batch.results || []).length) break;
   }
 
   return aggregated;

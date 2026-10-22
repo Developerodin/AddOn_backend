@@ -78,17 +78,43 @@ const getUserByEmail = async (email) => {
   return User.findOne({ email });
 };
 
+const ADMIN_ROLES = ['admin', 'super_admin'];
+
+/**
+ * Admin and super_admin may change roles and navigation. Self-updates do not qualify.
+ * @param {{ role?: string } | null | undefined} caller
+ * @returns {boolean}
+ */
+const isAdminCaller = (caller) => ADMIN_ROLES.includes(caller?.role);
+
+/**
+ * Reject a role write unless the caller is admin or super_admin.
+ * Password reset and email verification omit `role`, so they stay allowed.
+ * @param {Object} updateBody
+ * @param {{ role?: string } | null | undefined} caller
+ */
+const assertRoleChangeAllowed = (updateBody, caller) => {
+  if (updateBody.role === undefined) {
+    return;
+  }
+  if (!isAdminCaller(caller)) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'Forbidden');
+  }
+};
+
 /**
  * Update user by id
  * @param {ObjectId} userId
  * @param {Object} updateBody
+ * @param {{ role?: string } | null | undefined} [caller]
  * @returns {Promise<User>}
  */
-const updateUserById = async (userId, updateBody) => {
+const updateUserById = async (userId, updateBody, caller) => {
   const user = await getUserById(userId);
   if (!user) {
     throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
   }
+  assertRoleChangeAllowed(updateBody, caller);
   if (updateBody.email && (await User.isEmailTaken(updateBody.email, userId))) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Email already taken');
   }
@@ -104,12 +130,17 @@ const updateUserById = async (userId, updateBody) => {
 };
 
 /**
- * Update user navigation permissions by id
+ * Update user navigation permissions by id.
+ * Non-admins are rejected even when the target is themselves.
  * @param {ObjectId} userId
  * @param {Object} navigationBody
+ * @param {{ role?: string } | null | undefined} caller
  * @returns {Promise<User>}
  */
-const updateUserNavigationById = async (userId, navigationBody) => {
+const updateUserNavigationById = async (userId, navigationBody, caller) => {
+  if (!isAdminCaller(caller)) {
+    throw new ApiError(httpStatus.FORBIDDEN, 'Forbidden');
+  }
   const user = await getUserById(userId);
   if (!user) {
     throw new ApiError(httpStatus.NOT_FOUND, 'User not found');

@@ -5,7 +5,7 @@ import app from '../../src/app.js';
 import setupTestDB from '../utils/setupTestDB.js';
 import { insertUsers } from '../fixtures/user.fixture.js';
 import { admin } from '../fixtures/user.fixture.js';
-import tokenService from '../../src/services/token.service.js';
+import * as tokenService from '../../src/services/token.service.js';
 import config from '../../src/config/config.js';
 import { tokenTypes } from '../../src/config/tokens.js';
 

@@ -1,4 +1,6 @@
 module.exports = {
+  // Native ESM. Skip babel-jest so Node loads `import` and `node:` specifiers.
+  transform: {},
   testEnvironment: 'node',
   testEnvironmentOptions: {
     NODE_ENV: 'test',

@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import request from 'supertest';
 import faker from 'faker';
 import httpStatus from 'http-status';
@@ -16,8 +17,23 @@ import { tokenTypes } from '../../src/config/tokens';
 import { userOne, admin, insertUsers } from '../fixtures/user.fixture';
 import { userOneAccessToken, adminAccessToken } from '../fixtures/token.fixture';
 
-
 setupTestDB();
+
+/**
+ * Records sender calls from the nodemailer transport.
+ * ESM export bindings are read-only, so jest.spyOn cannot replace them.
+ * @param {import('@jest/globals').jest['fn']} spy
+ * @param {string} subjectNeedle
+ */
+function recordEmailCalls(spy, subjectNeedle) {
+  jest.spyOn(emailService.transport, 'sendMail').mockImplementation(async (msg) => {
+    if (!String(msg.subject).includes(subjectNeedle)) {
+      return;
+    }
+    const token = String(msg.text).match(/token=(\S+)/)?.[1];
+    spy(msg.to, token);
+  });
+}
 
 describe('Auth routes', () => {
   describe('POST /v1/auth/register', () => {
@@ -236,13 +252,15 @@ describe('Auth routes', () => {
   });
 
   describe('POST /v1/auth/forgot-password', () => {
+    const sendResetPasswordEmailSpy = jest.fn();
+
     beforeEach(() => {
-      jest.spyOn(emailService.transport, 'sendMail').mockResolvedValue();
+      sendResetPasswordEmailSpy.mockClear();
+      recordEmailCalls(sendResetPasswordEmailSpy, 'Reset password');
     });
 
     test('should return 204 and send reset password email to the user', async () => {
       await insertUsers([userOne]);
-      const sendResetPasswordEmailSpy = jest.spyOn(emailService, 'sendResetPasswordEmail');
 
       await request(app).post('/v1/auth/forgot-password').send({ email: userOne.email }).expect(httpStatus.NO_CONTENT);
 
@@ -357,13 +375,15 @@ describe('Auth routes', () => {
   });
 
   describe('POST /v1/auth/send-verification-email', () => {
+    const sendVerificationEmailSpy = jest.fn();
+
     beforeEach(() => {
-      jest.spyOn(emailService.transport, 'sendMail').mockResolvedValue();
+      sendVerificationEmailSpy.mockClear();
+      recordEmailCalls(sendVerificationEmailSpy, 'Email Verification');
     });
 
     test('should return 204 and send verification email to the user', async () => {
       await insertUsers([userOne]);
-      const sendVerificationEmailSpy = jest.spyOn(emailService, 'sendVerificationEmail');
 
       await request(app)
         .post('/v1/auth/send-verification-email')

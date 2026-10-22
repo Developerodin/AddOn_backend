@@ -13,7 +13,10 @@ import {
   createFinalQualityLog
 } from '../../utils/loggingHelper.js';
 import { createInwardReceivesForWarehouseAccept } from '../whms/inwardReceiveFromWarehouse.helper.js';
-import { computeConsumedPerDispatchRow } from '../../utils/dispatchWarehousePending.util.js';
+import {
+  computeConsumedPerDispatchRow,
+  consumeActiveDispatchStnAllocations,
+} from '../../utils/dispatchWarehousePending.util.js';
 import {
   brandKey,
   mergeTransferredDataByBrand,
@@ -1920,6 +1923,17 @@ export const updateArticleFloorReceivedData = async (articleId, payload) => {
   if (normalizedFloor === 'Warehouse' && typeof quantity === 'number' && quantity > 0) {
     const newLines = floorData.receivedData.slice(receivedDataLengthBefore);
     const containerId = payload.receivedData?.receivedInContainerId ?? null;
+    try {
+      for (const line of newLines) {
+        await consumeActiveDispatchStnAllocations({
+          articleId: article._id,
+          brand: line.brand,
+          quantity: line.transferred,
+        });
+      }
+    } catch (err) {
+      console.error('consumeActiveDispatchStnAllocations failed:', err?.message || err);
+    }
     try {
       await createInwardReceivesForWarehouseAccept(article, newLines, containerId);
     } catch (err) {

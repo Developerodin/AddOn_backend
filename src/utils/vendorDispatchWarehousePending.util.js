@@ -31,7 +31,10 @@ export const buildVendorStnAllocationMap = (allocationRows) => {
 };
 
 /**
- * Subtract vendor STN allocations from pending rows (per brand).
+ * Subtract open vendor STN locks from pending rows.
+ * One pool per flow + brand, shared across every transferredData row.
+ * Warehouse handoff releases locks in {@link consumeActiveVendorStnAllocations}.
+ * Past handoff qty is not subtracted here, or the next print repeats the same rows.
  * @param {Array<{ transferred?: number, styleCode?: string, brand?: string }>} pendingRows
  * @param {string|import('mongoose').Types.ObjectId} vendorProductionFlowId
  * @param {Map<string, number>} stnAllocMap
@@ -42,11 +45,18 @@ export const subtractVendorStnAllocationsFromPending = (
   vendorProductionFlowId,
   stnAllocMap
 ) => {
+  const allocLeft = new Map();
   const out = [];
   for (const row of pendingRows || []) {
     const key = vendorStnAllocationKey(vendorProductionFlowId, row.brand);
-    const allocated = stnAllocMap.get(key) || 0;
-    const pending = Math.max(0, (row.transferred || 0) - allocated);
+    if (!allocLeft.has(key)) {
+      allocLeft.set(key, Math.max(0, Number(stnAllocMap.get(key) || 0)));
+    }
+    const rowQty = Math.max(0, Number(row.transferred || 0));
+    const left = allocLeft.get(key) || 0;
+    const take = Math.min(rowQty, left);
+    allocLeft.set(key, left - take);
+    const pending = rowQty - take;
     if (pending > 0) {
       out.push({
         transferred: pending,
@@ -88,11 +98,7 @@ export const getPrintEligibleVendorDispatchTransferredData = (
     dispatchTransferredData,
     warehouseHandoffReceivedData
   );
-  return subtractVendorStnAllocationsFromPending(
-    warehousePending,
-    vendorProductionFlowId,
-    stnAllocMap
-  );
+  return subtractVendorStnAllocationsFromPending(warehousePending, vendorProductionFlowId, stnAllocMap);
 };
 
 /**
@@ -123,4 +129,91 @@ export const loadActiveVendorStnAllocationMap = async () => {
     .lean();
   const rows = docs.flatMap((doc) => doc.allocations || []);
   return buildVendorStnAllocationMap(rows);
+};
+
+/**
+ * Copy one vendor allocation subdocument to a plain object.
+ * @param {Object} alloc
+ * @returns {{ vendorProductionFlowId: unknown, brand: string, quantity: number }}
+ */
+const plainVendorAllocation = (alloc) => {
+  const plain = typeof alloc?.toObject === 'function' ? alloc.toObject() : { ...alloc };
+  return {
+    vendorProductionFlowId: plain.vendorProductionFlowId,
+    brand: plain.brand || '',
+    quantity: Number(plain.quantity) || 0,
+  };
+};
+
+/**
+ * Release active vendor-note locks for qty the warehouse just accepted.
+ * Oldest note first. Extra accept qty does not create a credit.
+ * A blank brand consumes the lock only when that flow has a single locked brand.
+ * @param {{ vendorProductionFlowId: unknown, brand?: string, quantity: number }} params
+ * @returns {Promise<{ consumed: number }>}
+ */
+export const consumeActiveVendorStnAllocations = async ({
+  vendorProductionFlowId,
+  brand,
+  quantity,
+} = {}) => {
+  let remaining = Number(quantity);
+  if (!vendorProductionFlowId || !Number.isFinite(remaining) || remaining <= 0) {
+    return { consumed: 0 };
+  }
+
+  const notes = await VendorDispatchStockTransferNote.find({
+    status: VendorDispatchStnStatus.ACTIVE,
+    'allocations.vendorProductionFlowId': vendorProductionFlowId,
+  }).sort({ stnDate: 1, createdAt: 1 });
+
+  let key = brandKey(brand);
+  if (!key) {
+    const brands = new Set();
+    for (const note of notes) {
+      for (const alloc of note.allocations || []) {
+        if (String(alloc.vendorProductionFlowId) !== String(vendorProductionFlowId)) continue;
+        const allocBrand = brandKey(alloc.brand);
+        if (allocBrand) brands.add(allocBrand);
+      }
+    }
+    if (brands.size !== 1) return { consumed: 0 };
+    key = [...brands][0];
+  }
+
+  let consumed = 0;
+  for (const note of notes) {
+    if (remaining <= 1e-9) break;
+    let changed = false;
+    const next = [];
+    for (const alloc of note.allocations || []) {
+      const sameFlow = String(alloc.vendorProductionFlowId) === String(vendorProductionFlowId);
+      const sameBrand = brandKey(alloc.brand) === key;
+      if (!sameFlow || !sameBrand || remaining <= 1e-9) {
+        next.push(plainVendorAllocation(alloc));
+        continue;
+      }
+      const qty = Number(alloc.quantity) || 0;
+      const take = Math.min(qty, remaining);
+      remaining -= take;
+      consumed += take;
+      changed = true;
+      const left = qty - take;
+      if (left > 1e-9) {
+        next.push({ ...plainVendorAllocation(alloc), quantity: left });
+      }
+    }
+    if (!changed) continue;
+    note.allocations = next;
+    note.markModified('allocations');
+    try {
+      await note.save();
+    } catch (err) {
+      throw new Error(
+        `Failed to release vendor transfer-note lock on ${note.stnSerial || note._id}: ${err?.message || err}`
+      );
+    }
+  }
+
+  return { consumed };
 };
