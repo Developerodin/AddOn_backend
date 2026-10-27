@@ -111,6 +111,10 @@ const userSchema = mongoose.Schema(
         'Replenishment Agent': false,
         'File Manager': false,
         'Help & Support': false,
+        Tasks: {
+          'Task Manager': false,
+          'My Tasks': false,
+        },
         Users: false,
         'Production Planning': {
           'Production Orders': false,

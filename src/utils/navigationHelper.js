@@ -43,6 +43,10 @@ export const DEFAULT_NAVIGATION = {
   'Replenishment Agent': false,
   'File Manager': false,
   'Help & Support': false,
+  Tasks: {
+    'Task Manager': false,
+    'My Tasks': false,
+  },
   Users: false,
   'Production Planning': {
     'Production Orders': false,
@@ -165,6 +169,10 @@ export const ROLE_NAVIGATION_TEMPLATES = {
     'Replenishment Agent': true,
     'File Manager': true,
     'Help & Support': false,
+    Tasks: {
+      'Task Manager': true,
+      'My Tasks': true,
+    },
     Users: true,
     'Production Planning': {
       'Production Orders': true,
@@ -282,6 +290,10 @@ export const ROLE_NAVIGATION_TEMPLATES = {
     'Replenishment Agent': false,
     'File Manager': false,
     'Help & Support': false,
+    Tasks: {
+      'Task Manager': false,
+      'My Tasks': false,
+    },
     Users: false,
     'Production Planning': {
       'Production Orders': false,
@@ -435,6 +447,30 @@ export const backfillMissingReports = (navigation) => {
   };
 };
 
+const BLANK_TASKS_NAV = { 'Task Manager': false, 'My Tasks': false };
+
+/**
+ * Keep the old boolean Tasks flag working: true opens both screens.
+ * @param {boolean | Object | undefined} source
+ * @param {boolean | Object | undefined} target
+ * @returns {{ 'Task Manager': boolean, 'My Tasks': boolean }}
+ */
+const normalizeTasksNavigation = (source, target) => {
+  const fromBoolean = (value) => ({ 'Task Manager': value === true, 'My Tasks': value === true });
+  if (source === true || source === false) return fromBoolean(source);
+  const base = target === true || target === false
+    ? fromBoolean(target)
+    : { ...BLANK_TASKS_NAV, ...(target && typeof target === 'object' ? target : {}) };
+  if (!source || typeof source !== 'object') {
+    if (target === undefined) return fromBoolean(true);
+    return base;
+  }
+  return {
+    'Task Manager': source['Task Manager'] ?? base['Task Manager'],
+    'My Tasks': source['My Tasks'] ?? base['My Tasks'],
+  };
+};
+
 /**
  * Merge navigation objects deeply
  * @param {Object} target - Target navigation object
@@ -447,6 +483,10 @@ export const mergeNavigation = (target, source, isRoot = true) => {
   const result = { ...target };
 
   for (const key in sourceFilled) {
+    if (key === 'Tasks') {
+      result.Tasks = normalizeTasksNavigation(sourceFilled.Tasks, result.Tasks);
+      continue;
+    }
     const sourceValue = sourceFilled[key];
     const targetValue = result[key];
 

@@ -13,6 +13,14 @@ const yarnIssueNavigationSchema = Joi.alternatives().try(
     .unknown(true)
 );
 
+const tasksNavigationSchema = Joi.alternatives().try(
+  Joi.boolean(),
+  Joi.object().keys({
+    'Task Manager': Joi.boolean(),
+    'My Tasks': Joi.boolean(),
+  })
+);
+
 const dashboardNavigationSchema = Joi.alternatives().try(
   Joi.boolean(),
   Joi.object()
@@ -75,6 +83,8 @@ const createUser = {
       Analytics: Joi.boolean(),
       'Replenishment Agent': Joi.boolean(),
       'File Manager': Joi.boolean(),
+      'Help & Support': Joi.boolean(),
+      Tasks: tasksNavigationSchema,
       Users: Joi.boolean(),
       'Production Planning': Joi.object().keys({
         'Production Orders': Joi.boolean(),
@@ -210,6 +220,8 @@ const updateUser = {
         Analytics: Joi.boolean(),
         'Replenishment Agent': Joi.boolean(),
         'File Manager': Joi.boolean(),
+        'Help & Support': Joi.boolean(),
+        Tasks: tasksNavigationSchema,
         Users: Joi.boolean(),
         'Production Planning': Joi.object().keys({
           'Production Orders': Joi.boolean(),
@@ -312,6 +324,8 @@ const updateUserNavigation = {
         Analytics: Joi.boolean(),
         'Replenishment Agent': Joi.boolean(),
         'File Manager': Joi.boolean(),
+        'Help & Support': Joi.boolean(),
+        Tasks: tasksNavigationSchema,
         Users: Joi.boolean(),
         'Production Planning': Joi.object().keys({
           'Production Orders': Joi.boolean(),

@@ -21,7 +21,13 @@ const whmsStagePermissions = [
 
 const agentPermissions = [...basePermissions, 'manageHelpSupportTickets', 'getHelpSupportAnalytics'];
 
-const adminPermissions = [...agentPermissions, 'manageUsers', 'deleteHelpSupportTickets', ...whmsStagePermissions];
+const adminPermissions = [
+  ...agentPermissions,
+  'manageUsers',
+  'manageTasks',
+  'deleteHelpSupportTickets',
+  ...whmsStagePermissions,
+];
 
 const allRoles = {
   user: basePermissions,
