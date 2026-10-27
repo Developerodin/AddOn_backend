@@ -113,7 +113,7 @@ const userSchema = mongoose.Schema(
         'Help & Support': false,
         Tasks: {
           'Task Manager': false,
-          'My Tasks': false,
+          'My Tasks': true,
         },
         Users: false,
         'Production Planning': {

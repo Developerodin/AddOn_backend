@@ -292,7 +292,7 @@ export const ROLE_NAVIGATION_TEMPLATES = {
     'Help & Support': false,
     Tasks: {
       'Task Manager': false,
-      'My Tasks': false,
+      'My Tasks': true,
     },
     Users: false,
     'Production Planning': {
@@ -450,19 +450,21 @@ export const backfillMissingReports = (navigation) => {
 const BLANK_TASKS_NAV = { 'Task Manager': false, 'My Tasks': false };
 
 /**
- * Keep the old boolean Tasks flag working: true opens both screens.
+ * Legacy boolean true opens My Tasks only. Task Manager stays off unless that flag is stored true.
  * @param {boolean | Object | undefined} source
  * @param {boolean | Object | undefined} target
  * @returns {{ 'Task Manager': boolean, 'My Tasks': boolean }}
  */
 const normalizeTasksNavigation = (source, target) => {
-  const fromBoolean = (value) => ({ 'Task Manager': value === true, 'My Tasks': value === true });
-  if (source === true || source === false) return fromBoolean(source);
+  const fromLegacyBoolean = (value) => ({
+    'Task Manager': false,
+    'My Tasks': value === true,
+  });
+  if (source === true || source === false) return fromLegacyBoolean(source);
   const base = target === true || target === false
-    ? fromBoolean(target)
+    ? fromLegacyBoolean(target)
     : { ...BLANK_TASKS_NAV, ...(target && typeof target === 'object' ? target : {}) };
   if (!source || typeof source !== 'object') {
-    if (target === undefined) return fromBoolean(true);
     return base;
   }
   return {

@@ -15,19 +15,18 @@ const STATUS_LABELS = {
 
 /**
  * True when the caller may open Task Manager and assign tasks.
- * A stored boolean true still counts.
+ * Missing and legacy boolean true do not grant this. Only the stored flag does.
  * @param {{ navigation?: { Tasks?: boolean | Object } }} user
  * @returns {boolean}
  */
 const canManage = (user) => {
   const tasks = user?.navigation?.Tasks;
-  if (tasks === undefined || tasks === true) return true;
-  if (tasks === false) return false;
   return Boolean(tasks && typeof tasks === 'object' && tasks['Task Manager'] === true);
 };
 
 /**
  * True when the caller may open My Tasks.
+ * Missing and legacy boolean true count as My Tasks. An explicit false does not.
  * @param {{ navigation?: { Tasks?: boolean | Object } }} user
  * @returns {boolean}
  */
