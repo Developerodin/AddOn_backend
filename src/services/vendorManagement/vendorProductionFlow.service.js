@@ -49,6 +49,10 @@ import {
   flowFilterFromBox,
   reconcileSecondaryCheckingFromBoxes,
 } from './vendorProductionFlowBoxReconcile.util.js';
+import {
+  preserveIncomingTransferredDelta,
+  resolveContainerTransferBreakdownSource,
+} from './vendorProductionFlowTransferAttribution.util.js';
 
 const VENDOR_CHECKING_FLOORS = new Set(['secondaryChecking', 'finalChecking']);
 
@@ -90,9 +94,7 @@ async function maybeAutoTransferVendorFloor(
   /** Per-line branding type on delta rows drives routing; flow-level type is legacy fallback only. */
   let brandingTransferType = flow?.brandingType;
   if (floorKey === 'branding' && bodyForPatch?.autoTransferToNextFloor === true) {
-    const deltaRows = Array.isArray(bodyForPatch?._incomingBrandingDelta)
-      ? bodyForPatch._incomingBrandingDelta
-      : bodyForPatch?.transferredData;
+    const deltaRows = resolveContainerTransferBreakdownSource(floorKey, bodyForPatch);
     try {
       brandingTransferType = resolveHomogeneousBrandingTypeFromRows(deltaRows, flow?.brandingType);
     } catch (err) {
@@ -224,10 +226,7 @@ async function maybeAutoTransferVendorFloor(
   );
 
   if (usesContainer) {
-    const breakdownSource =
-      floorKey === 'branding' && Array.isArray(bodyForPatch?._incomingBrandingDelta)
-        ? bodyForPatch._incomingBrandingDelta
-        : bodyForPatch?.transferredData;
+    const breakdownSource = resolveContainerTransferBreakdownSource(floorKey, bodyForPatch);
     const receiptRows = normalizeTransferBreakdownForReceipt(
       breakdownSource,
       transferable,
@@ -427,9 +426,9 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
       }
       const prior = flow.floorQuantities?.[floorKey]?.transferredData;
       if (bodyForPatch.transferredData.length > 0) {
-        /** Preserve incoming delta before merge — auto-transfer routing uses per-line branding type. */
+        /** Snapshot the client delta before merge. Container staging and branding-type routing use that delta, not the cumulative ledger. */
+        preserveIncomingTransferredDelta(floorKey, bodyForPatch);
         if (floorKey === 'branding') {
-          bodyForPatch._incomingBrandingDelta = [...bodyForPatch.transferredData];
           bodyForPatch.transferredData = mergeBrandingTransferredDataByLineKey(
             prior,
             bodyForPatch.transferredData,
