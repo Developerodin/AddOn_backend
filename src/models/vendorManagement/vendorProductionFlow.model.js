@@ -116,6 +116,21 @@ vendorProductionFlowSchema.plugin(paginate);
 vendorProductionFlowSchema.index({ vendor: 1, createdAt: -1 });
 vendorProductionFlowSchema.index({ vendorPurchaseOrder: 1 });
 
+/**
+ * Floor lists filter with $or (currentFloorKey, or that floor's received qty above 0,
+ * plus the other qty branches in queryVendorProductionFlows) and sort createdAt ascending.
+ * { vendor: 1, createdAt: -1 } cannot serve that: vendor is the prefix and the direction is reversed.
+ * Compound keys let each indexed $or branch walk in createdAt order.
+ */
+vendorProductionFlowSchema.index({ createdAt: 1 });
+vendorProductionFlowSchema.index({ currentFloorKey: 1, createdAt: 1 });
+for (const floorKey of vendorProductionFloorKeys) {
+  vendorProductionFlowSchema.index({
+    [`floorQuantities.${floorKey}.received`]: 1,
+    createdAt: 1,
+  });
+}
+
 const VendorProductionFlow = mongoose.model('VendorProductionFlow', vendorProductionFlowSchema);
 
 export default VendorProductionFlow;
