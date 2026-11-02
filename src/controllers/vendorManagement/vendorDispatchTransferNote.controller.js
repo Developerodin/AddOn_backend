@@ -2,6 +2,8 @@ import httpStatus from 'http-status';
 import pick from '../../utils/pick.js';
 import catchAsync from '../../utils/catchAsync.js';
 import * as vendorDispatchTransferNoteService from '../../services/vendorManagement/vendorDispatchTransferNote.service.js';
+import { getVendorDispatchTransferNoteReportRows } from '../../services/vendorManagement/vendorDispatchTransferNoteReport.service.js';
+import { queryAlreadyPrintedVendorNotes } from '../../services/vendorManagement/vendorDispatchTransferNoteReprint.service.js';
 
 /**
  * POST /vendor-management/dispatch/transfer-notes
@@ -26,6 +28,18 @@ export const previewVendorDispatchTransferNote = catchAsync(async (req, res) => 
 });
 
 /**
+ * GET /vendor-management/dispatch/transfer-notes/already-printed
+ */
+export const getAlreadyPrintedVendorDispatchTransferNotes = catchAsync(async (req, res) => {
+  const filter = pick(req.query, ['startDate', 'endDate', 'search']);
+  const options = pick(req.query, ['limit', 'page']);
+  if (options.limit) options.limit = parseInt(options.limit, 10);
+  if (options.page) options.page = parseInt(options.page, 10);
+  const result = await queryAlreadyPrintedVendorNotes(filter, options);
+  res.send(result);
+});
+
+/**
  * GET /vendor-management/dispatch/transfer-notes
  */
 export const getVendorDispatchTransferNotes = catchAsync(async (req, res) => {
@@ -42,7 +56,7 @@ export const getVendorDispatchTransferNotes = catchAsync(async (req, res) => {
  */
 export const getVendorDispatchTransferNoteReport = catchAsync(async (req, res) => {
   const filter = pick(req.query, ['startDate', 'endDate', 'search']);
-  const rows = await vendorDispatchTransferNoteService.getVendorDispatchTransferNoteReportRows(filter);
+  const rows = await getVendorDispatchTransferNoteReportRows(filter);
   res.send({ results: rows, totalResults: rows.length });
 });
 

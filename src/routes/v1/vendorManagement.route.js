@@ -152,6 +152,14 @@ router
   );
 
 router
+  .route('/dispatch/transfer-notes/already-printed')
+  .get(
+    auth(),
+    validate(vendorManagementValidation.getAlreadyPrintedVendorDispatchTransferNotes),
+    vendorDispatchTransferNoteController.getAlreadyPrintedVendorDispatchTransferNotes
+  );
+
+router
   .route('/dispatch/transfer-notes/:transferNoteId')
   .get(
     auth(),

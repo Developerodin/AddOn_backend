@@ -15,7 +15,6 @@ import {
   loadActiveVendorStnAllocationMap,
 } from '../../utils/vendorDispatchWarehousePending.util.js';
 
-const REPORT_MAX_ROWS = 10000;
 const VENDOR_WAREHOUSE_INWARD_FLOOR = 'Warehouse Inward';
 
 /**
@@ -223,7 +222,8 @@ const enrichStnLinesWithCatalogBrands = async (lines) => {
 };
 
 /**
- * Attach warehouse-inward staged containers to pending lines (vendor pipeline).
+ * Attach warehouse-inward staged containers to pending lines (best-effort).
+ * A missing barcode does not block the note; production dispatch works the same way.
  * @param {Array<Object>} lines
  * @returns {Promise<{ lines: Array<Object>, totalBoxes: number }>}
  */
@@ -274,31 +274,11 @@ const attachContainersToLines = async (lines) => {
 };
 
 /**
- * A note line is a physical box. Qty with no warehouse container must not print.
- * @param {Array<{ vpoNumber?: string, articleNumber?: string, qtyInPairs?: number, containerBarcodes?: unknown[] }>} lines
- */
-const assertLinesStagedOnWarehouseContainers = (lines) => {
-  const missing = (lines || []).filter(
-    (line) => Number(line.qtyInPairs) > 0 && !(line.containerBarcodes || []).length
-  );
-  if (!missing.length) return;
-  const shown = missing.slice(0, 8);
-  const detail = shown
-    .map((line) => `${line.vpoNumber || 'VPO'} ${line.articleNumber || ''} ${line.qtyInPairs}`.replace(/\s+/g, ' ').trim())
-    .join('; ');
-  const extra = missing.length > shown.length ? ` (+${missing.length - shown.length} more)` : '';
-  throw new ApiError(
-    httpStatus.BAD_REQUEST,
-    `Cannot print. These quantities are not in a warehouse container: ${detail}${extra}. Stage each on a container from Dispatch first.`
-  );
-};
-
-/**
  * Resolve invoice numbers for STN lines via vendor production flow referenceCode.
  * @param {Array<{ vendorProductionFlowId?: unknown, invoiceNumber?: string }>} lines
  * @returns {Promise<Map<string, string>>}
  */
-const resolveInvoiceNumbersByFlowId = async (lines) => {
+export const resolveInvoiceNumbersByFlowId = async (lines) => {
   const flowIds = [
     ...new Set(
       (lines || [])
@@ -360,7 +340,6 @@ export const createVendorDispatchTransferNote = async (body = {}, filter = {}, u
   const nameMap = await resolveArticleNamesByFactoryCode(factoryCodes);
   const brandMap = await resolveBrandLabelsByFactoryCode(factoryCodes);
   const { lines: linesWithContainers, totalBoxes } = await attachContainersToLines(flatLines);
-  assertLinesStagedOnWarehouseContainers(linesWithContainers);
 
   const stnLines = linesWithContainers.map((line) => mapLineToStnFields(line, nameMap, brandMap));
 
@@ -463,71 +442,6 @@ export const getVendorDispatchTransferNoteById = async (transferNoteId) => {
 };
 
 /**
- * Flat report rows for Excel export.
- * @param {Object} filter
- * @returns {Promise<Array<Object>>}
- */
-export const getVendorDispatchTransferNoteReportRows = async (filter = {}) => {
-  const mongoFilter = { status: VendorDispatchStnStatus.ACTIVE };
-
-  if (filter.startDate || filter.endDate) {
-    mongoFilter.stnDate = {};
-    if (filter.startDate) mongoFilter.stnDate.$gte = new Date(filter.startDate);
-    if (filter.endDate) {
-      const end = new Date(filter.endDate);
-      end.setHours(23, 59, 59, 999);
-      mongoFilter.stnDate.$lte = end;
-    }
-  }
-
-  if (filter.search) {
-    const term = String(filter.search).trim();
-    if (term) {
-      mongoFilter.$or = [
-        { stnSerial: new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
-        { categoryLabel: new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
-        { 'lines.articleNumber': new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
-      ];
-    }
-  }
-
-  const docs = await VendorDispatchStockTransferNote.find(mongoFilter)
-    .sort({ stnDate: -1 })
-    .limit(REPORT_MAX_ROWS)
-    .populate('createdBy', 'name email')
-    .lean();
-
-  const allLines = docs.flatMap((doc) => doc.lines || []);
-  const invoiceByFlowId = await resolveInvoiceNumbersByFlowId(allLines);
-
-  const rows = [];
-  for (const doc of docs) {
-    for (const line of doc.lines || []) {
-      const storedInvoice = String(line.invoiceNumber ?? '').trim();
-      const flowInvoice = invoiceByFlowId.get(String(line.vendorProductionFlowId ?? '')) || '';
-      rows.push({
-        stnSerial: doc.stnSerial,
-        stnDate: doc.stnDate,
-        categoryLabel: doc.categoryLabel,
-        totalQty: doc.totalQty,
-        totalBoxes: doc.totalBoxes,
-        vpoNumber: line.vpoNumber,
-        vendorName: line.vendorName,
-        invoiceNumber: storedInvoice || flowInvoice,
-        articleNumber: line.articleNumber,
-        sapArticleNo: line.sapArticleNo,
-        articleName: line.articleName,
-        brand: line.brand,
-        qtyInPairs: line.qtyInPairs,
-        containerBarcodes: (line.containerBarcodes || []).join(', '),
-        createdByName: doc.createdBy?.name || doc.createdBy?.email || '',
-      });
-    }
-  }
-  return rows;
-};
-
-/**
  * Preview pending print lines without creating an STN.
  * @param {Object} filter
  * @returns {Promise<{ lines: Array<Object>, totalQty: number }>}
@@ -541,7 +455,6 @@ export const previewVendorDispatchTransferNoteLines = async (filter = {}) => {
   const brandMap = await resolveBrandLabelsByFactoryCode(factoryCodes);
 
   const { lines: linesWithContainers } = await attachContainersToLines(flatLines);
-  assertLinesStagedOnWarehouseContainers(linesWithContainers);
 
   const lines = linesWithContainers.map((line) => {
     const mapped = mapLineToStnFields(line, nameMap, brandMap);
