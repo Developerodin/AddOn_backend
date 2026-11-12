@@ -6,6 +6,7 @@ import { createYarnTransaction } from './yarnTransaction.service.js';
 import { updateMachineOrderAssignmentById } from '../production/machineOrderAssignment.service.js';
 import { OrderStatus, YarnIssueStatus, YarnReturnStatus } from '../../models/production/enums.js';
 import logger from '../../config/logger.js';
+import { invalidateYarnStock } from './yarnReadCache.helper.js';
 
 const ISSUE_TX_TYPES = ['yarn_issued', 'yarn_issued_linking', 'yarn_issued_sampling'];
 
@@ -555,5 +556,6 @@ export async function processShortTermYarnReturnAllocate(options) {
 
   summary.moaCompleted = await maybeCompleteMoaYarnReturn(impactedPairs, dryRun);
 
+  if (!dryRun && summary.success > 0) await invalidateYarnStock('processShortTermYarnReturnAllocate');
   return { reportRows, summary };
 }

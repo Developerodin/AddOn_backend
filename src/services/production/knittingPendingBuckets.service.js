@@ -6,6 +6,7 @@ import {
   normalizeQueueStatus,
   resolveKnitPendingBucket,
 } from './knittingQueueStatus.js';
+import { cachedRead, ProductionCacheResource, ProductionCacheTtl } from './productionCache.helper.js';
 
 /**
  * Classifies every article's remaining knitting quantity into buckets, so the
@@ -237,7 +238,21 @@ export const loadQueueAssignments = async () =>
  *   orphanArticleCount: number
  * }>}
  */
-export const getKnittingPendingBuckets = async ({ orderIds } = {}) => {
+export const getKnittingPendingBuckets = async ({ orderIds } = {}) =>
+  cachedRead({
+    resource: ProductionCacheResource.REPORTS,
+    operation: 'getKnittingPendingBuckets',
+    input: { orderIds: (orderIds || []).map(String) },
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: () => loadKnittingPendingBuckets({ orderIds }),
+  });
+
+/**
+ * Uncached source for {@link getKnittingPendingBuckets}.
+ * @param {{ orderIds?: import('mongoose').Types.ObjectId[] }} [options]
+ * @returns {Promise<Object>} Same payload as the cached wrapper.
+ */
+const loadKnittingPendingBuckets = async ({ orderIds } = {}) => {
   const [orders, assignments, allArticles] = await Promise.all([
     ProductionOrder.find(orderIds ? { _id: { $in: orderIds } } : {})
       .select('_id orderNumber orderNote articles')

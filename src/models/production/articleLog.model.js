@@ -116,10 +116,17 @@ const articleLogSchema = new mongoose.Schema({
 
 // Indexes for performance
 articleLogSchema.index({ articleId: 1, date: 1 });
+articleLogSchema.index({ articleId: 1, timestamp: -1 });
 articleLogSchema.index({ orderId: 1, date: 1 });
 articleLogSchema.index({ action: 1, date: 1 });
 articleLogSchema.index({ userId: 1, date: 1 });
 articleLogSchema.index({ fromFloor: 1, toFloor: 1, date: 1 });
+// Log listings and reports filter on `timestamp` ranges and sort by `timestamp`,
+// while the pre-existing indexes above only cover the `date` field.
+articleLogSchema.index({ timestamp: -1 });
+articleLogSchema.index({ orderId: 1, timestamp: -1 });
+articleLogSchema.index({ action: 1, timestamp: -1 });
+articleLogSchema.index({ userId: 1, timestamp: -1 });
 
 // Apply plugins
 articleLogSchema.plugin(paginate);

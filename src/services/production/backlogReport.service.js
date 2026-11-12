@@ -3,6 +3,11 @@ import { Article, ArticleLog } from '../../models/production/index.js';
 import ApiError from '../../utils/ApiError.js';
 import { ALL_FLOOR_KEYS, getFloorKeyFromName } from '../../utils/floorLabelMap.js';
 import { loadUpcomingByFloor } from './backlogUpcoming.util.js';
+import {
+  cachedRead,
+  ProductionCacheResource,
+  ProductionCacheTtl,
+} from './productionCache.helper.js';
 
 const TIMEZONE = 'Asia/Kolkata';
 const CACHE_TTL_MS = 60 * 1000;
@@ -303,7 +308,23 @@ const loadTransferLogs = (monthEndExclusive) =>
  * @param {{ year?: number|string, month?: number|string }} query
  * @returns {Promise<object>}
  */
-export const getBacklogReport = async (query = {}) => {
+export const getBacklogReport = async (query = {}) =>
+  cachedRead({
+    resource: ProductionCacheResource.REPORTS,
+    operation: 'getBacklogReport',
+    input: { query },
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: () => loadBacklogReport(query),
+    // Never persist an in-process cache hit: it carries a frozen cacheAgeMs.
+    shouldCache: (value) => value?.cached !== true,
+  });
+
+/**
+ * Uncached source for {@link getBacklogReport}.
+ * @param {{ year?: number|string, month?: number|string }} query
+ * @returns {Promise<object>}
+ */
+const loadBacklogReport = async (query = {}) => {
   const period = resolvePeriod(query);
   const cacheKey = `backlog-v4:${period.year}:${period.month}`;
   const cached = cache.get(cacheKey);

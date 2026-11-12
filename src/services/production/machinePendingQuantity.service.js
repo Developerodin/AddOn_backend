@@ -4,6 +4,7 @@ import ApiError from '../../utils/ApiError.js';
 import Machine from '../../models/machine.model.js';
 import MachineOrderAssignment from '../../models/production/machineOrderAssignment.model.js';
 import { isLiveQueueStatus } from './knittingQueueStatus.js';
+import { cachedRead, ProductionCacheResource, ProductionCacheTtl } from './productionCache.helper.js';
 
 /**
  * Resolve Mongo id from populated or raw ref.
@@ -85,7 +86,21 @@ export const getMachinePendingQuantityById = async (machineId) => {
   if (!mongoose.Types.ObjectId.isValid(machineId)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid machine id');
   }
+  return cachedRead({
+    resource: ProductionCacheResource.ASSIGNMENTS,
+    operation: 'getMachinePendingQuantityById',
+    input: { machineId: String(machineId) },
+    ttlSeconds: ProductionCacheTtl.LIVE,
+    loader: () => loadMachinePendingQuantityById(machineId),
+  });
+};
 
+/**
+ * Uncached source for {@link getMachinePendingQuantityById}.
+ * @param {import('mongoose').Types.ObjectId|string} machineId
+ * @returns {Promise<Object>} Same payload as the cached wrapper.
+ */
+const loadMachinePendingQuantityById = async (machineId) => {
   const [machine, assignment] = await Promise.all([
     Machine.findById(machineId).select('machineCode activeNeedle').lean(),
     MachineOrderAssignment.findOne({ machine: machineId, isActive: true })
@@ -134,6 +149,21 @@ export const getMachinePendingQuantitiesByIds = async (machineIds) => {
     throw new ApiError(httpStatus.BAD_REQUEST, `Invalid machine id(s): ${invalid.join(', ')}`);
   }
 
+  return cachedRead({
+    resource: ProductionCacheResource.ASSIGNMENTS,
+    operation: 'getMachinePendingQuantitiesByIds',
+    input: { machineIds: uniqueIds },
+    ttlSeconds: ProductionCacheTtl.LIVE,
+    loader: () => loadMachinePendingQuantitiesByIds(uniqueIds),
+  });
+};
+
+/**
+ * Uncached source for {@link getMachinePendingQuantitiesByIds}.
+ * @param {string[]} uniqueIds - Validated, de-duplicated machine ids.
+ * @returns {Promise<Object>} Same payload as the cached wrapper.
+ */
+const loadMachinePendingQuantitiesByIds = async (uniqueIds) => {
   const objectIds = uniqueIds.map((id) => new mongoose.Types.ObjectId(id));
 
   const [machines, assignments] = await Promise.all([

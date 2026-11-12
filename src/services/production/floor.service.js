@@ -10,6 +10,7 @@ import {
   aggregateFloorStats,
   isQcFloorKey
 } from '../../utils/floorLabelMap.js';
+import { cachedRead, ProductionCacheResource, ProductionCacheTtl } from './productionCache.helper.js';
 
 /**
  * Get floor statistics
@@ -17,7 +18,22 @@ import {
  * @param {Object} dateRange
  * @returns {Promise<Object>}
  */
-export const getFloorStatistics = async (floor, dateRange = {}) => {
+export const getFloorStatistics = async (floor, dateRange = {}) =>
+  cachedRead({
+    resource: ProductionCacheResource.FLOOR_STATS,
+    operation: 'getFloorStatistics',
+    input: { floor, dateRange },
+    ttlSeconds: ProductionCacheTtl.LIVE,
+    loader: () => loadFloorStatistics(floor, dateRange),
+  });
+
+/**
+ * Uncached source for {@link getFloorStatistics}.
+ * @param {string} floor
+ * @param {Object} dateRange
+ * @returns {Promise<Object>}
+ */
+const loadFloorStatistics = async (floor, dateRange = {}) => {
   const { dateFrom, dateTo } = dateRange;
   
   // Validate floor using comprehensive floor list
@@ -80,7 +96,7 @@ const calculateRealTimeStatistics = async (floor, startDate, endDate) => {
   // Get articles with WIP on this floor
   const articlesWithWip = await Article.find({
     [`floorQuantities.${floorKey}.remaining`]: { $gt: 0 }
-  }).select('orderId status floorQuantities startedAt completedAt');
+  }).select('orderId status floorQuantities startedAt completedAt').lean();
 
   // Count unique orders with articles on this floor
   const orderIds = [...new Set(articlesWithWip.map(a => a.orderId?.toString()).filter(Boolean))];
@@ -88,7 +104,7 @@ const calculateRealTimeStatistics = async (floor, startDate, endDate) => {
   // Get order status counts
   const orders = await ProductionOrder.find({
     _id: { $in: orderIds }
-  }).select('status');
+  }).select('status').lean();
 
   const activeOrders = orders.filter(o => o.status === 'In Progress').length;
   const pendingOrders = orders.filter(o => o.status === 'Pending').length;
@@ -99,7 +115,7 @@ const calculateRealTimeStatistics = async (floor, startDate, endDate) => {
   const articlesToday = await Article.find({
     [`floorQuantities.${floorKey}.transferred`]: { $gt: 0 },
     updatedAt: { $gte: new Date(today) }
-  }).select('floorQuantities');
+  }).select('floorQuantities').lean();
 
   const completedToday = articlesToday.reduce((sum, a) => {
     return sum + (a.floorQuantities?.[floorKey]?.transferred || 0);
@@ -114,7 +130,7 @@ const calculateRealTimeStatistics = async (floor, startDate, endDate) => {
     status: 'Completed',
     startedAt: { $exists: true, $ne: null },
     completedAt: { $exists: true, $ne: null }
-  }).select('startedAt completedAt').limit(100);
+  }).select('startedAt completedAt').limit(100).lean();
 
   let averageProcessingTime = 0;
   if (completedArticles.length > 0) {
@@ -221,7 +237,7 @@ export const getFloorPerformanceMetrics = async (floor, dateRange = {}) => {
   const articles = await Article.find({
     [`floorQuantities.${floorKey}.received`]: { $gt: 0 },
     updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-  }).select('status floorQuantities startedAt completedAt');
+  }).select('status floorQuantities startedAt completedAt').lean();
 
   // Calculate metrics
   const totalArticles = articles.length;
@@ -338,7 +354,7 @@ export const getFloorWorkloadDistribution = async (dateRange = {}) => {
           { [`floorQuantities.${floorKey}.remaining`]: { $gt: 0 } }
         ],
         updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-      }).select('floorQuantities');
+      }).select('floorQuantities').lean();
 
       const stats = aggregateFloorStats(articles, floorKey);
 
@@ -378,7 +394,7 @@ export const getFloorBottleneckAnalysis = async (dateRange = {}) => {
       const articlesOnFloor = await Article.find({
         [`floorQuantities.${floorKey}.remaining`]: { $gt: 0 },
         updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-      }).select('floorQuantities startedAt completedAt status');
+      }).select('floorQuantities startedAt completedAt status').lean();
 
       // Get articles waiting from previous floor (transferred but not received on this floor)
       const previousFloorKey = index > 0 ? ALL_FLOOR_KEYS[index - 1] : null;
@@ -391,7 +407,7 @@ export const getFloorBottleneckAnalysis = async (dateRange = {}) => {
           [`floorQuantities.${previousFloorKey}.transferred`]: { $gt: 0 },
           [`floorQuantities.${floorKey}.received`]: 0,
           updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-        }).select('floorQuantities');
+        }).select('floorQuantities').lean();
 
         waitingCount = waitingArticles.length;
         waitingQuantity = waitingArticles.reduce((sum, a) => {

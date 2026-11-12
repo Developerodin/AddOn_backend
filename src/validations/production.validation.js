@@ -39,10 +39,13 @@ const getProductionOrders = {
     customerOrderNumber: Joi.string(),
     createdBy: Joi.string().custom(objectId),
     lastModifiedBy: Joi.string().custom(objectId),
+    search: Joi.string().allow('').max(80),
     sortBy: Joi.string(),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
-    populate: Joi.string()
+    populate: Joi.string(),
+    /** `list` = lean supervisor table (projected articles, no machines/logs). */
+    view: Joi.string().valid('list'),
   }),
 };
 

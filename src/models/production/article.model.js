@@ -496,6 +496,16 @@ const articleSchema = new mongoose.Schema({
 
 // Indexes for performance
 articleSchema.index({ articleNumber: 1 });
+articleSchema.index({ articleNumber: 1, createdAt: -1 });
+articleSchema.index({ orderId: 1, articleNumber: 1 });
+articleSchema.index(
+  { articleNumber: 1 },
+  { name: 'articleNumber_ci', collation: { locale: 'en', strength: 2 } }
+);
+articleSchema.index(
+  { knittingCode: 1 },
+  { name: 'knittingCode_ci', collation: { locale: 'en', strength: 2 } }
+);
 articleSchema.index({ orderId: 1 });
 // Removed currentFloor index - using flow-based system
 articleSchema.index({ status: 1 });
@@ -503,6 +513,9 @@ articleSchema.index({ priority: 1 });
 articleSchema.index({ machineId: 1 });
 articleSchema.index({ createdAt: -1 });
 articleSchema.index({ 'floorQuantities.knitting.received': 1, orderId: 1 });
+// Floor/M3/M4 listings and trend reports range-filter or sort on updatedAt.
+articleSchema.index({ updatedAt: -1 });
+articleSchema.index({ status: 1, updatedAt: -1 });
 
 // Virtual for progress calculation based on floor quantities
 articleSchema.virtual('calculatedProgress').get(function() {

@@ -40,6 +40,14 @@ router
   .get(auth(), validate(containersMasterValidation.getContainerByBarcode), containersMasterController.getContainerByBarcode)
   .patch(auth(), validate(containersMasterValidation.updateContainerByBarcode), containersMasterController.updateContainerByBarcode);
 
+router
+  .route('/floors/upcoming-summary')
+  .get(
+    auth(),
+    validate(containersMasterValidation.getUpcomingFloorSummary),
+    containersMasterController.getUpcomingFloorSummary
+  );
+
 /** All containers for a floor (activeFloor / linking) with articles + quantities per container */
 router
   .route('/by-floor/:activeFloor/with-articles')

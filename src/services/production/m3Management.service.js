@@ -1,8 +1,22 @@
 import httpStatus from 'http-status';
 import { Article, M3Log, ProductionOrder, M3LogType } from '../../models/production/index.js';
 import ApiError from '../../utils/ApiError.js';
+import {
+  cachedRead,
+  invalidateProductionData,
+  ProductionCacheResource,
+  ProductionCacheTtl,
+} from './productionCache.helper.js';
 
 const M3_FLOOR_KEYS = ['checking', 'secondaryChecking', 'finalChecking'];
+
+/** Exactly the fields {@link computeM3Snapshot} reads, for the KPI roll-up. */
+const M3_STATISTICS_SELECT = [
+  'floorQuantities.checking.m3Quantity',
+  'floorQuantities.secondaryChecking.m3Quantity',
+  'floorQuantities.finalChecking.m3Quantity',
+  'm3Tracking.outwardTotal',
+].join(' ');
 
 const FLOOR_KEY_TO_LABEL = {
   checking: 'Checking',
@@ -156,6 +170,8 @@ export const markM3Outward = async (articleId, body, user = {}) => {
     floorSupervisorId: user?.id || 'system',
   });
 
+  await invalidateProductionData('markM3Outward');
+
   return {
     article: {
       id: article.id,
@@ -210,7 +226,22 @@ const buildArticleM3Filter = (filter = {}) => {
  * @param {Object} options
  * @returns {Promise<Object>}
  */
-export const getM3Articles = async (filter = {}, options = {}) => {
+export const getM3Articles = async (filter = {}, options = {}) =>
+  cachedRead({
+    resource: ProductionCacheResource.M3,
+    operation: 'getM3Articles',
+    input: { filter, options },
+    ttlSeconds: ProductionCacheTtl.LIVE,
+    loader: () => loadM3Articles(filter, options),
+  });
+
+/**
+ * Uncached source for {@link getM3Articles}.
+ * @param {Object} filter
+ * @param {Object} options
+ * @returns {Promise<Object>}
+ */
+const loadM3Articles = async (filter = {}, options = {}) => {
   const mongoFilter = buildArticleM3Filter(filter);
   const page = options.page || 1;
   const limit = options.limit || 50;
@@ -263,7 +294,22 @@ export const getM3Articles = async (filter = {}, options = {}) => {
  * @param {Object} options
  * @returns {Promise<Object>}
  */
-export const getM3ArticleSummary = async (articleId, options = {}) => {
+export const getM3ArticleSummary = async (articleId, options = {}) =>
+  cachedRead({
+    resource: ProductionCacheResource.M3,
+    operation: 'getM3ArticleSummary',
+    input: { articleId: String(articleId), options },
+    ttlSeconds: ProductionCacheTtl.LIVE,
+    loader: () => loadM3ArticleSummary(articleId, options),
+  });
+
+/**
+ * Uncached source for {@link getM3ArticleSummary}.
+ * @param {string} articleId
+ * @param {Object} options
+ * @returns {Promise<Object>}
+ */
+const loadM3ArticleSummary = async (articleId, options = {}) => {
   const article = await findArticleById(articleId);
   if (!article) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Article not found');
@@ -295,7 +341,22 @@ export const getM3ArticleSummary = async (articleId, options = {}) => {
  * @param {Object} options
  * @returns {Promise<Object>}
  */
-export const getM3Logs = async (filter = {}, options = {}) => {
+export const getM3Logs = async (filter = {}, options = {}) =>
+  cachedRead({
+    resource: ProductionCacheResource.M3,
+    operation: 'getM3Logs',
+    input: { filter, options },
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: () => loadM3Logs(filter, options),
+  });
+
+/**
+ * Uncached source for {@link getM3Logs}.
+ * @param {Object} filter
+ * @param {Object} options
+ * @returns {Promise<Object>}
+ */
+const loadM3Logs = async (filter = {}, options = {}) => {
   const logFilter = {};
 
   if (filter.articleId) logFilter.articleId = filter.articleId;
@@ -327,8 +388,21 @@ export const getM3Logs = async (filter = {}, options = {}) => {
  * Aggregate KPI stats for M3 Management dashboard.
  * @returns {Promise<Object>}
  */
-export const getM3Statistics = async () => {
-  const articles = await Article.find(buildArticleM3Filter()).lean();
+export const getM3Statistics = async () =>
+  cachedRead({
+    resource: ProductionCacheResource.M3,
+    operation: 'getM3Statistics',
+    input: {},
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: loadM3Statistics,
+  });
+
+/**
+ * Uncached source for {@link getM3Statistics}.
+ * @returns {Promise<Object>}
+ */
+const loadM3Statistics = async () => {
+  const articles = await Article.find(buildArticleM3Filter()).select(M3_STATISTICS_SELECT).lean();
   let totalOnHand = 0;
   let totalOutwarded = 0;
   let totalAvailable = 0;

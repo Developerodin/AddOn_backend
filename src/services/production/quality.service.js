@@ -1,6 +1,7 @@
 import httpStatus from 'http-status';
 import { Article, ArticleLog } from '../../models/production/index.js';
 import ApiError from '../../utils/ApiError.js';
+import { invalidateProductionData } from './productionCache.helper.js';
 
 /**
  * Update quality categories for an article in Checking or Final Checking
@@ -134,6 +135,8 @@ export const updateQualityCategories = async (articleId, qualityData) => {
     });
   }
 
+  await invalidateProductionData('updateQualityCategories');
+
   return article;
 };
 
@@ -238,6 +241,8 @@ export const shiftM2Items = async (articleId, shiftData) => {
     });
   }
 
+  await invalidateProductionData('shiftM2Items');
+
   return {
     article,
     shiftDetails: {
@@ -307,6 +312,8 @@ export const confirmFinalQuality = async (articleId, confirmData) => {
     floorSupervisorId,
     qualityStatus: confirmed ? 'Approved for Dispatch' : 'Rejected'
   });
+
+  await invalidateProductionData('confirmFinalQuality');
 
   return {
     article,
@@ -393,6 +400,8 @@ export const forwardToWarehouse = async (orderId, forwardData) => {
     userId,
     floorSupervisorId
   });
+
+  await invalidateProductionData('forwardToWarehouse');
 
   return {
     order,

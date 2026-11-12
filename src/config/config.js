@@ -40,6 +40,10 @@ const envVarsSchema = Joi.object()
       .default('index.php?route=extension/addon/whms_sync.receive')
       .description('OpenCart WHMS receive route path'),
     WEBSITE_ORDER_SYNC_ALLOWED_IPS: Joi.string().allow('').default(''),
+    REDIS_URL: Joi.string()
+      .allow('')
+      .default('')
+      .description('optional Redis connection string for read caching; empty disables the cache'),
     ...syncEnvKeys,
   })
   .unknown();
@@ -93,6 +97,10 @@ const config = {
   },
   openai: {
     apiKey: envVars.OPENAI_API_KEY,
+  },
+  redis: {
+    // Empty string means "no cache": every read goes straight to Mongo.
+    url: envVars.REDIS_URL || '',
   },
   integrations: {
     websiteOrderSyncApiKey: envVars.WEBSITE_ORDER_SYNC_API_KEY || '',

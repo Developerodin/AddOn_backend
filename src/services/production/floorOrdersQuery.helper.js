@@ -74,14 +74,69 @@ export function getFullFloorOrderPopulate() {
   };
 }
 
+const FLOOR_QTY_KEYS = [
+  'knitting',
+  'linking',
+  'checking',
+  'washing',
+  'boarding',
+  'silicon',
+  'secondaryChecking',
+  'branding',
+  'reBoarding',
+  'finalChecking',
+  'warehouse',
+  'dispatch',
+];
+
+const FLOOR_QTY_SCALARS = [
+  'received',
+  'completed',
+  'remaining',
+  'transferred',
+  'm1Quantity',
+  'm2Quantity',
+  'm3Quantity',
+  'm4Quantity',
+  'm1Transferred',
+  'm1Remaining',
+  'm2Transferred',
+  'm2Remaining',
+  'repairReceived',
+  'repairStatus',
+  'repairRemarks',
+  'weight',
+];
+
+/**
+ * Article fields for a floor catalog. Scalars for every floor, line history only for the open floor.
+ * Omits the machine join and the other floors' receivedData arrays, which are the bulk of the 2MB payload.
+ * @param {string} [floorKey] - floorQuantities key for the page being opened, such as `finalChecking`
+ * @returns {string}
+ */
+export function getFloorListArticleSelect(floorKey) {
+  const parts = [ARTICLE_VIEW_ARTICLE_SELECT];
+  for (const key of FLOOR_QTY_KEYS) {
+    for (const field of FLOOR_QTY_SCALARS) {
+      parts.push(`floorQuantities.${key}.${field}`);
+    }
+  }
+  if (floorKey) {
+    parts.push(`floorQuantities.${floorKey}.receivedData`);
+    parts.push(`floorQuantities.${floorKey}.transferredData`);
+  }
+  return parts.join(' ');
+}
+
 /**
  * Lean article populate for article-view payloads (no machine join).
+ * @param {string} [floorKey] - floorQuantities key whose transfer lines the page renders
  * @returns {object}
  */
-export function getArticleViewPopulate() {
+export function getArticleViewPopulate(floorKey) {
   return {
     path: 'articles',
-    select: ARTICLE_VIEW_ARTICLE_SELECT,
+    select: getFloorListArticleSelect(floorKey),
   };
 }
 

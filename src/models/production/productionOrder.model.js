@@ -73,12 +73,23 @@ const productionOrderSchema = new mongoose.Schema({
 productionOrderSchema.plugin(toJSON);
 productionOrderSchema.plugin(paginate);
 
-// Indexes for performance
+// Indexes for performance.
+// Mongoose autoIndex builds these on startup. If autoIndex is off in production, run
+// ProductionOrder.syncIndexes() once so equality filters + createdAt sort stay covered.
 productionOrderSchema.index({ orderNumber: 1 });
 productionOrderSchema.index({ status: 1 });
 productionOrderSchema.index({ priority: 1 });
 productionOrderSchema.index({ currentFloor: 1 });
 productionOrderSchema.index({ currentFloor: 1, status: 1, createdAt: -1 });
+productionOrderSchema.index({ status: 1, createdAt: -1 });
+productionOrderSchema.index({ priority: 1, createdAt: -1 });
+productionOrderSchema.index({ currentFloor: 1, createdAt: -1 });
+productionOrderSchema.index({ status: 1, priority: 1, currentFloor: 1, createdAt: -1 });
+productionOrderSchema.index({ articles: 1 });
+productionOrderSchema.index(
+  { orderNumber: 1 },
+  { name: 'orderNumber_ci', collation: { locale: 'en', strength: 2 } }
+);
 productionOrderSchema.index({ createdAt: -1 });
 productionOrderSchema.index({ createdBy: 1 });
 productionOrderSchema.index({ lastModifiedBy: 1 });

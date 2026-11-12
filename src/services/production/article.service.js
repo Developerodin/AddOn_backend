@@ -31,6 +31,7 @@ import { ProductionFloor } from '../../models/production/enums.js';
 import logger from '../../config/logger.js';
 import { captureArticleFloorTransfer, isApplyPilotEnabled } from '../sync/syncPilotCapture.js';
 import { captureArticleFloorReceive, captureFloorMove, safeCapture } from '../sync/syncOwnershipCapture.js';
+import { invalidateProductionData } from './productionCache.helper.js';
 
 /** Floors that support brand/style breakdown via transferItems / transferredData (same shape as Branding → Final Checking). */
 const FLOORS_WITH_STYLE_TRANSFER_ITEMS = ['Branding', 'Final Checking', 'Dispatch', 'Re-Boarding'];
@@ -664,6 +665,8 @@ export const updateArticleProgress = async (floor, orderId, articleId, updateDat
   // This function was causing conflicts and double-counting issues
   await checkAndTransferPreviousFloorWork(article, updateData, user, normalizedFloor);
 
+  await invalidateProductionData('updateArticleProgress');
+
   // Return fresh article from DB so transfer/transferredData changes are persisted and visible
   const updated = await Article.findById(article._id)
     .populate('machineId', 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor');
@@ -1009,6 +1012,8 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
     logger.error(`[sync] productionArticleFloorTransfer capture threw: ${syncErr && syncErr.message}`);
   }
 
+  await invalidateProductionData('transferArticle');
+
   return {
     article,
     transferDetails: {
@@ -1123,6 +1128,8 @@ export const transferM2ForRepair = async (floor, orderId, articleId, repairData,
     floorSupervisorId: user?.id || repairData.floorSupervisorId || 'system',
     remarks: repairData.remarks || `M2 repair transfer: ${quantity} repairable items sent back to ${result.targetFloor} for repair`
   });
+
+  await invalidateProductionData('transferM2ForRepair');
 
   return {
     article,
@@ -1515,6 +1522,8 @@ export const bulkUpdateArticles = async (updates, batchSize = 50) => {
     throw new ApiError(httpStatus.BAD_REQUEST, error.message);
   }
 
+  await invalidateProductionData('bulkUpdateArticles');
+
   return results;
 };
 
@@ -1551,6 +1560,10 @@ export const fixCompletionStatus = async (orderId = null) => {
       }
     }
     
+    if (fixedCount > 0) {
+      await invalidateProductionData('fixCompletionStatus');
+    }
+
     return {
       success: true,
       message: `Fixed completion status for ${fixedCount} articles`,
@@ -1579,7 +1592,9 @@ export const fixDataCorruption = async (articleId) => {
     if (fixResult.fixed) {
       await article.save();
       console.log(`✅ Fixed data corruption for article ${article.articleNumber}:`, fixResult.fixes);
-      
+
+      await invalidateProductionData('fixDataCorruption');
+
       return {
         success: true,
         articleId: article._id,
@@ -1618,6 +1633,8 @@ export const updateArticleBrandingType = async (articleId, brandingType) => {
 
   article.brandingType = brandingType;
   await article.save();
+
+  await invalidateProductionData('updateArticleBrandingType');
 
   return Article.findById(articleId)
     .populate('machineId', 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor');
@@ -1740,6 +1757,8 @@ export const revertFloorTransfer = async (articleId, payload, user = null) => {
   } catch (logError) {
     console.error('Error creating transfer revert log:', logError);
   }
+
+  await invalidateProductionData('revertFloorTransfer');
 
   return Article.findById(articleId)
     .populate('machineId', 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor');
@@ -2006,6 +2025,8 @@ export const updateArticleFloorReceivedData = async (articleId, payload) => {
       })
     );
   }
+
+  await invalidateProductionData('updateArticleFloorReceivedData');
 
   return article;
 };
@@ -2356,6 +2377,8 @@ export const qualityInspection = async (articleId, inspectionData, user = null) 
   
   // REMOVED: The second transfer was causing double-counting
   // The transferM1ToNextFloor function already handles tracking transferred quantities
+
+  await invalidateProductionData('qualityInspection');
 
   return article;
 };

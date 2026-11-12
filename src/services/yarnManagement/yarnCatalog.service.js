@@ -4,6 +4,13 @@ import { YarnCatalog, YarnType, CountSize, Color, Blend } from '../../models/ind
 import ApiError from '../../utils/ApiError.js';
 import { captureMasterCreated, safeCapture } from '../sync/syncOwnershipCapture.js';
 import { OWNERSHIP_ENTITY_TYPES, OWNERSHIP_EVENT_TYPES } from '../sync/syncOwnershipTypes.js';
+import {
+  cachedYarnRead,
+  YarnCacheResource,
+  YarnCacheTtl,
+  invalidateYarnCatalogs,
+  invalidateYarnStock,
+} from './yarnReadCache.helper.js';
 
 /**
  * Convert IDs to embedded objects for yarn catalog
@@ -206,6 +213,8 @@ export const createYarnCatalog = async (yarnCatalogBody) => {
   await safeCapture('yarnCatalogCreated', () =>
     captureMasterCreated(OWNERSHIP_ENTITY_TYPES.YARN_CATALOG, OWNERSHIP_EVENT_TYPES.YARN_CATALOG_CREATED, yarnCatalog)
   );
+  await invalidateYarnCatalogs('createYarnCatalog');
+  await invalidateYarnStock('createYarnCatalog');
   return yarnCatalog;
 };
 
@@ -219,20 +228,24 @@ export const createYarnCatalog = async (yarnCatalogBody) => {
  * @returns {Promise<QueryResult>}
  */
 export const queryYarnCatalogs = async (filter, options) => {
-  const mongooseFilter = { ...filter };
-  
-  // Convert yarnName to regex for partial/fuzzy search (case-insensitive)
-  // Escape special regex characters to allow matching of special characters like ( ) / - etc.
-  if (mongooseFilter.yarnName) {
-    const yarnNameValue = String(mongooseFilter.yarnName).trim();
-    // Escape special regex characters: . * + ? ^ $ { } [ ] \ | ( )
-    // This allows searching for yarn names with special characters like "70/2-Black (New)-Black (New)-Nylon/Nylon"
-    const escapedYarnName = yarnNameValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    mongooseFilter.yarnName = { $regex: escapedYarnName, $options: 'i' };
-  }
-  
-  const yarnCatalogs = await YarnCatalog.paginate(mongooseFilter, options);
-  return yarnCatalogs;
+  return cachedYarnRead({
+    resource: YarnCacheResource.CATALOGS,
+    operation: 'queryYarnCatalogs',
+    input: { filter, options },
+    ttlSeconds: YarnCacheTtl.SLOW,
+    loader: async () => {
+      const mongooseFilter = { ...filter };
+
+      if (mongooseFilter.yarnName) {
+        const yarnNameValue = String(mongooseFilter.yarnName).trim();
+        const escapedYarnName = yarnNameValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        mongooseFilter.yarnName = { $regex: escapedYarnName, $options: 'i' };
+      }
+
+      const yarnCatalogs = await YarnCatalog.paginate(mongooseFilter, options);
+      return yarnCatalogs;
+    },
+  });
 };
 
 /**
@@ -288,7 +301,13 @@ function escapeRegex(str) {
  * @returns {Promise<YarnCatalog>}
  */
 export const getYarnCatalogById = async (id) => {
-  return YarnCatalog.findById(id);
+  return cachedYarnRead({
+    resource: YarnCacheResource.CATALOGS,
+    operation: 'getYarnCatalogById',
+    input: { id },
+    ttlSeconds: YarnCacheTtl.SLOW,
+    loader: () => YarnCatalog.findById(id),
+  });
 };
 
 /**
@@ -308,6 +327,8 @@ export const updateYarnCatalogById = async (yarnCatalogId, updateBody) => {
 
   Object.assign(yarnCatalog, processedBody);
   await yarnCatalog.save();
+  await invalidateYarnCatalogs('updateYarnCatalogById');
+  await invalidateYarnStock('updateYarnCatalogById');
   return yarnCatalog;
 };
 
@@ -322,6 +343,8 @@ export const deleteYarnCatalogById = async (yarnCatalogId) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Yarn catalog not found');
   }
   await yarnCatalog.deleteOne();
+  await invalidateYarnCatalogs('deleteYarnCatalogById');
+  await invalidateYarnStock('deleteYarnCatalogById');
   return yarnCatalog;
 };
 
@@ -454,7 +477,9 @@ export const bulkImportYarnCatalogs = async (yarnCatalogs, batchSize = 50) => {
     results.processingTime = endTime - startTime;
     
     console.log(`Bulk import yarn catalogs completed in ${results.processingTime}ms: ${results.created} created, ${results.updated} updated, ${results.failed} failed`);
-    
+
+    await invalidateYarnCatalogs('bulkImportYarnCatalogs');
+    await invalidateYarnStock('bulkImportYarnCatalogs');
     return results;
     
   } catch (error) {

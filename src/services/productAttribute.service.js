@@ -22,6 +22,11 @@ export const createProductAttribute = async (attributeBody) => {
  * @returns {Promise<QueryResult>}
  */
 export const queryProductAttributes = async (filter, options, search) => {
+  const nextFilter = { ...(filter || {}) };
+  if (nextFilter.name && typeof nextFilter.name === 'string') {
+    const escaped = nextFilter.name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    nextFilter.name = { $regex: `^${escaped}$`, $options: 'i' };
+  }
   // Handle search parameter - search across multiple fields
   if (search && typeof search === 'string' && search.trim()) {
     const searchTerm = search.trim();
@@ -40,13 +45,15 @@ export const queryProductAttributes = async (filter, options, search) => {
     };
     
     // Combine search filter with existing filter using $and
-    if (Object.keys(filter).length > 0) {
+    if (Object.keys(nextFilter).length > 0) {
       filter = {
-        $and: [filter, searchFilter],
+        $and: [nextFilter, searchFilter],
       };
     } else {
       filter = searchFilter;
     }
+  } else {
+    filter = nextFilter;
   }
   // attributeType exact filter if provided
   if (filter.attributeType) {

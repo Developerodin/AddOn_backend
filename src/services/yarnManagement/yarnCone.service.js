@@ -20,6 +20,7 @@ import {
   isStLocation,
   requireActiveStorageSlot,
 } from './storageLocation.helper.js';
+import { cachedYarnRead, YarnCacheResource, YarnCacheTtl, invalidateYarnStock } from './yarnReadCache.helper.js';
 
 /** Types that assign a cone to a production order + article (same as article-return-slice). */
 const ISSUE_TX_TYPES_FOR_CONE_LINK = ['yarn_issued', 'yarn_issued_linking', 'yarn_issued_sampling'];
@@ -230,6 +231,7 @@ export const createYarnCone = async (yarnConeBody) => {
   const yarnCone = await YarnCone.create(yarnConeBody);
   // Factory sync: post-commit, own try/catch (safeCapture). Never changes the response.
   await safeCapture('yarnConeCreated', () => captureYarnConeCreated(yarnCone));
+  await invalidateYarnStock('createYarnCone');
   return yarnCone;
 };
 
@@ -271,6 +273,7 @@ export const updateYarnConeById = async (yarnConeId, updateBody) => {
   if (updateBody.issueStatus === 'issued' && previousStatus !== 'issued') {
     await safeCapture('yarnConeProductionIssued', () => captureYarnConeProductionIssued(yarnCone));
   }
+  await invalidateYarnStock('updateYarnConeById');
   return yarnCone;
 };
 
@@ -456,6 +459,7 @@ export const bulkSetConeStorageLocation = async (payload) => {
   const updatedCones = await YarnCone.find({ $or: idFilter })
     .populate({ path: 'yarnCatalogId', select: '_id yarnName yarnType status' })
     .lean();
+  await invalidateYarnStock('bulkSetConeStorageLocation');
   return {
     message: `Updated storage location for ${result.modifiedCount} cone(s)`,
     modifiedCount: result.modifiedCount,
@@ -552,6 +556,7 @@ export const relocateCone = async (payload = {}) => {
     toStorageLocation: destBarcode,
   });
 
+  await invalidateYarnStock('relocateCone');
   return {
     message: `Relocated cone ${cone.barcode} from ${fromLocation} to ${destBarcode}`,
     cone,
@@ -561,7 +566,7 @@ export const relocateCone = async (payload = {}) => {
   };
 };
 
-export const queryYarnCones = async (filters = {}) => {
+const _queryYarnCones = async (filters = {}) => {
   const includeInactive = filters.include_inactive === true || filters.include_inactive === 'true';
   const mongooseFilter = includeInactive ? {} : { ...activeYarnConeMatch };
 
@@ -619,6 +624,15 @@ export const queryYarnCones = async (filters = {}) => {
 
   return yarnCones;
 };
+
+export const queryYarnCones = async (filters = {}) =>
+  cachedYarnRead({
+    resource: YarnCacheResource.CONES,
+    operation: 'queryYarnCones',
+    input: { filters },
+    ttlSeconds: YarnCacheTtl.LIVE,
+    loader: () => _queryYarnCones(filters),
+  });
 
 export const generateConesByBox = async (boxId, options = {}) => {
   const yarnBox = await YarnBox.findOne({ boxId, ...activeYarnBoxMatch });
@@ -754,6 +768,7 @@ export const generateConesByBox = async (boxId, options = {}) => {
 
   const updatedBox = await YarnBox.findById(yarnBox._id).lean();
 
+  await invalidateYarnStock('generateConesByBox');
   return {
     message: `Successfully created ${createdCones.length} cones for box ${boxId}`,
     created: true,
@@ -886,6 +901,7 @@ export const returnYarnCone = async (barcode, returnData = {}) => {
     ? `Cone ${barcode} returned empty (weight set to 0)`
     : `Cone ${barcode} returned with ${returnWeight}kg remaining yarn and stored in short-term storage`;
 
+  await invalidateYarnStock('returnYarnCone');
   return {
     cone: yarnCone.toObject(),
     isEmpty,

@@ -22,6 +22,7 @@ import {
   aggregateFloorStats,
   isQcFloorKey
 } from '../../utils/floorLabelMap.js';
+import { cachedRead, ProductionCacheResource } from './productionCache.helper.js';
 
 /**
  * Simple in-memory TTL cache
@@ -42,8 +43,17 @@ const CACHE_TTL = {
   reconciliation: 5 * 60 * 1000 // 5 minutes
 };
 
+/** Redis never holds a panel longer than this, whatever the in-memory TTL is. */
+const REDIS_TTL_CEILING_SECONDS = 120;
+
 /**
- * Get from cache or compute
+ * Get from cache or compute.
+ * The in-memory map stays the first layer; Redis backs it so a panel computed
+ * by one process is reused by the others instead of every worker recomputing.
+ * @param {string} key
+ * @param {number} ttl - In-memory lifetime in milliseconds.
+ * @param {() => Promise<Object>} computeFn
+ * @returns {Promise<Object>}
  */
 const getCached = async (key, ttl, computeFn) => {
   const now = Date.now();
@@ -57,7 +67,13 @@ const getCached = async (key, ttl, computeFn) => {
     };
   }
   
-  const result = await computeFn();
+  const result = await cachedRead({
+    resource: ProductionCacheResource.DASHBOARD,
+    operation: 'panel',
+    input: { key },
+    ttlSeconds: Math.min(Math.round(ttl / 1000), REDIS_TTL_CEILING_SECONDS),
+    loader: computeFn
+  });
   cache.set(key, { data: result, timestamp: now });
   
   return {

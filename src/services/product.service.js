@@ -243,8 +243,19 @@ export const queryProducts = async (filter, options, search) => {
       finalFilter = { $and: andConditions };
     }
 
-    // Add default population for category; avoid styleCodes populate to prevent casting errors on legacy docs
-    if (!queryOptions.populate) {
+    // Add default population for category unless the caller asked for a field projection.
+    const fieldSelect = queryOptions.fields
+      ? String(queryOptions.fields)
+          .split(',')
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+          .join(' ')
+      : '';
+    if (fieldSelect) {
+      delete queryOptions.fields;
+      queryOptions.select = fieldSelect;
+      queryOptions.lean = true;
+    } else if (!queryOptions.populate) {
       queryOptions.populate = 'category';
     } else {
       const segments = new Set(queryOptions.populate.split(',').map((entry) => entry.trim()).filter(Boolean));
@@ -305,25 +316,30 @@ export const getProductsByIds = async (ids) => {
  * @param {string[]} factoryCodes
  * @returns {Promise<Product[]>}
  */
-export const getProductsByFactoryCodes = async (factoryCodes) => {
+export const getProductsByFactoryCodes = async (factoryCodes, options = {}) => {
   if (!Array.isArray(factoryCodes) || factoryCodes.length === 0) {
     return [];
   }
-  const trimmed = factoryCodes.map((c) => String(c || '').trim()).filter(Boolean);
+  const trimmed = [...new Set(factoryCodes.map((code) => String(code || '').trim()).filter(Boolean))];
   if (trimmed.length === 0) return [];
 
-  const filter = {
-    $or: trimmed.map((c) => ({ factoryCode: new RegExp(`^${escapeRegex(c)}$`, 'i') })),
-  };
+  const query = Product.find({ factoryCode: { $in: trimmed } }).collation({ locale: 'en', strength: 2 });
+  if (options.view === 'card') {
+    return query.select('factoryCode name image').lean();
+  }
+  if (options.view === 'bom') {
+    return query
+      .select('factoryCode name knittingCode attributes bom')
+      .populate('bom.yarnCatalogId', 'yarnName yarnType')
+      .lean();
+  }
 
-  const products = await Product.find(filter)
+  return query
     .populate('category', 'name')
     .populate('bom.yarnCatalogId', 'yarnName yarnType countSize blend colorFamily')
     .populate('processes.processId', 'name type')
     .populate('styleCodes')
     .lean();
-
-  return products;
 };
 
 /**

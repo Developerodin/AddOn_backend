@@ -5,6 +5,7 @@ import ApiError from '../../utils/ApiError.js';
 import { activeYarnBoxMatch, activeYarnConeMatch } from './yarnStockActiveFilters.js';
 import * as yarnTransactionService from './yarnTransaction.service.js';
 import { syncBoxLtRemainingFromCones } from './yarnBoxLtRemaining.sync.js';
+import { invalidateYarnStock } from './yarnReadCache.helper.js';
 import {
   isLtLocation,
   isStLocation,
@@ -256,6 +257,7 @@ export const transferBoxes = async (transferData) => {
     'ST_TO_ST': `from short-term to short-term`,
   };
 
+  await invalidateYarnStock('transferBoxes');
   return {
     message: `Successfully transferred ${boxes.length} box(es) ${transferTypeMessages[transferType]} (${destBarcode})`,
     transferType,

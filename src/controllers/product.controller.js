@@ -30,7 +30,7 @@ export const getProducts = catchAsync(async (req, res) => {
   console.log('Clean filter:', cleanFilter);
   
   // Only pick allowed options
-  const allowedOptions = ['sortBy', 'limit', 'page', 'populate'];
+  const allowedOptions = ['sortBy', 'limit', 'page', 'populate', 'fields'];
   const options = pick(req.query, allowedOptions);
   
   // Ensure limit and page are numbers
@@ -126,8 +126,8 @@ export const getProductByCode = catchAsync(async (req, res) => {
 });
 
 export const getProductsByFactoryCodes = catchAsync(async (req, res) => {
-  const { factoryCodes } = req.body;
-  const products = await productService.getProductsByFactoryCodes(factoryCodes);
+  const { factoryCodes, view } = req.body;
+  const products = await productService.getProductsByFactoryCodes(factoryCodes, { view });
   res.send(products);
 });
 

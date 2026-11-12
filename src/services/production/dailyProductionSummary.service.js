@@ -9,6 +9,11 @@ import {
   ROW_KIND_M1,
   getVisibleRows,
 } from './dailyProductionSummaryRows.js';
+import {
+  cachedRead,
+  ProductionCacheResource,
+  ProductionCacheTtl,
+} from './productionCache.helper.js';
 
 /**
  * Daily Production Summary report.
@@ -341,7 +346,23 @@ const buildWarnings = ({ transferMeta, rows, includeExtraRows }) => {
  * @param {{ year?: number|string, month?: number|string, includeExtraRows?: boolean }} [query]
  * @returns {Promise<object>} Rows by floor/defect bucket, columns by IST calendar date.
  */
-export const getDailyProductionSummary = async (query = {}) => {
+export const getDailyProductionSummary = async (query = {}) =>
+  cachedRead({
+    resource: ProductionCacheResource.REPORTS,
+    operation: 'getDailyProductionSummary',
+    input: { query },
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: () => loadDailyProductionSummary(query),
+    // Never persist an in-process cache hit: it carries a frozen cacheAgeMs.
+    shouldCache: (value) => value?.cached !== true,
+  });
+
+/**
+ * Uncached source for {@link getDailyProductionSummary}.
+ * @param {{ year?: number|string, month?: number|string, includeExtraRows?: boolean }} [query]
+ * @returns {Promise<object>}
+ */
+const loadDailyProductionSummary = async (query = {}) => {
   const period = resolveIstMonthPeriod(query);
   const includeExtraRows = query.includeExtraRows === true || query.includeExtraRows === 'true';
 

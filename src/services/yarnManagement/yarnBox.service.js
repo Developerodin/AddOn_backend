@@ -16,6 +16,12 @@ import {
   isCartonEmptyByMovedCount,
 } from './yarnBoxLtRemaining.helper.js';
 import { countMovedConesForBoxId } from './yarnBoxLtRemaining.sync.js';
+import {
+  cachedYarnRead,
+  YarnCacheResource,
+  YarnCacheTtl,
+  invalidateYarnStock,
+} from './yarnReadCache.helper.js';
 
 const LT_STORAGE_PATTERN = new RegExp(`^(LT-|${LT_SECTION_CODES.map((s) => `${s}-`).join('|')})`, 'i');
 // Hide only boxes that are explicitly consumed (fully converted to cones and emptied).
@@ -71,15 +77,24 @@ export const createYarnBox = async (yarnBoxBody) => {
   }
 
   const yarnBox = await YarnBox.create(body);
+  await invalidateYarnStock('createYarnBox');
   return yarnBox;
 };
 
 export const getYarnBoxById = async (yarnBoxId) => {
-  const yarnBox = await YarnBox.findOne({ _id: yarnBoxId, ...ACTIVE_BOX_FILTER });
-  if (!yarnBox) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'Yarn box not found');
-  }
-  return yarnBox;
+  return cachedYarnRead({
+    resource: YarnCacheResource.BOXES,
+    operation: 'getYarnBoxById',
+    input: { yarnBoxId },
+    ttlSeconds: YarnCacheTtl.LIVE,
+    loader: async () => {
+      const yarnBox = await YarnBox.findOne({ _id: yarnBoxId, ...ACTIVE_BOX_FILTER });
+      if (!yarnBox) {
+        throw new ApiError(httpStatus.NOT_FOUND, 'Yarn box not found');
+      }
+      return yarnBox;
+    },
+  });
 };
 
 /**
@@ -302,10 +317,21 @@ export const updateYarnBoxById = async (yarnBoxId, updateBody) => {
       console.error('[YarnBox] failed syncing cones from box:', e?.message || e);
     }
   }
+  await invalidateYarnStock('updateYarnBoxById');
   return yarnBox;
 };
 
 export const queryYarnBoxes = async (filters = {}) => {
+  return cachedYarnRead({
+    resource: YarnCacheResource.BOXES,
+    operation: 'queryYarnBoxes',
+    input: { filters },
+    ttlSeconds: YarnCacheTtl.LIVE,
+    loader: () => _queryYarnBoxes(filters),
+  });
+};
+
+const _queryYarnBoxes = async (filters = {}) => {
   const includeInactive = filters.include_inactive === true || filters.include_inactive === 'true';
   const mongooseFilter = includeInactive ? {} : { ...ACTIVE_BOX_FILTER };
 
@@ -482,6 +508,7 @@ export const bulkCreateYarnBoxes = async (bulkData) => {
           }).sort({ createdAt: -1 })
         : [];
 
+    await invalidateYarnStock('bulkCreateYarnBoxes');
     return {
       message: `No new boxes needed for PO ${poNumber} (all lots at or above requested count)`,
       existingBoxesByLot,
@@ -511,6 +538,7 @@ export const bulkCreateYarnBoxes = async (bulkData) => {
     ? `Created ${totalBoxes} new box(es) across ${createdLots.length} lot(s); ${skippedLots.length} lot(s) needed no new boxes`
     : `Successfully created ${totalBoxes} boxes for PO ${poNumber}`;
   
+  await invalidateYarnStock('bulkCreateYarnBoxes');
   return {
     message,
     createdCount: totalBoxes,
@@ -595,6 +623,7 @@ export const bulkMatchUpdateYarnBoxes = async (payload) => {
     });
   }
 
+  await invalidateYarnStock('bulkMatchUpdateYarnBoxes');
   return {
     message: `Updated ${updated.length} box(es), ${failed.length} failed`,
     updatedCount: updated.length,
@@ -729,6 +758,7 @@ export const bulkSetBoxStorageLocation = async (payload) => {
   const result = await YarnBox.updateMany(filter, { $set: { storageLocation: String(storageLocation).trim() } });
 
   const updatedBoxes = await YarnBox.find({ $or: idFilter }).lean();
+  await invalidateYarnStock('bulkSetBoxStorageLocation');
   return {
     message: `Updated storage location for ${result.modifiedCount} box(es)`,
     modifiedCount: result.modifiedCount,
@@ -794,6 +824,7 @@ export const updateQcStatusByPoNumber = async (poNumber, qcStatus, qcData = {}) 
     }
   }
 
+  await invalidateYarnStock('updateQcStatusByPoNumber');
   return {
     message: `Successfully updated QC status to ${qcStatus} for ${updateResult.modifiedCount} boxes`,
     poNumber,
@@ -878,6 +909,7 @@ export const resetBoxesWeightToZeroIfStConesPresent = async ({ poNumber, dryRun 
     }
   }
 
+  if (!dryRun && fixed > 0) await invalidateYarnStock('resetBoxesWeightToZeroIfStConesPresent');
   return {
     message: dryRun
       ? `Dry-run: would reset ${fixed} box(es) for PO ${normalizedPo}`
@@ -1051,6 +1083,7 @@ export const backfillLtBoxWeightFromStCones = async ({ dryRun = false, limit, on
     await YarnBox.updateOne({ _id: box._id }, update);
   }
 
+  if (!dryRun && updated > 0) await invalidateYarnStock('backfillLtBoxWeightFromStCones');
   return {
     message: dryRun
       ? `Dry-run: would update ${updated} LT box(es) from ST cones`
@@ -1136,6 +1169,7 @@ export const archiveUnusedPlaceholderYarnBoxesByIds = async (yarnBoxMongoIds) =>
     archived.push(idStr);
   }
 
+  if (archived.length > 0) await invalidateYarnStock('archiveUnusedPlaceholderYarnBoxesByIds');
   return { archived, failed };
 };
 

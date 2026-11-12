@@ -1,6 +1,12 @@
 import httpStatus from 'http-status';
 import { ArticleLog, Article, ProductionOrder } from '../../models/production/index.js';
 import ApiError from '../../utils/ApiError.js';
+import {
+  cachedRead,
+  invalidateProductionData,
+  ProductionCacheResource,
+  ProductionCacheTtl,
+} from './productionCache.helper.js';
 
 /**
  * Get logs for a specific article
@@ -32,12 +38,17 @@ export const getArticleLogs = async (articleId, filter = {}, options = {}) => {
     ];
   }
 
-  const logs = await ArticleLog.paginate(logFilter, {
-    ...options,
-    sortBy: options.sortBy || 'timestamp:desc',
+  return cachedRead({
+    resource: ProductionCacheResource.LOGS,
+    operation: 'getArticleLogs',
+    input: { logFilter, options },
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: () =>
+      ArticleLog.paginate(logFilter, {
+        ...options,
+        sortBy: options.sortBy || 'timestamp:desc',
+      }),
   });
-
-  return logs;
 };
 
 /**
@@ -70,12 +81,17 @@ export const getOrderLogs = async (orderId, filter = {}, options = {}) => {
     ];
   }
 
-  const logs = await ArticleLog.paginate(logFilter, {
-    ...options,
-    sortBy: options.sortBy || 'timestamp:desc',
+  return cachedRead({
+    resource: ProductionCacheResource.LOGS,
+    operation: 'getOrderLogs',
+    input: { logFilter, options },
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: () =>
+      ArticleLog.paginate(logFilter, {
+        ...options,
+        sortBy: options.sortBy || 'timestamp:desc',
+      }),
   });
-
-  return logs;
 };
 
 /**
@@ -115,13 +131,18 @@ export const getFloorLogs = async (floor, filter, options) => {
     logFilter.userId = filter.userId;
   }
 
-  const logs = await ArticleLog.paginate(logFilter, {
-    ...options,
-    sortBy: 'timestamp:desc',
-    populate: 'articleId orderId'
+  return cachedRead({
+    resource: ProductionCacheResource.LOGS,
+    operation: 'getFloorLogs',
+    input: { logFilter, options },
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: () =>
+      ArticleLog.paginate(logFilter, {
+        ...options,
+        sortBy: 'timestamp:desc',
+        populate: 'articleId orderId'
+      }),
   });
-
-  return logs;
 };
 
 /**
@@ -161,13 +182,18 @@ export const getUserLogs = async (userId, filter, options) => {
     ];
   }
 
-  const logs = await ArticleLog.paginate(logFilter, {
-    ...options,
-    sortBy: 'timestamp:desc',
-    populate: 'articleId orderId'
+  return cachedRead({
+    resource: ProductionCacheResource.LOGS,
+    operation: 'getUserLogs',
+    input: { logFilter, options },
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: () =>
+      ArticleLog.paginate(logFilter, {
+        ...options,
+        sortBy: 'timestamp:desc',
+        populate: 'articleId orderId'
+      }),
   });
-
-  return logs;
 };
 
 /**
@@ -175,7 +201,21 @@ export const getUserLogs = async (userId, filter, options) => {
  * @param {Object} filter
  * @returns {Promise<Object>}
  */
-export const getLogStatistics = async (filter) => {
+export const getLogStatistics = async (filter) =>
+  cachedRead({
+    resource: ProductionCacheResource.LOGS,
+    operation: 'getLogStatistics',
+    input: filter,
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: () => loadLogStatistics(filter),
+  });
+
+/**
+ * Uncached source for {@link getLogStatistics}.
+ * @param {Object} filter
+ * @returns {Promise<Object>}
+ */
+const loadLogStatistics = async (filter) => {
   const {
     dateFrom,
     dateTo,
@@ -258,32 +298,31 @@ export const getLogStatistics = async (filter) => {
     { $sort: { '_id': 1 } }
   ];
 
-  const statistics = await ArticleLog.aggregate(pipeline);
-
-  // Get action breakdown
-  const actionBreakdown = await ArticleLog.aggregate([
-    { $match: matchFilter },
-    {
-      $group: {
-        _id: '$action',
-        count: { $sum: 1 },
-        totalQuantity: { $sum: '$quantity' }
-      }
-    },
-    { $sort: { count: -1 } }
-  ]);
-
-  // Get floor breakdown
-  const floorBreakdown = await ArticleLog.aggregate([
-    { $match: matchFilter },
-    {
-      $group: {
-        _id: '$fromFloor',
-        count: { $sum: 1 },
-        totalQuantity: { $sum: '$quantity' }
-      }
-    },
-    { $sort: { count: -1 } }
+  // The three aggregations are independent, so run them together.
+  const [statistics, actionBreakdown, floorBreakdown] = await Promise.all([
+    ArticleLog.aggregate(pipeline),
+    ArticleLog.aggregate([
+      { $match: matchFilter },
+      {
+        $group: {
+          _id: '$action',
+          count: { $sum: 1 },
+          totalQuantity: { $sum: '$quantity' }
+        }
+      },
+      { $sort: { count: -1 } }
+    ]),
+    ArticleLog.aggregate([
+      { $match: matchFilter },
+      {
+        $group: {
+          _id: '$fromFloor',
+          count: { $sum: 1 },
+          totalQuantity: { $sum: '$quantity' }
+        }
+      },
+      { $sort: { count: -1 } }
+    ]),
   ]);
 
   return {
@@ -295,129 +334,7 @@ export const getLogStatistics = async (filter) => {
   };
 };
 
-/**
- * Get audit trail for an order
- * @param {ObjectId} orderId
- * @param {Object} options
- * @returns {Promise<Object>}
- */
-export const getAuditTrail = async (orderId, options) => {
-  const { includeSystemLogs = true, includeUserActions = true } = options;
-
-  const order = await ProductionOrder.findById(orderId).populate('articles');
-  if (!order) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'Production order not found');
-  }
-
-  const logFilter = { orderId };
-
-  // Filter by log type
-  if (!includeSystemLogs || !includeUserActions) {
-    const actionFilters = [];
-    
-    if (includeSystemLogs) {
-      actionFilters.push({
-        action: {
-          $in: [
-            'Order Created', 'Order Updated', 'Order Completed',
-            'Article Added', 'Article Updated', 'Article Removed',
-            'Transferred to Knitting', 'Transferred to Linking',
-            'Transferred to Checking', 'Transferred to Washing',
-            'Transferred to Boarding', 'Transferred to Branding', 'Transferred to Re-Boarding',
-            'Transferred to Final Checking', 'Transferred to Warehouse', 'Transferred to Dispatch',
-            'Quality Check Started', 'Quality Check Completed',
-            'M1 Quantity Updated', 'M2 Quantity Updated',
-            'M3 Quantity Updated', 'M4 Quantity Updated',
-            'Final Quality Confirmed', 'Final Quality Rejected'
-          ]
-        }
-      });
-    }
-    
-    if (includeUserActions) {
-      actionFilters.push({
-        action: {
-          $in: [
-            'Work Started', 'Work Paused', 'Work Resumed', 'Work Completed',
-            'Quantity Updated', 'Progress Updated', 'Remarks Added', 'Remarks Updated',
-            'User Login', 'User Logout', 'Permission Changed', 'Password Changed',
-            'Profile Updated', 'Error Occurred', 'Issue Reported', 'Issue Resolved'
-          ]
-        }
-      });
-    }
-
-    if (actionFilters.length > 0) {
-      logFilter.$or = actionFilters;
-    }
-  }
-
-  const logs = await ArticleLog.find(logFilter)
-    .sort({ timestamp: 1 });
-
-  // Group logs by article for better organization
-  const auditTrail = {
-    order: {
-      id: order._id,
-      orderNumber: order.orderNumber,
-      status: order.status,
-      currentFloor: order.currentFloor,
-      createdAt: order.createdAt,
-      updatedAt: order.updatedAt
-    },
-    articles: order.articles.map(article => ({
-      id: article._id,
-      articleNumber: article.articleNumber,
-      status: article.status,
-      currentFloor: article.currentFloor,
-      progress: article.progress,
-      plannedQuantity: article.plannedQuantity,
-      completedQuantity: article.completedQuantity
-    })),
-    logs: logs.map(log => ({
-      id: log._id,
-      action: log.action,
-      quantity: log.quantity,
-      fromFloor: log.fromFloor,
-      toFloor: log.toFloor,
-      remarks: log.remarks,
-      timestamp: log.timestamp,
-      user: log.userId ? {
-        id: log.userId._id,
-        name: log.userId.name,
-        email: log.userId.email
-      } : null,
-      floorSupervisor: log.floorSupervisorId ? {
-        id: log.floorSupervisorId._id,
-        name: log.floorSupervisorId.name,
-        email: log.floorSupervisorId.email
-      } : null,
-      article: log.articleId ? {
-        id: log.articleId._id,
-        articleNumber: log.articleId.articleNumber
-      } : null,
-      previousValue: log.previousValue,
-      newValue: log.newValue,
-      changeReason: log.changeReason,
-      qualityStatus: log.qualityStatus,
-      machineId: log.machineId,
-      shiftId: log.shiftId,
-      batchNumber: log.batchNumber
-    })),
-    summary: {
-      totalLogs: logs.length,
-      totalActions: [...new Set(logs.map(log => log.action))].length,
-      timeSpan: logs.length > 0 ? {
-        start: logs[0].timestamp,
-        end: logs[logs.length - 1].timestamp
-      } : null,
-      floorsInvolved: [...new Set(logs.flatMap(log => [log.fromFloor, log.toFloor]).filter(Boolean))],
-      usersInvolved: [...new Set(logs.map(log => log.userId?._id).filter(Boolean))].length
-    }
-  };
-
-  return auditTrail;
-};
+export { getAuditTrail } from './auditTrail.service.js';
 
 /**
  * Create a manual log entry
@@ -465,7 +382,7 @@ export const createManualLog = async (logData) => {
     }
   }
 
-  return ArticleLog.createLogEntry({
+  const created = await ArticleLog.createLogEntry({
     articleId,
     orderId,
     action,
@@ -483,4 +400,8 @@ export const createManualLog = async (logData) => {
     shiftId,
     batchNumber
   });
+
+  await invalidateProductionData('createManualLog');
+
+  return created;
 };

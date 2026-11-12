@@ -142,6 +142,12 @@ productSchema.pre('save', async function (next) {
 productSchema.plugin(toJSON);
 productSchema.plugin(paginate);
 
+// Case-insensitive equality for factory-code lookups (supervisor order BOM, yarn issue).
+productSchema.index(
+  { factoryCode: 1 },
+  { name: 'factoryCode_ci', collation: { locale: 'en', strength: 2 } }
+);
+
 const Product = mongoose.model('Product', productSchema);
 
 export default Product; 

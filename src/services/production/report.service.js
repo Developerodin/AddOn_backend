@@ -1,47 +1,56 @@
-import httpStatus from 'http-status';
-import { ProductionOrder, Article, ArticleLog, FloorStatistics } from '../../models/production/index.js';
-import ApiError from '../../utils/ApiError.js';
-import { 
+import { ProductionOrder, Article, ArticleLog } from '../../models/production/index.js';
+import {
   ALL_FLOOR_NAMES,
-  ALL_FLOOR_KEYS,
   getFloorKeyFromName,
-  getFloorNameFromKey,
-  getFloorData, 
+  getFloorData,
   aggregateFloorStats,
-  getTotalCompletedQuantity,
-  getTotalWipQuantity
 } from '../../utils/floorLabelMap.js';
+import { getDailyEfficiencyTrend, getQualityTrend } from './reportTrends.helper.js';
+import { cachedRead, ProductionCacheResource, ProductionCacheTtl } from './productionCache.helper.js';
 
 /**
  * Get production dashboard data
  * @param {Object} filter
  * @returns {Promise<Object>}
  */
-export const getProductionDashboard = async (filter) => {
+export const getProductionDashboard = async (filter) =>
+  cachedRead({
+    resource: ProductionCacheResource.REPORTS,
+    operation: 'getProductionDashboard',
+    input: filter,
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: () => loadProductionDashboard(filter),
+  });
+
+/**
+ * Uncached source for {@link getProductionDashboard}.
+ * @param {Object} filter
+ * @returns {Promise<Object>}
+ */
+const loadProductionDashboard = async (filter) => {
   const { dateFrom, dateTo, floor } = filter;
   const today = new Date().toISOString().split('T')[0];
   const startDate = dateFrom || today;
   const endDate = dateTo || today;
 
-  // Get overall statistics
-  const totalOrders = await ProductionOrder.countDocuments({
-    createdAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-  });
-
-  const completedOrders = await ProductionOrder.countDocuments({
-    status: 'Completed',
-    updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-  });
-
-  const inProgressOrders = await ProductionOrder.countDocuments({
-    status: 'In Progress',
-    updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-  });
-
-  const onHoldOrders = await ProductionOrder.countDocuments({
-    status: 'On Hold',
-    updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-  });
+  // The four header counts are independent, so issue them together.
+  const [totalOrders, completedOrders, inProgressOrders, onHoldOrders] = await Promise.all([
+    ProductionOrder.countDocuments({
+      createdAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
+    }),
+    ProductionOrder.countDocuments({
+      status: 'Completed',
+      updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
+    }),
+    ProductionOrder.countDocuments({
+      status: 'In Progress',
+      updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
+    }),
+    ProductionOrder.countDocuments({
+      status: 'On Hold',
+      updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
+    }),
+  ]);
 
   // Get floor-specific data if floor filter is applied
   let floorData = null;
@@ -52,7 +61,7 @@ export const getProductionDashboard = async (filter) => {
       const floorArticles = await Article.find({
         [`floorQuantities.${floorKey}.remaining`]: { $gt: 0 },
         updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-      }).select('plannedQuantity floorQuantities');
+      }).select('plannedQuantity floorQuantities').lean();
 
       const stats = aggregateFloorStats(floorArticles, floorKey);
 
@@ -89,7 +98,7 @@ export const getProductionDashboard = async (filter) => {
           { [`floorQuantities.${floorKey}.remaining`]: { $gt: 0 } }
         ],
         updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-      }).select('plannedQuantity floorQuantities');
+      }).select('plannedQuantity floorQuantities').lean();
 
       const stats = aggregateFloorStats(floorArticles, floorKey);
 
@@ -152,7 +161,21 @@ export const getProductionDashboard = async (filter) => {
  * @param {Object} filter
  * @returns {Promise<Object>}
  */
-export const getEfficiencyReport = async (filter) => {
+export const getEfficiencyReport = async (filter) =>
+  cachedRead({
+    resource: ProductionCacheResource.REPORTS,
+    operation: 'getEfficiencyReport',
+    input: filter,
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: () => loadEfficiencyReport(filter),
+  });
+
+/**
+ * Uncached source for {@link getEfficiencyReport}.
+ * @param {Object} filter
+ * @returns {Promise<Object>}
+ */
+const loadEfficiencyReport = async (filter) => {
   const { floor, dateFrom, dateTo } = filter;
   const today = new Date().toISOString().split('T')[0];
   const startDate = dateFrom || today;
@@ -168,7 +191,7 @@ export const getEfficiencyReport = async (filter) => {
       const articles = await Article.find({
         [`floorQuantities.${floorKey}.received`]: { $gt: 0 },
         updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-      }).select('plannedQuantity status floorQuantities startedAt completedAt');
+      }).select('plannedQuantity status floorQuantities startedAt completedAt').lean();
 
       const totalArticles = articles.length;
       const completedArticles = articles.filter(article => article.status === 'Completed').length;
@@ -236,7 +259,21 @@ export const getEfficiencyReport = async (filter) => {
  * @param {Object} filter
  * @returns {Promise<Object>}
  */
-export const getQualityReport = async (filter) => {
+export const getQualityReport = async (filter) =>
+  cachedRead({
+    resource: ProductionCacheResource.REPORTS,
+    operation: 'getQualityReport',
+    input: filter,
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: () => loadQualityReport(filter),
+  });
+
+/**
+ * Uncached source for {@link getQualityReport}.
+ * @param {Object} filter
+ * @returns {Promise<Object>}
+ */
+const loadQualityReport = async (filter) => {
   const { floor, dateFrom, dateTo } = filter;
   const today = new Date().toISOString().split('T')[0];
   const startDate = dateFrom || today;
@@ -250,7 +287,7 @@ export const getQualityReport = async (filter) => {
   const articles = await Article.find({
     [`floorQuantities.${floorKey}.received`]: { $gt: 0 },
     updatedAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-  }).select('articleNumber orderId floorQuantities finalQualityConfirmed');
+  }).select('articleNumber orderId floorQuantities finalQualityConfirmed').lean();
 
   // Calculate quality metrics from floorQuantities
   const totalArticles = articles.length;
@@ -315,436 +352,7 @@ export const getQualityReport = async (filter) => {
   };
 };
 
-/**
- * Get order tracking report
- * @param {ObjectId} orderId
- * @returns {Promise<Object>}
- */
-export const getOrderTrackingReport = async (orderId) => {
-  const order = await ProductionOrder.findById(orderId).populate('articles');
-  if (!order) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'Production order not found');
-  }
+export { getOrderTrackingReport } from './orderTrackingReport.service.js';
 
-  // Get order logs
-  const logs = await ArticleLog.find({ orderId })
-    .sort({ timestamp: 1 })
-    .populate('articleId', 'articleNumber')
-    .populate('userId', 'name email');
 
-  // Calculate order progress
-  const totalArticles = order.articles.length;
-  const completedArticles = order.articles.filter(article => article.status === 'Completed').length;
-  const inProgressArticles = order.articles.filter(article => article.status === 'In Progress').length;
-  const pendingArticles = order.articles.filter(article => article.status === 'Pending').length;
-
-  // Calculate overall progress using floorQuantities
-  const totalPlannedQuantity = order.articles.reduce((sum, article) => sum + article.plannedQuantity, 0);
-  const totalCompletedQuantity = order.articles.reduce((sum, article) => {
-    // Sum up dispatched quantity as the true "completed"
-    return sum + (article.floorQuantities?.dispatch?.transferred || 0);
-  }, 0);
-  const overallProgress = totalPlannedQuantity > 0 ? 
-    Math.round((totalCompletedQuantity / totalPlannedQuantity) * 100) : 0;
-
-  // Get floor-wise progress from floorQuantities
-  const floorProgress = {};
-  for (const floorKey of ALL_FLOOR_KEYS) {
-    const floorName = getFloorNameFromKey(floorKey);
-    if (!floorName) continue;
-    
-    let totalReceived = 0;
-    let totalCompleted = 0;
-    let totalRemaining = 0;
-    let articlesOnFloor = 0;
-    
-    for (const article of order.articles) {
-      const fd = getFloorData(article.floorQuantities, floorKey);
-      if (fd.received > 0 || fd.remaining > 0) {
-        totalReceived += fd.received;
-        totalCompleted += fd.completed;
-        totalRemaining += fd.remaining;
-        if (fd.remaining > 0) articlesOnFloor++;
-      }
-    }
-    
-    if (totalReceived > 0 || totalRemaining > 0) {
-      floorProgress[floorKey] = {
-        floor: floorName,
-        floorKey,
-        articles: articlesOnFloor,
-        totalQuantity: totalReceived,
-        completedQuantity: totalCompleted,
-        wipQuantity: totalRemaining,
-        progress: totalReceived > 0 ? Math.round((totalCompleted / totalReceived) * 100) : 0
-      };
-    }
-  }
-
-  // Get timeline
-  const timeline = logs.map(log => ({
-    id: log._id,
-    action: log.action,
-    quantity: log.quantity,
-    fromFloor: log.fromFloor,
-    toFloor: log.toFloor,
-    remarks: log.remarks,
-    timestamp: log.timestamp,
-    user: log.userId ? {
-      id: log.userId._id,
-      name: log.userId.name,
-      email: log.userId.email
-    } : null,
-    article: log.articleId ? {
-      id: log.articleId._id,
-      articleNumber: log.articleId.articleNumber
-    } : null
-  }));
-
-  return {
-    order: {
-      id: order._id,
-      orderNumber: order.orderNumber,
-      status: order.status,
-      priority: order.priority,
-      currentFloor: order.currentFloor,
-      createdAt: order.createdAt,
-      updatedAt: order.updatedAt,
-      customerName: order.customerName,
-      customerOrderNumber: order.customerOrderNumber
-    },
-    progress: {
-      totalArticles,
-      completedArticles,
-      inProgressArticles,
-      pendingArticles,
-      totalPlannedQuantity,
-      totalCompletedQuantity,
-      overallProgress
-    },
-    floorProgress: Object.values(floorProgress),
-    articles: order.articles.map(article => {
-      // Get quality data from finalChecking floor
-      const fcData = getFloorData(article.floorQuantities, 'finalChecking');
-      const dispatchData = getFloorData(article.floorQuantities, 'dispatch');
-      const totalWip = getTotalWipQuantity(article.floorQuantities);
-      
-      return {
-        id: article._id,
-        articleNumber: article.articleNumber,
-        status: article.status,
-        progress: article.progress,
-        plannedQuantity: article.plannedQuantity,
-        completedQuantity: dispatchData.transferred, // Dispatched = completed
-        wipQuantity: totalWip,
-        m1Quantity: fcData.m1Quantity,
-        m2Quantity: fcData.m2Quantity,
-        m3Quantity: fcData.m3Quantity,
-        m4Quantity: fcData.m4Quantity,
-        repairStatus: article.floorQuantities?.finalChecking?.repairStatus,
-        finalQualityConfirmed: article.finalQualityConfirmed
-      };
-    }),
-    timeline
-  };
-};
-
-/**
- * Get daily efficiency trend
- * @param {string} floor - Floor name (ProductionFloor enum value)
- * @param {string} startDate
- * @param {string} endDate
- * @returns {Promise<Array>}
- */
-const getDailyEfficiencyTrend = async (floor, startDate, endDate) => {
-  const floorKey = getFloorKeyFromName(floor);
-  if (!floorKey) return [];
-  
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
-
-  const trend = [];
-  for (let i = 0; i < days; i++) {
-    const currentDate = new Date(start);
-    currentDate.setDate(start.getDate() + i);
-    const dateStr = currentDate.toISOString().split('T')[0];
-
-    // Find articles with activity on this floor during this date
-    const articles = await Article.find({
-      [`floorQuantities.${floorKey}.received`]: { $gt: 0 },
-      updatedAt: { $gte: new Date(dateStr), $lt: new Date(dateStr + 'T23:59:59.999Z') }
-    }).select('floorQuantities');
-
-    // Aggregate floor-specific quantities
-    const stats = aggregateFloorStats(articles, floorKey);
-    const efficiency = stats.totalReceived > 0 ? Math.round((stats.totalCompleted / stats.totalReceived) * 100) : 0;
-
-    trend.push({
-      date: dateStr,
-      totalQuantity: stats.totalReceived,
-      completedQuantity: stats.totalCompleted,
-      wipQuantity: stats.totalRemaining,
-      efficiency
-    });
-  }
-
-  return trend;
-};
-
-/**
- * Get quality trend over time
- * @param {string} floor - Floor name (ProductionFloor enum value)
- * @param {string} startDate
- * @param {string} endDate
- * @returns {Promise<Array>}
- */
-const getQualityTrend = async (floor, startDate, endDate) => {
-  const floorKey = getFloorKeyFromName(floor) || 'finalChecking';
-  
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
-
-  const trend = [];
-  for (let i = 0; i < days; i++) {
-    const currentDate = new Date(start);
-    currentDate.setDate(start.getDate() + i);
-    const dateStr = currentDate.toISOString().split('T')[0];
-
-    // Find articles with activity on this QC floor during this date
-    const articles = await Article.find({
-      [`floorQuantities.${floorKey}.received`]: { $gt: 0 },
-      updatedAt: { $gte: new Date(dateStr), $lt: new Date(dateStr + 'T23:59:59.999Z') }
-    }).select('floorQuantities');
-
-    // Aggregate quality metrics from floorQuantities
-    const stats = aggregateFloorStats(articles, floorKey);
-    const m1Quantity = stats.m1Total;
-    const m2Quantity = stats.m2Total;
-    const m3Quantity = stats.m3Total;
-    const m4Quantity = stats.m4Total;
-
-    const totalQualityQuantity = m1Quantity + m2Quantity + m3Quantity + m4Quantity;
-    const qualityRate = totalQualityQuantity > 0 ? Math.round((m1Quantity / totalQualityQuantity) * 100) : 0;
-    const firstPassYield = stats.totalReceived > 0 ? Math.round((m1Quantity / stats.totalReceived) * 100) : 0;
-
-    trend.push({
-      date: dateStr,
-      m1Quantity,
-      m2Quantity,
-      m3Quantity,
-      m4Quantity,
-      totalQualityQuantity,
-      qualityRate,
-      firstPassYield,
-      received: stats.totalReceived
-    });
-  }
-
-  return trend;
-};
-
-/**
- * Escapes a string for safe use inside a MongoDB `$regex` pattern (literal substring match).
- * @param {string} raw - User-provided search text
- * @returns {string} Escaped pattern fragment
- */
-const escapeRegexLiteral = (raw) => raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-/**
- * Builds a Mongo clause for documents belonging to the current page's distinct `articleNumber` keys.
- * @param {Array} pageKeys - `_id` values from `$group: { _id: '$articleNumber' }`
- * @returns {Object} Fragment to combine with `$and` alongside the base report match
- */
-const buildArticleNumberPageClause = (pageKeys) => {
-  const normalized = pageKeys.map((k) => (k === undefined ? null : k));
-  const nonBlank = [...new Set(normalized.filter((k) => k != null && k !== ''))];
-  const hasBlank = normalized.some((k) => k === null || k === '');
-  if (!hasBlank) {
-    return { articleNumber: { $in: nonBlank } };
-  }
-  if (nonBlank.length === 0) {
-    return {
-      $or: [
-        { articleNumber: null },
-        { articleNumber: '' },
-        { articleNumber: { $exists: false } },
-      ],
-    };
-  }
-  return {
-    $or: [
-      { articleNumber: { $in: nonBlank } },
-      { articleNumber: null },
-      { articleNumber: '' },
-      { articleNumber: { $exists: false } },
-    ],
-  };
-};
-
-/**
- * Get production data grouped by article (factoryCode/articleNumber).
- * Paginates by distinct article number in the database and only loads logs for the current page.
- * @param {Object} filter - { articleNumber, search, knittingCode, status, orderNumber }
- * @param {Object} options - { limit, page, logsPerArticle }
- * @returns {Promise<Object>} { results, page, limit, totalPages, total }
- */
-export const getArticleWiseData = async (filter = {}, options = {}) => {
-  const { articleNumber: filterArticleNumber, knittingCode: filterKnittingCode, search, status, orderNumber } = filter;
-  const limit = Math.min(parseInt(options.limit, 10) || 50, 100);
-  const page = parseInt(options.page, 10) || 1;
-  const logsPerArticleRaw = parseInt(options.logsPerArticle, 10);
-  const logsPerArticle =
-    Number.isFinite(logsPerArticleRaw) && logsPerArticleRaw >= 0
-      ? Math.min(logsPerArticleRaw, 100)
-      : 20;
-
-  const match = {};
-  if (filterArticleNumber) {
-    match.articleNumber = filterArticleNumber;
-  } else if (search && typeof search === 'string' && search.trim()) {
-    const trimmed = search.trim();
-    const searchRegex = { $regex: escapeRegexLiteral(trimmed), $options: 'i' };
-    match.$or = [{ articleNumber: searchRegex }, { knittingCode: searchRegex }];
-  }
-  if (filterKnittingCode && typeof filterKnittingCode === 'string' && filterKnittingCode.trim()) {
-    match.knittingCode = { $regex: escapeRegexLiteral(filterKnittingCode.trim()), $options: 'i' };
-  }
-  if (status) match.status = status;
-  if (orderNumber && typeof orderNumber === 'string' && orderNumber.trim()) {
-    const orders = await ProductionOrder.find({
-      orderNumber: { $regex: escapeRegexLiteral(orderNumber.trim()), $options: 'i' },
-    })
-      .select('_id')
-      .lean();
-    const orderIds = orders.map((o) => o._id);
-    if (orderIds.length === 0) {
-      return { results: [], page, limit, totalPages: 0, total: 0 };
-    }
-    match.orderId = { $in: orderIds };
-  } else {
-    match.orderId = { $exists: true, $ne: null };
-  }
-
-  const groupStages = [{ $match: match }, { $group: { _id: '$articleNumber' } }];
-
-  const [countRows, pageGroups] = await Promise.all([
-    Article.aggregate([...groupStages, { $count: 'total' }]),
-    Article.aggregate([
-      ...groupStages,
-      { $sort: { _id: 1 } },
-      { $skip: (page - 1) * limit },
-      { $limit: limit },
-    ]),
-  ]);
-
-  const total = countRows[0]?.total || 0;
-  const totalPages = Math.ceil(total / limit) || 1;
-  const pageKeys = pageGroups.map((g) => g._id);
-
-  if (pageKeys.length === 0) {
-    return {
-      results: [],
-      page,
-      limit,
-      totalPages: total === 0 ? 0 : totalPages,
-      total,
-    };
-  }
-
-  const pageClause = buildArticleNumberPageClause(pageKeys);
-  const articles = await Article.find({
-    $and: [match, pageClause],
-  })
-    .populate('orderId', 'orderNumber status priority currentFloor orderNote createdAt')
-    .populate('machineId', 'machineCode machineNumber model floor')
-    .sort({ articleNumber: 1, createdAt: -1 })
-    .lean();
-
-  const logsByArticleId = {};
-  if (logsPerArticle > 0) {
-    const articleIds = articles.map((a) => (a._id && a._id.toString()) || a.id);
-    const allLogs = await ArticleLog.find({ articleId: { $in: articleIds } })
-      .sort({ timestamp: -1 })
-      .lean();
-
-    for (const log of allLogs) {
-      const aid = log.articleId && log.articleId.toString();
-      if (!aid) continue;
-      if (!logsByArticleId[aid]) logsByArticleId[aid] = [];
-      if (logsByArticleId[aid].length < logsPerArticle) {
-        logsByArticleId[aid].push({
-          id: log.id,
-          action: log.action,
-          quantity: log.quantity,
-          fromFloor: log.fromFloor,
-          toFloor: log.toFloor,
-          remarks: log.remarks,
-          timestamp: log.timestamp,
-          date: log.date,
-          userId: log.userId,
-          previousValue: log.previousValue,
-          newValue: log.newValue,
-          qualityStatus: log.qualityStatus,
-        });
-      }
-    }
-  }
-
-  const byArticleNumber = {};
-  for (const a of articles) {
-    const orderId = a.orderId;
-    if (orderId == null || orderId === undefined) continue;
-
-    const key = a.articleNumber;
-    const orderDoc = orderId._id ? orderId : { _id: orderId };
-    const articleIdStr = (a._id && a._id.toString()) || a.id;
-
-    if (!byArticleNumber[key]) {
-      byArticleNumber[key] = {
-        factoryCode: key,
-        articleNumber: key,
-        orders: [],
-      };
-    }
-
-    byArticleNumber[key].orders.push({
-      articleId: articleIdStr,
-      orderId: orderDoc ? orderDoc._id : null,
-      orderNumber: orderId && orderId.orderNumber,
-      orderStatus: orderId && orderId.status,
-      orderPriority: orderId && orderId.priority,
-      orderCurrentFloor: orderId && orderId.currentFloor,
-      orderNote: orderId && orderId.orderNote,
-      orderCreatedAt: orderId && (orderId.createdAt || orderId.created_at),
-      plannedQuantity: a.plannedQuantity,
-      knittingCode: a.knittingCode,
-      status: a.status,
-      progress: a.progress,
-      linkingType: a.linkingType,
-      priority: a.priority,
-      remarks: a.remarks,
-      machineId: a.machineId,
-      machine: a.machineId && (a.machineId.machineCode ? a.machineId : null),
-      floorQuantities: a.floorQuantities,
-      startedAt: a.startedAt,
-      completedAt: a.completedAt,
-      logs: logsByArticleId[articleIdStr] || [],
-    });
-  }
-
-  const results = [];
-  for (const g of pageGroups) {
-    const row = byArticleNumber[g._id];
-    if (row) results.push(row);
-  }
-
-  return {
-    results,
-    page,
-    limit,
-    totalPages,
-    total,
-  };
-};
+export { getArticleWiseData } from './articleWiseQuery.helper.js';

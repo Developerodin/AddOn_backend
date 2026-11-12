@@ -27,6 +27,12 @@ import {
   validateM2MergeBrandSplit,
 } from '../../utils/brandQuantity.util.js';
 import { getProductByCode } from '../product.service.js';
+import {
+  cachedRead,
+  invalidateProductionData,
+  ProductionCacheResource,
+  ProductionCacheTtl,
+} from './productionCache.helper.js';
 
 const M2_QC_FLOORS = ['Checking', 'Secondary Checking', 'Final Checking'];
 
@@ -331,6 +337,8 @@ export const markM2MergeToM1 = async (entryId, body, user = {}) => {
 
   await article.save();
 
+  await invalidateProductionData('markM2MergeToM1');
+
   return { entry, resolutionLog, cascadeFloors, articleId: entry.articleId };
 };
 
@@ -470,6 +478,8 @@ async function markM2TransferToDefectCategory(entryId, body, user, category) {
 
   await article.save();
 
+  await invalidateProductionData('markM2TransferToDefectCategory');
+
   return { entry, resolutionLog };
 }
 
@@ -479,7 +489,22 @@ async function markM2TransferToDefectCategory(entryId, body, user, category) {
  * @param {Object} options
  * @returns {Promise<Object>}
  */
-export const getM2Entries = async (filter = {}, options = {}) => {
+export const getM2Entries = async (filter = {}, options = {}) =>
+  cachedRead({
+    resource: ProductionCacheResource.M2,
+    operation: 'getM2Entries',
+    input: { filter, options },
+    ttlSeconds: ProductionCacheTtl.LIVE,
+    loader: () => loadM2Entries(filter, options),
+  });
+
+/**
+ * Uncached source for {@link getM2Entries}.
+ * @param {Object} filter
+ * @param {Object} options
+ * @returns {Promise<Object>}
+ */
+const loadM2Entries = async (filter = {}, options = {}) => {
   const logFilter = {
     type: M2LogType.ENTRY,
   };
@@ -511,8 +536,12 @@ export const getM2Entries = async (filter = {}, options = {}) => {
   });
 
   const articleIds = [...new Set(paginated.results.map((row) => row.articleId).filter(Boolean))];
+  // Only the dispatch ledger and the current floor decide merge eligibility,
+  // so skip loading the full floorQuantities tree for every row.
   const articles = articleIds.length
     ? await Article.find({ $or: [{ _id: { $in: articleIds } }, { id: { $in: articleIds } }] })
+        .select('id currentFloor floorQuantities.dispatch')
+        .lean()
     : [];
   const articleById = new Map();
   for (const art of articles) {
@@ -549,7 +578,22 @@ export const getM2Entries = async (filter = {}, options = {}) => {
  * @param {Object} options
  * @returns {Promise<Object>}
  */
-export const getM2Logs = async (filter = {}, options = {}) => {
+export const getM2Logs = async (filter = {}, options = {}) =>
+  cachedRead({
+    resource: ProductionCacheResource.M2,
+    operation: 'getM2Logs',
+    input: { filter, options },
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: () => loadM2Logs(filter, options),
+  });
+
+/**
+ * Uncached source for {@link getM2Logs}.
+ * @param {Object} filter
+ * @param {Object} options
+ * @returns {Promise<Object>}
+ */
+const loadM2Logs = async (filter = {}, options = {}) => {
   const logFilter = {};
   if (filter.articleId) logFilter.articleId = filter.articleId;
   if (filter.orderId) logFilter.orderId = filter.orderId;
@@ -586,7 +630,22 @@ export const getM2Logs = async (filter = {}, options = {}) => {
  * @param {Object} options
  * @returns {Promise<Object>}
  */
-export const getM2ArticleSummary = async (articleId, options = {}) => {
+export const getM2ArticleSummary = async (articleId, options = {}) =>
+  cachedRead({
+    resource: ProductionCacheResource.M2,
+    operation: 'getM2ArticleSummary',
+    input: { articleId: String(articleId), options },
+    ttlSeconds: ProductionCacheTtl.LIVE,
+    loader: () => loadM2ArticleSummary(articleId, options),
+  });
+
+/**
+ * Uncached source for {@link getM2ArticleSummary}.
+ * @param {string} articleId
+ * @param {Object} options
+ * @returns {Promise<Object>}
+ */
+const loadM2ArticleSummary = async (articleId, options = {}) => {
   const article = await findArticleById(articleId);
   if (!article) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Article not found');
@@ -620,7 +679,20 @@ export const getM2ArticleSummary = async (articleId, options = {}) => {
  * KPI stats for M2 Management dashboard.
  * @returns {Promise<Object>}
  */
-export const getM2Statistics = async () => {
+export const getM2Statistics = async () =>
+  cachedRead({
+    resource: ProductionCacheResource.M2,
+    operation: 'getM2Statistics',
+    input: {},
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: loadM2Statistics,
+  });
+
+/**
+ * Uncached source for {@link getM2Statistics}.
+ * @returns {Promise<Object>}
+ */
+const loadM2Statistics = async () => {
   const [openEntries, partialEntries, resolvedCount, totalOpenQty] = await Promise.all([
     M2Log.countDocuments({ type: M2LogType.ENTRY, status: M2EntryStatus.OPEN }),
     M2Log.countDocuments({ type: M2LogType.ENTRY, status: M2EntryStatus.PARTIAL }),

@@ -5,6 +5,7 @@ import {
   YarnTransaction,
   YarnCatalog,
 } from '../../models/index.js';
+import { cachedYarnRead, YarnCacheResource, YarnCacheTtl } from './yarnReadCache.helper.js';
 
 const toNum = (v) => Number(v ?? 0);
 
@@ -245,7 +246,7 @@ const buildAnalyticsContext = (params) => {
  * @param {boolean} [params.includeDraft]
  * @returns {Promise<object>}
  */
-export const getPoAnalytics = async (params) => {
+const _getPoAnalytics = async (params) => {
   const ctx = buildAnalyticsContext(params);
   const { match, start, end, yarnCatalogId } = ctx;
 
@@ -372,7 +373,7 @@ export const getPoAnalytics = async (params) => {
  * Paginated PO rows for drill-down.
  * @param {object} params — same as getPoAnalytics plus page, limit, groupBy, groupId
  */
-export const getPoAnalyticsLines = async (params) => {
+const _getPoAnalyticsLines = async (params) => {
   const ctx = buildAnalyticsContext(params);
   const { match, start, end, yarnCatalogId } = ctx;
   const page = Math.max(1, toNum(params.page) || 1);
@@ -437,7 +438,7 @@ export const getPoAnalyticsLines = async (params) => {
  * Daily closing kg for one yarn across snapshot keys.
  * @param {{ yarnCatalogId: string, startDate: string, endDate: string }} params
  */
-export const getYarnClosingTrend = async (params) => {
+const _getYarnClosingTrend = async (params) => {
   const { yarnCatalogId, startDate, endDate } = params;
   const start = parseLocalDateForReport(startDate);
   const end = parseLocalDateForReport(endDate);
@@ -471,7 +472,7 @@ export const getYarnClosingTrend = async (params) => {
  * YarnTransaction totals by type in range.
  * @param {{ startDate: string, endDate: string, yarnCatalogId?: string }} params
  */
-export const getTransactionAnalytics = async (params) => {
+const _getTransactionAnalytics = async (params) => {
   const start = parseLocalDateForReport(params.startDate);
   const end = parseLocalDateForReport(params.endDate);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
@@ -510,3 +511,39 @@ export const getTransactionAnalytics = async (params) => {
     })),
   };
 };
+
+export const getPoAnalytics = async (params) =>
+  cachedYarnRead({
+    resource: YarnCacheResource.REPORTS,
+    operation: 'getPoAnalytics',
+    input: { params },
+    ttlSeconds: YarnCacheTtl.REPORT,
+    loader: () => _getPoAnalytics(params),
+  });
+
+export const getPoAnalyticsLines = async (params) =>
+  cachedYarnRead({
+    resource: YarnCacheResource.REPORTS,
+    operation: 'getPoAnalyticsLines',
+    input: { params },
+    ttlSeconds: YarnCacheTtl.REPORT,
+    loader: () => _getPoAnalyticsLines(params),
+  });
+
+export const getYarnClosingTrend = async (params) =>
+  cachedYarnRead({
+    resource: YarnCacheResource.REPORTS,
+    operation: 'getYarnClosingTrend',
+    input: { params },
+    ttlSeconds: YarnCacheTtl.REPORT,
+    loader: () => _getYarnClosingTrend(params),
+  });
+
+export const getTransactionAnalytics = async (params) =>
+  cachedYarnRead({
+    resource: YarnCacheResource.REPORTS,
+    operation: 'getTransactionAnalytics',
+    input: { params },
+    ttlSeconds: YarnCacheTtl.REPORT,
+    loader: () => _getTransactionAnalytics(params),
+  });

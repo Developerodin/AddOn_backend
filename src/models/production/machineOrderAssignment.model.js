@@ -169,6 +169,10 @@ machineOrderAssignmentSchema.index({ 'productionOrderItems.status': 1 });
 machineOrderAssignmentSchema.index({ 'productionOrderItems.yarnReturnStatus': 1 });
 machineOrderAssignmentSchema.index({ 'productionOrderItems.priority': 1 });
 machineOrderAssignmentSchema.index({ isActive: 1 });
+// Assignment lists filter on isActive and sort newest-first; machine lookups
+// always pair the machine with the active flag.
+machineOrderAssignmentSchema.index({ isActive: 1, createdAt: -1 });
+machineOrderAssignmentSchema.index({ machine: 1, isActive: 1 });
 
 const MachineOrderAssignment = mongoose.model('MachineOrderAssignment', machineOrderAssignmentSchema);
 

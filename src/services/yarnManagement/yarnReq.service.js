@@ -10,6 +10,7 @@ import {
   findLatestDraftPurchaseOrderForSupplier,
   mergeRequisitionLineIntoDraftPo,
 } from './yarnRequisitionDraftMerge.helper.js';
+import { cachedYarnRead, YarnCacheResource, YarnCacheTtl, invalidateYarnRequisitions } from './yarnReadCache.helper.js';
 
 const computeAlertStatus = (minQty, availableQty, blockedQty) => {
   if (availableQty < minQty) {
@@ -231,7 +232,16 @@ const attachLiveStockBreakdown = async (requisitionRows) => {
  * @param {string} [params.supplierName] - case-insensitive substring on preferredSupplierName
  * @returns {Promise<Object>} paginated response with results, page, limit, totalPages, totalResults, alertSummary
  */
-export const getYarnRequisitionList = async ({
+export const getYarnRequisitionList = async (params) =>
+  cachedYarnRead({
+    resource: YarnCacheResource.REQUISITIONS,
+    operation: 'getYarnRequisitionList',
+    input: { params },
+    ttlSeconds: YarnCacheTtl.LIVE,
+    loader: () => _getYarnRequisitionList(params),
+  });
+
+const _getYarnRequisitionList = async ({
   startDate,
   endDate,
   poSent,
@@ -409,6 +419,7 @@ export const createYarnRequisition = async (yarnRequisitionBody) => {
   payload.alertStatus = computeAlertStatus(payload.minQty, payload.availableQty, payload.blockedQty);
 
   const yarnRequisition = await YarnRequisition.create(payload);
+  await invalidateYarnRequisitions('createYarnRequisition');
   return yarnRequisition;
 };
 
@@ -495,6 +506,7 @@ export const patchYarnRequisition = async (yarnRequisitionId, updates = {}) => {
     (updates.preferredSupplierId !== undefined || typeof updates.preferredSupplierName === 'string');
 
   await doc.save(vendorOnlyPatch ? { timestamps: false } : {});
+  await invalidateYarnRequisitions('patchYarnRequisition');
   return populateRequisitionResponse(doc._id);
 };
 
@@ -516,6 +528,7 @@ export const dismissYarnRequisition = async (yarnRequisitionId) => {
   doc.dismissedAt = new Date();
   doc.draftForPo = false;
   await doc.save();
+  await invalidateYarnRequisitions('dismissYarnRequisition');
   return populateRequisitionResponse(doc._id);
 };
 
@@ -545,6 +558,7 @@ export const clearRequisitionDraftFlags = async (requisitionIds, linkedPurchaseO
   }
 
   await YarnRequisition.updateMany({ _id: { $in: objectIds } }, op);
+  await invalidateYarnRequisitions('clearRequisitionDraftFlags');
   return { cleared: objectIds.length };
 };
 

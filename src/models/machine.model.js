@@ -104,6 +104,9 @@ const machineSchema = mongoose.Schema(
 machineSchema.plugin(toJSON);
 machineSchema.plugin(paginate);
 
+// GET /machines defaults to isActive + machineCode sort.
+machineSchema.index({ isActive: 1, machineCode: 1 });
+
 /**
  * Check if machine code is taken
  * @param {string} machineCode - The machine code

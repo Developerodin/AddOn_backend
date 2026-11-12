@@ -7,6 +7,11 @@ import {
   collectListedArticleIds,
 } from './knittingPendingBuckets.service.js';
 import { KnitPendingBucket, resolveKnitPendingBucket } from './knittingQueueStatus.js';
+import {
+  cachedRead,
+  ProductionCacheResource,
+  ProductionCacheTtl,
+} from './productionCache.helper.js';
 
 const ALLOWED_SORT_FIELDS = new Set(['createdAt', 'updatedAt', 'orderNumber', 'priority', 'status']);
 
@@ -239,7 +244,22 @@ const toOrderSummaryRow = (order, articlesByOrder, statusesByArticle) => {
  * @param {{ page?: number, limit?: number, sortBy?: string }} options
  * @returns {Promise<{ results: object[], page: number, limit: number, totalPages: number, total: number, totals: object, pageTotals: object }>}
  */
-export const getOrderSummaryReport = async (filter = {}, options = {}) => {
+export const getOrderSummaryReport = async (filter = {}, options = {}) =>
+  cachedRead({
+    resource: ProductionCacheResource.REPORTS,
+    operation: 'getOrderSummaryReport',
+    input: { filter, options },
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: () => loadOrderSummaryReport(filter, options),
+  });
+
+/**
+ * Uncached source for {@link getOrderSummaryReport}.
+ * @param {Object} filter
+ * @param {Object} options
+ * @returns {Promise<Object>}
+ */
+const loadOrderSummaryReport = async (filter = {}, options = {}) => {
   const limit = Math.min(parseInt(String(options.limit), 10) || 10, 10000);
   const page = parseInt(String(options.page), 10) || 1;
   const rawSort =

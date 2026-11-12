@@ -3,6 +3,7 @@ import { OrderStatus, YarnIssueStatus } from '../../models/production/enums.js';
 import YarnTransaction from '../../models/yarnReq/yarnTransaction.model.js';
 import { getProductsByFactoryCodes } from '../product.service.js';
 import { getShortTermConeStockByYarnKeys } from '../yarnManagement/yarnInventory.service.js';
+import { cachedRead, ProductionCacheResource, ProductionCacheTtl } from './productionCache.helper.js';
 
 const toNumber = (v) => Number(v ?? 0);
 
@@ -86,6 +87,24 @@ const sumIssuedGramsForLine = (
  * }>}
  */
 export const getYarnIssuePendingSummary = async () => {
+  /** Set when the short-term cone stock lookup failed, which keeps the payload out of Redis. */
+  const state = { degraded: false };
+  return cachedRead({
+    resource: ProductionCacheResource.REPORTS,
+    operation: 'getYarnIssuePendingSummary',
+    input: {},
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: () => loadYarnIssuePendingSummary(state),
+    shouldCache: () => !state.degraded,
+  });
+};
+
+/**
+ * Uncached source for {@link getYarnIssuePendingSummary}.
+ * @param {{ degraded: boolean }} state - Flipped to `degraded` when a sub-source fails.
+ * @returns {Promise<Object>} Same payload as the cached wrapper.
+ */
+const loadYarnIssuePendingSummary = async (state) => {
   const assignments = await MachineOrderAssignment.find({
     isActive: true,
     'productionOrderItems.0': { $exists: true },
@@ -251,6 +270,7 @@ export const getYarnIssuePendingSummary = async () => {
   try {
     stMaps = await getShortTermConeStockByYarnKeys();
   } catch (err) {
+    state.degraded = true;
     console.error('[getYarnIssuePendingSummary] short-term stock:', err?.message || err);
   }
 

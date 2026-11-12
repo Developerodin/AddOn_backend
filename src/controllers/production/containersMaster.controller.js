@@ -3,6 +3,7 @@ import pick from '../../utils/pick.js';
 import ApiError from '../../utils/ApiError.js';
 import catchAsync from '../../utils/catchAsync.js';
 import * as containersMasterService from '../../services/production/containersMaster.service.js';
+import { summarizeUpcomingByFloor } from '../../services/production/containerFloorSummary.helper.js';
 
 const createContainersMaster = catchAsync(async (req, res) => {
   const doc = await containersMasterService.createContainersMaster(req.body);
@@ -58,6 +59,22 @@ const getContainersByFloorWithArticles = catchAsync(async (req, res) => {
   res.send({ floor: String(activeFloor || '').trim(), count: list.length, containers: list });
 });
 
+/**
+ * Upcoming totals for every floor in one query. Does not hydrate articles.
+ */
+const getUpcomingFloorSummary = catchAsync(async (req, res) => {
+  const floors = String(req.query.floors || '')
+    .split(',')
+    .map((floor) => floor.trim())
+    .filter(Boolean);
+  const results = await summarizeUpcomingByFloor({
+    status: req.query.status,
+    contentDomain: req.query.contentDomain,
+    floors,
+  });
+  res.send({ results });
+});
+
 const updateContainersMaster = catchAsync(async (req, res) => {
   const doc = await containersMasterService.updateContainersMasterById(req.params.containerId, req.body);
   res.send(doc);
@@ -98,6 +115,7 @@ export {
   getContainerWithArticlesByBarcode,
   getContainerWithArticles,
   getContainersByFloorWithArticles,
+  getUpcomingFloorSummary,
   updateContainersMaster,
   updateContainerByBarcode,
   acceptContainerByBarcode,

@@ -14,6 +14,7 @@ import { pickYarnCatalogId } from '../../utils/yarnCatalogRef.js';
 import { loadLatestIssueTransactionContextForCone } from './yarnCone.service.js';
 import { captureYarnTransactionIssued, safeCapture } from '../sync/syncOwnershipCapture.js';
 import { isLtLocation } from './storageLocation.helper.js';
+import { cachedYarnRead, YarnCacheResource, YarnCacheTtl, invalidateYarnStock } from './yarnReadCache.helper.js';
 
 /**
  * Produces an inventory bucket with all numeric values initialised to zero.
@@ -439,6 +440,7 @@ export const createYarnTransaction = async (transactionBody) => {
       await session.endSession();
       transactionRecord = await runCreateTransactionLogic(null, normalisedPayload);
       await captureIssuedTransaction(transactionRecord);
+      await invalidateYarnStock('createYarnTransaction');
       return transactionRecord;
     }
     await session.endSession();
@@ -447,6 +449,7 @@ export const createYarnTransaction = async (transactionBody) => {
 
   await session.endSession();
   await captureIssuedTransaction(transactionRecord);
+  await invalidateYarnStock('createYarnTransaction');
   return transactionRecord;
 };
 
@@ -493,7 +496,7 @@ export const getYarnTransactionById = async (transactionId) => {
  */
 const escapeRegex = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-export const queryYarnTransactions = async (filters = {}) => {
+const _queryYarnTransactions = async (filters = {}) => {
   const mongooseFilter = {};
 
   if (filters.transaction_type) {
@@ -612,6 +615,15 @@ export const queryYarnTransactions = async (filters = {}) => {
   const transactions = await applyPopulateAndSort(YarnTransaction.find(mongooseFilter)).lean();
   return transactions;
 };
+
+export const queryYarnTransactions = async (filters = {}) =>
+  cachedYarnRead({
+    resource: YarnCacheResource.TRANSACTIONS,
+    operation: 'queryYarnTransactions',
+    input: { filters },
+    ttlSeconds: YarnCacheTtl.LIVE,
+    loader: () => _queryYarnTransactions(filters),
+  });
 
 const ARTICLE_SLICE_ISSUE_TYPES = ['yarn_issued', 'yarn_issued_linking', 'yarn_issued_sampling'];
 
@@ -1303,7 +1315,7 @@ const groupTransactionsByArticleNumber = (transactions) => {
  * @param {boolean} groupByArticle
  * @param {{ includeReturns?: boolean; includeFloorIssue?: boolean }} [options]
  */
-export const getYarnIssuedByOrder = async (orderno, groupByArticle = false, options = {}) => {
+const _getYarnIssuedByOrder = async (orderno, groupByArticle = false, options = {}) => {
   const { includeReturns = false, includeFloorIssue = false } = options || {};
 
   /** @type {string[]} */
@@ -1404,12 +1416,21 @@ export const getYarnIssuedByOrder = async (orderno, groupByArticle = false, opti
   return Object.values(groupedByYarn);
 };
 
+export const getYarnIssuedByOrder = async (orderno, groupByArticle = false, options = {}) =>
+  cachedYarnRead({
+    resource: YarnCacheResource.TRANSACTIONS,
+    operation: 'getYarnIssuedByOrder',
+    input: { orderno, groupByArticle, options },
+    ttlSeconds: YarnCacheTtl.LIVE,
+    loader: () => _getYarnIssuedByOrder(orderno, groupByArticle, options),
+  });
+
 /**
  * Gets all yarn_issued transactions.
  * Returns all transactions with transactionType 'yarn_issued' regardless of order number.
  * Optionally filters by date range if start_date and/or end_date are provided.
  */
-export const getAllYarnIssued = async (filters = {}) => {
+const _getAllYarnIssued = async (filters = {}) => {
   const mongooseFilter = {
     transactionType: 'yarn_issued',
   };
@@ -1439,4 +1460,11 @@ export const getAllYarnIssued = async (filters = {}) => {
   return transactions;
 };
 
-
+export const getAllYarnIssued = async (filters = {}) =>
+  cachedYarnRead({
+    resource: YarnCacheResource.TRANSACTIONS,
+    operation: 'getAllYarnIssued',
+    input: { filters },
+    ttlSeconds: YarnCacheTtl.LIVE,
+    loader: () => _getAllYarnIssued(filters),
+  });

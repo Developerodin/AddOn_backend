@@ -10,6 +10,7 @@ import YarnInventory from '../../models/yarnReq/yarnInventory.model.js';
 import YarnTransaction from '../../models/yarnReq/yarnTransaction.model.js';
 import YarnRequisition from '../../models/yarnReq/yarnRequisition.model.js';
 import Supplier from '../../models/yarnManagement/supplier.model.js';
+import { invalidateYarnStock } from './yarnReadCache.helper.js';
 
 /**
  * Find potential duplicate yarn catalog entries.
@@ -444,6 +445,7 @@ export const mergeYarns = async (
   const catalogResult = await YarnCatalog.deleteMany({ _id: { $in: duplicateOids } });
   report.updates.yarnCatalogsDeleted = catalogResult.deletedCount;
 
+  await invalidateYarnStock('mergeYarns');
   return report;
 };
 

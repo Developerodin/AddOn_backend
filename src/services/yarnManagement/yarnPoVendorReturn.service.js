@@ -5,6 +5,7 @@ import YarnPurchaseOrder from '../../models/yarnReq/yarnPurchaseOrder.model.js';
 import YarnCone from '../../models/yarnReq/yarnCone.model.js';
 import YarnBox from '../../models/yarnReq/yarnBox.model.js';
 import ApiError from '../../utils/ApiError.js';
+import { invalidateYarnStock, invalidateYarnPurchaseOrders } from './yarnReadCache.helper.js';
 import { activeYarnConeMatch } from './yarnStockActiveFilters.js';
 import * as yarnPoReturnChallanService from './yarnPoReturnChallan.service.js';
 import {
@@ -223,6 +224,8 @@ export const finalizeVendorReturnSession = async (params) => {
     idempotencyKey: idem || undefined,
   });
 
+  await invalidateYarnStock('finalizeVendorReturnSession');
+  await invalidateYarnPurchaseOrders('finalizeVendorReturnSession');
   return {
     vendorReturn: result.vendorReturn,
     purchaseOrder: result.purchaseOrder,

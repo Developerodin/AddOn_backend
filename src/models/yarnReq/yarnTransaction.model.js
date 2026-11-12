@@ -115,6 +115,7 @@ yarnTransactionSchema.index({ issueBatchId: 1, yarnCatalogId: 1, transactionType
 yarnTransactionSchema.index({ issueBatchId: 1, transactionDate: -1 }, { sparse: true });
 // Order-scoped history
 yarnTransactionSchema.index({ orderId: 1, transactionDate: -1 }, { sparse: true });
+yarnTransactionSchema.index({ orderId: 1, transactionType: 1 });
 
 yarnTransactionSchema.pre('save', async function (next) {
   if (this.yarnCatalogId && (this.isModified('yarnCatalogId') || !this.yarnName)) {

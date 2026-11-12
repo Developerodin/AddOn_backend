@@ -10,6 +10,12 @@ import {
 } from '../../models/production/index.js';
 import Machine from '../../models/machine.model.js';
 import User from '../../models/user.model.js';
+import {
+  cachedRead,
+  invalidateProductionData,
+  ProductionCacheResource,
+  ProductionCacheTtl,
+} from './productionCache.helper.js';
 import ApiError from '../../utils/ApiError.js';
 
 const M4_FLOOR_KEYS = ['knitting', 'checking', 'secondaryChecking', 'finalChecking'];
@@ -36,6 +42,15 @@ const sumFloorM4 = (article) => {
  * @param {Object} article
  * @returns {Object}
  */
+/** Exactly the fields {@link computeM4Snapshot} reads, for the KPI roll-up. */
+const M4_STATISTICS_SELECT = [
+  'floorQuantities.knitting.m4Quantity',
+  'floorQuantities.checking.m4Quantity',
+  'floorQuantities.secondaryChecking.m4Quantity',
+  'floorQuantities.finalChecking.m4Quantity',
+  'm4Tracking.outwardTotal',
+].join(' ');
+
 export const computeM4Snapshot = (article) => {
   const fq = article?.floorQuantities || {};
   const byFloor = {
@@ -342,6 +357,8 @@ export const markM4Outward = async (articleId, body, user = {}) => {
     ...userFields,
   });
 
+  await invalidateProductionData('markM4Outward');
+
   return {
     article: {
       id: article.id,
@@ -397,7 +414,22 @@ const buildArticleM4Filter = (filter = {}) => {
  * @param {Object} options
  * @returns {Promise<Object>}
  */
-export const getM4Articles = async (filter = {}, options = {}) => {
+export const getM4Articles = async (filter = {}, options = {}) =>
+  cachedRead({
+    resource: ProductionCacheResource.M4,
+    operation: 'getM4Articles',
+    input: { filter, options },
+    ttlSeconds: ProductionCacheTtl.LIVE,
+    loader: () => loadM4Articles(filter, options),
+  });
+
+/**
+ * Uncached source for {@link getM4Articles}.
+ * @param {Object} filter
+ * @param {Object} options
+ * @returns {Promise<Object>}
+ */
+const loadM4Articles = async (filter = {}, options = {}) => {
   const mongoFilter = buildArticleM4Filter(filter);
   const page = options.page || 1;
   const limit = options.limit || 50;
@@ -452,7 +484,22 @@ export const getM4Articles = async (filter = {}, options = {}) => {
  * @param {Object} options
  * @returns {Promise<Object>}
  */
-export const getM4ArticleSummary = async (articleId, options = {}) => {
+export const getM4ArticleSummary = async (articleId, options = {}) =>
+  cachedRead({
+    resource: ProductionCacheResource.M4,
+    operation: 'getM4ArticleSummary',
+    input: { articleId: String(articleId), options },
+    ttlSeconds: ProductionCacheTtl.LIVE,
+    loader: () => loadM4ArticleSummary(articleId, options),
+  });
+
+/**
+ * Uncached source for {@link getM4ArticleSummary}.
+ * @param {string} articleId
+ * @param {Object} options
+ * @returns {Promise<Object>}
+ */
+const loadM4ArticleSummary = async (articleId, options = {}) => {
   const article = await findArticleById(articleId);
   if (!article) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Article not found');
@@ -486,7 +533,22 @@ export const getM4ArticleSummary = async (articleId, options = {}) => {
  * @param {Object} options
  * @returns {Promise<Object>}
  */
-export const getM4Logs = async (filter = {}, options = {}) => {
+export const getM4Logs = async (filter = {}, options = {}) =>
+  cachedRead({
+    resource: ProductionCacheResource.M4,
+    operation: 'getM4Logs',
+    input: { filter, options },
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: () => loadM4Logs(filter, options),
+  });
+
+/**
+ * Uncached source for {@link getM4Logs}.
+ * @param {Object} filter
+ * @param {Object} options
+ * @returns {Promise<Object>}
+ */
+const loadM4Logs = async (filter = {}, options = {}) => {
   const logFilter = {};
 
   if (filter.articleId) {
@@ -537,8 +599,21 @@ export const getM4Logs = async (filter = {}, options = {}) => {
  * Aggregate KPI stats for M4 Management dashboard.
  * @returns {Promise<Object>}
  */
-export const getM4Statistics = async () => {
-  const articles = await Article.find(buildArticleM4Filter()).lean();
+export const getM4Statistics = async () =>
+  cachedRead({
+    resource: ProductionCacheResource.M4,
+    operation: 'getM4Statistics',
+    input: {},
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: loadM4Statistics,
+  });
+
+/**
+ * Uncached source for {@link getM4Statistics}.
+ * @returns {Promise<Object>}
+ */
+const loadM4Statistics = async () => {
+  const articles = await Article.find(buildArticleM4Filter()).select(M4_STATISTICS_SELECT).lean();
   let totalOnHand = 0;
   let totalOutwarded = 0;
   let totalAvailable = 0;

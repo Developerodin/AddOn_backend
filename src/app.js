@@ -19,6 +19,11 @@ import optionalAuth from './middlewares/optionalAuth.js';
 
 const app = express();
 
+// Cross-origin GETs must not 304. Chrome reports a revalidated 304 (If-None-Match)
+// as a CORS failure with zero response headers. A reload skips the cache and the
+// same URL returns 200, which is why refresh appears to fix it.
+app.set('etag', false);
+
 if (config.env !== 'test') {
   app.use(morgan.successHandler);
   app.use(morgan.errorHandler);
@@ -59,6 +64,12 @@ app.use(
 // enable cors
 app.use(cors());
 app.options('*', cors());
+
+// Keep API responses out of the HTTP cache so the browser never revalidates them.
+app.use((req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
 
 // jwt authentication
 app.use(passport.initialize());

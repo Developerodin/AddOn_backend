@@ -22,7 +22,7 @@ const getMachines = catchAsync(async (req, res) => {
     'needleSizeConfig',
     'isActive',
   ]);
-  const options = pick(req.query, ['sortBy', 'sortOrder', 'limit', 'page', 'search']);
+  const options = pick(req.query, ['sortBy', 'sortOrder', 'limit', 'page', 'search', 'fields']);
   if (options.sortBy && options.sortOrder) {
     options.sortBy = `${options.sortBy}:${options.sortOrder}`;
   }

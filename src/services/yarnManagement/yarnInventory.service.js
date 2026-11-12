@@ -8,6 +8,12 @@ import { STORAGE_ZONES, ST_SECTION_CODE, LT_SECTION_CODES } from '../../models/s
 import { yarnConeUnavailableIssueStatuses } from '../../models/yarnReq/yarnCone.model.js';
 import { activeYarnBoxMatch, activeYarnBoxListingMatch, activeYarnConeMatch } from './yarnStockActiveFilters.js';
 import { mongoBoxNetWeightExpr, resolveBoxNetWeightKg } from './yarnBoxWeight.helper.js';
+import {
+  cachedYarnRead,
+  YarnCacheResource,
+  YarnCacheTtl,
+  invalidateYarnStock,
+} from './yarnReadCache.helper.js';
 
 /** LT: legacy LT-* OR slot barcodes B7-02-, B7-03-, B7-04-, B7-05- (from StorageSlot) */
 const LT_STORAGE_REGEX = { $regex: new RegExp(`^(LT-|${LT_SECTION_CODES.map((s) => `${s}-`).join('|')})`, 'i') };
@@ -693,6 +699,16 @@ const filterAggregateInventoryRows = (rows, filters = {}) => {
  * }>}
  */
 export const getYarnInventoriesSummary = async (filters = {}) => {
+  return cachedYarnRead({
+    resource: YarnCacheResource.INVENTORIES,
+    operation: 'getYarnInventoriesSummary',
+    input: { filters },
+    ttlSeconds: YarnCacheTtl.LIVE,
+    loader: () => _getYarnInventoriesSummary(filters),
+  });
+};
+
+const _getYarnInventoriesSummary = async (filters = {}) => {
   const inventoryMap = await aggregateInventoryFromStorage(filters);
   const rows = filterAggregateInventoryRows(Array.from(inventoryMap.values()), filters);
 
@@ -750,6 +766,16 @@ export const getYarnInventoriesSummary = async (filters = {}) => {
  * @returns {Promise<Object>} - Paginated inventory results
  */
 export const queryYarnInventories = async (filters = {}, options = {}) => {
+  return cachedYarnRead({
+    resource: YarnCacheResource.INVENTORIES,
+    operation: 'queryYarnInventories',
+    input: { filters, options },
+    ttlSeconds: YarnCacheTtl.LIVE,
+    loader: () => _queryYarnInventories(filters, options),
+  });
+};
+
+const _queryYarnInventories = async (filters = {}, options = {}) => {
   const limit = Math.min(Math.max(1, Number(options.limit) || 100), 100000);
   const page = Math.max(1, Number(options.page) || 1);
   const skip = (page - 1) * limit;
@@ -845,6 +871,7 @@ export const createYarnInventory = async (inventoryBody) => {
   }
 
   const inventory = await YarnInventory.create(body);
+  await invalidateYarnStock('createYarnInventory');
   return transformInventoryForResponse(inventory);
 };
 

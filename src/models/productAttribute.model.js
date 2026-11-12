@@ -48,6 +48,7 @@ const productAttributeSchema = mongoose.Schema(
 // add plugins
 productAttributeSchema.plugin(toJSON);
 productAttributeSchema.plugin(paginate);
+productAttributeSchema.index({ name: 1 });
 
 const ProductAttribute = mongoose.model('ProductAttribute', productAttributeSchema);
 

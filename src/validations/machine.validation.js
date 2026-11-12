@@ -47,6 +47,7 @@ const getMachines = {
     sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
     limit: Joi.number().integer(),
     page: Joi.number().integer(),
+    fields: Joi.string().max(300),
   }),
 };
 

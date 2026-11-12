@@ -1,6 +1,12 @@
 import httpStatus from 'http-status';
 import TeamMaster from '../../models/production/teamMaster.model.js';
 import ApiError from '../../utils/ApiError.js';
+import {
+  cachedRead,
+  invalidateTeamData,
+  ProductionCacheResource,
+  ProductionCacheTtl,
+} from './productionCache.helper.js';
 
 /**
  * Create a team member. Barcode is set from _id in model pre-save.
@@ -13,6 +19,7 @@ export const createTeamMaster = async (body) => {
     doc.barcode = doc._id.toString();
     await doc.save();
   }
+  await invalidateTeamData('createTeamMaster');
   return doc;
 };
 
@@ -22,7 +29,22 @@ export const createTeamMaster = async (body) => {
  * @param {Object} options - sortBy, limit, page
  * @returns {Promise<QueryResult>}
  */
-export const queryTeamMasters = async (filter, options = {}) => {
+export const queryTeamMasters = async (filter, options = {}) =>
+  cachedRead({
+    resource: ProductionCacheResource.TEAM,
+    operation: 'queryTeamMasters',
+    input: { filter, options },
+    ttlSeconds: ProductionCacheTtl.SLOW,
+    loader: () => loadTeamMasters(filter, options),
+  });
+
+/**
+ * Uncached source for {@link queryTeamMasters}.
+ * @param {Object} filter
+ * @param {Object} options
+ * @returns {Promise<QueryResult>}
+ */
+const loadTeamMasters = async (filter, options = {}) => {
   const { workingFloor, role, status, teamMemberName, search, ...rest } = filter || {};
   const query = { ...rest };
   if (workingFloor) query.workingFloor = workingFloor;
@@ -54,6 +76,7 @@ export const addActiveArticle = async (teamMemberId, articleId) => {
   doc.articleData.push({ activeArticle: articleId });
   doc.markModified('articleData');
   await doc.save();
+  await invalidateTeamData('addActiveArticle');
   return doc;
 };
 
@@ -81,6 +104,7 @@ export const removeActiveArticle = async (teamMemberId, articleId) => {
   doc.markModified('articleData');
   doc.markModified('logs');
   await doc.save();
+  await invalidateTeamData('removeActiveArticle');
   return doc;
 };
 
@@ -89,16 +113,36 @@ export const removeActiveArticle = async (teamMemberId, articleId) => {
  * @param {string} id
  * @returns {Promise<TeamMaster|null>}
  */
-export const getTeamMasterById = async (id) => {
-  return TeamMaster.findById(id).populate('myTeam', 'teamMemberName contactNumber role workingFloor');
-};
+export const getTeamMasterById = async (id) =>
+  cachedRead({
+    resource: ProductionCacheResource.TEAM,
+    operation: 'getTeamMasterById',
+    input: { id: String(id) },
+    ttlSeconds: ProductionCacheTtl.SLOW,
+    loader: () =>
+      TeamMaster.findById(id).populate('myTeam', 'teamMemberName contactNumber role workingFloor'),
+  });
 
 /**
  * Get team member by barcode (barcode stores the _id string).
  * @param {string} barcode
  * @returns {Promise<TeamMaster|null>}
  */
-export const getTeamMemberByBarcode = async (barcode) => {
+export const getTeamMemberByBarcode = async (barcode) =>
+  cachedRead({
+    resource: ProductionCacheResource.TEAM,
+    operation: 'getTeamMemberByBarcode',
+    input: { barcode: String(barcode ?? '') },
+    ttlSeconds: ProductionCacheTtl.SLOW,
+    loader: () => loadTeamMemberByBarcode(barcode),
+  });
+
+/**
+ * Uncached source for {@link getTeamMemberByBarcode}.
+ * @param {string} barcode
+ * @returns {Promise<TeamMaster|null>}
+ */
+const loadTeamMemberByBarcode = async (barcode) => {
   if (!barcode || !String(barcode).trim()) return null;
   const trimmed = String(barcode).trim();
   const byBarcode = await TeamMaster.findOne({ barcode: trimmed })
@@ -122,6 +166,7 @@ export const updateTeamMasterById = async (id, updateBody) => {
   if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Team member not found');
   Object.assign(doc, updateBody);
   await doc.save();
+  await invalidateTeamData('updateTeamMasterById');
   return doc;
 };
 
@@ -134,5 +179,6 @@ export const deleteTeamMasterById = async (id) => {
   const doc = await TeamMaster.findById(id);
   if (!doc) throw new ApiError(httpStatus.NOT_FOUND, 'Team member not found');
   await doc.deleteOne();
+  await invalidateTeamData('deleteTeamMasterById');
   return doc;
 };

@@ -21,7 +21,7 @@ export const getProductionOrders = catchAsync(async (req, res) => {
   const filter = pick(req.query, allowedFilterFields);
   const cleanFilter = cleanFilterObjectIds(filter, ['customerId', 'createdBy', 'lastModifiedBy']);
   
-  const allowedOptions = ['sortBy', 'limit', 'page', 'populate'];
+  const allowedOptions = ['sortBy', 'limit', 'page', 'populate', 'view'];
   const options = pick(req.query, allowedOptions);
   
   if (options.limit) options.limit = parseInt(options.limit, 10);
@@ -32,7 +32,7 @@ export const getProductionOrders = catchAsync(async (req, res) => {
 });
 
 export const getProductionOrder = catchAsync(async (req, res) => {
-  const order = await productionService.getProductionOrderById(req.params.orderId);
+  const order = await productionService.getProductionOrderByIdCached(req.params.orderId);
   if (!order) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Production order not found');
   }
@@ -65,7 +65,7 @@ export const getFloorOrders = catchAsync(async (req, res) => {
   if (options.limit) options.limit = parseInt(options.limit, 10);
   if (options.page) options.page = parseInt(options.page, 10);
   
-  const result = await productionService.getOrdersByFloor(floor, filter, options);
+  const result = await productionService.getOrdersByFloorCached(floor, filter, options);
   res.send(result);
 });
 
@@ -81,7 +81,7 @@ export const getDispatchPendingWarehousePrintOrders = catchAsync(async (req, res
   if (options.limit) options.limit = parseInt(options.limit, 10);
   if (options.page) options.page = parseInt(options.page, 10);
 
-  const result = await productionService.getDispatchOrdersPendingWarehousePrint(floor, filter, options);
+  const result = await productionService.getDispatchOrdersPendingWarehousePrintCached(floor, filter, options);
   res.send(result);
 });
 
@@ -138,13 +138,13 @@ export const forwardToWarehouse = catchAsync(async (req, res) => {
 
 export const getArticle = catchAsync(async (req, res) => {
   const { articleId } = req.params;
-  const article = await productionService.getArticleById(articleId);
+  const article = await productionService.getArticleByIdCached(articleId);
   if (!article) throw new ApiError(httpStatus.NOT_FOUND, 'Article not found');
   res.send(article);
 });
 
 export const getArticleProcesses = catchAsync(async (req, res) => {
-  const result = await productionService.getArticleProcesses(req.params.articleId);
+  const result = await productionService.getArticleProcessesCached(req.params.articleId);
   res.send(result);
 });
 

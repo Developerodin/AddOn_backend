@@ -19,6 +19,13 @@ import {
 import { removeProductionOrderFromAssignments, removeArticleFromAssignments } from './machineOrderAssignment.service.js';
 import logger from '../../config/logger.js';
 import { captureProductionOrderCreated, isApplyPilotEnabled } from '../sync/syncPilotCapture.js';
+import { buildSupervisorSearchClause, querySupervisorOrderList } from './supervisorListQuery.helper.js';
+import {
+  cachedRead,
+  invalidateProductionData,
+  ProductionCacheResource,
+  ProductionCacheTtl,
+} from './productionCache.helper.js';
 // import { generateOrderNumber } from '../../utils/generateId.js'; // Using model's auto-generation instead
 
 /**
@@ -205,6 +212,8 @@ export const createProductionOrder = async (orderBody, user = null) => {
     logger.error(`[sync] productionOrderCreated capture threw: ${syncErr && syncErr.message}`);
   }
 
+  await invalidateProductionData('createProductionOrder');
+
   return order.populate({
     path: 'articles',
     populate: {
@@ -215,54 +224,43 @@ export const createProductionOrder = async (orderBody, user = null) => {
 };
 
 /**
- * Query for production orders
+ * Query for production orders. Cached per (filter, options); the orders prefix
+ * is dropped by every order/article write.
  * @param {Object} filter - Mongo filter
  * @param {Object} options - Query options
  * @returns {Promise<QueryResult>}
  */
-export const queryProductionOrders = async (filter, options) => {
-  // Handle search functionality
-  if (filter.search) {
-    const searchTerm = filter.search;
-    delete filter.search; // Remove search from filter to avoid conflicts
-    
-    // First, search for orders by orderNumber
-    const orderNumberQuery = { orderNumber: { $regex: searchTerm, $options: 'i' } };
-    
-    // Also search for articles with matching articleNumber and get their orderIds
-    const matchingArticles = await Article.find(
-      { articleNumber: { $regex: searchTerm, $options: 'i' } },
-      { orderId: 1 }
-    );
-    
-    const orderIds = matchingArticles.map(article => article.orderId);
-    
-    // Create search query combining both orderNumber and articleNumber searches
-    const searchQuery = {
-      $or: [
-        orderNumberQuery,
-        ...(orderIds.length > 0 ? [{ _id: { $in: orderIds } }] : [])
-      ]
-    };
-    
-    // Merge search query with existing filter
-    const finalFilter = { ...filter, ...searchQuery };
-    
-    const orders = await ProductionOrder.paginate(finalFilter, {
-      ...options,
-      populate: {
-        path: 'articles',
-        populate: {
-          path: 'machineId',
-          select: 'machineCode machineNumber model floor status capacityPerShift capacityPerDay assignedSupervisor'
-        }
-      }
-    });
-    return orders;
+export const queryProductionOrders = async (filter, options = {}) =>
+  cachedRead({
+    resource: ProductionCacheResource.ORDERS,
+    operation: 'queryProductionOrders',
+    input: { filter, options },
+    ttlSeconds: ProductionCacheTtl.LIVE,
+    loader: () => loadProductionOrders(filter, options),
+  });
+
+/**
+ * Uncached order list query (source of truth for {@link queryProductionOrders}).
+ * @param {Object} filter - Mongo filter
+ * @param {Object} options - Query options
+ * @returns {Promise<QueryResult>}
+ */
+const loadProductionOrders = async (filter, options = {}) => {
+  const search = filter.search;
+  const restFilter = { ...filter };
+  delete restFilter.search;
+  const searchClause = search ? await buildSupervisorSearchClause(search) : null;
+  const finalFilter = searchClause
+    ? (Object.keys(restFilter).length > 0 ? { $and: [restFilter, searchClause] } : searchClause)
+    : restFilter;
+
+  const { view, ...pageOptions } = options;
+  if (view === 'list') {
+    return querySupervisorOrderList(finalFilter, pageOptions);
   }
-  
-  const orders = await ProductionOrder.paginate(filter, {
-    ...options,
+
+  return ProductionOrder.paginate(finalFilter, {
+    ...pageOptions,
     populate: {
       path: 'articles',
       populate: {
@@ -271,11 +269,12 @@ export const queryProductionOrders = async (filter, options) => {
       }
     }
   });
-  return orders;
 };
 
 /**
- * Get production order by id
+ * Get production order by id as a live mongoose document.
+ * Write paths use this (they mutate and `.save()` the result), so it is never
+ * served from cache.
  * @param {ObjectId} id
  * @returns {Promise<ProductionOrder>}
  */
@@ -551,6 +550,8 @@ export const updateProductionOrderById = async (orderId, updateBody, user = null
     floorSupervisorId: updateBody.lastModifiedBy || order.lastModifiedBy || 'system'
   });
 
+  await invalidateProductionData('updateProductionOrderById');
+
   // Return populated order with articles and machine data
   return order.populate({
     path: 'articles',
@@ -596,6 +597,8 @@ export const deleteProductionOrderById = async (orderId, userId) => {
 
   // Delete the order
   await order.deleteOne();
+
+  await invalidateProductionData('deleteProductionOrderById');
 
   return order;
 };
@@ -670,7 +673,7 @@ export const getOrdersByFloor = async (floor, filter, options) => {
   const articleView = isArticleViewPayload(options);
   const paginateOptions = {
     ...options,
-    populate: articleView ? getArticleViewPopulate() : getFullFloorOrderPopulate(),
+    populate: articleView ? getArticleViewPopulate(floorKey) : getFullFloorOrderPopulate(),
   };
   if (articleView) {
     paginateOptions.lean = true;
@@ -924,6 +927,8 @@ export const bulkCreateOrders = async (orders, batchSize = 50, user = null) => {
     results.processingTime = Date.now() - startTime;
     throw new ApiError(httpStatus.BAD_REQUEST, error.message);
   }
+
+  await invalidateProductionData('bulkCreateOrders');
 
   return results;
 };

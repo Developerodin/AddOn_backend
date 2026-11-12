@@ -10,6 +10,7 @@ import {
   runCreateTransactionLogic,
 } from './yarnTransaction.service.js';
 import { activeYarnConeMatch } from './yarnStockActiveFilters.js';
+import { invalidateYarnStock } from './yarnReadCache.helper.js';
 import { captureYarnConeFloorIssued, safeCapture } from '../sync/syncOwnershipCapture.js';
 
 /** Max net weight (kg) allowed when issuing a single cone to linking/sampling. */
@@ -280,6 +281,7 @@ export const issueConeForFloor = async ({ barcode, floor, totalWeight, totalTear
       const txn = await runCreateTransactionLogic(null, normalisedPayload);
       const updatedCone = await applyConeUpdate(null);
       await captureIssue();
+      await invalidateYarnStock('issueConeForFloor');
       return { transaction: txn, cone: updatedCone };
     }
     throw err;
@@ -290,5 +292,6 @@ export const issueConeForFloor = async ({ barcode, floor, totalWeight, totalTear
     throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Floor issue did not complete.');
   }
   await captureIssue();
+  await invalidateYarnStock('issueConeForFloor');
   return result;
 };

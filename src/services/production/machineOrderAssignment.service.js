@@ -11,6 +11,32 @@ import {
   pushItemFieldChanges,
 } from './machineOrderAssignmentAudit.helper.js';
 import { HIDDEN_FROM_QUEUE_STATUSES, isTerminalQueueStatus } from './knittingQueueStatus.js';
+import {
+  cachedRead,
+  invalidateAssignmentData,
+  ProductionCacheResource,
+  ProductionCacheTtl,
+} from './productionCache.helper.js';
+
+/**
+ * Populate set every assignment mutation endpoint returns.
+ * @type {string[]}
+ */
+const ASSIGNMENT_DETAIL_POPULATE = ['machine', 'productionOrderItems.productionOrder', 'productionOrderItems.article'];
+
+/**
+ * Reload an assignment with the detail populate after a mutation, dropping the
+ * cached machine-queue reads first so the next read cannot serve stale rows.
+ * @param {import('mongoose').Types.ObjectId|string} assignmentId
+ * @param {string} reason - Short debug label for the invalidation.
+ * @returns {Promise<Object|null>} Freshly loaded assignment document.
+ */
+const reloadAssignmentAfterWrite = async (assignmentId, reason) => {
+  await invalidateAssignmentData(reason);
+  const query = MachineOrderAssignment.findById(assignmentId);
+  ASSIGNMENT_DETAIL_POPULATE.forEach((path) => query.populate(path));
+  return query;
+};
 
 /**
  * Create a machine order assignment. Logs ASSIGNMENT_CREATED with userId.
@@ -38,6 +64,7 @@ export const createMachineOrderAssignment = async (body, userId) => {
     snapshotAfter: snapshotAssignment(assignment),
     auditSource: userId ? 'user' : 'system',
   });
+  await invalidateAssignmentData('createMachineOrderAssignment');
   return assignment;
 };
 
@@ -58,26 +85,37 @@ const MACHINE_ORDER_ASSIGNMENT_LIST_POPULATE = [
  * @param {Object} options
  * @returns {Promise<QueryResult>}
  */
-export const queryMachineOrderAssignments = async (filter, options) => {
-  const assignments = await MachineOrderAssignment.paginate(filter, {
-    ...options,
-    populate: MACHINE_ORDER_ASSIGNMENT_LIST_POPULATE,
-    sortBy: options.sortBy || 'createdAt:desc',
+export const queryMachineOrderAssignments = async (filter, options) =>
+  cachedRead({
+    resource: ProductionCacheResource.ASSIGNMENTS,
+    operation: 'queryMachineOrderAssignments',
+    input: { filter, options },
+    ttlSeconds: ProductionCacheTtl.LIVE,
+    loader: () =>
+      MachineOrderAssignment.paginate(filter, {
+        ...options,
+        populate: MACHINE_ORDER_ASSIGNMENT_LIST_POPULATE,
+        sortBy: options.sortBy || 'createdAt:desc',
+      }),
   });
-  return assignments;
-};
 
 /**
- * Get assignment by id.
+ * Get assignment by id. Cached: assignment writes drop the whole prefix.
  * @param {ObjectId} assignmentId
- * @returns {Promise<MachineOrderAssignment|null>}
+ * @returns {Promise<MachineOrderAssignment|Object|null>}
  */
-export const getMachineOrderAssignmentById = async (assignmentId) => {
-  return MachineOrderAssignment.findById(assignmentId)
-    .populate('machine')
-    .populate('productionOrderItems.productionOrder')
-    .populate('productionOrderItems.article');
-};
+export const getMachineOrderAssignmentById = async (assignmentId) =>
+  cachedRead({
+    resource: ProductionCacheResource.ASSIGNMENTS,
+    operation: 'getMachineOrderAssignmentById',
+    input: { assignmentId: String(assignmentId) },
+    ttlSeconds: ProductionCacheTtl.LIVE,
+    loader: () => {
+      const query = MachineOrderAssignment.findById(assignmentId);
+      ASSIGNMENT_DETAIL_POPULATE.forEach((path) => query.populate(path));
+      return query;
+    },
+  });
 
 /** Number of top-priority items to return per assignment */
 const TOP_ITEMS_LIMIT = 2;
@@ -99,7 +137,20 @@ const EXCLUDED_ITEM_STATUSES = HIDDEN_FROM_QUEUE_STATUSES;
  * Once an item's status becomes Completed or On Hold, it is excluded; when all items are Completed/On Hold, the order no longer appears.
  * @returns {Promise<Object[]>} Array of assignment objects with productionOrderItems limited to top 2 (active items only)
  */
-export const getMachineOrderAssignmentsTopItems = async () => {
+export const getMachineOrderAssignmentsTopItems = async () =>
+  cachedRead({
+    resource: ProductionCacheResource.ASSIGNMENTS,
+    operation: 'getMachineOrderAssignmentsTopItems',
+    input: {},
+    ttlSeconds: ProductionCacheTtl.LIVE,
+    loader: loadMachineOrderAssignmentsTopItems,
+  });
+
+/**
+ * Uncached source for {@link getMachineOrderAssignmentsTopItems}.
+ * @returns {Promise<Object[]>}
+ */
+const loadMachineOrderAssignmentsTopItems = async () => {
   const assignments = await MachineOrderAssignment.find({
     'productionOrderItems.0': { $exists: true },
     productionOrderItems: { $elemMatch: { status: { $nin: EXCLUDED_ITEM_STATUSES } } },
@@ -126,7 +177,20 @@ export const getMachineOrderAssignmentsTopItems = async () => {
  * Short Close: status Short Close + yarn was issued (yarnIssue not Pending).
  * @returns {Promise<Object[]>}
  */
-export const getMachineOrderAssignmentsCompletedItems = async () => {
+export const getMachineOrderAssignmentsCompletedItems = async () =>
+  cachedRead({
+    resource: ProductionCacheResource.ASSIGNMENTS,
+    operation: 'getMachineOrderAssignmentsCompletedItems',
+    input: {},
+    ttlSeconds: ProductionCacheTtl.LIVE,
+    loader: loadMachineOrderAssignmentsCompletedItems,
+  });
+
+/**
+ * Uncached source for {@link getMachineOrderAssignmentsCompletedItems}.
+ * @returns {Promise<Object[]>}
+ */
+const loadMachineOrderAssignmentsCompletedItems = async () => {
   const assignments = await MachineOrderAssignment.find({
     'productionOrderItems.0': { $exists: true },
     isActive: true,
@@ -577,6 +641,7 @@ export const updateMachineOrderAssignmentById = async (assignmentId, updateBody,
       userId,
     });
   }
+  await invalidateAssignmentData('updateMachineOrderAssignmentById');
   return fresh || assignment;
 };
 
@@ -621,10 +686,7 @@ export const updateProductionOrderItemPriorityById = async (assignmentId, itemId
       auditSource: userId ? 'user' : 'system',
     });
   }
-  return MachineOrderAssignment.findById(assignmentId)
-    .populate('machine')
-    .populate('productionOrderItems.productionOrder')
-    .populate('productionOrderItems.article');
+  return reloadAssignmentAfterWrite(assignmentId, 'machineQueueItemWrite');
 };
 
 /** Roles allowed to short-close an assignment item (admin/super_admin only). */
@@ -763,10 +825,7 @@ export const updateProductionOrderItemStatusById = async (assignmentId, itemId, 
     auditSource: userId ? 'user' : 'system',
   });
 
-  return MachineOrderAssignment.findById(assignmentId)
-    .populate('machine')
-    .populate('productionOrderItems.productionOrder')
-    .populate('productionOrderItems.article');
+  return reloadAssignmentAfterWrite(assignmentId, 'machineQueueItemWrite');
 };
 
 /**
@@ -821,10 +880,7 @@ export const updateProductionOrderItemYarnIssueStatusById = async (assignmentId,
     snapshotAfter: snapshotAssignment(fresh),
     auditSource: userId ? 'user' : 'system',
   });
-  return MachineOrderAssignment.findById(assignmentId)
-    .populate('machine')
-    .populate('productionOrderItems.productionOrder')
-    .populate('productionOrderItems.article');
+  return reloadAssignmentAfterWrite(assignmentId, 'machineQueueItemWrite');
 };
 
 /**
@@ -912,10 +968,7 @@ export const updateProductionOrderItemYarnReturnStatusById = async (assignmentId
     snapshotAfter: snapshotAssignment(fresh),
     auditSource: userId ? 'user' : 'system',
   });
-  return MachineOrderAssignment.findById(assignmentId)
-    .populate('machine')
-    .populate('productionOrderItems.productionOrder')
-    .populate('productionOrderItems.article');
+  return reloadAssignmentAfterWrite(assignmentId, 'machineQueueItemWrite');
 };
 
 /**
@@ -965,10 +1018,7 @@ export const updateProductionOrderItemPrioritiesById = async (assignmentId, item
       });
     }
   }
-  return MachineOrderAssignment.findById(assignmentId)
-    .populate('machine')
-    .populate('productionOrderItems.productionOrder')
-    .populate('productionOrderItems.article');
+  return reloadAssignmentAfterWrite(assignmentId, 'machineQueueItemWrite');
 };
 
 /**
@@ -1009,10 +1059,7 @@ export const deleteProductionOrderItemById = async (assignmentId, itemId, userId
     snapshotAfter: snapshotAssignment(fresh),
     auditSource: userId ? 'user' : 'system',
   });
-  return MachineOrderAssignment.findById(assignmentId)
-    .populate('machine')
-    .populate('productionOrderItems.productionOrder')
-    .populate('productionOrderItems.article');
+  return reloadAssignmentAfterWrite(assignmentId, 'machineQueueItemWrite');
 };
 
 /**
@@ -1049,6 +1096,7 @@ export const resetMachineOrderAssignmentById = async (assignmentId, userId) => {
     snapshotAfter: snapshotAssignment(fresh),
     auditSource: userId ? 'user' : 'system',
   });
+  await invalidateAssignmentData('resetMachineOrderAssignmentById');
   return fresh;
 };
 
@@ -1091,6 +1139,9 @@ export const removeProductionOrderFromAssignments = async (orderId, userId) => {
       snapshotAfter: snapshotAssignment(after),
       auditSource: userId ? 'user' : 'order_sync',
     });
+  }
+  if (modifiedCount > 0) {
+    await invalidateAssignmentData('removeProductionOrderFromAssignments');
   }
   return { modifiedCount };
 };
@@ -1143,6 +1194,9 @@ export const removeArticleFromAssignments = async (orderId, articleId, userId) =
       auditSource: userId ? 'user' : 'order_sync',
     });
   }
+  if (modifiedCount > 0) {
+    await invalidateAssignmentData('removeArticleFromAssignments');
+  }
   return { modifiedCount };
 };
 
@@ -1168,6 +1222,7 @@ export const deleteMachineOrderAssignmentById = async (assignmentId, userId) => 
     snapshotAfter: null,
     auditSource: userId ? 'user' : 'system',
   });
+  await invalidateAssignmentData('deleteMachineOrderAssignmentById');
 };
 
 /**
@@ -1186,12 +1241,18 @@ export const getAssignmentLogs = async (assignmentId, filter, options) => {
   }
   if (filter.action) logFilter.action = filter.action;
 
-  const result = await MachineOrderAssignmentLog.paginate(logFilter, {
-    ...options,
-    sortBy: options.sortBy || 'createdAt:desc',
-    populate: 'userId',
+  return cachedRead({
+    resource: ProductionCacheResource.ASSIGNMENTS,
+    operation: 'getAssignmentLogs',
+    input: { logFilter, options },
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: () =>
+      MachineOrderAssignmentLog.paginate(logFilter, {
+        ...options,
+        sortBy: options.sortBy || 'createdAt:desc',
+        populate: 'userId',
+      }),
   });
-  return result;
 };
 
 /**
@@ -1211,10 +1272,16 @@ export const getAssignmentLogsByUser = async (userId, filter, options) => {
   }
   if (filter.action) logFilter.action = filter.action;
 
-  const result = await MachineOrderAssignmentLog.paginate(logFilter, {
-    ...options,
-    sortBy: options.sortBy || 'createdAt:desc',
-    populate: ['assignmentId', 'userId'],
+  return cachedRead({
+    resource: ProductionCacheResource.ASSIGNMENTS,
+    operation: 'getAssignmentLogsByUser',
+    input: { logFilter, options },
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: () =>
+      MachineOrderAssignmentLog.paginate(logFilter, {
+        ...options,
+        sortBy: options.sortBy || 'createdAt:desc',
+        populate: ['assignmentId', 'userId'],
+      }),
   });
-  return result;
 };

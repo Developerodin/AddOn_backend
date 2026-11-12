@@ -10,6 +10,7 @@ import {
   YarnPoVendorReturn,
 } from '../../models/index.js';
 import { LT_SECTION_CODES } from '../../models/storageManagement/storageSlot.model.js';
+import { cachedYarnRead, YarnCacheResource, YarnCacheTtl } from './yarnReadCache.helper.js';
 
 const toNum = (v) => Number(v ?? 0);
 
@@ -457,7 +458,7 @@ const parseLocalDate = (dateInput) => {
   return new Date(y, m - 1, d);
 };
 
-export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
+const _getYarnReportByDateRange = async ({ startDate, endDate }) => {
   const start = parseLocalDate(startDate);
   const end = parseLocalDate(endDate);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
@@ -734,3 +735,12 @@ export const getYarnReportByDateRange = async ({ startDate, endDate }) => {
     },
   };
 };
+
+export const getYarnReportByDateRange = async ({ startDate, endDate }) =>
+  cachedYarnRead({
+    resource: YarnCacheResource.REPORTS,
+    operation: 'getYarnReportByDateRange',
+    input: { startDate, endDate },
+    ttlSeconds: YarnCacheTtl.REPORT,
+    loader: () => _getYarnReportByDateRange({ startDate, endDate }),
+  });

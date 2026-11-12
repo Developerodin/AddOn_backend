@@ -1,5 +1,10 @@
 import Product from '../../models/product.model.js';
 import {
+  cachedRead,
+  ProductionCacheResource,
+  ProductionCacheTtl,
+} from './productionCache.helper.js';
+import {
   addCoreMetrics,
   attrValue,
   createEmptyCoreMetrics,
@@ -148,7 +153,22 @@ const toCoreReportRow = (product, maps) => {
  *   pageTotals: object
  * }>}
  */
-export const getCoreReport = async (filter = {}, options = {}) => {
+export const getCoreReport = async (filter = {}, options = {}) =>
+  cachedRead({
+    resource: ProductionCacheResource.REPORTS,
+    operation: 'getCoreReport',
+    input: { filter, options },
+    ttlSeconds: ProductionCacheTtl.REPORT,
+    loader: () => loadCoreReport(filter, options),
+  });
+
+/**
+ * Uncached source for {@link getCoreReport}.
+ * @param {Object} filter
+ * @param {Object} options
+ * @returns {Promise<Object>}
+ */
+const loadCoreReport = async (filter = {}, options = {}) => {
   const limit = Math.min(parseInt(String(options.limit), 10) || 10, 10000);
   const page = parseInt(String(options.page), 10) || 1;
   const rawSort =

@@ -121,6 +121,10 @@ containersMasterSchema.index({ status: 1 });
 containersMasterSchema.index({ containerName: 1 });
 containersMasterSchema.index({ 'activeItems.article': 1 });
 containersMasterSchema.index({ 'activeItems.vendorProductionFlow': 1 });
+containersMasterSchema.index(
+  { status: 1, activeFloor: 1 },
+  { name: 'status_activeFloor_ci', collation: { locale: 'en', strength: 2 } }
+);
 containersMasterSchema.plugin(paginate);
 
 /** Virtual: total quantity across all active items */

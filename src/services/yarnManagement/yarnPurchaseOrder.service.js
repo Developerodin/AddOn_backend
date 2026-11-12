@@ -8,6 +8,7 @@ import { syncInventoriesFromStorageForCatalogIds } from './yarnInventory.service
 import { activeYarnBoxMatch, activeYarnConeMatch } from './yarnStockActiveFilters.js';
 import logger from '../../config/logger.js';
 import { captureYarnPurchaseOrderCreated, isApplyPilotEnabled } from '../sync/syncPilotCapture.js';
+import { cachedYarnRead, YarnCacheResource, YarnCacheTtl, invalidateYarnPurchaseOrders, invalidateYarnStock } from './yarnReadCache.helper.js';
 
 /**
  * Enriches each PO line item with yarn subtype and colour for Excel/API consumers.
@@ -32,75 +33,96 @@ const enrichPoItemsWithSubtypeAndColour = (po) => {
   });
 };
 
-export const getPurchaseOrders = async ({ startDate, endDate, statusCode }) => {
-  const start = new Date(startDate);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(endDate);
-  end.setHours(23, 59, 59, 999);
+export const getPurchaseOrders = async ({ startDate, endDate, statusCode }) =>
+  cachedYarnRead({
+    resource: YarnCacheResource.PURCHASE_ORDERS,
+    operation: 'getPurchaseOrders',
+    input: { startDate, endDate, statusCode },
+    ttlSeconds: YarnCacheTtl.LIVE,
+    loader: async () => {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
 
-  const filter = {
-    createDate: {
-      $gte: start,
-      $lte: end,
+      const filter = {
+        createDate: {
+          $gte: start,
+          $lte: end,
+        },
+      };
+
+      if (statusCode) {
+        filter.currentStatus = statusCode;
+      }
+
+      const purchaseOrders = await YarnPurchaseOrder.find(filter)
+      .populate({
+        path: 'supplier',
+        select: '_id brandName contactPersonName contactNumber email address city state pincode country gstNo',
+      })
+        .populate({
+          path: 'poItems.yarnCatalogId',
+          select: '_id yarnName yarnType status yarnSubtype colorFamily hsnCode',
+        })
+        .sort({ createDate: -1 })
+        .lean();
+
+      purchaseOrders.forEach(enrichPoItemsWithSubtypeAndColour);
+      return purchaseOrders;
     },
-  };
+  });
 
-  if (statusCode) {
-    filter.currentStatus = statusCode;
-  }
+export const getPurchaseOrderById = async (purchaseOrderId) =>
+  cachedYarnRead({
+    resource: YarnCacheResource.PURCHASE_ORDERS,
+    operation: 'getPurchaseOrderById',
+    input: { purchaseOrderId },
+    ttlSeconds: YarnCacheTtl.LIVE,
+    loader: async () => {
+      const purchaseOrder = await YarnPurchaseOrder.findById(purchaseOrderId)
+        .populate({
+          path: 'supplier',
+          select: '_id brandName contactPersonName contactNumber email address city state gstNo',
+        })
+        .populate({
+          path: 'poItems.yarnCatalogId',
+          select: '_id yarnName yarnType status yarnSubtype colorFamily hsnCode',
+        })
+        .lean();
 
-  const purchaseOrders = await YarnPurchaseOrder.find(filter)
-  .populate({
-    path: 'supplier',
-    select: '_id brandName contactPersonName contactNumber email address city state pincode country gstNo',
-  })
-    .populate({
-      path: 'poItems.yarnCatalogId',
-      select: '_id yarnName yarnType status yarnSubtype colorFamily hsnCode',
-    })
-    .sort({ createDate: -1 })
-    .lean();
-
-  purchaseOrders.forEach(enrichPoItemsWithSubtypeAndColour);
-  return purchaseOrders;
-};
-
-export const getPurchaseOrderById = async (purchaseOrderId) => {
-  const purchaseOrder = await YarnPurchaseOrder.findById(purchaseOrderId)
-    .populate({
-      path: 'supplier',
-      select: '_id brandName contactPersonName contactNumber email address city state gstNo',
-    })
-    .populate({
-      path: 'poItems.yarnCatalogId',
-      select: '_id yarnName yarnType status yarnSubtype colorFamily hsnCode',
-    })
-    .lean();
-
-  if (purchaseOrder) enrichPoItemsWithSubtypeAndColour(purchaseOrder);
-  return purchaseOrder;
-};
+      if (purchaseOrder) enrichPoItemsWithSubtypeAndColour(purchaseOrder);
+      return purchaseOrder;
+    },
+  });
 
 /**
  * Get purchase order by PO number
  * @param {string} poNumber - PO number (e.g. PO-2026-554)
  * @returns {Promise<Object|null>}
  */
-export const getPurchaseOrderByPoNumber = async (poNumber) => {
-  const purchaseOrder = await YarnPurchaseOrder.findOne({ poNumber })
-    .populate({
-      path: 'supplier',
-      select: '_id brandName contactPersonName contactNumber email address city state gstNo',
-    })
-    .populate({
-      path: 'poItems.yarnCatalogId',
-      select: '_id yarnName yarnType status yarnSubtype colorFamily hsnCode',
-    })
-    .lean();
+export const getPurchaseOrderByPoNumber = async (poNumber) =>
+  cachedYarnRead({
+    resource: YarnCacheResource.PURCHASE_ORDERS,
+    operation: 'getPurchaseOrderByPoNumber',
+    input: { poNumber },
+    ttlSeconds: YarnCacheTtl.LIVE,
+    loader: async () => {
+      const purchaseOrder = await YarnPurchaseOrder.findOne({ poNumber })
+        .populate({
+          path: 'supplier',
+          select: '_id brandName contactPersonName contactNumber email address city state gstNo',
+        })
+        .populate({
+          path: 'poItems.yarnCatalogId',
+          select: '_id yarnName yarnType status yarnSubtype colorFamily hsnCode',
+        })
+        .lean();
 
-  if (purchaseOrder) enrichPoItemsWithSubtypeAndColour(purchaseOrder);
-  return purchaseOrder;
-};
+      if (purchaseOrder) enrichPoItemsWithSubtypeAndColour(purchaseOrder);
+      return purchaseOrder;
+    },
+  });
 
 
 /**
@@ -198,6 +220,8 @@ export const createPurchaseOrder = async (purchaseOrderBody) => {
   } catch (syncErr) {
     logger.error(`[sync] yarnPurchaseOrderCreated capture threw: ${syncErr && syncErr.message}`);
   }
+  await invalidateYarnPurchaseOrders('createPurchaseOrder');
+  await invalidateYarnStock('createPurchaseOrder');
   return purchaseOrder;
 };
 
@@ -289,6 +313,8 @@ export const updatePurchaseOrderById = async (purchaseOrderId, updateBody) => {
 
   Object.assign(purchaseOrder, safeUpdate);
   await purchaseOrder.save();
+  await invalidateYarnPurchaseOrders('updatePurchaseOrderById');
+  await invalidateYarnStock('updatePurchaseOrderById');
   return purchaseOrder;
 };
 
@@ -371,6 +397,8 @@ export const deletePurchaseOrderById = async (purchaseOrderId) => {
   }
 
   await purchaseOrder.deleteOne();
+  await invalidateYarnPurchaseOrders('deletePurchaseOrderById');
+  await invalidateYarnStock('deletePurchaseOrderById');
   return purchaseOrder;
 };
 
@@ -402,6 +430,8 @@ export const updatePurchaseOrderStatus = async (purchaseOrderId, statusCode, upd
   }
 
   await purchaseOrder.save();
+  await invalidateYarnPurchaseOrders('updatePurchaseOrderStatus');
+  await invalidateYarnStock('updatePurchaseOrderStatus');
   return purchaseOrder;
 };
 
@@ -433,6 +463,8 @@ export const updateLotStatus = async (poNumber, lotNumber, lotStatus) => {
   purchaseOrder.receivedLotDetails[lotIndex].status = lotStatus;
 
   await purchaseOrder.save();
+  await invalidateYarnPurchaseOrders('updateLotStatus');
+  await invalidateYarnStock('updateLotStatus');
   return purchaseOrder;
 };
 
@@ -550,6 +582,8 @@ export const updateLotStatusAndQcApprove = async (poNumber, lotNumber, lotStatus
     ? `Successfully updated lot status to ${lotStatus} and ${actionMessage} ${updatedBoxes.length} boxes for lot ${lotNumber}`
     : `Successfully updated lot status to ${lotStatus} for lot ${lotNumber}`;
 
+  await invalidateYarnPurchaseOrders('updateLotStatusAndQcApprove');
+  await invalidateYarnStock('updateLotStatusAndQcApprove');
   return {
     purchaseOrder,
     boxes: updatedBoxes,
@@ -642,6 +676,8 @@ export const deleteLotByPoAndLotNumber = async (poNumber, lotNumber) => {
 
   await syncInventoriesFromStorageForCatalogIds([...catalogIdSet]);
 
+  await invalidateYarnPurchaseOrders('deleteLotByPoAndLotNumber');
+  await invalidateYarnStock('deleteLotByPoAndLotNumber');
   return {
     purchaseOrder: updatedPo,
     deletedConesCount,
@@ -697,6 +733,8 @@ export const qcApproveAllLotsForPo = async (purchaseOrderId, updatedBy, notes = 
     .populate({ path: 'poItems.yarnCatalogId', select: '_id yarnName' })
     .lean();
 
+  await invalidateYarnPurchaseOrders('qcApproveAllLotsForPo');
+  await invalidateYarnStock('qcApproveAllLotsForPo');
   return {
     purchaseOrder: updatedPo,
     lotsApproved: results.filter((r) => r.success).length,

@@ -216,10 +216,21 @@ const queryMachines = async (filter, options) => {
     ? filter 
     : { ...filter, isActive: true };
 
+  const projected = { ...options };
+  if (projected.fields) {
+    projected.select = String(projected.fields)
+      .split(',')
+      .map((field) => field.trim())
+      .filter(Boolean)
+      .join(' ');
+    projected.lean = true;
+    delete projected.fields;
+  }
+
   // Default sort: machineCode asc for line-wise order (K001, K002, K003...)
   const queryOptions = {
-    ...options,
-    sortBy: options.sortBy || 'machineCode:asc',
+    ...projected,
+    sortBy: projected.sortBy || 'machineCode:asc',
   };
   
   // Handle search parameter - search across machineCode, machineNumber, and model

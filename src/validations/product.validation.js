@@ -57,6 +57,7 @@ const getProducts = {
     page: Joi.number().integer(),
     populate: Joi.string(),
     search: Joi.string(),
+    fields: Joi.string().max(200),
   }),
 };
 
@@ -208,6 +209,7 @@ const getProductByCode = {
 const getProductsByFactoryCodes = {
   body: Joi.object().keys({
     factoryCodes: Joi.array().items(Joi.string().trim()).min(1).max(500).required(),
+    view: Joi.string().valid('bom', 'card'),
   }),
 };
 

@@ -99,6 +99,15 @@ export const getContainerByBarcode = {
   }),
 };
 
+/** Upcoming tab: counts and qty per floor, no article hydration. */
+export const getUpcomingFloorSummary = {
+  query: Joi.object().keys({
+    status: containerStatusFlexible,
+    contentDomain: Joi.string().valid('vendor', 'production').optional(),
+    floors: Joi.string().trim().max(500),
+  }),
+};
+
 /** List containers on a floor (activeFloor) with populated articles */
 export const getContainersByFloorWithArticles = {
   params: Joi.object().keys({
