@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 import Product from '../models/product.model.js';
 import StyleCode from '../models/styleCode.model.js';
 import ApiError from '../utils/ApiError.js';
+import { captureMasterCreated, safeCapture } from './sync/syncOwnershipCapture.js';
+import { OWNERSHIP_ENTITY_TYPES, OWNERSHIP_EVENT_TYPES } from './sync/syncOwnershipTypes.js';
 
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -122,7 +124,12 @@ export const createProduct = async (productBody) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Software code already taken');
   }
   const styleCodes = await ensureValidStyleCodes(productBody.styleCodes);
-  return Product.create({ ...productBody, styleCodes });
+  const product = await Product.create({ ...productBody, styleCodes });
+  // Factory sync: post-commit, own try/catch (safeCapture). Never changes the response. Both directions.
+  await safeCapture('productCreated', () =>
+    captureMasterCreated(OWNERSHIP_ENTITY_TYPES.PRODUCT, OWNERSHIP_EVENT_TYPES.PRODUCT_CREATED, product)
+  );
+  return product;
 };
 
 /**

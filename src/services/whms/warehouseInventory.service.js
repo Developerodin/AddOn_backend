@@ -6,6 +6,11 @@ import Product from '../../models/product.model.js';
 import StyleCode from '../../models/styleCode.model.js';
 import WarehouseInventory from '../../models/whms/warehouseInventory.model.js';
 import WarehouseInventoryLog from '../../models/whms/warehouseInventoryLog.model.js';
+import {
+  captureWarehouseInventoryCreated,
+  captureWarehouseInventoryUpdated,
+  safeCapture,
+} from '../sync/syncOwnershipCapture.js';
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -709,7 +714,18 @@ const bulkImportWarehouseInventoryStyleOnlyOptimized = async (items) => {
 };
 
 export const createWarehouseInventory = async (body) => {
-  const { record } = await upsertWarehouseInventory(body);
+  const { record, wasMerged } = await upsertWarehouseInventory(body);
+  // Factory sync: post-commit, own try/catch (safeCapture). Never changes the response.
+  // A merge added quantity to an existing row, so it travels as an update with the resulting absolute values.
+  await safeCapture(wasMerged ? 'warehouseInventoryUpdated' : 'warehouseInventoryCreated', () =>
+    wasMerged
+      ? captureWarehouseInventoryUpdated(record._id, {
+          totalQuantity: record.totalQuantity,
+          blockedQuantity: record.blockedQuantity,
+          adjustReason: 'sync: create merged into existing row',
+        })
+      : captureWarehouseInventoryCreated(record)
+  );
   return record;
 };
 
@@ -890,6 +906,11 @@ export const updateWarehouseInventoryById = async (id, updateBody, userId = null
       userId: userId || null,
     });
   }
+
+  // Factory sync: post-commit, own try/catch (safeCapture). Never changes the response.
+  await safeCapture('warehouseInventoryUpdated', () =>
+    captureWarehouseInventoryUpdated(doc._id, { ...patch, ...(reason ? { adjustReason: reason } : {}) })
+  );
 
   return WarehouseInventory.findById(doc._id).populate(POPULATE_DEFAULT);
 };

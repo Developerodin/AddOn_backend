@@ -52,6 +52,8 @@ import helpSupportRoute from './helpSupport/index.js';
 import websiteOrderRoute from './integrations/websiteOrder.route.js';
 import aiRoute from './ai.route.js';
 import taskRoute from './task.route.js';
+import syncRoute from './sync.route.js';
+import syncReviewRoute from './syncReview.route.js';
 import config from '../../config/config.js';
 import userActivityLog from '../../middlewares/userActivityLog.js';
 
@@ -268,6 +270,14 @@ const defaultRoutes = [
   {
     path: '/tasks',
     route: taskRoute,
+  },
+  {
+    path: '/sync',
+    route: syncRoute,
+  },
+  {
+    path: '/sync-review',
+    route: syncReviewRoute,
   },
 ];
 

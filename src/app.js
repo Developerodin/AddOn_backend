@@ -1,3 +1,5 @@
+// Must stay the first import: wraps mongoose.model before any business schema is compiled (documentUpserted sync).
+import './services/sync/syncModelRegistrar.js';
 import express from 'express';
 import helmet from 'helmet';
 import xss  from 'xss-clean';

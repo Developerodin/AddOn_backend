@@ -1,6 +1,8 @@
 import httpStatus from 'http-status';
 import { Category } from '../models/index.js';
 import ApiError from '../utils/ApiError.js';
+import { captureMasterCreated, safeCapture } from './sync/syncOwnershipCapture.js';
+import { OWNERSHIP_ENTITY_TYPES, OWNERSHIP_EVENT_TYPES } from './sync/syncOwnershipTypes.js';
 
 /**
  * Create a category
@@ -8,7 +10,12 @@ import ApiError from '../utils/ApiError.js';
  * @returns {Promise<Category>}
  */
 export const createCategory = async (categoryBody) => {
-  return Category.create(categoryBody);
+  const category = await Category.create(categoryBody);
+  // Factory sync: post-commit, own try/catch (safeCapture). Never changes the response. Both directions.
+  await safeCapture('categoryCreated', () =>
+    captureMasterCreated(OWNERSHIP_ENTITY_TYPES.CATEGORY, OWNERSHIP_EVENT_TYPES.CATEGORY_CREATED, category)
+  );
+  return category;
 };
 
 /**

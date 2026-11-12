@@ -10,6 +10,7 @@ import {
   runCreateTransactionLogic,
 } from './yarnTransaction.service.js';
 import { activeYarnConeMatch } from './yarnStockActiveFilters.js';
+import { captureYarnConeFloorIssued, safeCapture } from '../sync/syncOwnershipCapture.js';
 
 /** Max net weight (kg) allowed when issuing a single cone to linking/sampling. */
 const MAX_NET_KG_FLOOR = 5;
@@ -230,6 +231,23 @@ export const issueConeForFloor = async ({ barcode, floor, totalWeight, totalTear
     ).exec();
   };
 
+  /**
+   * Factory sync: post-commit, own try/catch (safeCapture). Never changes the response.
+   * @returns {Promise<void>}
+   */
+  const captureIssue = () =>
+    safeCapture('yarnConeFloorIssued', () =>
+      captureYarnConeFloorIssued({
+        coneId: String(coneId),
+        barcode: trimmed,
+        floor,
+        totalWeight: tw,
+        totalTearWeight: tt,
+        issuedByEmail: issuer,
+        issueBatchId: issueBatchIdTrim,
+      })
+    );
+
   const session = await mongoose.startSession();
   /** @type {{ transaction: import('mongoose').Document, cone: import('mongoose').Document | null } | undefined} */
   let result;
@@ -261,6 +279,7 @@ export const issueConeForFloor = async ({ barcode, floor, totalWeight, totalTear
       });
       const txn = await runCreateTransactionLogic(null, normalisedPayload);
       const updatedCone = await applyConeUpdate(null);
+      await captureIssue();
       return { transaction: txn, cone: updatedCone };
     }
     throw err;
@@ -270,5 +289,6 @@ export const issueConeForFloor = async ({ barcode, floor, totalWeight, totalTear
   if (!result) {
     throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Floor issue did not complete.');
   }
+  await captureIssue();
   return result;
 };

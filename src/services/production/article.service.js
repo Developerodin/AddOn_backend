@@ -28,6 +28,9 @@ import { recordM4Entry } from './m4Management.service.js';
 import { recordM3Entry } from './m3Management.service.js';
 import { recordM2Entry, computeOpenM2Quantity } from './m2Management.service.js';
 import { ProductionFloor } from '../../models/production/enums.js';
+import logger from '../../config/logger.js';
+import { captureArticleFloorTransfer, isApplyPilotEnabled } from '../sync/syncPilotCapture.js';
+import { captureArticleFloorReceive, captureFloorMove, safeCapture } from '../sync/syncOwnershipCapture.js';
 
 /** Floors that support brand/style breakdown via transferItems / transferredData (same shape as Branding → Final Checking). */
 const FLOORS_WITH_STYLE_TRANSFER_ITEMS = ['Branding', 'Final Checking', 'Dispatch', 'Re-Boarding'];
@@ -778,6 +781,17 @@ const transferFromPreviousFloor = async (article, fromFloor, quantity, updateDat
     floorSupervisorId: user?.id || updateData.floorSupervisorId || 'system',
     remarks: `Transferred ${newTransferQuantity} completed units from ${fromFloor} to ${article.currentFloor} (Total completed: ${totalCompleted}, Total transferred: ${fromFloorData.transferred})`
   });
+
+  // Factory sync: post-commit, own try/catch (safeCapture). Never changes the response.
+  await safeCapture('productionArticleFloorTransfer', () =>
+    captureFloorMove({
+      orderId: article.orderId,
+      articleId: article._id,
+      fromFloor,
+      toFloor: nextFloor,
+      quantity: newTransferQuantity,
+    })
+  );
 };
 
 /**
@@ -978,6 +992,22 @@ export const transferArticle = async (floor, orderId, articleId, transferData, u
     batchNumber: transferData.batchNumber,
     machineId: transferData.machineId
   });
+
+  // Factory sync pilot: post-commit, own try/catch, no session. Never changes the response.
+  try {
+    if (isApplyPilotEnabled()) {
+      await captureArticleFloorTransfer({
+        orderId: String(article.orderId),
+        articleId: String(article._id),
+        fromFloor: normalizedFloor,
+        toFloor: nextFloor,
+        quantity: transferQuantity,
+        transferItems: Array.isArray(transferItems) && transferItems.length > 0 ? transferItems : null,
+      });
+    }
+  } catch (syncErr) {
+    logger.error(`[sync] productionArticleFloorTransfer capture threw: ${syncErr && syncErr.message}`);
+  }
 
   return {
     article,
@@ -1292,6 +1322,19 @@ const transferCompletedWorkToNextFloor = async (article, updateData, user = null
     floorSupervisorId: user?.id || updateData.floorSupervisorId || 'system',
     remarks: `Auto-transferred ${newTransferQuantity} completed units from ${sourceFloor} to ${nextFloor} (Total completed: ${totalCompleted}, Total transferred: ${sourceFloorData.transferred}, Remaining: ${sourceFloorData.remaining})`
   });
+
+  // Factory sync: post-commit, own try/catch (safeCapture). Never changes the response.
+  await safeCapture('productionArticleFloorTransfer', () =>
+    captureFloorMove({
+      orderId: article.orderId,
+      articleId: article._id,
+      fromFloor: sourceFloor,
+      toFloor: nextFloor,
+      quantity: newTransferQuantity,
+      transferItems,
+      styleFloors: FLOORS_WITH_STYLE_TRANSFER_ITEMS,
+    })
+  );
 };
 
 /**
@@ -1950,6 +1993,20 @@ export const updateArticleFloorReceivedData = async (articleId, payload) => {
     }
   }
 
+  // Factory sync: post-commit, own try/catch (safeCapture). Never changes the response.
+  if (typeof quantity === 'number' && quantity > 0) {
+    await safeCapture('productionArticleFloorReceive', () =>
+      captureArticleFloorReceive({
+        orderId: article.orderId,
+        articleId: article._id,
+        floor: normalizedFloor,
+        quantity,
+        receivedData: payload.receivedData || {},
+        receivedTransferItems,
+      })
+    );
+  }
+
   return article;
 };
 
@@ -2335,6 +2392,10 @@ const autoTransferCompletedWorkToNextFloor = async (article, updateData, user = 
     return;
   }
 
+  // Factory sync: the units this call actually moves (transferred is set, not added).
+  const syncFromFloor = article.currentFloor;
+  const syncMovedQuantity = transferQuantity - (currentFloorData.transferred || 0);
+
   // Update current floor: mark as transferred
   currentFloorData.transferred = transferQuantity;
   if (article.currentFloor === 'Knitting') {
@@ -2393,6 +2454,17 @@ const autoTransferCompletedWorkToNextFloor = async (article, updateData, user = 
   });
 
   console.log(`✅ Auto-transfer completed: ${transferQuantity} units from ${article.currentFloor === nextFloor ? currentFloorKey : article.currentFloor} to ${nextFloor}`);
+
+  // Factory sync: post-commit, own try/catch (safeCapture). Never changes the response.
+  await safeCapture('productionArticleFloorTransfer', () =>
+    captureFloorMove({
+      orderId: article.orderId,
+      articleId: article._id,
+      fromFloor: syncFromFloor,
+      toFloor: nextFloor,
+      quantity: syncMovedQuantity,
+    })
+  );
 };
 
 /**
@@ -2499,6 +2571,19 @@ const transferM1ToNextFloor = async (article, m1Quantity, user = null, inspectio
   });
 
   console.log(`✅ M1 transfer completed: ${m1Quantity} units from ${sourceFloor} to ${nextFloor}. Article remains on ${article.currentFloor} floor. Total M1 transferred: ${newM1Transferred}, M1 remaining: ${sourceFloorData.m1Remaining}`);
+
+  // Factory sync: post-commit, own try/catch (safeCapture). Never changes the response.
+  await safeCapture('productionArticleFloorTransfer', () =>
+    captureFloorMove({
+      orderId: article.orderId,
+      articleId: article._id,
+      fromFloor: sourceFloor,
+      toFloor: nextFloor,
+      quantity: m1Quantity,
+      transferItems,
+      styleFloors: FLOORS_WITH_STYLE_TRANSFER_ITEMS,
+    })
+  );
 };
 
 // Note: createArticleLog function removed - now using loggingHelper.js functions

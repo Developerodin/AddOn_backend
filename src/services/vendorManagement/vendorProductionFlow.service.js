@@ -29,6 +29,8 @@ import {
 } from './vendorProductionFlowFloorPatch.js';
 import { stageVendorTransferOnExistingContainer } from './vendorProductionFlowReceive.service.js';
 import { transferVendorDispatchToWarehouseQuantity } from './vendorDispatchWarehouseTransfer.service.js';
+import { captureVendorTransferShadow, isVendorTransferShadowEnabled } from '../sync/syncShadowCapture.js';
+import logger from '../../config/logger.js';
 import {
   aggregateTransferredByStyleKey,
   assertFinalCheckingTransferredWithinInboundChannelCap,
@@ -740,7 +742,21 @@ export const updateVendorProductionFlowFloorById = async (flowId, floorKey, body
  */
 export const transferVendorProductionFlowQuantity = async (flowId, fromFloorKey, toFloorKey, quantity, opts = {}) => {
   if (fromFloorKey === 'dispatch' && toFloorKey === 'warehouse') {
-    return transferVendorDispatchToWarehouseQuantity(flowId, quantity, opts);
+    const updated = await transferVendorDispatchToWarehouseQuantity(flowId, quantity, opts);
+    try {
+      if (updated && isVendorTransferShadowEnabled()) {
+        await captureVendorTransferShadow({
+          flowId: updated._id ? String(updated._id) : String(flowId),
+          fromFloorKey,
+          toFloorKey,
+          quantity: Number(quantity),
+          containerBarcode: opts.existingContainerBarcode ? String(opts.existingContainerBarcode) : null,
+        });
+      }
+    } catch (syncErr) {
+      logger.error(`[sync] vendor dispatch capture threw: ${syncErr && syncErr.message}`);
+    }
+    return updated;
   }
 
   assertAllowedFloorKey(fromFloorKey);
@@ -959,6 +975,20 @@ export const transferVendorProductionFlowQuantity = async (flowId, fromFloorKey,
         throw error;
       }
       updatedFlow = await applyTransferUpdates(null);
+    }
+    // Factory sync shadow (v1): post-commit, own try/catch, no floor session, no HTTP. Never changes the response.
+    try {
+      if (updatedFlow && isVendorTransferShadowEnabled()) {
+        await captureVendorTransferShadow({
+          flowId: updatedFlow._id ? String(updatedFlow._id) : String(flowId),
+          fromFloorKey,
+          toFloorKey,
+          quantity: qty,
+          containerBarcode: vendorTransferContainerMeta ? vendorTransferContainerMeta.barcode : null,
+        });
+      }
+    } catch (syncErr) {
+      logger.error(`[sync] vendor transfer shadow capture threw: ${syncErr && syncErr.message}`);
     }
     if (vendorTransferContainerMeta && updatedFlow) {
       const o = updatedFlow.toObject ? updatedFlow.toObject() : { ...updatedFlow };

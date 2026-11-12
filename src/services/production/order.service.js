@@ -17,6 +17,8 @@ import {
   loadActiveStnAllocationMap,
 } from '../../utils/dispatchWarehousePending.util.js';
 import { removeProductionOrderFromAssignments, removeArticleFromAssignments } from './machineOrderAssignment.service.js';
+import logger from '../../config/logger.js';
+import { captureProductionOrderCreated, isApplyPilotEnabled } from '../sync/syncPilotCapture.js';
 // import { generateOrderNumber } from '../../utils/generateId.js'; // Using model's auto-generation instead
 
 /**
@@ -192,6 +194,16 @@ export const createProductionOrder = async (orderBody, user = null) => {
     userId: orderBody.createdBy || user?.id || 'system',
     floorSupervisorId: orderBody.createdBy || user?.id || 'system'
   });
+
+  // Factory sync pilot: post-commit, own try/catch, no session. Never changes the response.
+  try {
+    if (isApplyPilotEnabled()) {
+      const savedArticles = await Article.find({ orderId: order._id }).lean();
+      await captureProductionOrderCreated(order, savedArticles);
+    }
+  } catch (syncErr) {
+    logger.error(`[sync] productionOrderCreated capture threw: ${syncErr && syncErr.message}`);
+  }
 
   return order.populate({
     path: 'articles',

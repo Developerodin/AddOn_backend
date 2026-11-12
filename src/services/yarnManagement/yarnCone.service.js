@@ -11,6 +11,12 @@ import {
 import { activeYarnConeMatch, activeYarnBoxMatch } from './yarnStockActiveFilters.js';
 import { resolveYarnCatalogIdForCone } from './yarnConeCatalogResolve.service.js';
 import {
+  captureYarnConeCreated,
+  captureYarnConeProductionIssued,
+  captureYarnConeReturned,
+  safeCapture,
+} from '../sync/syncOwnershipCapture.js';
+import {
   isStLocation,
   requireActiveStorageSlot,
 } from './storageLocation.helper.js';
@@ -222,6 +228,8 @@ export const createYarnCone = async (yarnConeBody) => {
   }
 
   const yarnCone = await YarnCone.create(yarnConeBody);
+  // Factory sync: post-commit, own try/catch (safeCapture). Never changes the response.
+  await safeCapture('yarnConeCreated', () => captureYarnConeCreated(yarnCone));
   return yarnCone;
 };
 
@@ -257,8 +265,12 @@ export const updateYarnConeById = async (yarnConeId, updateBody) => {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid return status');
   }
 
+  const previousStatus = yarnCone.issueStatus;
   Object.assign(yarnCone, updateBody);
   await yarnCone.save();
+  if (updateBody.issueStatus === 'issued' && previousStatus !== 'issued') {
+    await safeCapture('yarnConeProductionIssued', () => captureYarnConeProductionIssued(yarnCone));
+  }
   return yarnCone;
 };
 
@@ -858,6 +870,11 @@ export const returnYarnCone = async (barcode, returnData = {}) => {
 
   // Save cone (post-save hook will automatically sync to inventory)
   await yarnCone.save();
+
+  // Factory sync: post-commit, own try/catch (safeCapture). Never changes the response.
+  await safeCapture('yarnConeReturned', () =>
+    captureYarnConeReturned({ coneId: String(yarnCone._id), barcode: yarnCone.barcode, returnData })
+  );
 
   // Populate yarn info before returning
   await yarnCone.populate({

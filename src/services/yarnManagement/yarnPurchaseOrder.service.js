@@ -6,6 +6,8 @@ import { yarnPurchaseOrderStatuses, lotStatuses } from '../../models/yarnReq/yar
 import * as supplierService from './supplier.service.js';
 import { syncInventoriesFromStorageForCatalogIds } from './yarnInventory.service.js';
 import { activeYarnBoxMatch, activeYarnConeMatch } from './yarnStockActiveFilters.js';
+import logger from '../../config/logger.js';
+import { captureYarnPurchaseOrderCreated, isApplyPilotEnabled } from '../sync/syncPilotCapture.js';
 
 /**
  * Enriches each PO line item with yarn subtype and colour for Excel/API consumers.
@@ -190,6 +192,12 @@ export const createPurchaseOrder = async (purchaseOrderBody) => {
   }
 
   const purchaseOrder = await YarnPurchaseOrder.create(payload);
+  // Factory sync pilot: post-commit, own try/catch, no session. Never changes the response.
+  try {
+    if (isApplyPilotEnabled()) await captureYarnPurchaseOrderCreated(purchaseOrder);
+  } catch (syncErr) {
+    logger.error(`[sync] yarnPurchaseOrderCreated capture threw: ${syncErr && syncErr.message}`);
+  }
   return purchaseOrder;
 };
 

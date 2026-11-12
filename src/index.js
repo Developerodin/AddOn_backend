@@ -8,11 +8,13 @@ import { testS3Connection } from './utils/s3Connection.js';
 import { startOrderSyncJob } from './cron/orderSync.cron.js';
 import { startYarnDailySnapshotJob, stopYarnDailySnapshotJob } from './cron/yarnDailySnapshot.cron.js';
 import { startWebsiteOrderOutboundJob, stopWebsiteOrderOutboundJob } from './cron/websiteOrderOutbound.cron.js';
+import { startSyncWorker, stopSyncWorker } from './services/sync/syncWorker.js';
 
 let server;
 let orderSyncCronJob;
 let yarnSnapshotCronJob;
 let websiteOrderOutboundCronJob;
+let syncWorkerHandle;
 
 const mongoOptions = {
   ...config.mongoose.options,
@@ -31,17 +33,32 @@ mongoose.connect(config.mongoose.url, mongoOptions).then(async () => {
   // Test S3 connection
   await testS3Connection();
   
-  // Start order sync cron job
-  const cronSchedule = process.env.ORDER_SYNC_CRON_SCHEDULE || '*/30 * * * *'; // Every 30 minutes
-  orderSyncCronJob = startOrderSyncJob(cronSchedule);
+  // Start order sync cron job. Opt-out only: exactly "false" skips it (factory box); anything else keeps it on.
+  if (process.env.ORDER_SYNC_ENABLED === 'false') {
+    logger.info('Order sync cron job disabled (ORDER_SYNC_ENABLED=false)');
+  } else {
+    const cronSchedule = process.env.ORDER_SYNC_CRON_SCHEDULE || '*/30 * * * *'; // Every 30 minutes
+    orderSyncCronJob = startOrderSyncJob(cronSchedule);
+  }
 
-  // Start website order outbound sync (addonweb ← warehouse)
-  const websiteOutboundSchedule = process.env.WEBSITE_ORDER_OUTBOUND_CRON || '*/2 * * * *';
-  websiteOrderOutboundCronJob = startWebsiteOrderOutboundJob(websiteOutboundSchedule);
+  // Start website order outbound sync (addonweb ← warehouse). Exactly "false" skips it.
+  if (process.env.WEBSITE_ORDER_OUTBOUND_ENABLED === 'false') {
+    logger.info('Website order outbound cron job disabled (WEBSITE_ORDER_OUTBOUND_ENABLED=false)');
+  } else {
+    const websiteOutboundSchedule = process.env.WEBSITE_ORDER_OUTBOUND_CRON || '*/2 * * * *';
+    websiteOrderOutboundCronJob = startWebsiteOrderOutboundJob(websiteOutboundSchedule);
+  }
 
   // Start yarn daily closing snapshot job (feature-flagged)
   if (process.env.YARN_DAILY_SNAPSHOT_ENABLED === 'true') {
     yarnSnapshotCronJob = startYarnDailySnapshotJob();
+  }
+
+  // Factory sync worker (shadow v1). Starts only when SYNC_WORKER_ENABLED=true; never blocks boot.
+  try {
+    syncWorkerHandle = startSyncWorker();
+  } catch (err) {
+    logger.error(`[sync] worker start failed: ${err && err.message}`);
   }
   
   server = app.listen(config.port, () => {
@@ -65,6 +82,7 @@ const exitHandler = () => {
       }
       stopYarnDailySnapshotJob(yarnSnapshotCronJob);
       stopWebsiteOrderOutboundJob(websiteOrderOutboundCronJob);
+      stopSyncWorker(syncWorkerHandle);
       process.exit(1);
     });
   } else {
@@ -88,6 +106,7 @@ process.on('SIGTERM', () => {
   }
   stopYarnDailySnapshotJob(yarnSnapshotCronJob);
   stopWebsiteOrderOutboundJob(websiteOrderOutboundCronJob);
+  stopSyncWorker(syncWorkerHandle);
   if (server) {
     server.close();
   }

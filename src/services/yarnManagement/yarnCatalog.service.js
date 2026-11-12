@@ -2,6 +2,8 @@ import httpStatus from 'http-status';
 import mongoose from 'mongoose';
 import { YarnCatalog, YarnType, CountSize, Color, Blend } from '../../models/index.js';
 import ApiError from '../../utils/ApiError.js';
+import { captureMasterCreated, safeCapture } from '../sync/syncOwnershipCapture.js';
+import { OWNERSHIP_ENTITY_TYPES, OWNERSHIP_EVENT_TYPES } from '../sync/syncOwnershipTypes.js';
 
 /**
  * Convert IDs to embedded objects for yarn catalog
@@ -199,7 +201,12 @@ export const createYarnCatalog = async (yarnCatalogBody) => {
   // Convert IDs to embedded objects
   const processedBody = await convertIdsToEmbedded(yarnCatalogBody);
 
-  return YarnCatalog.create(processedBody);
+  const yarnCatalog = await YarnCatalog.create(processedBody);
+  // Factory sync: post-commit, own try/catch (safeCapture). Never changes the response. Both directions.
+  await safeCapture('yarnCatalogCreated', () =>
+    captureMasterCreated(OWNERSHIP_ENTITY_TYPES.YARN_CATALOG, OWNERSHIP_EVENT_TYPES.YARN_CATALOG_CREATED, yarnCatalog)
+  );
+  return yarnCatalog;
 };
 
 /**

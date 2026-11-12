@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 import StyleCode from '../models/styleCode.model.js';
 import RawMaterial from '../models/rawMaterial.model.js';
 import ApiError from '../utils/ApiError.js';
+import { captureMasterCreated, safeCapture } from './sync/syncOwnershipCapture.js';
+import { OWNERSHIP_ENTITY_TYPES, OWNERSHIP_EVENT_TYPES } from './sync/syncOwnershipTypes.js';
 
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -15,7 +17,12 @@ export const createStyleCode = async (body) => {
   if (await StyleCode.findOne({ styleCode: body.styleCode })) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Style code already exists');
   }
-  return StyleCode.create(body);
+  const styleCode = await StyleCode.create(body);
+  // Factory sync: post-commit, own try/catch (safeCapture). Never changes the response. Both directions.
+  await safeCapture('styleCodeCreated', () =>
+    captureMasterCreated(OWNERSHIP_ENTITY_TYPES.STYLE_CODE, OWNERSHIP_EVENT_TYPES.STYLE_CODE_CREATED, styleCode)
+  );
+  return styleCode;
 };
 
 /**

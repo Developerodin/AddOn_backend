@@ -9,7 +9,7 @@ FROM base AS deps
 # Copy package files
 COPY package*.json ./
 # Install dependencies
-RUN npm ci --only=production && npm cache clean --force
+RUN npm ci --omit=dev --legacy-peer-deps && npm cache clean --force
 
 # Build stage (if needed for any build steps)
 FROM base AS builder

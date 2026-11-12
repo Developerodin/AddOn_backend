@@ -12,6 +12,7 @@ import Product from '../../models/product.model.js';
 import ApiError from '../../utils/ApiError.js';
 import { pickYarnCatalogId } from '../../utils/yarnCatalogRef.js';
 import { loadLatestIssueTransactionContextForCone } from './yarnCone.service.js';
+import { captureYarnTransactionIssued, safeCapture } from '../sync/syncOwnershipCapture.js';
 import { isLtLocation } from './storageLocation.helper.js';
 
 /**
@@ -437,6 +438,7 @@ export const createYarnTransaction = async (transactionBody) => {
     if (isStandaloneTransactionError) {
       await session.endSession();
       transactionRecord = await runCreateTransactionLogic(null, normalisedPayload);
+      await captureIssuedTransaction(transactionRecord);
       return transactionRecord;
     }
     await session.endSession();
@@ -444,7 +446,19 @@ export const createYarnTransaction = async (transactionBody) => {
   }
 
   await session.endSession();
+  await captureIssuedTransaction(transactionRecord);
   return transactionRecord;
+};
+
+/**
+ * Factory sync for the yarn-issue screen's `yarn_issued` row. Post-commit, own try/catch.
+ * @param {import('mongoose').Document|undefined} record
+ * @returns {Promise<void>}
+ */
+const captureIssuedTransaction = async (record) => {
+  const coneId = record && record.conesIdsArray && record.conesIdsArray[0];
+  if (!coneId) return;
+  await safeCapture('yarnTransactionIssued', () => captureYarnTransactionIssued(record, coneId));
 };
 
 /**

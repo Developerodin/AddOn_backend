@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import Joi from 'joi';
 import { parseMongoRetryWrites, setRetryWritesOnUri } from './mongoUri.js';
+import { syncEnvKeys, buildSyncConfig } from './syncConfig.js';
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env'), override: true });
 
@@ -39,6 +40,7 @@ const envVarsSchema = Joi.object()
       .default('index.php?route=extension/addon/whms_sync.receive')
       .description('OpenCart WHMS receive route path'),
     WEBSITE_ORDER_SYNC_ALLOWED_IPS: Joi.string().allow('').default(''),
+    ...syncEnvKeys,
   })
   .unknown();
 
@@ -101,6 +103,7 @@ const config = {
       .map((s) => s.trim())
       .filter(Boolean),
   },
+  sync: buildSyncConfig(envVars),
 };
 
 export default config;

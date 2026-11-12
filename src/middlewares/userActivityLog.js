@@ -41,6 +41,8 @@ const userActivityLog = (req, res, next) => {
       }
       const path = req.originalUrl?.split('?')[0] || req.path;
       if (SKIP_PATHS.some((p) => path.startsWith(p))) return;
+      // Site-to-site sync polls every ~60s; logging it would flood the 30-day activity collection.
+      if (path === '/v1/sync' || path.startsWith('/v1/sync/')) return;
 
       const statusCode = res.statusCode;
       const method = req.method;
