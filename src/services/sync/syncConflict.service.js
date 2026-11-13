@@ -22,6 +22,28 @@ const toReviewRow = (row) => ({
   createdAt: row.createdAt,
 });
 
+/** Audit log row: summary + resolution metadata (no heavy payload replay required). */
+const toHistoryRow = (row) => {
+  const res = row.resolution || {};
+  return {
+    id: String(row._id),
+    entityType: row.entityType,
+    aggregateId: row.aggregateId,
+    aggregateVersion: row.aggregateVersion ?? null,
+    changedKeys: row.changedKeys || [],
+    factorySiteId: row.factorySiteId || null,
+    cloudSiteId: row.cloudSiteId || null,
+    createdAt: row.createdAt,
+    resolution: {
+      decision: res.decision || null,
+      note: res.note || '',
+      recordedAt: res.recordedAt || null,
+      recordedByUserId: res.recordedByUserId || null,
+      recordedBySiteId: res.recordedBySiteId || null,
+    },
+  };
+};
+
 /**
  * Open (CONFLICTED) rows, newest first. Read only.
  * @param {{ limit?: number }} [opts]
@@ -29,6 +51,39 @@ const toReviewRow = (row) => ({
 export const listOpenConflicts = async ({ limit = 100 } = {}) => {
   const rows = await SyncConflict.find({ status: CONFLICT_STATUS.CONFLICTED }).sort({ createdAt: -1 }).limit(limit).lean();
   return rows.map(toReviewRow);
+};
+
+const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Paginated resolution audit log (RESOLUTION_RECORDED only). Read only.
+ * @param {{ page?: number, limit?: number, entityType?: string, aggregateId?: string }} [opts]
+ */
+export const listConflictHistory = async ({ page = 1, limit = 20, entityType, aggregateId } = {}) => {
+  const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 50);
+  const safePage = Math.max(Number(page) || 1, 1);
+  const filter = { status: CONFLICT_STATUS.RESOLUTION_RECORDED };
+  if (entityType && String(entityType).trim()) {
+    filter.entityType = String(entityType).trim();
+  }
+  if (aggregateId && String(aggregateId).trim()) {
+    const term = escapeRegex(String(aggregateId).trim());
+    filter.aggregateId = { $regex: term, $options: 'i' };
+  }
+
+  const skip = (safePage - 1) * safeLimit;
+  const [rows, total] = await Promise.all([
+    SyncConflict.find(filter).sort({ 'resolution.recordedAt': -1, createdAt: -1 }).skip(skip).limit(safeLimit).lean(),
+    SyncConflict.countDocuments(filter),
+  ]);
+
+  return {
+    results: rows.map(toHistoryRow),
+    page: safePage,
+    limit: safeLimit,
+    totalResults: total,
+    totalPages: Math.max(1, Math.ceil(total / safeLimit)),
+  };
 };
 
 /**

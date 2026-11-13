@@ -1,6 +1,10 @@
 import config from '../config/config.js';
 import catchAsync from '../utils/catchAsync.js';
-import { listOpenConflicts, recordConflictResolution } from '../services/sync/syncConflict.service.js';
+import {
+  listOpenConflicts,
+  listConflictHistory,
+  recordConflictResolution,
+} from '../services/sync/syncConflict.service.js';
 import { getReviewQueue } from '../services/sync/syncStatus.service.js';
 
 /**
@@ -14,6 +18,16 @@ export const listConflicts = catchAsync(async (req, res) => {
     getReviewQueue(),
   ]);
   res.send({ ...SHADOW, siteId: config.sync.siteId || null, conflicts, queue });
+});
+
+export const listConflictsHistory = catchAsync(async (req, res) => {
+  const history = await listConflictHistory({
+    page: req.query.page,
+    limit: req.query.limit,
+    entityType: req.query.entityType,
+    aggregateId: req.query.aggregateId,
+  });
+  res.send({ ...SHADOW, siteId: config.sync.siteId || null, ...history });
 });
 
 export const resolveConflict = catchAsync(async (req, res) => {

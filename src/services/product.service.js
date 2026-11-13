@@ -114,6 +114,39 @@ const ensureValidStyleCodes = async (styleCodeIds) => {
   return normalizedIds;
 };
 
+const factoryCodeConflictMessage = (factoryCode, existing) =>
+  `Factory code "${String(factoryCode).trim()}" is already used by product "${existing.name || existing.softwareCode || existing._id}"`;
+
+/**
+ * Case-insensitive factory code lookup (same semantics as getProductByCode).
+ * @param {string} factoryCode
+ * @param {import('mongoose').Types.ObjectId|string|null} [excludeProductId]
+ * @returns {Promise<Object|null>}
+ */
+const findProductConflictingFactoryCode = async (factoryCode, excludeProductId = null) => {
+  const trimmedCode = String(factoryCode || '').trim();
+  if (!trimmedCode) return null;
+  const filter = {
+    factoryCode: { $regex: new RegExp(`^${escapeRegex(trimmedCode)}$`, 'i') },
+  };
+  if (excludeProductId) {
+    filter._id = { $ne: excludeProductId };
+  }
+  return Product.findOne(filter).select('factoryCode name softwareCode').lean();
+};
+
+/**
+ * Reject duplicate non-empty factory codes across catalog items.
+ * @param {string} factoryCode
+ * @param {import('mongoose').Types.ObjectId|string|null} [excludeProductId]
+ */
+const ensureFactoryCodeUnique = async (factoryCode, excludeProductId = null) => {
+  const existing = await findProductConflictingFactoryCode(factoryCode, excludeProductId);
+  if (existing) {
+    throw new ApiError(httpStatus.BAD_REQUEST, factoryCodeConflictMessage(factoryCode, existing));
+  }
+};
+
 /**
  * Create a product
  * @param {Object} productBody
@@ -123,6 +156,7 @@ export const createProduct = async (productBody) => {
   if (productBody.softwareCode && (await Product.findOne({ softwareCode: productBody.softwareCode }))) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Software code already taken');
   }
+  await ensureFactoryCodeUnique(productBody.factoryCode);
   const styleCodes = await ensureValidStyleCodes(productBody.styleCodes);
   const product = await Product.create({ ...productBody, styleCodes });
   // Factory sync: post-commit, own try/catch (safeCapture). Never changes the response. Both directions.
@@ -406,6 +440,9 @@ export const updateProductById = async (productId, updateBody) => {
   if (updateBody.softwareCode && (await Product.findOne({ softwareCode: updateBody.softwareCode, _id: { $ne: productId } }))) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Software code already taken');
   }
+  if (updateBody.factoryCode !== undefined) {
+    await ensureFactoryCodeUnique(updateBody.factoryCode, productId);
+  }
   let styleCodes;
   if (updateBody.styleCodes) {
     styleCodes = await ensureValidStyleCodes(updateBody.styleCodes);
@@ -605,6 +642,12 @@ export const bulkImportProducts = async (products, batchSize = 50) => {
                   throw new Error(`Software code ${$set.softwareCode} already exists`);
                 }
               }
+              if ($set.factoryCode !== undefined && String($set.factoryCode).trim() !== '') {
+                const factoryDup = await findProductConflictingFactoryCode($set.factoryCode, productData.id);
+                if (factoryDup) {
+                  throw new Error(factoryCodeConflictMessage($set.factoryCode, factoryDup));
+                }
+              }
               if (Object.keys($set).length === 0) {
                 console.log(`[bulkImport] Update id=${productData.id}: no fields to update, skipping`);
               } else {
@@ -677,6 +720,12 @@ export const bulkImportProducts = async (products, batchSize = 50) => {
 
               if (await Product.findOne({ softwareCode: processedData.softwareCode }).lean()) {
                 throw new Error(`Software code ${processedData.softwareCode} already exists`);
+              }
+              if (processedData.factoryCode) {
+                const factoryDup = await findProductConflictingFactoryCode(processedData.factoryCode);
+                if (factoryDup) {
+                  throw new Error(factoryCodeConflictMessage(processedData.factoryCode, factoryDup));
+                }
               }
               console.log(`[bulkImport] Create: name="${processedData.name}" softwareCode=${processedData.softwareCode}`);
               await Product.create(processedData);
@@ -809,6 +858,12 @@ export const bulkUpsertProducts = async (products, batchSize = 50) => {
               const dup = await Product.findOne({ softwareCode: $set.softwareCode, _id: { $ne: productData.id } }).lean();
               if (dup) throw new Error(`Software code ${$set.softwareCode} already exists`);
             }
+            if ($set.factoryCode !== undefined && String($set.factoryCode).trim() !== '') {
+              const factoryDup = await findProductConflictingFactoryCode($set.factoryCode, productData.id);
+              if (factoryDup) {
+                throw new Error(factoryCodeConflictMessage($set.factoryCode, factoryDup));
+              }
+            }
             const updatedFields = Object.keys($set).map((k) =>
               k.startsWith('attributes.') ? `attributes.${k.split('.')[1]}` : k
             );
@@ -837,6 +892,12 @@ export const bulkUpsertProducts = async (products, batchSize = 50) => {
             const factoryCodeVal = normalizeExcelValue(
               productData.factoryCode ?? productData['Factory Code'] ?? productData.factory_code ?? ''
             );
+            if (factoryCodeVal) {
+              const factoryDup = await findProductConflictingFactoryCode(factoryCodeVal);
+              if (factoryDup) {
+                throw new Error(factoryCodeConflictMessage(factoryCodeVal, factoryDup));
+              }
+            }
             const processedData = {
               name,
               styleCodes: normalizedStyleCodes,

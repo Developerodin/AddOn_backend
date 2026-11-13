@@ -11,6 +11,12 @@ import * as syncReviewController from '../../controllers/syncReview.controller.j
 const router = express.Router();
 
 router.get('/conflicts', auth('manageUsers'), validate(syncValidation.listConflicts), syncReviewController.listConflicts);
+router.get(
+  '/conflicts/history',
+  auth('manageUsers'),
+  validate(syncValidation.listConflictHistory),
+  syncReviewController.listConflictsHistory
+);
 router.post(
   '/conflicts/:id/resolve',
   auth('manageUsers'),

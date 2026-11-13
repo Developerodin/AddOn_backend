@@ -57,3 +57,12 @@ export const listConflicts = {
     limit: Joi.number().integer().min(1).max(200).default(100),
   }),
 };
+
+export const listConflictHistory = {
+  query: Joi.object().keys({
+    page: Joi.number().integer().min(1).default(1),
+    limit: Joi.number().integer().min(1).max(50).default(20),
+    entityType: Joi.string().trim().max(64).allow(''),
+    aggregateId: Joi.string().trim().max(128).allow(''),
+  }),
+};

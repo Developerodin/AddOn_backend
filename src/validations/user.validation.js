@@ -86,6 +86,7 @@ const createUser = {
       'Help & Support': Joi.boolean(),
       Tasks: tasksNavigationSchema,
       Users: Joi.boolean(),
+      'Sync Conflicts': Joi.boolean(),
       'Production Planning': Joi.object().keys({
         'Production Orders': Joi.boolean(),
         'Knitting Floor': Joi.boolean(),
@@ -223,6 +224,7 @@ const updateUser = {
         'Help & Support': Joi.boolean(),
         Tasks: tasksNavigationSchema,
         Users: Joi.boolean(),
+        'Sync Conflicts': Joi.boolean(),
         'Production Planning': Joi.object().keys({
           'Production Orders': Joi.boolean(),
           'Knitting Floor': Joi.boolean(),
@@ -327,6 +329,7 @@ const updateUserNavigation = {
         'Help & Support': Joi.boolean(),
         Tasks: tasksNavigationSchema,
         Users: Joi.boolean(),
+        'Sync Conflicts': Joi.boolean(),
         'Production Planning': Joi.object().keys({
           'Production Orders': Joi.boolean(),
           'Knitting Floor': Joi.boolean(),

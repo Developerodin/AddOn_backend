@@ -116,6 +116,7 @@ const userSchema = mongoose.Schema(
           'My Tasks': true,
         },
         Users: false,
+        'Sync Conflicts': false,
         'Production Planning': {
           'Production Orders': false,
           'Knitting Floor': false,
