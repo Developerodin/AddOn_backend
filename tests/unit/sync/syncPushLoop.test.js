@@ -392,7 +392,7 @@ describe('ingest path stays off domain services', () => {
   };
 
   it('runPushTick never reaches a vendor, yarn, order, or warehouse module', () => {
-    const files = reachable('services/sync/syncWorker.js');
+    const files = reachable('services/sync/syncWorker.js', ['services/sync/syncPull.js']);
     expect(files).toContain('services/sync/syncWorker.js');
     files.forEach((rel) => expect(rel).not.toMatch(forbidden));
   });

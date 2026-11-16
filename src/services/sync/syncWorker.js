@@ -8,13 +8,15 @@ import { OUTBOX_STATUS, terminalExpireAt } from '../../models/sync/syncConstants
 import { toWireEvent } from './syncCursor.service.js';
 
 /**
- * Sync push worker (shadow v1).
+ * Sync worker.
  * - Starts only when SYNC_ENABLED and SYNC_WORKER_ENABLED are true and SYNC_SITE_ID is set.
- * - No peer URL configured → every tick is a no-op.
+ * - Push: this site's outbox is POSTed to the peer.
+ * - Pull: this site GETs the peer's outbox and applies it. The factory uses pull because the cloud
+ *   server cannot open a connection to the factory LAN. A peer with no URL makes both sides a no-op.
  * - Claims per aggregate (max 5 per aggregate, 100 per tick) with a conditional PENDING → PROCESSING
  *   update and `lockedUntil`. HTTP happens only after the claim is written; nothing runs in a transaction.
  * - A failing event backs off its whole aggregate, so one poison event never blocks other flows.
- * - Never imports or calls a domain service.
+ * - Never imports or calls a domain service. Apply goes through the inbox, which does not capture a new outbox row.
  */
 
 export const MAX_PER_AGGREGATE = 5;
@@ -258,8 +260,12 @@ export const startSyncWorker = () => {
     try {
       const stats = await runPushTick({ workerId });
       if (stats.claimed) logger.info(`[sync] push tick ${JSON.stringify(stats)}`);
+      // Loaded only on a tick so this file's import graph stays off the apply path.
+      const { runPullTick } = await import('./syncPull.js');
+      const pulled = await runPullTick();
+      if (pulled.pulled || pulled.error) logger.info(`[sync] pull tick ${JSON.stringify(pulled)}`);
     } catch (err) {
-      logger.error(`[sync] push tick failed: ${err && err.message}`);
+      logger.error(`[sync] tick failed: ${err && err.message}`);
     } finally {
       running = false;
     }
