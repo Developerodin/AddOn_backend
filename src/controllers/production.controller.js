@@ -254,6 +254,22 @@ export const getDailyProductionSummary = catchAsync(async (req, res) => {
   res.send(result);
 });
 
+export const getKnittingFloorReport = catchAsync(async (req, res) => {
+  const startDate = String(req.query.startDate ?? '').trim();
+  const endDate = String(req.query.endDate ?? '').trim();
+  const page = req.query.page != null ? parseInt(String(req.query.page), 10) : undefined;
+  const limit = req.query.limit != null ? parseInt(String(req.query.limit), 10) : undefined;
+  const search = req.query.search != null ? String(req.query.search).trim() : undefined;
+  const result = await productionService.getKnittingFloorReport({
+    startDate,
+    endDate,
+    page,
+    limit,
+    search,
+  });
+  res.send(result);
+});
+
 // ==================== LOGGING AND AUDIT ====================
 
 export const getArticleLogs = catchAsync(async (req, res) => {

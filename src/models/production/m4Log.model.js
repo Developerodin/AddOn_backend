@@ -86,6 +86,8 @@ m4LogSchema.index({ orderId: 1, timestamp: -1 });
 m4LogSchema.index({ type: 1, timestamp: -1 });
 m4LogSchema.index({ sourceFloor: 1, timestamp: -1 });
 m4LogSchema.index({ machineId: 1, timestamp: -1 });
+/** Knitting floor M4 report: type + sourceFloor + timestamp range. */
+m4LogSchema.index({ type: 1, sourceFloor: 1, timestamp: 1 });
 
 m4LogSchema.plugin(paginate);
 

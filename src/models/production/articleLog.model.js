@@ -127,6 +127,8 @@ articleLogSchema.index({ timestamp: -1 });
 articleLogSchema.index({ orderId: 1, timestamp: -1 });
 articleLogSchema.index({ action: 1, timestamp: -1 });
 articleLogSchema.index({ userId: 1, timestamp: -1 });
+/** Knitting floor report: action + timestamp range on article_logs. */
+articleLogSchema.index({ action: 1, timestamp: 1, articleId: 1 });
 
 // Apply plugins
 articleLogSchema.plugin(paginate);

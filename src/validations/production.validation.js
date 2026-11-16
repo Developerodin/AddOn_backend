@@ -507,6 +507,21 @@ const getDailyProductionSummary = {
   }),
 };
 
+/** Knitting floor: order/article/machine activity in an IST date range. */
+const getKnittingFloorReport = {
+  query: Joi.object().keys({
+    startDate: Joi.string()
+      .pattern(/^\d{4}-\d{2}-\d{2}$/)
+      .required(),
+    endDate: Joi.string()
+      .pattern(/^\d{4}-\d{2}-\d{2}$/)
+      .required(),
+    limit: Joi.number().integer().min(1).max(2000),
+    page: Joi.number().integer().min(1),
+    search: Joi.string().trim().max(80).allow(''),
+  }),
+};
+
 /** Instant branding type update on an article (Branding floor). */
 const updateArticleBrandingType = {
   params: Joi.object().keys({
@@ -899,6 +914,7 @@ export default {
   getCoreReport,
   getBacklogReport,
   getDailyProductionSummary,
+  getKnittingFloorReport,
 
   // Logging validations
   getArticleLogs,

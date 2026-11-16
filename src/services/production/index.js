@@ -22,6 +22,7 @@ export * from './coreReport.service.js';
 export * from './knittingPendingBuckets.service.js';
 export * from './backlogReport.service.js';
 export * from './dailyProductionSummary.service.js';
+export * from './knittingFloorReport.service.js';
 
 // Machine Order Assignment Services
 export * from './machineOrderAssignment.service.js';

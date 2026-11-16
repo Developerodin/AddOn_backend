@@ -303,6 +303,13 @@ router
     productionController.getDailyProductionSummary
   );
 
+router
+  .route('/reports/knitting-floor-report')
+  .get(
+    validate(productionValidation.getKnittingFloorReport),
+    productionController.getKnittingFloorReport
+  );
+
 // ==================== LOGGING AND AUDIT ROUTES ====================
 
 router
