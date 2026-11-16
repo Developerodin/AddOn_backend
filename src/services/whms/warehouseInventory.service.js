@@ -46,6 +46,7 @@ export const appendWarehouseInventoryLog = async (payload) => {
  * @param {string} [args.orderNumber]
  * @param {string} [args.action]
  * @param {string} [args.message]
+ * @param {boolean} [args.clampToAvailable] - website orders: reserve only free stock and do not reject the order
  */
 export const applyWarehouseInventoryBlockedDelta = async ({
   session,
@@ -55,6 +56,7 @@ export const applyWarehouseInventoryBlockedDelta = async ({
   orderNumber = null,
   action = 'order_block',
   message = '',
+  clampToAvailable = false,
 }) => {
   if (!styleCode || !deltaBlocked || !Number.isFinite(deltaBlocked)) return;
 
@@ -63,15 +65,22 @@ export const applyWarehouseInventoryBlockedDelta = async ({
     if (session) invQuery = invQuery.session(session);
     const inv = await invQuery;
     if (!inv) {
+      if (clampToAvailable) return;
       throw new ApiError(httpStatus.BAD_REQUEST, `No inventory row found for styleCode "${styleCode}"`);
     }
     const total = Number(inv.totalQuantity ?? 0);
     const blocked = Number(inv.blockedQuantity ?? 0);
-    if (blocked + deltaBlocked > total) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        `Insufficient available stock for styleCode "${styleCode}" (total: ${total}, blocked: ${blocked}, requested block: ${deltaBlocked})`
-      );
+    const free = Math.max(0, total - blocked);
+    if (deltaBlocked > free) {
+      if (!clampToAvailable) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Insufficient available stock for styleCode "${styleCode}" (total: ${total}, blocked: ${blocked}, requested block: ${deltaBlocked})`
+        );
+      }
+      if (free <= 0) return;
+      message = `${message} — reserved ${free} of ${deltaBlocked} (stock short)`.trim();
+      deltaBlocked = free;
     }
   }
 

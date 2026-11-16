@@ -54,7 +54,16 @@ export const aggregateQtyByStyleCode = (rows, mode = 'quantity') => {
  * @param {string} context.action
  * @param {string} context.messagePrefix
  */
-const applyBlockedDeltasFromMap = async (qtyByStyleCode, { orderId, orderNumber, action, messagePrefix }) => {
+/** Website orders are accepted even when stock is short. Only free quantity is reserved. */
+const isWebsiteOrder = (order) => {
+  const meta = order?.meta && typeof order.meta.toObject === 'function' ? order.meta.toObject() : order?.meta || {};
+  return meta.source === 'addonweb';
+};
+
+const applyBlockedDeltasFromMap = async (
+  qtyByStyleCode,
+  { orderId, orderNumber, action, messagePrefix, clampToAvailable = false }
+) => {
   for (const [styleCode, qty] of qtyByStyleCode.entries()) {
     if (!qty) continue;
     await applyWarehouseInventoryBlockedDelta({
@@ -64,6 +73,7 @@ const applyBlockedDeltasFromMap = async (qtyByStyleCode, { orderId, orderNumber,
       orderNumber,
       action,
       message: `${messagePrefix} ${styleCode} (${qty > 0 ? '+' : ''}${qty})`,
+      clampToAvailable,
     });
   }
 };
@@ -81,6 +91,7 @@ export const blockInventoryForWarehouseOrder = async (order) => {
     orderNumber: order.orderNumber,
     action: 'order_block_create',
     messagePrefix: 'Warehouse order created — blocked',
+    clampToAvailable: isWebsiteOrder(order),
   });
 };
 
@@ -109,6 +120,7 @@ export const syncInventoryBlockForWarehouseOrderLineItems = async (order, previo
       orderNumber: order.orderNumber,
       action: 'order_block_sync',
       message: `Warehouse order line edit — blocked ${styleCode} (${delta > 0 ? '+' : ''}${delta})`,
+      clampToAvailable: isWebsiteOrder(order),
     });
   }
 };
