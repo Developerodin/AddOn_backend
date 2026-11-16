@@ -5,6 +5,7 @@ import {
   articleRequiresBrandOnM2Merge,
   buildSingleBrandM2MergeItems,
   extractBrandsFromProductStyleCodes,
+  latestStyleCodeForBrand,
   finalCheckingHasBrandReceivedData,
   formatM2MergeBrandRemarks,
   mergeTransferredDataByBrand,
@@ -442,5 +443,28 @@ describe('brandQuantity.util — M2 merge brand', () => {
 
       expect(article.floorQuantities.branding.transferredData[0].styleCode).toBe('A1');
     });
+  });
+});
+
+describe('latestStyleCodeForBrand', () => {
+  const styles = [
+    { brand: 'Peter England', styleCode: 'OLD', createdAt: '2026-02-14T07:28:38.179Z' },
+    { brand: 'Allen Solly', styleCode: 'AS-OLD', createdAt: '2026-02-14T07:28:38.180Z' },
+    { brand: 'Peter England', styleCode: 'MID', createdAt: '2026-02-14T07:28:38.188Z' },
+    { brand: 'Peter England', styleCode: 'NEW', createdAt: '2026-07-04T11:15:50.900Z' },
+  ];
+
+  test('picks the newest style code for the brand', () => {
+    expect(latestStyleCodeForBrand('Peter England', styles)).toBe('NEW');
+    expect(latestStyleCodeForBrand('allen solly', styles)).toBe('AS-OLD');
+  });
+
+  test('uses the last linked code when createdAt is missing', () => {
+    expect(
+      latestStyleCodeForBrand('Peter England', [
+        { brand: 'Peter England', styleCode: 'FIRST' },
+        { brand: 'Peter England', styleCode: 'LAST' },
+      ])
+    ).toBe('LAST');
   });
 });

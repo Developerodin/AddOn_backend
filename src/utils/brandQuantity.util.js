@@ -492,6 +492,35 @@ export function resolveStyleCodeForBrand(brand, receivedData, productStyleCodes)
 }
 
 /**
+ * Newest catalog style code for a brand.
+ * Used when the article never goes through Branding, so nobody picked a style and the
+ * first linked code is the older one. `createdAt` wins; if it is missing, the last linked code is used.
+ * @param {string} brand
+ * @param {Array<{ brand?: string, styleCode?: string, createdAt?: Date|string }>|undefined|null} productStyleCodes
+ * @returns {string}
+ */
+export function latestStyleCodeForBrand(brand, productStyleCodes) {
+  const key = brandKey(brand);
+  if (!key) return '';
+  let bestCode = '';
+  let bestAt = Number.NEGATIVE_INFINITY;
+  let bestIndex = -1;
+  (productStyleCodes || []).forEach((sc, index) => {
+    if (brandKey(brandFromStyleCodeEntry(sc)) !== key) return;
+    const code = styleCodeFromProductEntry(sc);
+    if (!code) return;
+    const created = sc?.createdAt != null ? new Date(sc.createdAt).getTime() : Number.NaN;
+    const at = Number.isFinite(created) ? created : Number.NEGATIVE_INFINITY;
+    if (bestIndex < 0 || at > bestAt || (at === bestAt && index > bestIndex)) {
+      bestCode = code;
+      bestAt = at;
+      bestIndex = index;
+    }
+  });
+  return bestCode;
+}
+
+/**
  * Enrich M2 merge transfer items with styleCode from receivedData or product catalog.
  * @param {Array<{ transferred?: number, styleCode?: string, brand?: string }>} transferItems
  * @param {Array<{ styleCode?: string, brand?: string }>} receivedData
