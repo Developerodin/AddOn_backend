@@ -155,7 +155,8 @@ export const getYarnConeByBarcode = {
     .keys({
       /** When set together with expected_article_id, response includes matchesExpectedReturnContext from yarn issue history. */
       expected_order_id: Joi.string().custom(objectId).optional(),
-      expected_article_id: Joi.string().custom(objectId).optional(),
+      /** Production article business id (`ART…`) or Mongo `_id` — not ObjectId-only. */
+      expected_article_id: Joi.string().trim().min(1).optional(),
     })
     .optional(),
 };

@@ -98,6 +98,29 @@ function escapeRegex(s) {
 }
 
 /**
+ * Resolve article on a PO by Mongo `_id`, business `id` (`ART…`), or `articleNumber`.
+ *
+ * @param {string} orderIdStr
+ * @param {string} articleIdStr
+ */
+async function resolveArticleForOrder(orderIdStr, articleIdStr) {
+  const trimmed = String(articleIdStr || '').trim();
+  if (!trimmed || !mongoose.Types.ObjectId.isValid(orderIdStr)) {
+    return null;
+  }
+  const orderOid = new mongoose.Types.ObjectId(orderIdStr);
+  if (/^[0-9a-fA-F]{24}$/.test(trimmed)) {
+    return Article.findOne({ _id: trimmed, orderId: orderOid }).select('articleNumber id').lean();
+  }
+  return Article.findOne({
+    orderId: orderOid,
+    $or: [{ id: trimmed }, { articleNumber: trimmed }],
+  })
+    .select('articleNumber id')
+    .lean();
+}
+
+/**
  * Any yarn issue row linking this cone to the given production order + article (legacy `orderno` / `articleNumber` aware).
  *
  * @param {mongoose.Types.ObjectId|string} coneOid
@@ -105,17 +128,12 @@ function escapeRegex(s) {
  * @param {string} articleIdStr
  */
 async function findIssueTxnMatchingOrderArticle(coneOid, orderIdStr, articleIdStr) {
-  if (!mongoose.Types.ObjectId.isValid(orderIdStr) || !mongoose.Types.ObjectId.isValid(articleIdStr)) {
+  if (!mongoose.Types.ObjectId.isValid(orderIdStr)) {
     return null;
   }
   const [po, article] = await Promise.all([
     ProductionOrder.findById(orderIdStr).select('orderNumber').lean(),
-    Article.findOne({
-      _id: new mongoose.Types.ObjectId(articleIdStr),
-      orderId: new mongoose.Types.ObjectId(orderIdStr),
-    })
-      .select('articleNumber')
-      .lean(),
+    resolveArticleForOrder(orderIdStr, articleIdStr),
   ]);
   if (!po || !article) {
     return null;
@@ -123,12 +141,13 @@ async function findIssueTxnMatchingOrderArticle(coneOid, orderIdStr, articleIdSt
   const oid = coneOid instanceof mongoose.Types.ObjectId ? coneOid : new mongoose.Types.ObjectId(String(coneOid));
   const ordRe = new RegExp(`^${escapeRegex(String(po.orderNumber ?? '').trim())}$`, 'i');
   const artRe = new RegExp(`^${escapeRegex(String(article.articleNumber ?? '').trim())}$`, 'i');
+  const articleOid = article._id;
   return YarnTransaction.findOne({
     transactionType: { $in: ISSUE_TX_TYPES_FOR_CONE_LINK },
     conesIdsArray: oid,
     $and: [
       { $or: [{ orderId: new mongoose.Types.ObjectId(orderIdStr) }, { orderno: ordRe }] },
-      { $or: [{ articleId: new mongoose.Types.ObjectId(articleIdStr) }, { articleNumber: artRe }] },
+      { $or: [{ articleId: articleOid }, { articleNumber: artRe }] },
     ],
   })
     .select('_id transactionDate')
@@ -436,12 +455,7 @@ export const getYarnConeByBarcode = async (barcode, options = {}) => {
 
   /** @type {boolean|null} */
   let matchesExpectedReturnContext = null;
-  if (
-    expectedOrderId &&
-    expectedArticleId &&
-    mongoose.Types.ObjectId.isValid(expectedOrderId) &&
-    mongoose.Types.ObjectId.isValid(expectedArticleId)
-  ) {
+  if (expectedOrderId && expectedArticleId && mongoose.Types.ObjectId.isValid(expectedOrderId)) {
     const hit = await findIssueTxnMatchingOrderArticle(yarnCone._id, expectedOrderId, expectedArticleId);
     matchesExpectedReturnContext = !!hit;
   }
