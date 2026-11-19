@@ -206,9 +206,19 @@ const loadMachineOrderAssignmentsCompletedItems = async () => {
       },
     },
   })
-    .populate('machine')
-    .populate('productionOrderItems.productionOrder')
-    .populate('productionOrderItems.article')
+    .populate({
+      path: 'machine',
+      select: 'machineCode machineNumber model name needleSize needleSizeConfig floor',
+    })
+    .populate({
+      path: 'productionOrderItems.productionOrder',
+      select: 'orderNumber currentFloor createdAt updatedAt',
+    })
+    .populate({
+      path: 'productionOrderItems.article',
+      select: 'articleNumber plannedQuantity status linkingType priority remarks',
+    })
+    .select('machine activeNeedle productionOrderItems isActive createdAt updatedAt')
     .lean();
   return assignments.map((doc) => {
     const items = (doc.productionOrderItems || []).filter((i) => {

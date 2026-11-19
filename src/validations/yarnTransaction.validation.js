@@ -81,6 +81,12 @@ export const createYarnTransaction = {
         });
       }
 
+      if (type === 'yarn_issued' && !String(valueWithId.machineId ?? '').trim()) {
+        return helpers.error('any.custom', {
+          message: 'machineId is required when transactionType is yarn_issued',
+        });
+      }
+
       return valueWithId;
     }, 'transaction payload completeness validation')
     .required(),
@@ -137,6 +143,7 @@ export const getYarnIssuedByOrder = {
     include_floor_issue: Joi.alternatives()
       .try(Joi.boolean(), Joi.string().trim().valid('', 'true', 'false', '0', '1', 'yes', 'no'))
       .optional(),
+    machine_id: Joi.string().custom(objectId).optional(),
   }),
 };
 

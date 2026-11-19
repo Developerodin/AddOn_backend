@@ -98,9 +98,12 @@ export const getYarnIssuedByOrder = catchAsync(async (req, res) => {
     return s === 'true' || s === '1' || s === 'yes';
   };
 
+  const machineId = String(req.query.machine_id ?? '').trim() || undefined;
+
   const transactions = await yarnTransactionService.getYarnIssuedByOrder(orderno, false, {
     includeReturns: truthy(req.query.include_returns),
     includeFloorIssue: truthy(req.query.include_floor_issue),
+    machineId,
   });
   res.status(httpStatus.OK).send(transactions);
 });

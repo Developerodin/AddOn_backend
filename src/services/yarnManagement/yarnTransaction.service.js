@@ -11,7 +11,7 @@ import {
 import Product from '../../models/product.model.js';
 import ApiError from '../../utils/ApiError.js';
 import { pickYarnCatalogId } from '../../utils/yarnCatalogRef.js';
-import { loadLatestIssueTransactionContextForCone } from './yarnCone.service.js';
+import { loadLatestIssueOrderArticleByConeIds } from './yarnCone.service.js';
 import { captureYarnTransactionIssued, safeCapture } from '../sync/syncOwnershipCapture.js';
 import { isLtLocation } from './storageLocation.helper.js';
 import { cachedYarnRead, YarnCacheResource, YarnCacheTtl, invalidateYarnStock } from './yarnReadCache.helper.js';
@@ -678,6 +678,153 @@ const resolveKnittingCompletedAtIso = async (articleIdStr) => {
   return null;
 };
 
+const ARTICLE_SLICE_TX_SELECT =
+  '_id transactionType transactionDate yarnName conesIdsArray articleId articleNumber orderId orderno';
+
+/**
+ * Same article-matching rules as {@link groupTransactionsByArticle}, but only for one target article
+ * (avoids per-article Product/BOM queries on every slice request).
+ *
+ * @param {Record<string, unknown>[]} transactions
+ * @param {{ _id: import('mongoose').Types.ObjectId; orderNumber?: string | null }} productionOrder
+ * @param {{ _id: unknown; articleNumber?: string | null }} targetArticle
+ * @returns {Promise<Record<string, unknown>[]>}
+ */
+async function collectTransactionsForArticleSlice(transactions, productionOrder, targetArticle) {
+  if (!transactions?.length) return [];
+
+  const targetKey = String(targetArticle.articleNumber ?? '').trim().toLowerCase();
+  if (!targetKey) return [];
+
+  const orderArticles = await Article.find({ orderId: productionOrder._id })
+    .select('articleNumber _id')
+    .lean();
+
+  /** @type {Set<string>} */
+  const targetBomYarnNames = new Set();
+  try {
+    const product = await Product.findOne({
+      factoryCode: targetArticle.articleNumber,
+    })
+      .populate({ path: 'bom.yarnCatalogId', select: 'yarnName' })
+      .select('bom')
+      .lean();
+    if (product?.bom?.length) {
+      for (const bomItem of product.bom) {
+        const yarnName = bomItem.yarnName || bomItem.yarnCatalogId?.yarnName;
+        if (yarnName) targetBomYarnNames.add(yarnName);
+      }
+    }
+  } catch (error) {
+    console.error(`Error fetching BOM for article ${targetArticle.articleNumber}:`, error.message);
+  }
+
+  const coneIdToArticleNumber = new Map();
+  const coneOidHex = new Set();
+  for (const t of transactions) {
+    const arr = t.conesIdsArray;
+    if (!Array.isArray(arr)) continue;
+    for (const item of arr) {
+      const id =
+        item && typeof item === 'object' && item !== null && '_id' in item ? item._id : item;
+      if (id != null && mongoose.Types.ObjectId.isValid(id)) {
+        coneOidHex.add(String(id));
+      }
+    }
+  }
+  if (coneOidHex.size > 0) {
+    const cones = await YarnCone.find({
+      _id: { $in: [...coneOidHex].map((h) => new mongoose.Types.ObjectId(h)) },
+    })
+      .select('articleId')
+      .lean();
+    for (const c of cones) {
+      if (!c?._id || !c?.articleId) continue;
+      const hit = orderArticles.find((a) => String(a._id) === String(c.articleId));
+      if (hit?.articleNumber) {
+        coneIdToArticleNumber.set(String(c._id), String(hit.articleNumber).trim());
+      }
+    }
+  }
+
+  /**
+   * @param {Record<string, unknown>} transaction
+   * @param {typeof orderArticles} orderArticlesList
+   * @returns {string|null}
+   */
+  const resolveArticleNumberFromTransaction = (transaction, orderArticlesList) => {
+    const top = transaction?.articleNumber != null ? String(transaction.articleNumber).trim() : '';
+    if (top) return top;
+
+    const aid = transaction.articleId;
+    if (aid && typeof aid === 'object') {
+      const fromPop = aid.articleNumber != null ? String(aid.articleNumber).trim() : '';
+      if (fromPop) return fromPop;
+      const id = '_id' in aid ? aid._id : null;
+      if (id != null) {
+        const hit = orderArticlesList.find((a) => String(a._id) === String(id));
+        if (hit?.articleNumber) return String(hit.articleNumber).trim();
+      }
+    } else if (aid != null) {
+      const hit = orderArticlesList.find((a) => String(a._id) === String(aid));
+      if (hit?.articleNumber) return String(hit.articleNumber).trim();
+    }
+    return null;
+  };
+
+  /**
+   * @param {Record<string, unknown>} transaction
+   * @returns {string|null}
+   */
+  const articleNumberFromConeIds = (transaction) => {
+    const arr = transaction.conesIdsArray;
+    if (!Array.isArray(arr) || arr.length === 0) return null;
+    const first = arr[0];
+    const id =
+      first && typeof first === 'object' && first !== null && '_id' in first ? first._id : first;
+    if (id == null) return null;
+    return coneIdToArticleNumber.get(String(id)) ?? null;
+  };
+
+  /** @type {Record<string, unknown>[]} */
+  const matched = [];
+  for (const transaction of transactions) {
+    const explicitArticleNumber = resolveArticleNumberFromTransaction(transaction, orderArticles);
+    const canonicalExplicit = explicitArticleNumber
+      ? orderArticles.find(
+          (a) =>
+            String(a.articleNumber).trim().toLowerCase() ===
+            String(explicitArticleNumber).trim().toLowerCase()
+        )
+      : null;
+    if (canonicalExplicit) {
+      if (String(canonicalExplicit.articleNumber).trim().toLowerCase() === targetKey) {
+        matched.push(transaction);
+      }
+      continue;
+    }
+
+    const coneArticle = articleNumberFromConeIds(transaction);
+    const canonicalFromCone = coneArticle
+      ? orderArticles.find(
+          (a) => String(a.articleNumber).trim().toLowerCase() === String(coneArticle).trim().toLowerCase()
+        )
+      : null;
+    if (canonicalFromCone) {
+      if (String(canonicalFromCone.articleNumber).trim().toLowerCase() === targetKey) {
+        matched.push(transaction);
+      }
+      continue;
+    }
+
+    if (targetBomYarnNames.has(transaction.yarnName)) {
+      matched.push(transaction);
+    }
+  }
+
+  return matched;
+}
+
 /**
  * Read path: issued + returned yarn transactions for one PO + article, merged to cone-level status.
  * Matches legacy `orderno` rows the same way as `getYarnIssuedByOrder` / `queryYarnTransactions` + `order_id`.
@@ -697,7 +844,7 @@ const resolveKnittingCompletedAtIso = async (articleIdStr) => {
  *
  * @param {{ orderId: string; articleId?: string; articleNumber?: string }} params
  */
-export const getArticleReturnSlice = async ({ orderId, articleId, articleNumber }) => {
+const _getArticleReturnSlice = async ({ orderId, articleId, articleNumber }) => {
   const poIdStr = String(orderId ?? '').trim();
   if (!mongoose.Types.ObjectId.isValid(poIdStr)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid order_id');
@@ -708,30 +855,6 @@ export const getArticleReturnSlice = async ({ orderId, articleId, articleNumber 
   if (!po) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Production order not found');
   }
-
-  const ordRe = new RegExp(`^${escapeRegex(String(po.orderNumber ?? '').trim())}$`, 'i');
-  const orderScope = { $or: [{ orderId: po._id }, { orderno: ordRe }] };
-
-  const sliceTypes = [...ARTICLE_SLICE_ISSUE_TYPES, 'yarn_returned'];
-  const mongooseFilter = {
-    $and: [{ ...orderScope }, { transactionType: { $in: sliceTypes } }],
-  };
-
-  const transactions = await YarnTransaction.find(mongooseFilter)
-    .populate({
-      path: 'yarnCatalogId',
-      select: '_id yarnName yarnType status',
-    })
-    .populate({ path: 'orderId', select: 'orderNumber' })
-    .populate({ path: 'articleId', select: 'articleNumber orderId machineId' })
-    .populate({ path: 'machineId', select: 'machineCode machineNumber model floor' })
-    .populate({
-      path: 'conesIdsArray',
-      select: 'barcode boxId yarnName _id articleId',
-      populate: { path: 'articleId', select: 'articleNumber' },
-    })
-    .sort({ transactionDate: -1 })
-    .lean();
 
   let articleDoc = null;
   const aidTrim = articleId ? String(articleId).trim() : '';
@@ -759,14 +882,26 @@ export const getArticleReturnSlice = async ({ orderId, articleId, articleNumber 
     throw new ApiError(httpStatus.NOT_FOUND, 'Article not found for this production order');
   }
 
-  const groups = await groupTransactionsByArticle(transactions, { orderId: po._id });
+  const ordRe = new RegExp(`^${escapeRegex(String(po.orderNumber ?? '').trim())}$`, 'i');
+  const orderScope = { $or: [{ orderId: po._id }, { orderno: ordRe }] };
 
-  const targetKey = String(articleDoc.articleNumber ?? '').trim().toLowerCase();
-  /** @type {Record<string, unknown>[]|undefined} */
-  const matchingGroupTx = groups.find((g) => String(g.articleNumber ?? '').trim().toLowerCase() === targetKey)
-    ?.transactions;
+  const sliceTypes = [...ARTICLE_SLICE_ISSUE_TYPES, 'yarn_returned'];
+  const mongooseFilter = {
+    $and: [{ ...orderScope }, { transactionType: { $in: sliceTypes } }],
+  };
 
-  const articleTxList = Array.isArray(matchingGroupTx) ? matchingGroupTx : [];
+  const transactions = await YarnTransaction.find(mongooseFilter)
+    .select(ARTICLE_SLICE_TX_SELECT)
+    .populate({ path: 'articleId', select: 'articleNumber' })
+    .populate({
+      path: 'conesIdsArray',
+      select: 'barcode boxId yarnName _id articleId',
+      populate: { path: 'articleId', select: 'articleNumber' },
+    })
+    .sort({ transactionDate: -1 })
+    .lean();
+
+  const articleTxList = await collectTransactionsForArticleSlice(transactions, po, articleDoc);
 
   /** @type {Map<string, { id: string; barcode: string; yarnName: string; status: 'Awaiting' | 'Returned' | 'Consumed' | 'Closed' }>} */
   const coneById = new Map();
@@ -805,10 +940,9 @@ export const getArticleReturnSlice = async ({ orderId, articleId, articleNumber 
   const sliceOrderIdStr = String(po._id);
   const sliceArticleIdStr = String(articleDoc._id);
   const candidateIds = [...coneById.keys()];
-  const latestCtxList = await Promise.all(candidateIds.map((coneKey) => loadLatestIssueTransactionContextForCone(coneKey)));
-  for (let i = 0; i < candidateIds.length; i += 1) {
-    const coneKey = candidateIds[i];
-    const ctx = latestCtxList[i];
+  const latestCtxByCone = await loadLatestIssueOrderArticleByConeIds(candidateIds);
+  for (const coneKey of candidateIds) {
+    const ctx = latestCtxByCone.get(coneKey);
     if (!ctx?.orderId || !ctx?.articleId) continue;
     if (String(ctx.orderId) !== sliceOrderIdStr || String(ctx.articleId) !== sliceArticleIdStr) {
       coneById.delete(coneKey);
@@ -898,43 +1032,24 @@ export const getArticleReturnSlice = async ({ orderId, articleId, articleNumber 
   else if (pendingConeCount > 0 && closedConeCount === 0) statusSummary = 'Awaiting';
   else if (pendingConeCount === 0 && closedConeCount > 0) statusSummary = 'Returned';
 
-  let assignment =
-    /** @type {import('mongoose').LeanDocument<{ machine?: Record<string, unknown> }>|null} */ (
-      await MachineOrderAssignment.findOne({
-        isActive: true,
-        productionOrderItems: {
-          $elemMatch: { productionOrder: po._id, article: articleDoc._id },
-        },
+  const [assignmentRow, knittingCompletedFromLog] = await Promise.all([
+    MachineOrderAssignment.findOne({
+      productionOrderItems: {
+        $elemMatch: { productionOrder: po._id, article: articleDoc._id },
+      },
+    })
+      .populate({
+        path: 'machine',
+        select: 'floor assignedSupervisor',
+        populate: { path: 'assignedSupervisor', select: 'name email' },
       })
-        .populate({
-          path: 'machine',
-          select: 'floor assignedSupervisor',
-          populate: { path: 'assignedSupervisor', select: 'name email' },
-        })
-        .select('machine')
-        .sort({ updatedAt: -1 })
-        .lean()
-    );
+      .select('machine isActive')
+      .sort({ isActive: -1, updatedAt: -1 })
+      .lean(),
+    resolveKnittingCompletedAtIso(String(articleDoc._id)),
+  ]);
 
-  if (!assignment?.machine) {
-    assignment =
-      /** @type {typeof assignment} */
-      (
-        await MachineOrderAssignment.findOne({
-          productionOrderItems: {
-            $elemMatch: { productionOrder: po._id, article: articleDoc._id },
-          },
-        })
-          .populate({
-            path: 'machine',
-            select: 'floor assignedSupervisor',
-            populate: { path: 'assignedSupervisor', select: 'name email' },
-          })
-          .select('machine')
-          .sort({ updatedAt: -1 })
-          .lean()
-      );
-  }
+  const assignment = /** @type {typeof assignmentRow} */ (assignmentRow);
 
   /** @type {Record<string, unknown>|undefined} */
   const mach = assignment && typeof assignment.machine === 'object' ? assignment.machine : undefined;
@@ -952,7 +1067,6 @@ export const getArticleReturnSlice = async ({ orderId, articleId, articleNumber 
     (supervisor?.email != null && String(supervisor.email).trim()) ||
     'N/A';
 
-  const knittingCompletedFromLog = await resolveKnittingCompletedAtIso(String(articleDoc._id));
   const knittingCompletedAt =
     knittingCompletedFromLog ??
     toIsoStringOrNull(articleDoc.completedAt);
@@ -984,6 +1098,15 @@ export const getArticleReturnSlice = async ({ orderId, articleId, articleNumber 
     cones: conesOut,
   };
 };
+
+export const getArticleReturnSlice = async (params) =>
+  cachedYarnRead({
+    resource: YarnCacheResource.TRANSACTIONS,
+    operation: 'getArticleReturnSlice',
+    input: params,
+    ttlSeconds: YarnCacheTtl.LIVE,
+    loader: () => _getArticleReturnSlice(params),
+  });
 
 /**
  * Enriches yarn transactions with article information by matching yarns to articles via BOM
@@ -1313,10 +1436,10 @@ const groupTransactionsByArticleNumber = (transactions) => {
  *
  * @param {string} orderno
  * @param {boolean} groupByArticle
- * @param {{ includeReturns?: boolean; includeFloorIssue?: boolean }} [options]
+ * @param {{ includeReturns?: boolean; includeFloorIssue?: boolean; machineId?: string }} [options]
  */
 const _getYarnIssuedByOrder = async (orderno, groupByArticle = false, options = {}) => {
-  const { includeReturns = false, includeFloorIssue = false } = options || {};
+  const { includeReturns = false, includeFloorIssue = false, machineId } = options || {};
 
   /** @type {string[]} */
   const types = ['yarn_issued'];
@@ -1340,6 +1463,11 @@ const _getYarnIssuedByOrder = async (orderno, groupByArticle = false, options = 
   const mongooseFilter = {
     $and: [{ ...orderScope }, { transactionType: { $in: types } }],
   };
+
+  const scopedMachineId = String(machineId ?? '').trim();
+  if (scopedMachineId) {
+    mongooseFilter.$and.push({ machineId: scopedMachineId });
+  }
 
   const transactions = await YarnTransaction.find(mongooseFilter)
     .populate({

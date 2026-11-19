@@ -211,6 +211,126 @@ export async function loadLatestIssueTransactionContextForCone(coneId) {
   };
 }
 
+/**
+ * Batch variant for article-return-slice: one query for all cones, newest issue txn wins per cone.
+ * Returns only `orderId` / `articleId` (same semantics as {@link loadLatestIssueTransactionContextForCone} for slice filtering).
+ *
+ * @param {Array<mongoose.Types.ObjectId|string>} coneIds
+ * @returns {Promise<Map<string, { orderId: string|null, articleId: string|null }>>}
+ */
+export async function loadLatestIssueOrderArticleByConeIds(coneIds) {
+  /** @type {Map<string, { orderId: string|null, articleId: string|null }>} */
+  const out = new Map();
+  if (!Array.isArray(coneIds) || coneIds.length === 0) return out;
+
+  /** @type {mongoose.Types.ObjectId[]} */
+  const oids = [];
+  const oidHex = new Set();
+  for (const raw of coneIds) {
+    try {
+      const oid = raw instanceof mongoose.Types.ObjectId ? raw : new mongoose.Types.ObjectId(String(raw));
+      const hex = String(oid);
+      if (oidHex.has(hex)) continue;
+      oidHex.add(hex);
+      oids.push(oid);
+    } catch {
+      // skip invalid ids
+    }
+  }
+  if (!oids.length) return out;
+
+  const txns = await YarnTransaction.find({
+    transactionType: { $in: ISSUE_TX_TYPES_FOR_CONE_LINK },
+    conesIdsArray: { $in: oids },
+  })
+    .sort({ transactionDate: -1, _id: -1 })
+    .select('_id transactionDate orderId orderno articleId articleNumber conesIdsArray')
+    .populate({ path: 'orderId', select: '_id orderNumber' })
+    .populate({ path: 'articleId', select: '_id articleNumber' })
+    .lean();
+
+  /** @type {Set<string>} */
+  const unresolvedOrdernos = new Set();
+
+  const resolveOrderIdFromTxn = (txn) => {
+    if (txn.orderId) {
+      const o = txn.orderId;
+      if (typeof o === 'object' && o !== null && '_id' in o) {
+        return String(/** @type {{ _id?: unknown }} */ (o)._id);
+      }
+      return String(o);
+    }
+    return null;
+  };
+
+  const resolveArticleIdFromTxn = (txn) => {
+    if (txn.articleId) {
+      const a = txn.articleId;
+      if (typeof a === 'object' && a !== null && '_id' in a) {
+        return String(/** @type {{ _id?: unknown }} */ (a)._id);
+      }
+      return String(a);
+    }
+    return null;
+  };
+
+  for (const txn of txns) {
+    const arr = txn.conesIdsArray;
+    if (!Array.isArray(arr)) continue;
+    let orderIdStr = resolveOrderIdFromTxn(txn);
+    const articleIdStr = resolveArticleIdFromTxn(txn);
+    if (!orderIdStr && txn.orderno != null && String(txn.orderno).trim()) {
+      unresolvedOrdernos.add(String(txn.orderno).trim());
+    }
+    for (const cref of arr) {
+      const id =
+        cref && typeof cref === 'object' && cref !== null && '_id' in cref
+          ? String(/** @type {{ _id?: unknown }} */ (cref)._id)
+          : String(cref);
+      if (!oidHex.has(id) || out.has(id)) continue;
+      if (orderIdStr) {
+        out.set(id, { orderId: orderIdStr, articleId: articleIdStr });
+      }
+    }
+  }
+
+  if (unresolvedOrdernos.size > 0) {
+    const ordernoMatchers = [...unresolvedOrdernos].map(
+      (ono) => new RegExp(`^${escapeRegex(String(ono).trim())}$`, 'i')
+    );
+    const pos = await ProductionOrder.find({ orderNumber: { $in: ordernoMatchers } })
+      .select('_id orderNumber')
+      .lean();
+    /** @type {Map<string, string>} */
+    const ordernoToId = new Map();
+    for (const p of pos) {
+      if (p?.orderNumber != null) {
+        ordernoToId.set(String(p.orderNumber).trim().toLowerCase(), String(p._id));
+      }
+    }
+    for (const txn of txns) {
+      const ono = txn.orderno != null ? String(txn.orderno).trim().toLowerCase() : '';
+      if (!ono) continue;
+      const resolved = ordernoToId.get(ono);
+      if (!resolved) continue;
+      if (resolveOrderIdFromTxn(txn)) continue;
+      const articleIdStr = resolveArticleIdFromTxn(txn);
+      const arr = txn.conesIdsArray;
+      if (!Array.isArray(arr)) continue;
+      for (const cref of arr) {
+        const id =
+          cref && typeof cref === 'object' && cref !== null && '_id' in cref
+            ? String(/** @type {{ _id?: unknown }} */ (cref)._id)
+            : String(cref);
+        if (!oidHex.has(id) || out.has(id)) continue;
+        out.set(id, { orderId: resolved, articleId: articleIdStr });
+      }
+    }
+  }
+
+  return out;
+}
+
 export const createYarnCone = async (yarnConeBody) => {
   const existingBarcode = await YarnCone.findOne({
     barcode: yarnConeBody.barcode,
