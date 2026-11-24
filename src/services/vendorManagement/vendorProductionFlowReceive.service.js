@@ -5,9 +5,18 @@ import ContainersMaster from '../../models/production/containersMaster.model.js'
 import { ContainerStatus } from '../../models/production/enums.js';
 import ApiError from '../../utils/ApiError.js';
 import { computeDerivedForFloor, pickFloorSnapshot } from './vendorProductionFlowFloorPatch.js';
-import { aggregateTransferredByStyleKey, aggregateFinalCheckingReceivedForSourceCap, filterBrandingOutboundForDestination, normalizeVendorBrandingType } from '../../utils/vendorStyleQuantity.util.js';
+import {
+  aggregateTransferredByStyleKey,
+  aggregateFinalCheckingReceivedForSourceCap,
+  filterBrandingOutboundForDestination,
+  normalizeVendorBrandingType,
+  vendorStyleKey,
+} from '../../utils/vendorStyleQuantity.util.js';
 import { promoteVendorDispatchToInwardReceive } from '../whms/inwardReceiveFromVendorDispatch.helper.js';
-import { consumeActiveVendorStnAllocations } from '../../utils/vendorDispatchWarehousePending.util.js';
+import {
+  aggregateVendorDispatchFloorReceivedByStyleKey,
+  consumeActiveVendorStnAllocations,
+} from '../../utils/vendorDispatchWarehousePending.util.js';
 
 /** WHMS: container accept after dispatch→warehouse transfer stages this floor. */
 export const VENDOR_WAREHOUSE_INWARD_ACTIVE_FLOOR = 'Warehouse Inward';
@@ -309,7 +318,8 @@ function assertVendorDispatchReceiveWithinFinalCheckingCap(flow, incomingRows) {
   const fcByStyle = aggregateTransferredByStyleKey(fc.transferredData);
 
   const dispatch = flow.floorQuantities?.dispatch || {};
-  const dispatchExisting = aggregateTransferredByStyleKey(dispatch.receivedData);
+  /** WHMS handoff rows live on `receivedData` too — must not inflate dispatch receive vs FC cap. */
+  const dispatchExisting = aggregateVendorDispatchFloorReceivedByStyleKey(dispatch.receivedData);
   const incomingMap = aggregateTransferredByStyleKey(incomingRows);
   const incomingTotal = [...incomingMap.values()].reduce((a, b) => a + b, 0);
   if (incomingTotal <= 0) return;
@@ -493,22 +503,27 @@ export const updateVendorProductionFlowFloorReceivedData = async (flowId, payloa
   ) {
     const fc = flow.floorQuantities?.finalChecking;
     const prevTransferredData = fc?.transferredData;
+    const fcByStyle = aggregateTransferredByStyleKey(prevTransferredData);
+    const dispatchByStyle = aggregateVendorDispatchFloorReceivedByStyleKey(
+      flow.floorQuantities?.dispatch?.receivedData
+    );
     if (Array.isArray(prevTransferredData) && prevTransferredData.length > 0) {
-      const totalAvailable = prevTransferredData.reduce((s, i) => s + (i.transferred || 0), 0);
-      if (totalAvailable >= quantity) {
-        let remaining = quantity;
-        const items = [];
-        for (const i of prevTransferredData) {
-          if (remaining <= 0) break;
-          const take = Math.min(i.transferred || 0, remaining);
-          if (take > 0) {
-            items.push({ transferred: take, styleCode: i.styleCode || '', brand: i.brand || '' });
-            remaining -= take;
-          }
+      let remaining = quantity;
+      const items = [];
+      for (const i of prevTransferredData) {
+        if (remaining <= 0) break;
+        const k = vendorStyleKey(i.styleCode, i.brand);
+        const cap = fcByStyle.get(k) || 0;
+        const got = dispatchByStyle.get(k) || 0;
+        const headroom = Math.max(0, cap - got);
+        const take = Math.min(Number(i.transferred || 0), headroom, remaining);
+        if (take > 0) {
+          items.push({ transferred: take, styleCode: i.styleCode || '', brand: i.brand || '' });
+          remaining -= take;
         }
-        if (items.length > 0 && items.reduce((s, x) => s + x.transferred, 0) === quantity) {
-          receivedTransferItems = items;
-        }
+      }
+      if (items.length > 0 && items.reduce((s, x) => s + x.transferred, 0) === quantity) {
+        receivedTransferItems = items;
       }
     }
   }

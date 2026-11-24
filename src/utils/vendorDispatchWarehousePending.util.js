@@ -3,6 +3,7 @@ import VendorDispatchStockTransferNote, {
   VendorDispatchStnStatus,
 } from '../models/vendorManagement/vendorDispatchStockTransferNote.model.js';
 import { getPendingDispatchTransferredData } from './dispatchWarehousePending.util.js';
+import { aggregateTransferredByStyleKey } from './vendorStyleQuantity.util.js';
 
 /**
  * Build lookup key for vendor flow + brand STN allocation maps.
@@ -77,6 +78,27 @@ export const filterVendorWarehouseHandoffReceivedData = (receivedData) => {
   return (receivedData || []).filter((rd) =>
     String(rd?.receivedStatusFromPreviousFloor || '').startsWith('warehouse:')
   );
+};
+
+/**
+ * Dispatch `receivedData` from floor container accepts / confirm — excludes `warehouse:*` handoff rows
+ * (those mirror WHMS staging and must not count toward final-checking → dispatch receive caps).
+ * @param {Array<{ receivedStatusFromPreviousFloor?: string, transferred?: number, styleCode?: string, brand?: string }>} receivedData
+ * @returns {Array<Object>}
+ */
+export const filterVendorDispatchFloorReceiveReceivedData = (receivedData) => {
+  return (receivedData || []).filter(
+    (rd) => !String(rd?.receivedStatusFromPreviousFloor || '').startsWith('warehouse:')
+  );
+};
+
+/**
+ * Per style+brand qty received on dispatch floor only (not warehouse handoff ledger rows).
+ * @param {Array<{ receivedStatusFromPreviousFloor?: string, transferred?: number, styleCode?: string, brand?: string }>} receivedData
+ * @returns {Map<string, number>}
+ */
+export const aggregateVendorDispatchFloorReceivedByStyleKey = (receivedData) => {
+  return aggregateTransferredByStyleKey(filterVendorDispatchFloorReceiveReceivedData(receivedData));
 };
 
 /**
