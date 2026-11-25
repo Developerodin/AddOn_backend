@@ -1,11 +1,7 @@
 import { ProductionOrder } from '../../models/production/index.js';
 import Product from '../../models/product.model.js';
 import InwardReceive, { InwardReceiveStatus, InwardReceiveSource } from '../../models/whms/inwardReceive.model.js';
-import {
-  articleHasBrandingInProcess,
-  latestStyleCodeForBrand,
-  resolveStyleCodeForBrand,
-} from '../../utils/brandQuantity.util.js';
+import { latestStyleCodeForBrand } from '../../utils/brandQuantity.util.js';
 
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -49,18 +45,7 @@ export async function createInwardReceivesForWarehouseAccept(article, newLines, 
         })
           .populate('styleCodes', 'styleCode brand createdAt')
           .lean();
-        let floorOrder = null;
-        try {
-          if (typeof article.getFloorOrder === 'function') {
-            floorOrder = await article.getFloorOrder();
-          }
-        } catch {
-          floorOrder = null;
-        }
-        const brandingSkipped = Array.isArray(floorOrder) && !articleHasBrandingInProcess(floorOrder);
-        styleCode = brandingSkipped
-          ? latestStyleCodeForBrand(brand, product?.styleCodes)
-          : resolveStyleCodeForBrand(brand, [], product?.styleCodes);
+        styleCode = latestStyleCodeForBrand(brand, product?.styleCodes);
       }
     }
 
