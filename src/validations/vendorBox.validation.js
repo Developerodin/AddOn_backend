@@ -74,6 +74,14 @@ export const resyncVendorLotBoxes = {
   }),
 };
 
+export const renameVendorLotInvoice = {
+  body: Joi.object().keys({
+    vpoNumber: Joi.string().required().trim(),
+    fromLotNumber: Joi.string().required().trim(),
+    toLotNumber: Joi.string().required().trim(),
+  }),
+};
+
 export const getVendorBoxes = {
   query: Joi.object().keys({
     vpoNumber: Joi.string(),

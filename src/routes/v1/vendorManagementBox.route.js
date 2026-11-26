@@ -27,6 +27,10 @@ router
   .post(auth(), validate(vendorBoxValidation.resyncVendorLotBoxes), vendorBoxController.resyncVendorLotBoxes);
 
 router
+  .route('/rename-lot-invoice')
+  .post(auth(), validate(vendorBoxValidation.renameVendorLotInvoice), vendorBoxController.renameVendorLotInvoice);
+
+router
   .route('/')
   .get(auth(), validate(vendorBoxValidation.getVendorBoxes), vendorBoxController.getVendorBoxes)
   .post(auth(), validate(vendorBoxValidation.createVendorBox), vendorBoxController.createVendorBox);

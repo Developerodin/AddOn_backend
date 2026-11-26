@@ -2,6 +2,7 @@ import httpStatus from 'http-status';
 import pick from '../../utils/pick.js';
 import catchAsync from '../../utils/catchAsync.js';
 import * as vendorBoxService from '../../services/vendorManagement/vendorBox.service.js';
+import { renameVendorLotInvoice as renameVendorLotInvoiceService } from '../../services/vendorManagement/vendorLotInvoiceRename.service.js';
 
 export const createVendorBox = catchAsync(async (req, res) => {
   const doc = await vendorBoxService.createVendorBox(req.body);
@@ -47,6 +48,11 @@ export const processVendorLot = catchAsync(async (req, res) => {
 
 export const resyncVendorLotBoxes = catchAsync(async (req, res) => {
   const result = await vendorBoxService.resyncVendorLotBoxes(req.body);
+  res.status(httpStatus.OK).send(result);
+});
+
+export const renameVendorLotInvoice = catchAsync(async (req, res) => {
+  const result = await renameVendorLotInvoiceService(req.body);
   res.status(httpStatus.OK).send(result);
 });
 
